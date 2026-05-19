@@ -43,6 +43,18 @@ LOGIN_RATE_LIMIT_MAX=10
 LOGIN_RATE_LIMIT_WINDOW_SECONDS=900
 LICENSE_CHECK_RATE_LIMIT_MAX=120
 LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS=60
+LICENSE_KEY_RATE_LIMIT_MAX=600
+LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS=300
+
+# Reverse proxy and session safety.
+# Set TRUST_PROXY_HEADERS=1 only when the app is behind a trusted proxy such as Nginx.
+TRUST_PROXY_HEADERS=1
+SESSION_COOKIE_SECURE=1
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_LIFETIME_SECONDS=43200
+
+# Operational logging.
+LOG_LEVEL=INFO
 ```
 
 ## Forbidden Values
@@ -73,6 +85,8 @@ LICENSE_ADMIN_PASSWORD=admin12345
 LICENSE_ADMIN_EMAIL=admin@example.com
 AUTO_INIT_DB=1
 RATE_LIMITS_ENABLED=1
+TRUST_PROXY_HEADERS=0
+SESSION_COOKIE_SECURE=0
 ```
 
 Run:
@@ -139,7 +153,20 @@ key, server fingerprint, and optional server metadata.
 - Serve production through HTTPS only.
 - Terminate TLS in Nginx or another reverse proxy.
 - Forward `Host`, `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto`.
+- Set `TRUST_PROXY_HEADERS=1` only after the Flask app is reachable only from
+  the trusted proxy.
 - Do not expose Flask's development server directly.
+
+## WSGI Entrypoint
+
+Use the production WSGI module:
+
+```bash
+python -m pip install gunicorn
+gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 2
+```
+
+Do not run `python run.py` for production service hosting.
 
 ## Backup Reminder
 

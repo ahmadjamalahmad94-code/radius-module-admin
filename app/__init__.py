@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -8,10 +9,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, abort, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
+from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config, TestingConfig
 from .extensions import db
 from .models import Admin, Plan, Setting, utcnow
+from .security import client_ip
 
 
 def create_app(config_object=None, **overrides) -> Flask:
@@ -19,12 +23,16 @@ def create_app(config_object=None, **overrides) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config_object or Config)
     app.config.update(overrides)
+    _configure_logging(app)
     _validate_production_config(app)
+    _install_proxy_fix(app)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
     _install_rate_limits(app)
     _install_csrf(app)
+    _install_security_headers(app)
+    _install_error_handlers(app)
     _install_template_helpers(app)
 
     from .auth.routes import bp as auth_bp
@@ -46,6 +54,13 @@ def create_app(config_object=None, **overrides) -> Flask:
     return app
 
 
+def _configure_logging(app: Flask) -> None:
+    level_name = str(app.config.get("LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    app.logger.setLevel(level)
+
+
 def _validate_production_config(app: Flask) -> None:
     if app.config.get("TESTING"):
         return
@@ -64,14 +79,21 @@ def _validate_production_config(app: Flask) -> None:
         raise RuntimeError("Production requires a non-default FLASK_SECRET.")
     if str(app.config.get("ADMIN_PASSWORD", "")) in weak_passwords:
         raise RuntimeError("Production requires a non-default LICENSE_ADMIN_PASSWORD.")
+    if app.config.get("SQLALCHEMY_DATABASE_URI") == Config.DEFAULT_DATABASE_URI:
+        raise RuntimeError("Production requires an explicit DATABASE_URL.")
+    if not app.config.get("RATE_LIMITS_ENABLED", True):
+        raise RuntimeError("Production requires RATE_LIMITS_ENABLED=1.")
+    if not app.config.get("SESSION_COOKIE_SECURE", False):
+        raise RuntimeError("Production requires SESSION_COOKIE_SECURE=1.")
+
+
+def _install_proxy_fix(app: Flask) -> None:
+    if app.config.get("TRUST_PROXY_HEADERS"):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
 def _install_rate_limits(app: Flask) -> None:
     buckets: dict[str, tuple[float, int]] = {}
-
-    def client_ip() -> str:
-        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-        return forwarded or request.remote_addr or "unknown"
 
     def retry_after_for(key: str, max_attempts: int, window_seconds: int) -> int | None:
         now = time.monotonic()
@@ -105,21 +127,74 @@ def _install_rate_limits(app: Flask) -> None:
             return None
         if request.endpoint == "auth.login_post":
             retry_after = retry_after_for(
-                f"login:{client_ip()}",
+                f"login:{client_ip(app.config.get('TRUST_PROXY_HEADERS', False))}",
                 int(app.config.get("LOGIN_RATE_LIMIT_MAX", 10)),
                 int(app.config.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 900)),
             )
             if retry_after:
                 return rate_limited_response(retry_after)
         if request.endpoint == "api.license_check":
+            body = request.get_json(silent=True) or {}
+            license_key = str(body.get("license_key") or "").strip().upper()
             retry_after = retry_after_for(
-                f"license-check:{client_ip()}",
+                f"license-check-ip:{client_ip(app.config.get('TRUST_PROXY_HEADERS', False))}",
                 int(app.config.get("LICENSE_CHECK_RATE_LIMIT_MAX", 120)),
                 int(app.config.get("LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS", 60)),
             )
             if retry_after:
                 return rate_limited_response(retry_after)
+            if license_key:
+                retry_after = retry_after_for(
+                    f"license-check-key:{license_key}",
+                    int(app.config.get("LICENSE_KEY_RATE_LIMIT_MAX", 600)),
+                    int(app.config.get("LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS", 300)),
+                )
+                if retry_after:
+                    return rate_limited_response(retry_after)
         return None
+
+
+def _install_security_headers(app: Flask) -> None:
+    @app.after_request
+    def set_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "script-src 'self'; "
+            "frame-ancestors 'none'",
+        )
+        if app.config.get("SESSION_COOKIE_SECURE"):
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
+def _install_error_handlers(app: Flask) -> None:
+    @app.errorhandler(HTTPException)
+    def handle_http_error(error):
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": error.name.lower().replace(" ", "_"),
+                "message": error.description,
+            }), error.code
+        return error
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(error):
+        if app.config.get("TESTING"):
+            raise error
+        app.logger.exception("Unhandled request error")
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "error": "internal_server_error",
+                "message": "Internal server error.",
+            }), 500
+        return "Internal server error.", 500
 
 
 def init_database(app: Flask) -> None:

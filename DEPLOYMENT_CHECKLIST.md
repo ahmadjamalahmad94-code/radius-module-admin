@@ -23,6 +23,13 @@ Set these before any real deployment:
 - `LOGIN_RATE_LIMIT_WINDOW_SECONDS`
 - `LICENSE_CHECK_RATE_LIMIT_MAX`
 - `LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS`
+- `LICENSE_KEY_RATE_LIMIT_MAX`
+- `LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS`
+- `TRUST_PROXY_HEADERS`
+- `SESSION_COOKIE_SECURE`
+- `SESSION_COOKIE_SAMESITE`
+- `SESSION_LIFETIME_SECONDS`
+- `LOG_LEVEL`
 
 ## Forbidden Defaults
 
@@ -33,6 +40,8 @@ Never run production with these values:
 - `LICENSE_ADMIN_PASSWORD=admin12345`
 - `LICENSE_ADMIN_PASSWORD=change-this-password`
 - `LICENSE_PANEL_ENV=local`
+- `SESSION_COOKIE_SECURE=0`
+- `RATE_LIMITS_ENABLED=0`
 
 The application now refuses to start in `production` if the built-in default
 secret or default admin password is still active.
@@ -69,6 +78,9 @@ password: admin12345
 - Redirect HTTP to HTTPS.
 - Enable modern TLS certificates with automatic renewal, for example Certbot.
 - Forward the original client IP with `X-Forwarded-For`.
+- Set `TRUST_PROXY_HEADERS=1` only when the Flask app is reachable only from
+  that trusted reverse proxy.
+- Keep `SESSION_COOKIE_SECURE=1` in production.
 - Keep admin routes private where possible, for example with firewall rules,
   VPN, or IP allowlists.
 - Do not expose the development server directly to the internet.
@@ -92,6 +104,18 @@ server {
     }
 }
 ```
+
+## Gunicorn Readiness
+
+Production should use the WSGI entrypoint:
+
+```bash
+python -m pip install gunicorn
+gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 2
+```
+
+Do not use `python run.py` as the production service command. `run.py` is for
+local development.
 
 ## Database Notes
 

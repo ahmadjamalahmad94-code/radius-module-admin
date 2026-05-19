@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 
 from ..extensions import db
 from ..models import Admin, AuditLog, utcnow
@@ -43,6 +43,13 @@ def audit(action: str, entity_type: str, entity_id: str = "", summary: str = "",
     db.session.add(row)
 
 
+def safe_next_url(target: str | None) -> str:
+    target = (target or "").strip()
+    if target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("admin.dashboard")
+
+
 @bp.get("/login")
 def login():
     return render_template("auth/login.html")
@@ -60,12 +67,14 @@ def login_post():
     admin.last_login_at = utcnow()
     db.session.add(admin)
     session.clear()
+    session.permanent = True
     session["admin_id"] = admin.id
     session["admin_name"] = admin.full_name or admin.username
     audit("login", "admin", str(admin.id), f"Admin {admin.username} logged in")
     db.session.commit()
+    current_app.logger.info("Admin login succeeded for %s", admin.username)
     flash("تم تسجيل الدخول بنجاح.", "success")
-    return redirect(request.args.get("next") or url_for("admin.dashboard"))
+    return redirect(safe_next_url(request.args.get("next")))
 
 
 @bp.post("/logout")
