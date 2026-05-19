@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تسجيل الدخول - لوحة التراخيص</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-mark">HBR</div>
+    <h1>لوحة إدارة التراخيص</h1>
+    <p class="muted">دخول آمن لإدارة العملاء والاشتراكات ومفاتيح الترخيص.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    <form method="post" action="{{ url_for('auth.login_post') }}" class="grid">
+      {{ csrf_input() }}
+      <div class="form-row">
+        <label>اسم الدخول</label>
+        <input name="username" value="{{ username or '' }}" required autofocus>
+      </div>
+      <div class="form-row">
+        <label>كلمة المرور</label>
+        <input name="password" type="password" required>
+      </div>
+      <button class="btn" type="submit">دخول</button>
+    </form>
+  </main>
+</body>
+</html>
+

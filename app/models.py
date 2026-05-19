@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from .extensions import db
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def json_loads(raw: str | None, default):
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def json_dumps(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+class TimestampMixin:
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class Admin(TimestampMixin, db.Model):
+    __tablename__ = "admins"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    full_name = db.Column(db.String(160), default="", nullable=False)
+    email = db.Column(db.String(160), default="", nullable=False)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    last_login_at = db.Column(db.DateTime)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+
+class Customer(TimestampMixin, db.Model):
+    __tablename__ = "customers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_name = db.Column(db.String(180), nullable=False, index=True)
+    contact_name = db.Column(db.String(160), default="", nullable=False)
+    email = db.Column(db.String(180), default="", nullable=False)
+    phone = db.Column(db.String(80), default="", nullable=False)
+    country = db.Column(db.String(100), default="", nullable=False)
+    city = db.Column(db.String(100), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+    status = db.Column(db.String(20), default="active", nullable=False, index=True)
+
+    licenses = db.relationship("License", back_populates="customer", lazy="dynamic")
+    renewals = db.relationship("Renewal", back_populates="customer", lazy="dynamic")
+
+
+class Plan(TimestampMixin, db.Model):
+    __tablename__ = "plans"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    monthly_price = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    max_users = db.Column(db.Integer, default=100, nullable=False)
+    max_nas = db.Column(db.Integer, default=1, nullable=False)
+    max_admins = db.Column(db.Integer, default=1, nullable=False)
+    max_devices = db.Column(db.Integer, default=1, nullable=False)
+    features_json = db.Column(db.Text, default="{}", nullable=False)
+    status = db.Column(db.String(20), default="active", nullable=False, index=True)
+
+    licenses = db.relationship("License", back_populates="plan", lazy="dynamic")
+
+    @property
+    def features(self) -> dict:
+        return json_loads(self.features_json, {})
+
+    @features.setter
+    def features(self, value: dict) -> None:
+        self.features_json = json_dumps(value or {})
+
+    def public_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "max_users": self.max_users,
+            "max_nas": self.max_nas,
+            "max_admins": self.max_admins,
+        }
+
+
+class License(TimestampMixin, db.Model):
+    __tablename__ = "licenses"
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey("plans.id"), nullable=False, index=True)
+    license_key = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    status = db.Column(db.String(20), default="active", nullable=False, index=True)
+    starts_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    grace_until = db.Column(db.DateTime)
+    max_fingerprints = db.Column(db.Integer, default=1, nullable=False)
+    allowed_fingerprints_json = db.Column(db.Text, default="[]", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+    last_check_at = db.Column(db.DateTime)
+
+    customer = db.relationship("Customer", back_populates="licenses")
+    plan = db.relationship("Plan", back_populates="licenses")
+    checks = db.relationship("LicenseCheck", back_populates="license", lazy="dynamic")
+    renewals = db.relationship("Renewal", back_populates="license", lazy="dynamic")
+
+    @property
+    def fingerprints(self) -> list[str]:
+        return json_loads(self.allowed_fingerprints_json, [])
+
+    @fingerprints.setter
+    def fingerprints(self, value: list[str]) -> None:
+        cleaned = [str(v).strip() for v in value if str(v).strip()]
+        self.allowed_fingerprints_json = json_dumps(cleaned)
+
+
+class LicenseCheck(db.Model):
+    __tablename__ = "license_checks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    license_key = db.Column(db.String(32), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=True, index=True)
+    fingerprint = db.Column(db.String(255), default="", nullable=False, index=True)
+    hostname = db.Column(db.String(255), default="", nullable=False)
+    ip_address = db.Column(db.String(80), default="", nullable=False)
+    version = db.Column(db.String(80), default="", nullable=False)
+    install_id = db.Column(db.String(120), default="", nullable=False)
+    domain = db.Column(db.String(255), default="", nullable=False)
+    result = db.Column(db.String(40), nullable=False, index=True)
+    response_mode = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.String(255), default="", nullable=False)
+    checked_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    license = db.relationship("License", back_populates="checks")
+    customer = db.relationship("Customer")
+
+
+class Renewal(db.Model):
+    __tablename__ = "renewals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=False, index=True)
+    amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    period_months = db.Column(db.Integer, default=1, nullable=False)
+    period_start = db.Column(db.DateTime, nullable=False)
+    period_end = db.Column(db.DateTime, nullable=False)
+    method = db.Column(db.String(40), default="manual", nullable=False)
+    status = db.Column(db.String(20), default="paid", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    customer = db.relationship("Customer", back_populates="renewals")
+    license = db.relationship("License", back_populates="renewals")
+
+
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    action = db.Column(db.String(80), nullable=False, index=True)
+    entity_type = db.Column(db.String(80), nullable=False, index=True)
+    entity_id = db.Column(db.String(80), default="", nullable=False)
+    summary = db.Column(db.String(255), default="", nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    actor = db.relationship("Admin")
+
+    @property
+    def meta(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @meta.setter
+    def meta(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
+
+
+class Setting(db.Model):
+    __tablename__ = "settings"
+
+    key = db.Column(db.String(120), primary_key=True)
+    value = db.Column(db.Text, default="", nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
