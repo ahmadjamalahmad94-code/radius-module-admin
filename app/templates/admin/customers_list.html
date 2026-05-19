@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% block title %}العملاء{% endblock %}
+{% block page_title %}العملاء{% endblock %}
+{% block page_subtitle %}إدارة الشركات والعملاء الذين يستخدمون منتج RADIUS{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <form class="filter-form" method="get">
+    <input name="q" placeholder="بحث بالاسم أو البريد" value="{{ search }}">
+    <select name="status">
+      <option value="">كل الحالات</option>
+      {% for s in ['active','inactive','blocked'] %}
+        <option value="{{ s }}" {{ 'selected' if status == s else '' }}>{{ s|status_label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn-secondary" type="submit">بحث</button>
+  </form>
+  <a class="btn" href="{{ url_for('admin.customer_new') }}">عميل جديد</a>
+</div>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>الشركة</th><th>المسؤول</th><th>البريد</th><th>الهاتف</th><th>الحالة</th><th>التراخيص</th><th></th></tr></thead>
+    <tbody>
+    {% for customer in customers %}
+      <tr>
+        <td><strong>{{ customer.company_name }}</strong><div class="muted">{{ customer.city }} {{ customer.country }}</div></td>
+        <td>{{ customer.contact_name or '-' }}</td>
+        <td>{{ customer.email or '-' }}</td>
+        <td>{{ customer.phone or '-' }}</td>
+        <td><span class="badge {{ customer.status|badge_class }}">{{ customer.status|status_label }}</span></td>
+        <td>{{ customer.licenses.count() }}</td>
+        <td class="actions">
+          <a class="btn-ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">عرض</a>
+          <a class="btn-secondary" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">تعديل</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="empty">لا يوجد عملاء بعد. أضف أول عميل من الزر بالأعلى.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

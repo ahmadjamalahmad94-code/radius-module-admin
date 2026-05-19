@@ -1,0 +1,39 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'خطة جديدة' if is_new else 'تعديل خطة' }}{% endblock %}
+{% block page_title %}{{ 'خطة جديدة' if is_new else 'تعديل خطة' }}{% endblock %}
+{% block page_subtitle %}الحدود والمزايا التي سيستلمها نظام العميل عند فحص الترخيص{% endblock %}
+{% block content %}
+<form class="card grid" method="post">
+  {{ csrf_input() }}
+  <div class="form-grid">
+    <div class="form-row"><label>اسم الخطة</label><input name="name" value="{{ plan.name or '' }}" required></div>
+    <div class="form-row"><label>المعرّف المختصر</label><input name="slug" value="{{ plan.slug or '' }}" required class="mono"></div>
+    <div class="form-row"><label>السعر الشهري</label><input name="monthly_price" type="number" step="0.01" value="{{ plan.monthly_price or 0 }}"></div>
+    <div class="form-row"><label>العملة</label><input name="currency" value="{{ plan.currency or 'USD' }}"></div>
+    <div class="form-row"><label>أقصى عدد مستخدمين</label><input name="max_users" type="number" value="{{ plan.max_users or 0 }}"></div>
+    <div class="form-row"><label>أقصى عدد NAS</label><input name="max_nas" type="number" value="{{ plan.max_nas or 0 }}"></div>
+    <div class="form-row"><label>أقصى عدد مدراء</label><input name="max_admins" type="number" value="{{ plan.max_admins or 0 }}"></div>
+    <div class="form-row"><label>أقصى عدد بصمات/أجهزة</label><input name="max_devices" type="number" value="{{ plan.max_devices or 1 }}"></div>
+    <div class="form-row">
+      <label>الحالة</label>
+      <select name="status">
+        {% for s in ['active','inactive'] %}
+          <option value="{{ s }}" {{ 'selected' if plan.status == s else '' }}>{{ s|status_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row full">
+      <label>المزايا</label>
+      <div class="check-grid">
+        {% for key, label in features %}
+          <label class="check-item"><input type="checkbox" name="feature_{{ key }}" {{ 'checked' if plan.features.get(key) else '' }}> {{ label }}</label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">حفظ</button>
+    <a class="btn-ghost" href="{{ url_for('admin.plans_list') }}">إلغاء</a>
+  </div>
+</form>
+{% endblock %}

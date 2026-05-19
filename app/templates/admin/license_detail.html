@@ -1,0 +1,128 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ license.license_key }}{% endblock %}
+{% block page_title %}{{ license.license_key }}{% endblock %}
+{% block page_subtitle %}إدارة حالة الترخيص والتجديد والبصمات وسجل الفحص{% endblock %}
+{% block content %}
+<section class="grid two-grid">
+  <div class="card">
+    <div class="section-head">
+      <h2>معلومات الترخيص</h2>
+      <span class="badge {{ license.status|badge_class }}">{{ license.status|status_label }}</span>
+    </div>
+    {% if suspicious %}
+      <div class="flash warning">يوجد نشاط يستحق المراجعة: بصمات أو عناوين IP متعددة على هذا الترخيص.</div>
+    {% endif %}
+    <div class="detail-list">
+      <div><span>العميل</span><strong>{{ license.customer.company_name }}</strong></div>
+      <div><span>الخطة</span><strong>{{ license.plan.name }}</strong></div>
+      <div><span>ينتهي في</span><strong>{{ license.expires_at|dt }}</strong></div>
+      <div><span>مهلة السماح</span><strong>{{ license.grace_until|dt }}</strong></div>
+      <div><span>أقصى بصمات</span><strong>{{ license.max_fingerprints }}</strong></div>
+      <div><span>آخر فحص</span><strong>{{ license.last_check_at|dt }}</strong></div>
+    </div>
+  </div>
+  <div class="card quick-actions">
+    <div class="section-head"><h2>إجراءات سريعة</h2></div>
+    <form method="post" action="{{ url_for('admin.license_activate', license_id=license.id) }}">{{ csrf_input() }}<button class="btn-secondary">تفعيل</button></form>
+    <form method="post" action="{{ url_for('admin.license_suspend', license_id=license.id) }}">{{ csrf_input() }}<button class="btn-danger">تعليق</button></form>
+    <form method="post" action="{{ url_for('admin.license_revoke', license_id=license.id) }}" onsubmit="return confirm('إلغاء الترخيص نهائيًا؟')">{{ csrf_input() }}<button class="btn-danger">إلغاء</button></form>
+    <form method="post" action="{{ url_for('admin.license_reset_fingerprints', license_id=license.id) }}">{{ csrf_input() }}<button class="btn-ghost">مسح البصمات</button></form>
+    <p class="muted">الإلغاء والتعليق يعيدان `mode=denied` من API الترخيص.</p>
+  </div>
+</section>
+
+<section class="grid two-grid" style="margin-top:16px">
+  <div class="card">
+    <div class="section-head"><h2>تجديد يدوي</h2></div>
+    <form method="post" action="{{ url_for('admin.license_renew', license_id=license.id) }}" class="grid">
+      {{ csrf_input() }}
+      <div class="form-grid">
+        <div class="form-row"><label>المدة بالأشهر</label><input name="period_months" type="number" min="1" value="1"></div>
+        <div class="form-row"><label>المبلغ</label><input name="amount" type="number" step="0.01" value="{{ license.plan.monthly_price }}"></div>
+        <div class="form-row">
+          <label>طريقة الدفع</label>
+          <select name="method"><option value="manual">يدوي</option><option value="cash">نقدًا</option><option value="bank">تحويل بنكي</option><option value="other">أخرى</option></select>
+        </div>
+        <div class="form-row">
+          <label>الحالة</label>
+          <select name="status"><option value="paid">مدفوع</option><option value="unpaid">غير مدفوع</option><option value="waived">معفى</option></select>
+        </div>
+        <div class="form-row full"><label>ملاحظات</label><textarea name="notes" rows="2"></textarea></div>
+      </div>
+      <button class="btn" type="submit">تجديد الترخيص</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>البصمات المسموحة</h2></div>
+    <form method="post" action="{{ url_for('admin.license_add_fingerprint', license_id=license.id) }}" class="filter-form">
+      {{ csrf_input() }}
+      <input name="fingerprint" placeholder="server fingerprint">
+      <button class="btn-secondary" type="submit">إضافة</button>
+    </form>
+    <div class="grid" style="margin-top:12px">
+      {% for fp in license.fingerprints %}
+        <div class="card" style="box-shadow:none;padding:10px">
+          <div class="actions" style="justify-content:space-between">
+            <span class="mono">{{ fp }}</span>
+            <form method="post" action="{{ url_for('admin.license_remove_fingerprint', license_id=license.id) }}">
+              {{ csrf_input() }}
+              <input type="hidden" name="fingerprint" value="{{ fp }}">
+              <button class="btn-danger" type="submit">حذف</button>
+            </form>
+          </div>
+        </div>
+      {% else %}
+        <p class="empty">لا توجد بصمات بعد. أول فحص ناجح سيربط البصمة تلقائيًا إذا كان الحد يسمح.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-head"><h2>آخر فحوصات هذا الترخيص</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>النتيجة</th><th>الوضع</th><th>البصمة</th><th>الخادم</th><th>IP</th><th>النسخة</th><th>الوقت</th></tr></thead>
+      <tbody>
+      {% for item in checks %}
+        <tr>
+          <td><span class="badge {{ item.result|badge_class }}">{{ item.result|status_label }}</span></td>
+          <td>{{ item.response_mode }}</td>
+          <td class="mono">{{ item.fingerprint }}</td>
+          <td>{{ item.hostname or '-' }}</td>
+          <td>{{ item.ip_address or '-' }}</td>
+          <td>{{ item.version or '-' }}</td>
+          <td>{{ item.checked_at|dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="empty">لا توجد فحوصات بعد.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-head"><h2>التجديدات</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>المدة</th><th>الفترة</th><th>المبلغ</th><th>الطريقة</th><th>الحالة</th><th>الوقت</th></tr></thead>
+      <tbody>
+      {% for item in renewals %}
+        <tr>
+          <td>{{ item.period_months }} شهر</td>
+          <td>{{ item.period_start|date }} - {{ item.period_end|date }}</td>
+          <td>{{ item.amount|money }} {{ item.currency }}</td>
+          <td>{{ item.method }}</td>
+          <td><span class="badge {{ item.status|badge_class }}">{{ item.status|status_label }}</span></td>
+          <td>{{ item.created_at|dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="empty">لا توجد تجديدات بعد.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+

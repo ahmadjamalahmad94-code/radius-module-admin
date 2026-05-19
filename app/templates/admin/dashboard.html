@@ -1,0 +1,66 @@
+{% extends "admin/base.html" %}
+{% block title %}لوحة التحكم{% endblock %}
+{% block page_title %}لوحة التحكم{% endblock %}
+{% block page_subtitle %}نظرة سريعة على العملاء والتراخيص وحركة الفحص الأخيرة{% endblock %}
+{% block content %}
+<section class="grid stats-grid">
+  <div class="card stat"><div class="label">إجمالي العملاء</div><div class="value">{{ stats.customers }}</div></div>
+  <div class="card stat"><div class="label">تراخيص نشطة</div><div class="value">{{ stats.active }}</div></div>
+  <div class="card stat"><div class="label">تراخيص منتهية</div><div class="value">{{ stats.expired }}</div></div>
+  <div class="card stat"><div class="label">تراخيص معلقة</div><div class="value">{{ stats.suspended }}</div></div>
+  <div class="card stat"><div class="label">تنتهي قريبًا</div><div class="value">{{ stats.expiring_soon }}</div></div>
+</section>
+
+<section class="grid two-grid" style="margin-top:16px">
+  <div class="card">
+    <div class="section-head"><h2>آخر فحوصات الترخيص</h2><a class="btn-ghost" href="{{ url_for('admin.checks_list') }}">عرض الكل</a></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>المفتاح</th><th>النتيجة</th><th>الخادم</th><th>الوقت</th></tr></thead>
+        <tbody>
+        {% for item in recent_checks %}
+          <tr>
+            <td class="mono">{{ item.license_key }}</td>
+            <td><span class="badge {{ item.result|badge_class }}">{{ item.result|status_label }}</span></td>
+            <td>{{ item.hostname or '-' }}</td>
+            <td>{{ item.checked_at|dt }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">لا توجد فحوصات بعد.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>آخر التجديدات</h2><a class="btn-ghost" href="{{ url_for('admin.renewals_list') }}">عرض الكل</a></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>العميل</th><th>المدة</th><th>المبلغ</th><th>الوقت</th></tr></thead>
+        <tbody>
+        {% for item in recent_renewals %}
+          <tr>
+            <td>{{ item.customer.company_name }}</td>
+            <td>{{ item.period_months }} شهر</td>
+            <td>{{ item.amount|money }} {{ item.currency }}</td>
+            <td>{{ item.created_at|dt }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="empty">لا توجد تجديدات بعد.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-head"><h2>حالة النظام</h2><a class="btn-ghost" href="{{ url_for('admin.settings_page') }}">الإعدادات</a></div>
+  <div class="detail-list">
+    <div><span>البيئة</span><strong>{{ health.env }}</strong></div>
+    <div><span>رابط API</span><strong class="mono">{{ health.api_base }}/api/license/check</strong></div>
+    <div><span>بريد الدعم</span><strong>{{ health.support_email or '-' }}</strong></div>
+  </div>
+</section>
+{% endblock %}
+

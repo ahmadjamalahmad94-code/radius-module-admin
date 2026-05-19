@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ customer.company_name }}{% endblock %}
+{% block page_title %}{{ customer.company_name }}{% endblock %}
+{% block page_subtitle %}تفاصيل العميل والتراخيص المرتبطة به{% endblock %}
+{% block content %}
+<section class="grid two-grid">
+  <div class="card">
+    <div class="section-head"><h2>بيانات العميل</h2><a class="btn-secondary" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">تعديل</a></div>
+    <div class="detail-list">
+      <div><span>الحالة</span><strong><span class="badge {{ customer.status|badge_class }}">{{ customer.status|status_label }}</span></strong></div>
+      <div><span>المسؤول</span><strong>{{ customer.contact_name or '-' }}</strong></div>
+      <div><span>البريد</span><strong>{{ customer.email or '-' }}</strong></div>
+      <div><span>الهاتف</span><strong>{{ customer.phone or '-' }}</strong></div>
+      <div><span>الموقع</span><strong>{{ customer.city }} {{ customer.country }}</strong></div>
+      <div><span>تاريخ الإنشاء</span><strong>{{ customer.created_at|dt }}</strong></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>ملاحظات</h2></div>
+    <p>{{ customer.notes or 'لا توجد ملاحظات.' }}</p>
+  </div>
+</section>
+<section class="card" style="margin-top:16px">
+  <div class="section-head"><h2>تراخيص العميل</h2><a class="btn" href="{{ url_for('admin.license_new') }}">ترخيص جديد</a></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>المفتاح</th><th>الخطة</th><th>الحالة</th><th>ينتهي في</th><th></th></tr></thead>
+      <tbody>
+      {% for lic in licenses %}
+        <tr>
+          <td class="mono">{{ lic.license_key }}</td>
+          <td>{{ lic.plan.name }}</td>
+          <td><span class="badge {{ lic.status|badge_class }}">{{ lic.status|status_label }}</span></td>
+          <td>{{ lic.expires_at|date }}</td>
+          <td><a class="btn-ghost" href="{{ url_for('admin.license_detail', license_id=lic.id) }}">عرض</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="empty">لا توجد تراخيص لهذا العميل بعد.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+

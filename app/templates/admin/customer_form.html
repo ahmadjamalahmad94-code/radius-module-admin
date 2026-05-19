@@ -1,0 +1,31 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'عميل جديد' if is_new else 'تعديل عميل' }}{% endblock %}
+{% block page_title %}{{ 'عميل جديد' if is_new else 'تعديل عميل' }}{% endblock %}
+{% block page_subtitle %}بيانات العميل الأساسية التي تظهر في إدارة التراخيص{% endblock %}
+{% block content %}
+<form class="card grid" method="post">
+  {{ csrf_input() }}
+  <div class="form-grid">
+    <div class="form-row"><label>اسم الشركة</label><input name="company_name" value="{{ customer.company_name or '' }}" required></div>
+    <div class="form-row"><label>اسم المسؤول</label><input name="contact_name" value="{{ customer.contact_name or '' }}"></div>
+    <div class="form-row"><label>البريد</label><input name="email" type="email" value="{{ customer.email or '' }}"></div>
+    <div class="form-row"><label>الهاتف</label><input name="phone" value="{{ customer.phone or '' }}"></div>
+    <div class="form-row"><label>الدولة</label><input name="country" value="{{ customer.country or '' }}"></div>
+    <div class="form-row"><label>المدينة</label><input name="city" value="{{ customer.city or '' }}"></div>
+    <div class="form-row">
+      <label>الحالة</label>
+      <select name="status">
+        {% for s in ['active','inactive','blocked'] %}
+          <option value="{{ s }}" {{ 'selected' if customer.status == s else '' }}>{{ s|status_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row full"><label>ملاحظات</label><textarea name="notes" rows="4">{{ customer.notes or '' }}</textarea></div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">حفظ</button>
+    <a class="btn-ghost" href="{{ url_for('admin.customers_list') }}">إلغاء</a>
+  </div>
+</form>
+{% endblock %}
+

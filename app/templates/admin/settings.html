@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+{% block title %}الإعدادات{% endblock %}
+{% block page_title %}الإعدادات{% endblock %}
+{% block page_subtitle %}إعدادات عامة تظهر لك وتساعد العملاء في الاتصال بخدمة الترخيص{% endblock %}
+{% block content %}
+<form class="card grid" method="post">
+  {{ csrf_input() }}
+  <div class="form-grid">
+    <div class="form-row"><label>اسم المنتج</label><input name="product_name" value="{{ settings.get('product_name', '') }}"></div>
+    <div class="form-row"><label>رابط API الأساسي</label><input name="license_api_base_url" value="{{ settings.get('license_api_base_url', '') }}" class="mono"></div>
+    <div class="form-row"><label>أيام السماح الافتراضية</label><input name="default_grace_days" type="number" value="{{ settings.get('default_grace_days', '7') }}"></div>
+    <div class="form-row"><label>العملة الافتراضية</label><input name="default_currency" value="{{ settings.get('default_currency', 'USD') }}"></div>
+    <div class="form-row"><label>بريد الدعم</label><input name="support_email" value="{{ settings.get('support_email', '') }}"></div>
+    <div class="form-row"><label>هاتف الدعم</label><input name="support_phone" value="{{ settings.get('support_phone', '') }}"></div>
+    <div class="form-row"><label>فاصل الفحص المقترح</label><input name="check_interval_recommendation" value="{{ settings.get('check_interval_recommendation', '') }}"></div>
+    <div class="form-row"><label>اسم البيئة</label><input name="environment_label" value="{{ settings.get('environment_label', 'local') }}"></div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">حفظ الإعدادات</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% block title %}ترخيص جديد{% endblock %}
+{% block page_title %}ترخيص جديد{% endblock %}
+{% block page_subtitle %}سيتم توليد مفتاح آمن تلقائيًا بصيغة HBR-YYYY-XXXX-XXXX-XXXX{% endblock %}
+{% block content %}
+<form class="card grid" method="post">
+  {{ csrf_input() }}
+  <div class="form-grid">
+    <div class="form-row">
+      <label>العميل</label>
+      <select name="customer_id" required>
+        {% for customer in customers %}
+          <option value="{{ customer.id }}">{{ customer.company_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row">
+      <label>الخطة</label>
+      <select name="plan_id" required>
+        {% for plan in plans %}
+          <option value="{{ plan.id }}">{{ plan.name }} - {{ plan.monthly_price|money }} {{ plan.currency }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row">
+      <label>الحالة</label>
+      <select name="status">
+        {% for s in ['active','trial','suspended'] %}
+          <option value="{{ s }}">{{ s|status_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row"><label>أقصى عدد بصمات</label><input name="max_fingerprints" type="number" min="1" value="1"></div>
+    <div class="form-row"><label>بداية الترخيص</label><input name="starts_at" type="datetime-local" value="{{ today.strftime('%Y-%m-%dT%H:%M') }}"></div>
+    <div class="form-row"><label>تاريخ الانتهاء</label><input name="expires_at" type="datetime-local" value="{{ (today + timedelta(days=30)).strftime('%Y-%m-%dT%H:%M') }}"></div>
+    <div class="form-row"><label>مهلة السماح</label><input name="grace_until" type="datetime-local" value="{{ (today + timedelta(days=37)).strftime('%Y-%m-%dT%H:%M') }}"></div>
+    <div class="form-row full"><label>ملاحظات</label><textarea name="notes" rows="3"></textarea></div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">توليد الترخيص</button>
+    <a class="btn-ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
+  </div>
+</form>
+{% endblock %}
+

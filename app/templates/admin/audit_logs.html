@@ -1,0 +1,25 @@
+{% extends "admin/base.html" %}
+{% block title %}سجل التدقيق{% endblock %}
+{% block page_title %}سجل التدقيق{% endblock %}
+{% block page_subtitle %}تتبع الإجراءات الإدارية المهمة داخل لوحة التراخيص{% endblock %}
+{% block content %}
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>الإجراء</th><th>الكيان</th><th>الملخص</th><th>المدير</th><th>الوقت</th></tr></thead>
+    <tbody>
+    {% for item in logs %}
+      <tr>
+        <td class="mono">{{ item.action }}</td>
+        <td>{{ item.entity_type }} #{{ item.entity_id }}</td>
+        <td>{{ item.summary }}</td>
+        <td>{{ item.actor.username if item.actor else '-' }}</td>
+        <td>{{ item.created_at|dt }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="empty">لا توجد أحداث بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

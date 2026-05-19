@@ -1,0 +1,33 @@
+{% extends "admin/base.html" %}
+{% block title %}الخطط{% endblock %}
+{% block page_title %}خطط الاشتراك{% endblock %}
+{% block page_subtitle %}تحديد الأسعار والحدود والمزايا التي تعود للعميل عبر API الترخيص{% endblock %}
+{% block content %}
+<div class="toolbar"><span></span><a class="btn" href="{{ url_for('admin.plan_new') }}">خطة جديدة</a></div>
+<div class="card table-wrap">
+  <table>
+    <thead><tr><th>الخطة</th><th>السعر</th><th>الحدود</th><th>المزايا</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>
+    {% for plan in plans %}
+      <tr>
+        <td><strong>{{ plan.name }}</strong><div class="muted mono">{{ plan.slug }}</div></td>
+        <td>{{ plan.monthly_price|money }} {{ plan.currency }} / شهر</td>
+        <td>{{ plan.max_users }} مستخدم، {{ plan.max_nas }} NAS، {{ plan.max_admins }} مدير</td>
+        <td>{{ plan.features|length }} ميزة</td>
+        <td><span class="badge {{ plan.status|badge_class }}">{{ plan.status|status_label }}</span></td>
+        <td class="actions">
+          <a class="btn-secondary" href="{{ url_for('admin.plan_edit', plan_id=plan.id) }}">تعديل</a>
+          <form method="post" action="{{ url_for('admin.plan_delete', plan_id=plan.id) }}" onsubmit="return confirm('حذف الخطة؟')">
+            {{ csrf_input() }}
+            <button class="btn-danger" type="submit">حذف</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">لا توجد خطط بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
