@@ -116,6 +116,21 @@ def check_license(
         db.session.commit()
         return result
 
+    expired = bool(lic.expires_at and lic.expires_at < now)
+    in_grace = bool(expired and lic.grace_until and lic.grace_until >= now)
+    if expired and not in_grace:
+        result = LicenseResult(
+            False,
+            "expired",
+            "limited",
+            "License expired. Admin access is allowed, but new users/cards/sync actions are disabled.",
+            "expired",
+            lic,
+        )
+        _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
+        db.session.commit()
+        return result
+
     if fingerprint:
         fingerprints = lic.fingerprints
         if fingerprint not in fingerprints:
@@ -135,18 +150,8 @@ def check_license(
                 db.session.commit()
                 return result
 
-    if lic.expires_at and lic.expires_at < now:
-        if lic.grace_until and lic.grace_until >= now:
-            result = LicenseResult(True, "grace", "active", "License is in grace period. Please renew soon.", "grace", lic)
-        else:
-            result = LicenseResult(
-                False,
-                "expired",
-                "limited",
-                "License expired. Admin access is allowed, but new users/cards/sync actions are disabled.",
-                "expired",
-                lic,
-            )
+    if in_grace:
+        result = LicenseResult(True, "grace", "active", "License is in grace period. Please renew soon.", "grace", lic)
         _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
         db.session.commit()
         return result

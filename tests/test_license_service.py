@@ -68,6 +68,14 @@ def test_expired_license_after_grace_returns_limited(app):
     assert result.mode == "limited"
 
 
+def test_expired_license_after_grace_does_not_bind_new_fingerprint(app):
+    lic = make_license(expires_delta=timedelta(days=-10), grace_delta=timedelta(days=-1), max_fingerprints=1)
+    result = check_license(license_key=lic.license_key, fingerprint="expired-fp")
+    assert result.active is False
+    assert result.mode == "limited"
+    assert db.session.get(License, lic.id).fingerprints == []
+
+
 @pytest.mark.parametrize("status", ["suspended", "revoked"])
 def test_suspended_and_revoked_license_returns_denied(app, status):
     lic = make_license(status=status)
@@ -110,4 +118,3 @@ def test_renewal_extends_expiry(app):
     assert refreshed.expires_at > old_expiry
     assert refreshed.status == "active"
     assert renewal.period_end == refreshed.expires_at
-

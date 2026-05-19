@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, abort, redirect, request, session, url_for
+from flask import Flask, abort, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
 
 from .config import Config, TestingConfig
@@ -18,9 +19,11 @@ def create_app(config_object=None, **overrides) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config_object or Config)
     app.config.update(overrides)
+    _validate_production_config(app)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
+    _install_rate_limits(app)
     _install_csrf(app)
     _install_template_helpers(app)
 
@@ -41,6 +44,82 @@ def create_app(config_object=None, **overrides) -> Flask:
             init_database(app)
 
     return app
+
+
+def _validate_production_config(app: Flask) -> None:
+    if app.config.get("TESTING"):
+        return
+    env = str(app.config.get("LICENSE_PANEL_ENV", "")).strip().lower()
+    if env not in {"prod", "production"}:
+        return
+
+    weak_passwords = {
+        "",
+        Config.DEFAULT_ADMIN_PASSWORD,
+        "change-this-password",
+        "admin",
+        "password",
+    }
+    if not app.config.get("SECRET_KEY") or app.config["SECRET_KEY"] == Config.DEFAULT_SECRET_KEY:
+        raise RuntimeError("Production requires a non-default FLASK_SECRET.")
+    if str(app.config.get("ADMIN_PASSWORD", "")) in weak_passwords:
+        raise RuntimeError("Production requires a non-default LICENSE_ADMIN_PASSWORD.")
+
+
+def _install_rate_limits(app: Flask) -> None:
+    buckets: dict[str, tuple[float, int]] = {}
+
+    def client_ip() -> str:
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        return forwarded or request.remote_addr or "unknown"
+
+    def retry_after_for(key: str, max_attempts: int, window_seconds: int) -> int | None:
+        now = time.monotonic()
+        start, count = buckets.get(key, (now, 0))
+        if now - start >= window_seconds:
+            start, count = now, 0
+        count += 1
+        buckets[key] = (start, count)
+        if count <= max_attempts:
+            return None
+        return max(1, int(window_seconds - (now - start)))
+
+    def rate_limited_response(retry_after: int):
+        if request.path.startswith("/api/"):
+            response = jsonify({
+                "active": False,
+                "status": "rate_limited",
+                "mode": "denied",
+                "message": "Too many requests. Please retry later.",
+            })
+        else:
+            flash("محاولات كثيرة خلال وقت قصير. حاول مرة أخرى لاحقًا.", "error")
+            response = make_response(render_template("auth/login.html", username=request.form.get("username", "")))
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    @app.before_request
+    def check_rate_limit():
+        if not app.config.get("RATE_LIMITS_ENABLED", True):
+            return None
+        if request.endpoint == "auth.login_post":
+            retry_after = retry_after_for(
+                f"login:{client_ip()}",
+                int(app.config.get("LOGIN_RATE_LIMIT_MAX", 10)),
+                int(app.config.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 900)),
+            )
+            if retry_after:
+                return rate_limited_response(retry_after)
+        if request.endpoint == "api.license_check":
+            retry_after = retry_after_for(
+                f"license-check:{client_ip()}",
+                int(app.config.get("LICENSE_CHECK_RATE_LIMIT_MAX", 120)),
+                int(app.config.get("LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS", 60)),
+            )
+            if retry_after:
+                return rate_limited_response(retry_after)
+        return None
 
 
 def init_database(app: Flask) -> None:

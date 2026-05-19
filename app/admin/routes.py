@@ -193,6 +193,11 @@ def plan_new():
 def plan_create():
     plan = Plan()
     _fill_plan(plan)
+    errors = _validate_plan(plan)
+    if errors:
+        for message in errors:
+            flash(message, "error")
+        return render_template("admin/plan_form.html", plan=plan, features=FEATURES, is_new=True), 400
     db.session.add(plan)
     db.session.flush()
     audit("plan_created", "plan", str(plan.id), f"Created plan {plan.name}")
@@ -213,6 +218,11 @@ def plan_edit(plan_id: int):
 def plan_update(plan_id: int):
     plan = db.get_or_404(Plan, plan_id)
     _fill_plan(plan)
+    errors = _validate_plan(plan)
+    if errors:
+        for message in errors:
+            flash(message, "error")
+        return render_template("admin/plan_form.html", plan=plan, features=FEATURES, is_new=False), 400
     audit("plan_updated", "plan", str(plan.id), f"Updated plan {plan.name}")
     db.session.commit()
     flash("تم تحديث الخطة.", "success")
@@ -244,6 +254,23 @@ def _fill_plan(plan: Plan) -> None:
     plan.max_devices = _int("max_devices", 1)
     plan.status = request.form.get("status") or "active"
     plan.features = {key: bool(request.form.get(f"feature_{key}")) for key, _label in FEATURES}
+
+
+def _validate_plan(plan: Plan) -> list[str]:
+    errors: list[str] = []
+    if not plan.name:
+        errors.append("اسم الخطة مطلوب.")
+    if not plan.slug:
+        errors.append("المعرّف المختصر مطلوب.")
+        return errors
+
+    with db.session.no_autoflush:
+        duplicate = Plan.query.filter(Plan.slug == plan.slug)
+        if plan.id:
+            duplicate = duplicate.filter(Plan.id != plan.id)
+        if duplicate.first():
+            errors.append("المعرّف المختصر مستخدم في خطة أخرى.")
+    return errors
 
 
 @bp.get("/licenses")
