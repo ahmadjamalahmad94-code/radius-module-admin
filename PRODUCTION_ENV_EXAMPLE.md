@@ -46,6 +46,15 @@ LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS=60
 LICENSE_KEY_RATE_LIMIT_MAX=600
 LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS=300
 
+# Signed license checks.
+# Use the same secret in customer RADIUS installations that call /api/license/check.
+LICENSE_CHECK_HMAC_SECRET=replace-with-a-long-random-license-check-signing-secret
+LICENSE_CHECK_SIGNATURE_REQUIRED=1
+LICENSE_CHECK_ALLOW_UNSIGNED=0
+LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS=300
+LICENSE_CHECK_REPLAY_WINDOW_SECONDS=600
+LICENSE_CHECK_NONCE_CACHE_MAX=5000
+
 # Reverse proxy and session safety.
 # Set TRUST_PROXY_HEADERS=1 only when the app is behind a trusted proxy such as Nginx.
 TRUST_PROXY_HEADERS=1
@@ -85,6 +94,8 @@ LICENSE_ADMIN_PASSWORD=admin12345
 LICENSE_ADMIN_EMAIL=admin@example.com
 AUTO_INIT_DB=1
 RATE_LIMITS_ENABLED=1
+LICENSE_CHECK_SIGNATURE_REQUIRED=0
+LICENSE_CHECK_ALLOW_UNSIGNED=1
 TRUST_PROXY_HEADERS=0
 SESSION_COOKIE_SECURE=0
 ```
@@ -116,8 +127,15 @@ POST https://license.example.com/api/license/check
 Example:
 
 ```python
+import hashlib
+import hmac
+import json
+import time
+import uuid
+
 import requests
 
+license_check_secret = "same-secret-configured-on-license-panel"
 payload = {
     "license_key": "HBR-2026-ABCD-EFGH-9K22",
     "server_fingerprint": "server-fingerprint-hash",
@@ -125,7 +143,21 @@ payload = {
     "version": "1.0.0",
     "install_id": "optional-install-id",
     "domain": "radius.customer.example",
+    "timestamp": int(time.time()),
+    "nonce": str(uuid.uuid4()),
 }
+
+canonical = json.dumps(
+    {key: value for key, value in payload.items() if key != "signature"},
+    ensure_ascii=False,
+    separators=(",", ":"),
+    sort_keys=True,
+)
+payload["signature"] = hmac.new(
+    license_check_secret.encode("utf-8"),
+    canonical.encode("utf-8"),
+    hashlib.sha256,
+).hexdigest()
 
 response = requests.post(
     "https://license.example.com/api/license/check",
@@ -148,6 +180,9 @@ else:
 The public API must not receive admin credentials. It only needs the license
 key, server fingerprint, and optional server metadata.
 
+Production requires signed requests by default. Unsigned compatibility mode is
+for local/staging or controlled rollout only.
+
 ## Nginx And TLS Reminder
 
 - Serve production through HTTPS only.
@@ -162,8 +197,8 @@ key, server fingerprint, and optional server metadata.
 Use the production WSGI module:
 
 ```bash
-python -m pip install gunicorn
-gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 2
+python -m pip install -r requirements-production.txt
+gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 1
 ```
 
 Do not run `python run.py` for production service hosting.

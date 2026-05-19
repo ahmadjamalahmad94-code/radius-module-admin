@@ -25,6 +25,12 @@ Set these before any real deployment:
 - `LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS`
 - `LICENSE_KEY_RATE_LIMIT_MAX`
 - `LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS`
+- `LICENSE_CHECK_HMAC_SECRET`
+- `LICENSE_CHECK_SIGNATURE_REQUIRED`
+- `LICENSE_CHECK_ALLOW_UNSIGNED`
+- `LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS`
+- `LICENSE_CHECK_REPLAY_WINDOW_SECONDS`
+- `LICENSE_CHECK_NONCE_CACHE_MAX`
 - `TRUST_PROXY_HEADERS`
 - `SESSION_COOKIE_SECURE`
 - `SESSION_COOKIE_SAMESITE`
@@ -42,6 +48,8 @@ Never run production with these values:
 - `LICENSE_PANEL_ENV=local`
 - `SESSION_COOKIE_SECURE=0`
 - `RATE_LIMITS_ENABLED=0`
+- `LICENSE_CHECK_ALLOW_UNSIGNED=1`
+- `LICENSE_CHECK_SIGNATURE_REQUIRED=0`
 
 The application now refuses to start in `production` if the built-in default
 secret or default admin password is still active.
@@ -110,12 +118,35 @@ server {
 Production should use the WSGI entrypoint:
 
 ```bash
-python -m pip install gunicorn
-gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 2
+python -m pip install -r requirements-production.txt
+gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 1
 ```
 
 Do not use `python run.py` as the production service command. `run.py` is for
-local development.
+local development. Keep one worker until rate limiting and signed-request nonce
+tracking use shared storage such as Redis.
+
+## First Admin Bootstrap
+
+Fresh installs need one admin account before login is possible. The bootstrap
+path uses `LICENSE_ADMIN_USERNAME`, `LICENSE_ADMIN_PASSWORD`, and
+`LICENSE_ADMIN_EMAIL` from the environment.
+
+For an explicit one-time setup:
+
+```bash
+flask --app wsgi init-db
+```
+
+Safety behavior:
+
+- `init-db` creates tables, sample plans/settings, and the first admin when no
+  admin exists.
+- use `bootstrap-admin` only when tables already exist but no admin exists.
+- `bootstrap-admin` refuses to run if any admin already exists.
+- production rejects weak/default admin passwords.
+- the password is never printed by the command.
+- `init-db` creates tables and seeds missing plans/settings/admin values.
 
 ## Database Notes
 
@@ -138,6 +169,16 @@ If using SQLite temporarily in production:
 - back it up frequently
 - run only one app process unless the write behavior has been tested carefully
 - avoid network filesystems for the SQLite database file
+
+Recommended PostgreSQL URL format:
+
+```env
+DATABASE_URL=postgresql+psycopg://license_user:strong-password@127.0.0.1:5432/license_panel
+```
+
+For existing SQLite data, read `POSTGRESQL_READINESS.md`. New indexes are part
+of the SQLAlchemy model definitions for fresh databases; existing databases need
+a deliberate migration or reviewed DDL to add them.
 
 ## Backup Notes
 
@@ -191,9 +232,22 @@ Example request:
   "hostname": "client-vps-1",
   "version": "1.0.0",
   "install_id": "optional-install-id",
-  "domain": "radius.customer.example"
+  "domain": "radius.customer.example",
+  "timestamp": 1800000000,
+  "nonce": "unique-request-id",
+  "signature": "hmac-sha256-hex"
 }
 ```
+
+Signed request contract:
+
+- `timestamp` is Unix seconds.
+- `nonce` must be unique inside the replay window.
+- `signature` is HMAC-SHA256 hex.
+- The signed payload is canonical JSON of the request body with sorted keys,
+  compact separators, UTF-8 encoding, and without the `signature` field.
+- production should use `LICENSE_CHECK_SIGNATURE_REQUIRED=1` and
+  `LICENSE_CHECK_ALLOW_UNSIGNED=0`.
 
 Expected response modes:
 

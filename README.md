@@ -118,6 +118,38 @@ python -m compileall app
 python -m pytest -q
 ```
 
+## Database For Production
+
+SQLite remains the default for local demos and small single-process testing.
+Commercial production should use PostgreSQL:
+
+```env
+DATABASE_URL=postgresql+psycopg://license_user:strong-password@127.0.0.1:5432/license_panel
+```
+
+See `POSTGRESQL_READINESS.md` before moving existing SQLite data to PostgreSQL.
+
+## First Admin Bootstrap
+
+For a fresh database, the first admin is created from:
+
+```text
+LICENSE_ADMIN_USERNAME
+LICENSE_ADMIN_PASSWORD
+LICENSE_ADMIN_EMAIL
+```
+
+Explicit setup command:
+
+```powershell
+flask --app wsgi init-db
+```
+
+`init-db` creates tables, sample plans/settings, and the first admin from the
+environment when no admin exists. Use `bootstrap-admin` only for an existing
+database that has tables but no admin account yet. It refuses to run if an admin
+already exists and never prints the admin password.
+
 ## Arabic Summary
 
 هذا المشروع لوحة مركزية لإدارة تراخيص واشتراكات منتج RADIUS. لا يحتوي على نظام RADIUS نفسه، ولا يستورد من مشروع العميل. وظيفته إصدار التراخيص وفحص حالتها وإدارة التجديدات والبصمات والسجلات.

@@ -1,0 +1,20 @@
+[Unit]
+Description=HobeRadius License Control Panel
+After=network.target
+
+[Service]
+Type=simple
+User=licensepanel
+Group=licensepanel
+WorkingDirectory=/opt/hoberadius-license-panel
+EnvironmentFile=/etc/hoberadius-license-panel/license-panel.env
+ExecStart=/opt/hoberadius-license-panel/.venv/bin/gunicorn "wsgi:app" --bind 127.0.0.1:5055 --workers 1 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/hoberadius-license-panel/instance /var/backups/hoberadius-license-panel
+
+[Install]
+WantedBy=multi-user.target

@@ -50,6 +50,9 @@ class Admin(TimestampMixin, db.Model):
 
 class Customer(TimestampMixin, db.Model):
     __tablename__ = "customers"
+    __table_args__ = (
+        db.Index("ix_customers_status_created_at", "status", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     company_name = db.Column(db.String(180), nullable=False, index=True)
@@ -67,6 +70,9 @@ class Customer(TimestampMixin, db.Model):
 
 class Plan(TimestampMixin, db.Model):
     __tablename__ = "plans"
+    __table_args__ = (
+        db.Index("ix_plans_status_name", "status", "name"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
@@ -101,6 +107,11 @@ class Plan(TimestampMixin, db.Model):
 
 class License(TimestampMixin, db.Model):
     __tablename__ = "licenses"
+    __table_args__ = (
+        db.Index("ix_licenses_status_expires_at", "status", "expires_at"),
+        db.Index("ix_licenses_expires_at", "expires_at"),
+        db.Index("ix_licenses_created_at", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
@@ -132,6 +143,11 @@ class License(TimestampMixin, db.Model):
 
 class LicenseCheck(db.Model):
     __tablename__ = "license_checks"
+    __table_args__ = (
+        db.Index("ix_license_checks_license_checked_at", "license_id", "checked_at"),
+        db.Index("ix_license_checks_result_checked_at", "result", "checked_at"),
+        db.Index("ix_license_checks_license_ip", "license_id", "ip_address"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
@@ -154,6 +170,10 @@ class LicenseCheck(db.Model):
 
 class Renewal(db.Model):
     __tablename__ = "renewals"
+    __table_args__ = (
+        db.Index("ix_renewals_customer_created_at", "customer_id", "created_at"),
+        db.Index("ix_renewals_license_created_at", "license_id", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
@@ -174,6 +194,10 @@ class Renewal(db.Model):
 
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        db.Index("ix_audit_logs_entity_created_at", "entity_type", "entity_id", "created_at"),
+        db.Index("ix_audit_logs_action_created_at", "action", "created_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     actor_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)

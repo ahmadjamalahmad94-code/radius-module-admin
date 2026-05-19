@@ -12,9 +12,10 @@ from markupsafe import Markup, escape
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from .bootstrap import BootstrapError, bootstrap_admin_from_config
 from .config import Config, TestingConfig
 from .extensions import db
-from .models import Admin, Plan, Setting, utcnow
+from .models import Plan, Setting, utcnow
 from .security import client_ip
 
 
@@ -46,6 +47,8 @@ def create_app(config_object=None, **overrides) -> Flask:
     @app.get("/")
     def root():
         return redirect(url_for("admin.dashboard"))
+
+    _register_cli_commands(app)
 
     if app.config.get("AUTO_INIT_DB"):
         with app.app_context():
@@ -85,6 +88,12 @@ def _validate_production_config(app: Flask) -> None:
         raise RuntimeError("Production requires RATE_LIMITS_ENABLED=1.")
     if not app.config.get("SESSION_COOKIE_SECURE", False):
         raise RuntimeError("Production requires SESSION_COOKIE_SECURE=1.")
+    if app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED", False):
+        raise RuntimeError("Production requires LICENSE_CHECK_ALLOW_UNSIGNED=0.")
+    if not app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED", False):
+        raise RuntimeError("Production requires LICENSE_CHECK_SIGNATURE_REQUIRED=1.")
+    if len(str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")) < 32:
+        raise RuntimeError("Production requires a strong LICENSE_CHECK_HMAC_SECRET.")
 
 
 def _install_proxy_fix(app: Flask) -> None:
@@ -203,15 +212,7 @@ def init_database(app: Flask) -> None:
 
 
 def seed_defaults(app: Flask) -> None:
-    if not Admin.query.filter_by(username=app.config["ADMIN_USERNAME"]).first():
-        admin = Admin(
-            username=app.config["ADMIN_USERNAME"],
-            full_name="License Admin",
-            email=app.config["ADMIN_EMAIL"],
-            active=True,
-        )
-        admin.set_password(app.config["ADMIN_PASSWORD"])
-        db.session.add(admin)
+    bootstrap_admin_from_config(app, fail_if_exists=False)
 
     sample_plans = [
         ("Starter", "starter", Decimal("29.00"), 300, 2, 1, 1, {
@@ -274,6 +275,30 @@ def seed_defaults(app: Flask) -> None:
             db.session.add(Setting(key=key, value=value))
 
     db.session.commit()
+
+
+def _register_cli_commands(app: Flask) -> None:
+    import click
+
+    @app.cli.command("init-db")
+    def init_db_command():
+        """Create tables and seed default data if missing."""
+        with app.app_context():
+            init_database(app)
+        click.echo("Database initialized.")
+
+    @app.cli.command("bootstrap-admin")
+    def bootstrap_admin_command():
+        """Create the first admin from LICENSE_ADMIN_* environment values."""
+        with app.app_context():
+            db.create_all()
+            try:
+                admin = bootstrap_admin_from_config(app, fail_if_exists=True)
+            except BootstrapError as exc:
+                raise click.ClickException(str(exc)) from exc
+            username = admin.username
+            db.session.commit()
+        click.echo(f"Admin '{username}' created.")
 
 
 def _install_csrf(app: Flask) -> None:

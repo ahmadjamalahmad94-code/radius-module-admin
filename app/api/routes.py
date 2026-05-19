@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ..license_signing import LicenseSignatureError, verify_license_signature
 from ..security import clean_text, client_ip
 from ..services.license_service import check_license
 
@@ -16,6 +17,16 @@ def health():
 @bp.post("/license/check")
 def license_check():
     body = request.get_json(silent=True) or {}
+    try:
+        verify_license_signature(current_app, body)
+    except LicenseSignatureError:
+        return jsonify({
+            "active": False,
+            "status": "denied",
+            "mode": "denied",
+            "message": "License check authorization failed.",
+        }), 401
+
     try:
         license_key = clean_text(body.get("license_key"), 32).upper()
         fingerprint = clean_text(body.get("server_fingerprint"), 255)

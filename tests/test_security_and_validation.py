@@ -22,6 +22,9 @@ class SafeProductionConfig(UnsafeProductionConfig):
     SECRET_KEY = "production-secret-for-tests"
     ADMIN_PASSWORD = "production-admin-password-for-tests"
     SESSION_COOKIE_SECURE = True
+    LICENSE_CHECK_ALLOW_UNSIGNED = False
+    LICENSE_CHECK_SIGNATURE_REQUIRED = True
+    LICENSE_CHECK_HMAC_SECRET = "production-license-signing-secret-for-tests"
 
 
 def test_production_rejects_default_secret_and_admin_password():
@@ -56,6 +59,22 @@ def test_production_rejects_insecure_session_cookie():
 
     with pytest.raises(RuntimeError, match="SESSION_COOKIE_SECURE"):
         create_app(UnsafeCookieConfig)
+
+
+def test_production_rejects_unsigned_license_checks():
+    class UnsafeUnsignedConfig(SafeProductionConfig):
+        LICENSE_CHECK_ALLOW_UNSIGNED = True
+
+    with pytest.raises(RuntimeError, match="LICENSE_CHECK_ALLOW_UNSIGNED"):
+        create_app(UnsafeUnsignedConfig)
+
+
+def test_production_rejects_missing_license_hmac_secret():
+    class UnsafeSigningSecretConfig(SafeProductionConfig):
+        LICENSE_CHECK_HMAC_SECRET = ""
+
+    with pytest.raises(RuntimeError, match="LICENSE_CHECK_HMAC_SECRET"):
+        create_app(UnsafeSigningSecretConfig)
 
 
 def test_login_rate_limit_blocks_repeated_attempts():
