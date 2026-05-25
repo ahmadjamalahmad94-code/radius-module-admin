@@ -39,10 +39,12 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
     from .api.routes import bp as api_bp
+    from .public.routes import bp as public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(public_bp)
 
     @app.get("/")
     def root():
@@ -370,6 +372,19 @@ def _install_template_helpers(app: Flask) -> None:
             "paid": "مدفوع",
             "unpaid": "غير مدفوع",
             "waived": "معفى",
+            "pending": "بانتظار الدفع",
+            "proof_submitted": "بانتظار المراجعة",
+            "under_review": "قيد المراجعة",
+            "rejected": "مرفوض",
+            "cancelled": "ملغي",
+            "failed": "فشل",
+            "payment_pending": "بانتظار الدفع",
+            "provisioning_pending": "قيد التجهيز",
+            "provisioning_in_progress": "التجهيز جار",
+            "testing": "قيد الفحص",
+            "ready": "جاهز",
+            "delivered": "تم التسليم",
+            "needs_manual_review": "يحتاج مراجعة",
         }.get(str(value), value)
 
     @app.template_filter("badge_class")
@@ -386,6 +401,19 @@ def _install_template_helpers(app: Flask) -> None:
             "paid": "badge-green",
             "unpaid": "badge-orange",
             "waived": "badge-blue",
+            "pending": "badge-amber",
+            "proof_submitted": "badge-blue",
+            "under_review": "badge-blue",
+            "rejected": "badge-red",
+            "cancelled": "badge-gray",
+            "failed": "badge-red",
+            "payment_pending": "badge-amber",
+            "provisioning_pending": "badge-blue",
+            "provisioning_in_progress": "badge-blue",
+            "testing": "badge-amber",
+            "ready": "badge-green",
+            "delivered": "badge-green",
+            "needs_manual_review": "badge-orange",
             "fingerprint_denied": "badge-red",
             "not_found": "badge-gray",
         }.get(str(value), "badge-gray")

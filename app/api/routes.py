@@ -6,10 +6,12 @@ from ..extensions import db
 from ..license_signing import LicenseSignatureError, verify_license_signature
 from ..security import clean_text, client_ip
 from ..services.license_payments import (
+    LicensePaymentProofService,
     LicensePaymentRequestRepository,
     LicensePaymentRequestService,
     LicensePaymentValidationError,
     instructions_for_request,
+    proof_to_dict,
 )
 from ..services.license_service import check_license
 
@@ -92,3 +94,21 @@ def license_payment_instructions(payment_request_id: int):
     if not payment_request:
         return _payment_error("not_found", 404)
     return jsonify({"ok": True, "instructions": instructions_for_request(payment_request)})
+
+
+@bp.post("/license-payments/requests/<int:payment_request_id>/proofs")
+def submit_license_payment_proof(payment_request_id: int):
+    body = request.get_json(silent=True) or {}
+    token = str(body.get("token") or request.args.get("token") or "").strip()
+    payment_request = LicensePaymentRequestRepository().get_for_portal(payment_request_id, token)
+    if not payment_request:
+        return _payment_error("not_found", 404)
+    try:
+        proof = LicensePaymentProofService().submit_manual_proof(
+            payment_request=payment_request,
+            reference_number=body.get("reference_number") or "",
+            note=body.get("note") or "",
+        )
+    except LicensePaymentValidationError as exc:
+        return _payment_error(str(exc), 400)
+    return jsonify({"ok": True, "proof": proof_to_dict(proof), "status": payment_request.status}), 201

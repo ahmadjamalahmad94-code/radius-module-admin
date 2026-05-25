@@ -386,7 +386,7 @@ class LicensePaymentRequestService:
         payload["instructions"] = instructions_for_request(payment_request)
         try:
             payload["portal_url"] = url_for(
-                "admin.payment_portal",
+                "public.payment_portal",
                 request_id=payment_request.id,
                 token=payment_request.access_token,
                 _external=False,
@@ -394,6 +394,38 @@ class LicensePaymentRequestService:
         except (BuildError, RuntimeError):
             payload["portal_url"] = None
         return payload
+
+
+class LicensePaymentProofService:
+    allowed_submission_statuses = {"pending"}
+    blocked_submission_statuses = {"paid", "expired", "cancelled", "rejected", "failed"}
+
+    def submit_manual_proof(
+        self,
+        *,
+        payment_request: LicensePaymentRequest,
+        reference_number: str = "",
+        note: str = "",
+    ) -> LicensePaymentProof:
+        if payment_request.status in self.blocked_submission_statuses:
+            raise LicensePaymentValidationError("request_not_open_for_proof")
+        if payment_request.expires_at and payment_request.expires_at < utcnow():
+            payment_request.status = "expired"
+            db.session.add(payment_request)
+            db.session.commit()
+            raise LicensePaymentValidationError("request_expired")
+        if payment_request.status not in self.allowed_submission_statuses:
+            raise LicensePaymentValidationError("request_not_open_for_proof")
+        proof = LicensePaymentProofRepository().create_manual_reference(
+            payment_request=payment_request,
+            reference_number=reference_number,
+            note=note,
+        )
+        payment_request.status = "proof_submitted"
+        db.session.add(payment_request)
+        db.session.add(proof)
+        db.session.commit()
+        return proof
 
 
 def proof_to_dict(proof: LicensePaymentProof) -> dict[str, Any]:

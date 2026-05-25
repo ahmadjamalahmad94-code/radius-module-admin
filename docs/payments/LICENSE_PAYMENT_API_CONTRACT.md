@@ -24,6 +24,10 @@ Portal-safe endpoints are scoped to a single payment request token:
 - A wallet number is routing information only.
 - New requests start as `pending`.
 - Client payloads cannot set `status=paid`.
+- Proof submission is text-only in the first implementation: reference number
+  and note. File uploads require a separate safe upload review.
+- Proof submission changes `pending` to `proof_submitted`; it never marks the
+  payment paid.
 - Payment instructions expose amount, currency, receiver wallet, wallet owner,
   reference code, expiry, and status only.
 - Provider secrets, license signing secrets, admin sessions, and raw stack
