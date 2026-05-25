@@ -219,6 +219,135 @@ class AuditLog(db.Model):
         self.metadata_json = json_dumps(value or {})
 
 
+class PlatformPaymentSettings(TimestampMixin, db.Model):
+    __tablename__ = "platform_payment_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(40), default="manual_wallet", nullable=False)
+    enabled = db.Column(db.Boolean, default=False, nullable=False)
+    wallet_number = db.Column(db.String(120), default="", nullable=False)
+    wallet_owner_name = db.Column(db.String(160), default="", nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    confirmation_mode = db.Column(db.String(20), default="manual", nullable=False)
+    payment_request_ttl_minutes = db.Column(db.Integer, default=1440, nullable=True)
+
+
+class LicensePaymentRequest(TimestampMixin, db.Model):
+    __tablename__ = "license_payment_requests"
+    __table_args__ = (
+        db.Index("ix_license_payment_requests_status_created", "status", "created_at"),
+        db.Index("ix_license_payment_requests_customer", "customer_id", "created_at"),
+        db.UniqueConstraint("reference_code", name="uq_license_payment_requests_reference"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey("plans.id"), nullable=True, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    purpose = db.Column(db.String(40), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    provider = db.Column(db.String(40), default="manual_wallet", nullable=False)
+    receiver_wallet = db.Column(db.String(120), default="", nullable=False)
+    reference_code = db.Column(db.String(40), nullable=False, index=True)
+    status = db.Column(db.String(30), default="pending", nullable=False, index=True)
+    expires_at = db.Column(db.DateTime)
+
+    customer = db.relationship("Customer")
+    plan = db.relationship("Plan")
+    license = db.relationship("License")
+    proofs = db.relationship("LicensePaymentProof", back_populates="payment_request", lazy="dynamic")
+    transactions = db.relationship("LicensePaymentTransaction", back_populates="payment_request", lazy="dynamic")
+    provisioning_orders = db.relationship("ProvisioningOrder", back_populates="payment_request", lazy="dynamic")
+
+
+class LicensePaymentProof(db.Model):
+    __tablename__ = "license_payment_proofs"
+    __table_args__ = (
+        db.Index("ix_license_payment_proofs_request", "license_payment_request_id", "submitted_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    license_payment_request_id = db.Column(db.Integer, db.ForeignKey("license_payment_requests.id"), nullable=False)
+    proof_type = db.Column(db.String(40), default="manual_reference", nullable=False)
+    reference_number = db.Column(db.String(120), default="", nullable=False)
+    image_path = db.Column(db.String(255), default="", nullable=False)
+    note = db.Column(db.Text, default="", nullable=False)
+    submitted_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    reviewed_at = db.Column(db.DateTime)
+    review_status = db.Column(db.String(20), default="", nullable=False)
+    review_note = db.Column(db.Text, default="", nullable=False)
+
+    payment_request = db.relationship("LicensePaymentRequest", back_populates="proofs")
+    reviewer = db.relationship("Admin")
+
+
+class LicensePaymentTransaction(db.Model):
+    __tablename__ = "license_payment_transactions"
+    __table_args__ = (
+        db.Index("ix_license_payment_transactions_request", "license_payment_request_id", "created_at"),
+        db.UniqueConstraint("provider_transaction_id", name="uq_license_payment_transactions_provider_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    license_payment_request_id = db.Column(db.Integer, db.ForeignKey("license_payment_requests.id"), nullable=False)
+    provider_transaction_id = db.Column(db.String(160), nullable=True)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    status = db.Column(db.String(30), nullable=False)
+    raw_payload = db.Column(db.Text, default="{}", nullable=False)
+    verified_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    payment_request = db.relationship("LicensePaymentRequest", back_populates="transactions")
+
+
+class LicensePaymentWebhookEvent(db.Model):
+    __tablename__ = "license_payment_webhook_events"
+    __table_args__ = (
+        db.Index("ix_license_payment_webhooks_request", "license_payment_request_id", "created_at"),
+        db.UniqueConstraint("provider", "event_id", name="uq_license_payment_webhooks_provider_event"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(40), nullable=False)
+    event_id = db.Column(db.String(160), nullable=True)
+    license_payment_request_id = db.Column(db.Integer, db.ForeignKey("license_payment_requests.id"), nullable=True)
+    payload = db.Column(db.Text, default="{}", nullable=False)
+    signature_valid = db.Column(db.Boolean, nullable=True)
+    processed = db.Column(db.Boolean, default=False, nullable=False)
+    processed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    payment_request = db.relationship("LicensePaymentRequest")
+
+
+class ProvisioningOrder(TimestampMixin, db.Model):
+    __tablename__ = "provisioning_orders"
+    __table_args__ = (
+        db.Index("ix_provisioning_orders_status_created", "status", "created_at"),
+        db.Index("ix_provisioning_orders_customer", "customer_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_payment_request_id = db.Column(db.Integer, db.ForeignKey("license_payment_requests.id"), nullable=True)
+    target_plan_id = db.Column(db.Integer, db.ForeignKey("plans.id"), nullable=True)
+    status = db.Column(db.String(40), default="payment_pending", nullable=False, index=True)
+    requested_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    paid_at = db.Column(db.DateTime)
+    provisioning_started_at = db.Column(db.DateTime)
+    ready_at = db.Column(db.DateTime)
+    delivered_at = db.Column(db.DateTime)
+    assigned_operator = db.Column(db.String(160), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+
+    customer = db.relationship("Customer")
+    payment_request = db.relationship("LicensePaymentRequest", back_populates="provisioning_orders")
+    target_plan = db.relationship("Plan")
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 
