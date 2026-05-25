@@ -8,10 +8,11 @@ from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required
 from ..extensions import db
-from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentRequest, Plan, Renewal, Setting, utcnow
+from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentProof, LicensePaymentRequest, LicensePaymentTransaction, Plan, ProvisioningOrder, Renewal, Setting, utcnow
 from ..services.license_payments import (
     LicensePaymentRequestRepository,
     LicensePaymentRequestService,
+    LicensePaymentReviewService,
     LicensePaymentValidationError,
     PlatformPaymentSettingsRepository,
     instructions_for_request,
@@ -544,3 +545,68 @@ def payment_requests_api_create():
     audit("payment_request_created", "license_payment_request", str(payment_request.id), f"Created payment request {payment_request.reference_code}")
     db.session.commit()
     return jsonify({"ok": True, "payment_request": LicensePaymentRequestService().portal_payload(payment_request)}), 201
+
+
+@bp.get("/payments/review-queue")
+@login_required
+def payment_review_queue():
+    status = (request.args.get("status") or "proof_submitted").strip()
+    query = LicensePaymentRequest.query
+    if status:
+        query = query.filter_by(status=status)
+    requests = query.order_by(LicensePaymentRequest.updated_at.desc()).all()
+    return render_template("admin/payment_review_queue.html", requests=requests, status=status)
+
+
+@bp.get("/payments/requests/<int:payment_request_id>")
+@login_required
+def payment_request_detail(payment_request_id: int):
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    proofs = payment_request.proofs.order_by(LicensePaymentProof.submitted_at.desc()).all()
+    transactions = payment_request.transactions.order_by(LicensePaymentTransaction.created_at.desc()).all()
+    orders = ProvisioningOrder.query.filter_by(license_payment_request_id=payment_request.id).all()
+    return render_template(
+        "admin/payment_request_detail.html",
+        payment_request=payment_request,
+        proofs=proofs,
+        transactions=transactions,
+        orders=orders,
+    )
+
+
+@bp.post("/payments/requests/<int:payment_request_id>/approve")
+@login_required
+def payment_request_approve(payment_request_id: int):
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    try:
+        LicensePaymentReviewService().approve(
+            payment_request=payment_request,
+            reviewed_by=session.get("admin_id"),
+            review_note=request.form.get("review_note") or "",
+        )
+    except LicensePaymentValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    audit("license_payment_approved", "license_payment_request", str(payment_request.id), f"Approved payment {payment_request.reference_code}")
+    db.session.commit()
+    flash("تم قبول الدفع اليدوي. لم يتم تفعيل الترخيص تلقائيًا بعد.", "success")
+    return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+
+
+@bp.post("/payments/requests/<int:payment_request_id>/reject")
+@login_required
+def payment_request_reject(payment_request_id: int):
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    try:
+        LicensePaymentReviewService().reject(
+            payment_request=payment_request,
+            reviewed_by=session.get("admin_id"),
+            review_note=request.form.get("review_note") or "",
+        )
+    except LicensePaymentValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    audit("license_payment_rejected", "license_payment_request", str(payment_request.id), f"Rejected payment {payment_request.reference_code}")
+    db.session.commit()
+    flash("تم رفض إثبات الدفع.", "warning")
+    return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))

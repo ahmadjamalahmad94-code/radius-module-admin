@@ -25,6 +25,7 @@
         <a class="{{ 'active' if ep.startswith('admin.customer') else '' }}" href="{{ url_for('admin.customers_list') }}">العملاء</a>
         <a class="{{ 'active' if ep.startswith('admin.plan') else '' }}" href="{{ url_for('admin.plans_list') }}">الخطط</a>
         <a class="{{ 'active' if ep.startswith('admin.license') else '' }}" href="{{ url_for('admin.licenses_list') }}">التراخيص</a>
+        <a class="{{ 'active' if ep.startswith('admin.payment_') else '' }}" href="{{ url_for('admin.payment_review_queue') }}">مدفوعات التراخيص</a>
         <a class="{{ 'active' if ep == 'admin.checks_list' else '' }}" href="{{ url_for('admin.checks_list') }}">فحوصات الترخيص</a>
         <a class="{{ 'active' if ep == 'admin.renewals_list' else '' }}" href="{{ url_for('admin.renewals_list') }}">التجديدات</a>
         <a class="{{ 'active' if ep == 'admin.audit_logs' else '' }}" href="{{ url_for('admin.audit_logs') }}">سجل التدقيق</a>

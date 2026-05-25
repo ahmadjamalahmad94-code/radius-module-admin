@@ -1,0 +1,90 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ payment_request.reference_code }}{% endblock %}
+{% block page_title %}{{ payment_request.reference_code }}{% endblock %}
+{% block page_subtitle %}مراجعة دفع يدوي. قبول الدفع لا يعني تفعيل الترخيص تلقائيًا في هذه المرحلة.{% endblock %}
+{% block content %}
+<section class="grid two-grid">
+  <div class="card">
+    <div class="section-head">
+      <h2>طلب الدفع</h2>
+      <span class="badge {{ payment_request.status|badge_class }}">{{ payment_request.status|status_label }}</span>
+    </div>
+    <div class="detail-list">
+      <div><span>العميل</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "-" }}</strong></div>
+      <div><span>الغرض</span><strong>{{ payment_request.purpose }}</strong></div>
+      <div><span>المبلغ</span><strong>{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
+      <div><span>المحفظة</span><strong class="mono">{{ payment_request.receiver_wallet }}</strong></div>
+      <div><span>ينتهي في</span><strong>{{ payment_request.expires_at|dt }}</strong></div>
+      <div><span>الرابط الآمن</span><strong class="mono">/payments/requests/{{ payment_request.id }}</strong></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>قرار المراجعة</h2></div>
+    {% if payment_request.status in ["proof_submitted", "under_review"] %}
+      <form method="post" action="{{ url_for('admin.payment_request_approve', payment_request_id=payment_request.id) }}" class="grid" style="margin-bottom:12px">
+        {{ csrf_input() }}
+        <textarea name="review_note" rows="2" placeholder="ملاحظة قبول اختيارية"></textarea>
+        <button class="btn" type="submit">قبول الدفع</button>
+      </form>
+      <form method="post" action="{{ url_for('admin.payment_request_reject', payment_request_id=payment_request.id) }}" class="grid">
+        {{ csrf_input() }}
+        <textarea name="review_note" rows="2" placeholder="سبب الرفض"></textarea>
+        <button class="btn-danger" type="submit">رفض الإثبات</button>
+      </form>
+    {% else %}
+      <p class="muted">لا توجد إجراءات مراجعة متاحة لهذه الحالة.</p>
+    {% endif %}
+    <div class="flash warning" style="margin-top:14px">رقم المحفظة وإرسال الإثبات لا يثبتان الدفع دون قبول إداري.</div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-head"><h2>الإثباتات</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>المرجع</th><th>ملاحظة العميل</th><th>حالة المراجعة</th><th>المراجع</th><th>ملاحظة المراجعة</th><th>الوقت</th></tr></thead>
+      <tbody>
+        {% for proof in proofs %}
+          <tr>
+            <td class="mono">{{ proof.reference_number or "-" }}</td>
+            <td>{{ proof.note or "-" }}</td>
+            <td>{{ proof.review_status or "بانتظار المراجعة" }}</td>
+            <td>{{ proof.reviewer.username if proof.reviewer else "-" }}</td>
+            <td>{{ proof.review_note or "-" }}</td>
+            <td>{{ proof.submitted_at|dt }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="empty">لا توجد إثباتات بعد.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="grid two-grid" style="margin-top:16px">
+  <div class="card">
+    <div class="section-head"><h2>المعاملات</h2></div>
+    {% for transaction in transactions %}
+      <div class="detail-list">
+        <div><span>الحالة</span><strong>{{ transaction.status }}</strong></div>
+        <div><span>المبلغ</span><strong>{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
+        <div><span>وقت التحقق</span><strong>{{ transaction.verified_at|dt }}</strong></div>
+      </div>
+    {% else %}
+      <p class="empty">لا توجد معاملات مدفوعة بعد.</p>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>أوامر التجهيز</h2></div>
+    {% for order in orders %}
+      <div class="detail-list">
+        <div><span>الحالة</span><strong><span class="badge {{ order.status|badge_class }}">{{ order.status|status_label }}</span></strong></div>
+        <div><span>دفع في</span><strong>{{ order.paid_at|dt }}</strong></div>
+        <div><span>ملاحظات</span><strong>{{ order.notes or "-" }}</strong></div>
+      </div>
+    {% else %}
+      <p class="empty">لا يوجد أمر تجهيز مرتبط.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

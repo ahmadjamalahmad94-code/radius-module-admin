@@ -428,6 +428,67 @@ class LicensePaymentProofService:
         return proof
 
 
+class LicensePaymentReviewService:
+    reviewable_statuses = {"proof_submitted", "under_review"}
+
+    def approve(
+        self,
+        *,
+        payment_request: LicensePaymentRequest,
+        reviewed_by: int | None = None,
+        review_note: str = "",
+    ) -> LicensePaymentTransaction:
+        if payment_request.status == "paid":
+            raise LicensePaymentValidationError("request_already_paid")
+        if payment_request.status not in self.reviewable_statuses:
+            raise LicensePaymentValidationError("request_not_reviewable")
+
+        latest_proof = payment_request.proofs.order_by(LicensePaymentProof.submitted_at.desc()).first()
+        if not latest_proof:
+            raise LicensePaymentValidationError("proof_missing")
+        latest_proof.review_status = "accepted"
+        latest_proof.reviewed_by = reviewed_by
+        latest_proof.reviewed_at = utcnow()
+        latest_proof.review_note = str(review_note or "").strip()
+
+        payment_request.status = "paid"
+        db.session.add(payment_request)
+        db.session.add(latest_proof)
+        transaction = LicensePaymentTransactionRepository().create_manual_paid(
+            payment_request=payment_request,
+            reviewed_by=reviewed_by,
+        )
+        order = ProvisioningOrderRepository().ensure_for_request(payment_request)
+        if order.status in {"payment_pending", "paid"}:
+            order.status = "provisioning_pending"
+        order.paid_at = order.paid_at or utcnow()
+        db.session.add(order)
+        db.session.commit()
+        return transaction
+
+    def reject(
+        self,
+        *,
+        payment_request: LicensePaymentRequest,
+        reviewed_by: int | None = None,
+        review_note: str = "",
+    ) -> LicensePaymentProof:
+        if payment_request.status not in self.reviewable_statuses:
+            raise LicensePaymentValidationError("request_not_reviewable")
+        latest_proof = payment_request.proofs.order_by(LicensePaymentProof.submitted_at.desc()).first()
+        if not latest_proof:
+            raise LicensePaymentValidationError("proof_missing")
+        latest_proof.review_status = "rejected"
+        latest_proof.reviewed_by = reviewed_by
+        latest_proof.reviewed_at = utcnow()
+        latest_proof.review_note = str(review_note or "").strip()
+        payment_request.status = "rejected"
+        db.session.add(payment_request)
+        db.session.add(latest_proof)
+        db.session.commit()
+        return latest_proof
+
+
 def proof_to_dict(proof: LicensePaymentProof) -> dict[str, Any]:
     return {
         "id": proof.id,
