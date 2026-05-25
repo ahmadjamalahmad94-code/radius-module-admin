@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ..extensions import db
 from ..license_signing import LicenseSignatureError, verify_license_signature
 from ..security import clean_text, client_ip
+from ..services.license_payments import (
+    LicensePaymentRequestRepository,
+    LicensePaymentRequestService,
+    LicensePaymentValidationError,
+    instructions_for_request,
+)
 from ..services.license_service import check_license
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -60,3 +67,28 @@ def license_check():
         ip_address=client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)),
     )
     return jsonify(result.to_response())
+
+
+def _payment_error(message: str, status_code: int = 400):
+    return jsonify({"ok": False, "error": message}), status_code
+
+
+@bp.post("/license-payments/requests")
+def create_license_payment_request():
+    body = request.get_json(silent=True) or {}
+    body.pop("status", None)
+    try:
+        payment_request = LicensePaymentRequestService().create_request(body)
+    except (LicensePaymentValidationError, ValueError) as exc:
+        return _payment_error(str(exc), 400)
+    db.session.commit()
+    return jsonify({"ok": True, "payment_request": LicensePaymentRequestService().portal_payload(payment_request)}), 201
+
+
+@bp.get("/license-payments/requests/<int:payment_request_id>/instructions")
+def license_payment_instructions(payment_request_id: int):
+    token = (request.args.get("token") or "").strip()
+    payment_request = LicensePaymentRequestRepository().get_for_portal(payment_request_id, token)
+    if not payment_request:
+        return _payment_error("not_found", 404)
+    return jsonify({"ok": True, "instructions": instructions_for_request(payment_request)})

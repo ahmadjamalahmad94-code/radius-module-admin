@@ -3,12 +3,21 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required
 from ..extensions import db
-from ..models import AuditLog, Customer, License, LicenseCheck, Plan, Renewal, Setting, utcnow
+from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentRequest, Plan, Renewal, Setting, utcnow
+from ..services.license_payments import (
+    LicensePaymentRequestRepository,
+    LicensePaymentRequestService,
+    LicensePaymentValidationError,
+    PlatformPaymentSettingsRepository,
+    instructions_for_request,
+    request_to_dict,
+    settings_to_dict,
+)
 from ..services.license_service import (
     default_grace_days,
     generate_license_key,
@@ -475,3 +484,63 @@ def settings_update():
     db.session.commit()
     flash("تم حفظ الإعدادات.", "success")
     return redirect(url_for("admin.settings_page"))
+
+
+def _payment_error(message: str, status_code: int = 400):
+    return jsonify({"ok": False, "error": message}), status_code
+
+
+@bp.get("/api/payments/settings")
+@login_required
+def payment_settings_api_get():
+    settings = PlatformPaymentSettingsRepository().get()
+    return jsonify({"ok": True, "settings": settings_to_dict(settings)})
+
+
+@bp.patch("/api/payments/settings")
+@login_required
+def payment_settings_api_patch():
+    body = request.get_json(silent=True) or {}
+    try:
+        settings = PlatformPaymentSettingsRepository().upsert(**body)
+    except (LicensePaymentValidationError, ValueError) as exc:
+        return _payment_error(str(exc), 400)
+    audit("payment_settings_updated", "platform_payment_settings", str(settings.id), "Updated license payment settings")
+    db.session.commit()
+    return jsonify({"ok": True, "settings": settings_to_dict(settings)})
+
+
+@bp.get("/api/payments/requests")
+@login_required
+def payment_requests_api_list():
+    items = LicensePaymentRequestRepository().list_filtered(
+        status=(request.args.get("status") or "").strip(),
+        purpose=(request.args.get("purpose") or "").strip(),
+        customer_id=int(request.args["customer_id"]) if request.args.get("customer_id") else None,
+    )
+    return jsonify({"ok": True, "items": [request_to_dict(item, include_internal=True) for item in items]})
+
+
+@bp.get("/api/payments/requests/<int:payment_request_id>")
+@login_required
+def payment_requests_api_detail(payment_request_id: int):
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    return jsonify({
+        "ok": True,
+        "payment_request": request_to_dict(payment_request, include_internal=True),
+        "instructions": instructions_for_request(payment_request),
+    })
+
+
+@bp.post("/api/payments/requests")
+@login_required
+def payment_requests_api_create():
+    body = request.get_json(silent=True) or {}
+    body.pop("status", None)
+    try:
+        payment_request = LicensePaymentRequestService().create_request(body)
+    except (LicensePaymentValidationError, ValueError) as exc:
+        return _payment_error(str(exc), 400)
+    audit("payment_request_created", "license_payment_request", str(payment_request.id), f"Created payment request {payment_request.reference_code}")
+    db.session.commit()
+    return jsonify({"ok": True, "payment_request": LicensePaymentRequestService().portal_payload(payment_request)}), 201

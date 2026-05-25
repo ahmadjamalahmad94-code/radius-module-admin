@@ -250,6 +250,7 @@ class LicensePaymentRequest(TimestampMixin, db.Model):
     provider = db.Column(db.String(40), default="manual_wallet", nullable=False)
     receiver_wallet = db.Column(db.String(120), default="", nullable=False)
     reference_code = db.Column(db.String(40), nullable=False, index=True)
+    access_token = db.Column(db.String(96), default="", nullable=False, index=True)
     status = db.Column(db.String(30), default="pending", nullable=False, index=True)
     expires_at = db.Column(db.DateTime)
 
