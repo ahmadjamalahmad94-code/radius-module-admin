@@ -253,6 +253,9 @@ class LicensePaymentRequest(TimestampMixin, db.Model):
     access_token = db.Column(db.String(96), default="", nullable=False, index=True)
     status = db.Column(db.String(30), default="pending", nullable=False, index=True)
     expires_at = db.Column(db.DateTime)
+    applied_at = db.Column(db.DateTime)
+    applied_action = db.Column(db.String(60), default="", nullable=False)
+    applied_result_json = db.Column(db.Text, default="{}", nullable=False)
 
     customer = db.relationship("Customer")
     plan = db.relationship("Plan")

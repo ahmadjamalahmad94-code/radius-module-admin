@@ -38,6 +38,33 @@
   </div>
 </section>
 
+{% if payment_request.status == "paid" %}
+<section class="card" style="margin-top:16px">
+  <div class="section-head">
+    <h2>ربط الدفع بالترخيص</h2>
+    {% if payment_request.applied_at %}
+      <span class="badge badge-green">تم التنفيذ</span>
+    {% else %}
+      <span class="badge badge-amber">بانتظار التنفيذ</span>
+    {% endif %}
+  </div>
+  <p class="muted">هذا الإجراء لا يعمل إلا بعد قبول الدفع. يتم تنفيذه مرة واحدة فقط ولا يكرر التجديد أو الترقية.</p>
+  {% if payment_request.applied_at %}
+    <div class="detail-list">
+      <div><span>نوع التنفيذ</span><strong>{{ payment_request.applied_action }}</strong></div>
+      <div><span>وقت التنفيذ</span><strong>{{ payment_request.applied_at|dt }}</strong></div>
+    </div>
+  {% else %}
+    <form method="post" action="{{ url_for('admin.payment_request_apply_license', payment_request_id=payment_request.id) }}" class="filter-form">
+      {{ csrf_input() }}
+      <input name="period_months" type="number" min="1" value="1" style="max-width:140px">
+      <button class="btn-secondary" type="submit">تنفيذ ربط الدفع</button>
+    </form>
+    <p class="hint">new_subscription يحتاج أن يكون أمر التجهيز جاهزًا أو تم تسليمه قبل إنشاء الترخيص.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="card" style="margin-top:16px">
   <div class="section-head"><h2>الإثباتات</h2></div>
   <div class="table-wrap">

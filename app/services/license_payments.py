@@ -11,7 +11,9 @@ from werkzeug.routing import BuildError
 
 from ..extensions import db
 from ..models import (
+    AuditLog,
     Customer,
+    License,
     LicensePaymentProof,
     LicensePaymentRequest,
     LicensePaymentTransaction,
@@ -19,10 +21,12 @@ from ..models import (
     Plan,
     PlatformPaymentSettings,
     ProvisioningOrder,
+    Renewal,
     json_dumps,
     json_loads,
     utcnow,
 )
+from .license_service import add_months, default_grace_days, generate_license_key, iso_z
 
 PAYMENT_PROVIDERS = {"manual_wallet", "jawwal_pay"}
 CONFIRMATION_MODES = {"manual", "api"}
@@ -326,6 +330,9 @@ def request_to_dict(payment_request: LicensePaymentRequest, *, include_internal:
         "reference_code": payment_request.reference_code,
         "status": payment_request.status,
         "expires_at": payment_request.expires_at.isoformat() if payment_request.expires_at else None,
+        "applied_at": payment_request.applied_at.isoformat() if payment_request.applied_at else None,
+        "applied_action": payment_request.applied_action,
+        "applied_result": json_loads(payment_request.applied_result_json, {}),
         "created_at": payment_request.created_at.isoformat() if payment_request.created_at else None,
         "updated_at": payment_request.updated_at.isoformat() if payment_request.updated_at else None,
     }
@@ -516,3 +523,165 @@ def transaction_to_dict(transaction: LicensePaymentTransaction) -> dict[str, Any
         "verified_at": transaction.verified_at.isoformat() if transaction.verified_at else None,
         "created_at": transaction.created_at.isoformat() if transaction.created_at else None,
     }
+
+
+class LicensePaymentApplyService:
+    def apply_paid_payment(
+        self,
+        *,
+        payment_request: LicensePaymentRequest,
+        actor_admin_id: int | None = None,
+        period_months: int = 1,
+    ) -> dict[str, Any]:
+        if payment_request.status != "paid":
+            raise LicensePaymentValidationError("request_not_paid")
+        if payment_request.applied_at:
+            return json_loads(payment_request.applied_result_json, {})
+
+        purpose = payment_request.purpose
+        if purpose == "renewal":
+            result = self._apply_renewal(payment_request, actor_admin_id, period_months)
+        elif purpose == "upgrade":
+            result = self._apply_upgrade(payment_request, actor_admin_id)
+        elif purpose == "new_subscription":
+            result = self._apply_new_subscription(payment_request, actor_admin_id)
+        elif purpose == "capacity_increase":
+            result = {
+                "status": "manual_follow_up",
+                "message": "Capacity increase requires an entitlement override workflow before automatic apply.",
+            }
+            self._audit(actor_admin_id, "payment_capacity_followup", payment_request, result)
+        elif purpose == "setup_fee":
+            result = {
+                "status": "setup_fee_recorded",
+                "message": "Setup fee payment recorded; no license mutation is attached to setup_fee.",
+            }
+            self._audit(actor_admin_id, "payment_setup_fee_recorded", payment_request, result)
+        else:
+            raise LicensePaymentValidationError("purpose_not_supported")
+
+        payment_request.applied_at = utcnow()
+        payment_request.applied_action = purpose
+        payment_request.applied_result_json = json_dumps(result)
+        db.session.add(payment_request)
+        db.session.commit()
+        return result
+
+    def _apply_renewal(
+        self,
+        payment_request: LicensePaymentRequest,
+        actor_admin_id: int | None,
+        period_months: int,
+    ) -> dict[str, Any]:
+        license_row = db.session.get(License, int(payment_request.license_id or 0))
+        if not license_row:
+            raise LicensePaymentValidationError("license_id")
+        months = max(1, int(period_months or 1))
+        now = utcnow()
+        start = license_row.expires_at if license_row.expires_at and license_row.expires_at > now else now
+        end = add_months(start, months)
+        license_row.status = "active"
+        license_row.expires_at = end
+        license_row.grace_until = end + timedelta(days=default_grace_days())
+        renewal = Renewal(
+            customer_id=license_row.customer_id,
+            license_id=license_row.id,
+            amount=payment_request.amount,
+            currency=payment_request.currency,
+            period_months=months,
+            period_start=start,
+            period_end=end,
+            method=payment_request.provider,
+            status="paid",
+            notes=f"Applied from payment {payment_request.reference_code}",
+        )
+        db.session.add(license_row)
+        db.session.add(renewal)
+        result = {
+            "status": "renewed",
+            "license_id": license_row.id,
+            "license_key": license_row.license_key,
+            "period_months": months,
+            "expires_at": iso_z(end),
+        }
+        self._audit(actor_admin_id, "payment_license_renewed", payment_request, result)
+        return result
+
+    def _apply_upgrade(self, payment_request: LicensePaymentRequest, actor_admin_id: int | None) -> dict[str, Any]:
+        license_row = db.session.get(License, int(payment_request.license_id or 0))
+        plan = db.session.get(Plan, int(payment_request.plan_id or 0))
+        if not license_row:
+            raise LicensePaymentValidationError("license_id")
+        if not plan:
+            raise LicensePaymentValidationError("plan_id")
+        old_plan_id = license_row.plan_id
+        license_row.plan_id = plan.id
+        license_row.max_fingerprints = max(1, int(plan.max_devices or license_row.max_fingerprints or 1))
+        db.session.add(license_row)
+        result = {
+            "status": "upgraded",
+            "license_id": license_row.id,
+            "license_key": license_row.license_key,
+            "old_plan_id": old_plan_id,
+            "new_plan_id": plan.id,
+        }
+        self._audit(actor_admin_id, "payment_license_upgraded", payment_request, result)
+        return result
+
+    def _apply_new_subscription(
+        self,
+        payment_request: LicensePaymentRequest,
+        actor_admin_id: int | None,
+    ) -> dict[str, Any]:
+        order = ProvisioningOrder.query.filter_by(license_payment_request_id=payment_request.id).first()
+        if not order or order.status not in {"ready", "delivered"}:
+            raise LicensePaymentValidationError("provisioning_not_ready")
+        plan = db.session.get(Plan, int(payment_request.plan_id or order.target_plan_id or 0))
+        if not plan:
+            raise LicensePaymentValidationError("plan_id")
+        now = utcnow()
+        expires_at = add_months(now, 1)
+        license_row = License(
+            customer_id=payment_request.customer_id,
+            plan_id=plan.id,
+            license_key=generate_license_key(),
+            status="active",
+            starts_at=now,
+            expires_at=expires_at,
+            grace_until=expires_at + timedelta(days=default_grace_days()),
+            max_fingerprints=max(1, int(plan.max_devices or 1)),
+            notes=f"Created from paid request {payment_request.reference_code}",
+        )
+        db.session.add(license_row)
+        db.session.flush()
+        result = {
+            "status": "license_created",
+            "license_id": license_row.id,
+            "license_key": license_row.license_key,
+            "plan_id": plan.id,
+            "expires_at": iso_z(expires_at),
+        }
+        self._audit(actor_admin_id, "payment_license_created", payment_request, result)
+        return result
+
+    def _audit(
+        self,
+        actor_admin_id: int | None,
+        action: str,
+        payment_request: LicensePaymentRequest,
+        result: dict[str, Any],
+    ) -> None:
+        row = AuditLog(
+            actor_admin_id=actor_admin_id,
+            action=action,
+            entity_type="license_payment_request",
+            entity_id=str(payment_request.id),
+            summary=f"Applied payment {payment_request.reference_code}: {result.get('status')}",
+        )
+        row.meta = {
+            "payment_request_id": payment_request.id,
+            "reference_code": payment_request.reference_code,
+            "purpose": payment_request.purpose,
+            "result": result,
+        }
+        db.session.add(row)

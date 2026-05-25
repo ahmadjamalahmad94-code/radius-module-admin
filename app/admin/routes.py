@@ -10,6 +10,7 @@ from ..auth.routes import audit, current_admin, login_required
 from ..extensions import db
 from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentProof, LicensePaymentRequest, LicensePaymentTransaction, Plan, ProvisioningOrder, Renewal, Setting, utcnow
 from ..services.license_payments import (
+    LicensePaymentApplyService,
     LicensePaymentRequestRepository,
     LicensePaymentRequestService,
     LicensePaymentReviewService,
@@ -609,4 +610,21 @@ def payment_request_reject(payment_request_id: int):
     audit("license_payment_rejected", "license_payment_request", str(payment_request.id), f"Rejected payment {payment_request.reference_code}")
     db.session.commit()
     flash("تم رفض إثبات الدفع.", "warning")
+    return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+
+
+@bp.post("/payments/requests/<int:payment_request_id>/apply-license")
+@login_required
+def payment_request_apply_license(payment_request_id: int):
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    try:
+        result = LicensePaymentApplyService().apply_paid_payment(
+            payment_request=payment_request,
+            actor_admin_id=session.get("admin_id"),
+            period_months=_int("period_months", 1),
+        )
+    except LicensePaymentValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    flash(f"تم تنفيذ ربط الدفع بالترخيص: {result.get('status')}", "success")
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
