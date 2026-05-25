@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+{% block title %}تقارير وتسوية الدفع{% endblock %}
+{% block page_title %}تقارير وتسوية الدفع{% endblock %}
+{% block page_subtitle %}مراجعة مالية وتشغيلية بدون حذف أو تفعيل تلقائي{% endblock %}
+{% block content %}
+<section class="grid stats-grid">
+  <div class="card stat"><div class="label">مدفوعات هذا الشهر</div><div class="value">{{ report.payments_this_month.count }}</div></div>
+  <div class="card stat"><div class="label">قيد المراجعة</div><div class="value">{{ report.pending_review_count }}</div></div>
+  <div class="card stat"><div class="label">مدفوع ولم يطبق</div><div class="value">{{ report.paid_not_applied_count }}</div></div>
+  <div class="card stat"><div class="label">تجهيزات معلقة</div><div class="value">{{ report.provisioning.pending }}</div></div>
+  <div class="card stat"><div class="label">تجهيزات فاشلة</div><div class="value">{{ report.provisioning.failed }}</div></div>
+</section>
+
+<section class="grid two-grid" style="margin-top:16px">
+  <div class="card">
+    <div class="section-head"><h2>حسب الحالة</h2></div>
+    <div class="detail-list">
+      {% for key, count in report.payments_by_status.items() %}
+        <div><span>{{ key|status_label }}</span><strong>{{ count }}</strong></div>
+      {% else %}
+        <p class="empty">لا توجد مدفوعات بعد.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-head"><h2>حسب الغرض</h2></div>
+    <div class="detail-list">
+      {% for key, count in report.payments_by_purpose.items() %}
+        <div><span>{{ key }}</span><strong>{{ count }}</strong></div>
+      {% else %}
+        <p class="empty">لا توجد مدفوعات بعد.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="section-head">
+    <h2>التسوية والمخاطر</h2>
+    <form method="post" action="{{ url_for('admin.payment_expire_pending') }}">
+      {{ csrf_input() }}
+      <button class="btn-secondary" type="submit">تعليم الطلبات المنتهية</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>الفحص</th><th>العدد</th><th>ملاحظة</th></tr></thead>
+      <tbody>
+        <tr><td>مدفوع بدون معاملة</td><td>{{ reconciliation.paid_without_transaction|length }}</td><td>يحتاج مراجعة إدارية</td></tr>
+        <tr><td>مدفوع ولم يطبق</td><td>{{ reconciliation.paid_not_applied|length }}</td><td>ينتظر ربط الدفع بالترخيص</td></tr>
+        <tr><td>طلبات Pending منتهية</td><td>{{ reconciliation.expired_pending_requests|length }}</td><td>يمكن تعليمها expired بدون حذف</td></tr>
+        <tr><td>مخاطر تكرار provider transaction</td><td>{{ reconciliation.duplicate_provider_transaction_risks|length }}</td><td>يجب ألا يحدث مع القيود الحالية</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

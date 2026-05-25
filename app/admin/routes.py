@@ -11,6 +11,7 @@ from ..extensions import db
 from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentProof, LicensePaymentRequest, LicensePaymentTransaction, Plan, ProvisioningOrder, Renewal, Setting, utcnow
 from ..services.license_payments import (
     LicensePaymentApplyService,
+    LicensePaymentReportingService,
     LicensePaymentRequestRepository,
     LicensePaymentRequestService,
     LicensePaymentReviewService,
@@ -628,3 +629,36 @@ def payment_request_apply_license(payment_request_id: int):
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
     flash(f"تم تنفيذ ربط الدفع بالترخيص: {result.get('status')}", "success")
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+
+
+@bp.get("/payments/reports")
+@login_required
+def payment_reports():
+    service = LicensePaymentReportingService()
+    return render_template(
+        "admin/payment_reports.html",
+        report=service.report(),
+        reconciliation=service.reconciliation(),
+    )
+
+
+@bp.get("/api/payments/reports")
+@login_required
+def payment_reports_api():
+    return jsonify({"ok": True, "report": LicensePaymentReportingService().report()})
+
+
+@bp.get("/api/payments/reconciliation")
+@login_required
+def payment_reconciliation_api():
+    return jsonify({"ok": True, "reconciliation": LicensePaymentReportingService().reconciliation()})
+
+
+@bp.post("/payments/reports/expire-pending")
+@login_required
+def payment_expire_pending():
+    count = LicensePaymentReportingService().expire_pending_requests()
+    audit("license_payments_expired", "license_payment_request", "batch", f"Expired {count} pending payment request(s)")
+    db.session.commit()
+    flash(f"تم تعليم {count} طلب دفع منتهي كـ expired.", "success")
+    return redirect(url_for("admin.payment_reports"))

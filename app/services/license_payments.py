@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from flask import url_for
+from sqlalchemy import func
 from werkzeug.routing import BuildError
 
 from ..extensions import db
@@ -685,3 +686,90 @@ class LicensePaymentApplyService:
             "result": result,
         }
         db.session.add(row)
+
+
+class LicensePaymentReportingService:
+    def report(self) -> dict[str, Any]:
+        return {
+            "payments_by_status": self._count_by(LicensePaymentRequest.status),
+            "payments_by_purpose": self._count_by(LicensePaymentRequest.purpose),
+            "payments_by_provider": self._count_by(LicensePaymentRequest.provider),
+            "payments_this_month": self._payments_this_month(),
+            "pending_review_count": LicensePaymentRequest.query.filter(
+                LicensePaymentRequest.status.in_(["proof_submitted", "under_review"])
+            ).count(),
+            "failed_apply_count": LicensePaymentRequest.query.filter_by(applied_action="failed").count(),
+            "paid_not_applied_count": LicensePaymentRequest.query.filter(
+                LicensePaymentRequest.status == "paid",
+                LicensePaymentRequest.applied_at.is_(None),
+            ).count(),
+            "provisioning": {
+                "pending": ProvisioningOrder.query.filter(
+                    ProvisioningOrder.status.in_(["paid", "provisioning_pending", "provisioning_in_progress"])
+                ).count(),
+                "failed": ProvisioningOrder.query.filter_by(status="failed").count(),
+            },
+        }
+
+    def reconciliation(self) -> dict[str, Any]:
+        paid_without_transaction = [
+            request_to_dict(item)
+            for item in LicensePaymentRequest.query.filter_by(status="paid").all()
+            if item.transactions.count() == 0
+        ]
+        paid_not_applied = [
+            request_to_dict(item)
+            for item in LicensePaymentRequest.query.filter(
+                LicensePaymentRequest.status == "paid",
+                LicensePaymentRequest.applied_at.is_(None),
+            ).all()
+        ]
+        expired_pending = [
+            request_to_dict(item)
+            for item in LicensePaymentRequest.query.filter(
+                LicensePaymentRequest.status == "pending",
+                LicensePaymentRequest.expires_at.is_not(None),
+                LicensePaymentRequest.expires_at < utcnow(),
+            ).all()
+        ]
+        duplicate_provider_transactions = [
+            {"provider_transaction_id": row[0], "count": row[1]}
+            for row in db.session.query(
+                LicensePaymentTransaction.provider_transaction_id,
+                func.count(LicensePaymentTransaction.id),
+            )
+            .filter(LicensePaymentTransaction.provider_transaction_id.is_not(None))
+            .group_by(LicensePaymentTransaction.provider_transaction_id)
+            .having(func.count(LicensePaymentTransaction.id) > 1)
+            .all()
+        ]
+        return {
+            "paid_without_transaction": paid_without_transaction,
+            "transactions_without_request": [],
+            "paid_not_applied": paid_not_applied,
+            "duplicate_reference_risks": [],
+            "duplicate_provider_transaction_risks": duplicate_provider_transactions,
+            "expired_pending_requests": expired_pending,
+        }
+
+    def expire_pending_requests(self) -> int:
+        items = LicensePaymentRequest.query.filter(
+            LicensePaymentRequest.status == "pending",
+            LicensePaymentRequest.expires_at.is_not(None),
+            LicensePaymentRequest.expires_at < utcnow(),
+        ).all()
+        for item in items:
+            item.status = "expired"
+            db.session.add(item)
+        db.session.commit()
+        return len(items)
+
+    def _count_by(self, column) -> dict[str, int]:
+        return {str(key): int(count) for key, count in db.session.query(column, func.count()).group_by(column).all()}
+
+    def _payments_this_month(self) -> dict[str, Any]:
+        now = utcnow()
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        rows = LicensePaymentRequest.query.filter(LicensePaymentRequest.created_at >= start).all()
+        total = sum(float(row.amount or 0) for row in rows)
+        return {"count": len(rows), "amount": f"{total:.2f}"}
