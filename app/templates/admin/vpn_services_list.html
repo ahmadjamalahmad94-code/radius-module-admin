@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+{% block title %}خدمات VPN / تغيير IP{% endblock %}
+{% block page_title %}خدمات VPN / تغيير IP{% endblock %}
+{% block page_subtitle %}إدارة باقات خدمة تغيير عنوان IP التي تظهر كاستحقاق مرخص للعميل{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span class="muted">المفتاح الداخلي للخدمة: <strong class="mono">ip_change_vpn</strong></span>
+  <a class="btn" href="{{ url_for('admin.vpn_service_new') }}">باقة VPN جديدة</a>
+</div>
+<div class="card table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>الباقة</th>
+        <th>الكود</th>
+        <th>سرعة التحميل</th>
+        <th>سرعة الرفع</th>
+        <th>عدد مستخدمي VPN</th>
+        <th>المواقع</th>
+        <th>السعر الشهري</th>
+        <th>الحالة</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for vpn_plan in vpn_plans %}
+      <tr>
+        <td><strong>{{ vpn_plan.name }}</strong><div class="muted">{{ vpn_plan.description or '-' }}</div></td>
+        <td class="mono">{{ vpn_plan.code }}</td>
+        <td>{{ vpn_plan.download_mbps }} Mbps</td>
+        <td>{{ vpn_plan.upload_mbps }} Mbps</td>
+        <td>{{ vpn_plan.max_vpn_users }}</td>
+        <td>{{ vpn_plan.max_locations }}</td>
+        <td>{{ vpn_plan.price_monthly|money if vpn_plan.price_monthly is not none else '-' }}</td>
+        <td><span class="badge {{ 'badge-green' if vpn_plan.is_active else 'badge-gray' }}">{{ 'مفعلة' if vpn_plan.is_active else 'غير مفعلة' }}</span></td>
+        <td class="actions">
+          <a class="btn-secondary" href="{{ url_for('admin.vpn_service_edit', vpn_plan_id=vpn_plan.id) }}">تعديل</a>
+          {% if vpn_plan.is_active %}
+            <form method="post" action="{{ url_for('admin.vpn_service_disable', vpn_plan_id=vpn_plan.id) }}">
+              {{ csrf_input() }}
+              <button class="btn-danger" type="submit">إيقاف</button>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('admin.vpn_service_enable', vpn_plan_id=vpn_plan.id) }}">
+              {{ csrf_input() }}
+              <button class="btn-secondary" type="submit">تفعيل</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="empty">لا توجد باقات VPN بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

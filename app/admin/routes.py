@@ -8,7 +8,22 @@ from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required
 from ..extensions import db
-from ..models import AuditLog, Customer, License, LicenseCheck, LicensePaymentProof, LicensePaymentRequest, LicensePaymentTransaction, Plan, ProvisioningOrder, Renewal, Setting, utcnow
+from ..models import (
+    AuditLog,
+    Customer,
+    CustomerVpnEntitlement,
+    License,
+    LicenseCheck,
+    LicensePaymentProof,
+    LicensePaymentRequest,
+    LicensePaymentTransaction,
+    Plan,
+    ProvisioningOrder,
+    Renewal,
+    Setting,
+    VpnServicePlan,
+    utcnow,
+)
 from ..services.license_payments import (
     LicensePaymentApplyService,
     LicensePaymentReportingService,
@@ -27,6 +42,23 @@ from ..services.license_service import (
     renew_license,
     reset_fingerprints,
     set_license_status,
+)
+from ..services.vpn_entitlements import (
+    VpnEntitlementValidationError,
+    apply_plan_defaults,
+    build_effective_vpn_entitlement,
+    clean_vpn_plan_code,
+    find_best_customer_license,
+    get_or_create_customer_vpn_entitlement,
+    license_allows_vpn_services,
+    parse_optional_decimal,
+    parse_optional_positive_int,
+    serialize_vpn_contract,
+    validate_customer_vpn_entitlement,
+    validate_entitlement_status,
+    validate_positive_limit,
+    validate_vpn_plan,
+    validate_vpn_speed,
 )
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -54,6 +86,10 @@ def _decimal(name: str, default: str = "0") -> Decimal:
         return Decimal(request.form.get(name) or default)
     except (InvalidOperation, TypeError):
         return Decimal(default)
+
+
+def _nullable_decimal(name: str) -> Decimal | None:
+    return parse_optional_decimal(request.form.get(name), name)
 
 
 def _dt(name: str, default: datetime | None = None) -> datetime | None:
@@ -142,6 +178,128 @@ def customer_detail(customer_id: int):
     customer = db.get_or_404(Customer, customer_id)
     licenses = customer.licenses.order_by(License.created_at.desc()).all()
     return render_template("admin/customer_detail.html", customer=customer, licenses=licenses)
+
+
+@bp.get("/customers/<int:customer_id>/vpn-service")
+@login_required
+def customer_vpn_service(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    entitlement = get_or_create_customer_vpn_entitlement(customer)
+    return _render_customer_vpn_service(customer, entitlement)
+
+
+@bp.post("/customers/<int:customer_id>/vpn-service")
+@login_required
+def customer_vpn_service_update(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    entitlement = get_or_create_customer_vpn_entitlement(customer)
+    try:
+        _fill_customer_vpn_entitlement(customer, entitlement)
+    except VpnEntitlementValidationError as exc:
+        flash(str(exc), "error")
+        return _render_customer_vpn_service(customer, entitlement), 400
+    db.session.add(entitlement)
+    db.session.flush()
+    audit(
+        "customer_vpn_entitlement_updated",
+        "customer_vpn_entitlement",
+        str(entitlement.id),
+        f"Updated VPN entitlement for {customer.company_name}",
+        {
+            "customer_id": customer.id,
+            "status": entitlement.status,
+            "enabled": entitlement.enabled,
+            "download_mbps": entitlement.download_mbps,
+            "upload_mbps": entitlement.upload_mbps,
+            "max_vpn_users": entitlement.max_vpn_users,
+        },
+    )
+    db.session.commit()
+    flash("تم حفظ خدمة تغيير IP / VPN للعميل.", "success")
+    return redirect(url_for("admin.customer_vpn_service", customer_id=customer.id))
+
+
+def _render_customer_vpn_service(customer: Customer, entitlement: CustomerVpnEntitlement):
+    vpn_plans = VpnServicePlan.query.order_by(VpnServicePlan.is_active.desc(), VpnServicePlan.download_mbps.asc()).all()
+    licenses = customer.licenses.order_by(License.created_at.desc()).all()
+    current_license = entitlement.license or find_best_customer_license(customer)
+    effective = build_effective_vpn_entitlement(
+        current_license,
+        license_allows_services=license_allows_vpn_services(current_license),
+    )
+    return render_template(
+        "admin/customer_vpn_service.html",
+        customer=customer,
+        entitlement=entitlement,
+        vpn_plans=vpn_plans,
+        licenses=licenses,
+        current_license=current_license,
+        contract=serialize_vpn_contract(effective),
+    )
+
+
+def _fill_customer_vpn_entitlement(customer: Customer, entitlement: CustomerVpnEntitlement) -> None:
+    action = (request.form.get("action") or "save").strip()
+    requested_status = validate_entitlement_status(request.form.get("status") or "disabled")
+    requested_enabled = bool(request.form.get("enabled"))
+    will_be_active = action == "activate" or (action == "save" and requested_enabled and requested_status == "active")
+    plan_id = _int("vpn_plan_id") if request.form.get("vpn_plan_id") else None
+    selected_plan = db.session.get(VpnServicePlan, plan_id) if plan_id else None
+    if plan_id and not selected_plan:
+        raise VpnEntitlementValidationError("Selected VPN plan was not found.")
+
+    license_id = _int("license_id") if request.form.get("license_id") else None
+    selected_license = customer.licenses.filter_by(id=license_id).first() if license_id else None
+    if license_id and not selected_license:
+        raise VpnEntitlementValidationError("Selected license does not belong to this customer.")
+
+    entitlement.customer_id = customer.id
+    entitlement.license_id = selected_license.id if selected_license else None
+    entitlement.vpn_plan_id = selected_plan.id if selected_plan else None
+    entitlement.expires_at = _dt("expires_at")
+    entitlement.notes = (request.form.get("notes") or "").strip()[:2000]
+    entitlement.updated_by_admin_id = session.get("admin_id")
+
+    if selected_plan and _should_apply_vpn_plan_defaults():
+        apply_plan_defaults(entitlement, selected_plan)
+    elif will_be_active:
+        entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
+        entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
+        entitlement.max_locations = validate_positive_limit(request.form.get("max_locations") or 1, "max_locations")
+    else:
+        entitlement.download_mbps = parse_optional_positive_int(request.form.get("download_mbps"), "download_mbps")
+        entitlement.upload_mbps = parse_optional_positive_int(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.max_vpn_users = parse_optional_positive_int(request.form.get("max_vpn_users"), "max_vpn_users")
+        entitlement.max_locations = parse_optional_positive_int(request.form.get("max_locations"), "max_locations") or 1
+
+    if action == "activate":
+        entitlement.enabled = True
+        entitlement.status = "active"
+    elif action == "suspend":
+        entitlement.enabled = False
+        entitlement.status = "suspended"
+    elif action == "disable":
+        entitlement.enabled = False
+        entitlement.status = "disabled"
+    else:
+        entitlement.enabled = requested_enabled
+        entitlement.status = requested_status if requested_enabled else "disabled"
+        if entitlement.status != "active":
+            entitlement.enabled = False
+
+    validate_customer_vpn_entitlement(entitlement)
+
+
+def _should_apply_vpn_plan_defaults() -> bool:
+    if request.form.get("apply_plan_defaults"):
+        return True
+    return not any((request.form.get(name) or "").strip() for name in (
+        "download_mbps",
+        "upload_mbps",
+        "max_vpn_users",
+        "max_locations",
+    ))
 
 
 @bp.get("/customers/<int:customer_id>/edit")
@@ -283,6 +441,105 @@ def _validate_plan(plan: Plan) -> list[str]:
         if duplicate.first():
             errors.append("المعرّف المختصر مستخدم في خطة أخرى.")
     return errors
+
+
+@bp.get("/vpn-services")
+@login_required
+def vpn_services_list():
+    vpn_plans = VpnServicePlan.query.order_by(VpnServicePlan.is_active.desc(), VpnServicePlan.download_mbps.asc()).all()
+    return render_template("admin/vpn_services_list.html", vpn_plans=vpn_plans)
+
+
+@bp.get("/vpn-services/new")
+@login_required
+def vpn_service_new():
+    return render_template("admin/vpn_service_form.html", vpn_plan=VpnServicePlan(max_locations=1, is_active=True), is_new=True)
+
+
+@bp.post("/vpn-services/new")
+@login_required
+def vpn_service_create():
+    vpn_plan = VpnServicePlan()
+    try:
+        _fill_vpn_plan(vpn_plan)
+        _validate_unique_vpn_plan_code(vpn_plan)
+    except VpnEntitlementValidationError as exc:
+        flash(str(exc), "error")
+        return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=True), 400
+    db.session.add(vpn_plan)
+    db.session.flush()
+    audit("vpn_service_plan_created", "vpn_service_plan", str(vpn_plan.id), f"Created VPN service plan {vpn_plan.code}")
+    db.session.commit()
+    flash("تم إنشاء خطة خدمة تغيير IP / VPN.", "success")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
+@bp.get("/vpn-services/<int:vpn_plan_id>/edit")
+@login_required
+def vpn_service_edit(vpn_plan_id: int):
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=False)
+
+
+@bp.post("/vpn-services/<int:vpn_plan_id>/edit")
+@login_required
+def vpn_service_update(vpn_plan_id: int):
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    try:
+        _fill_vpn_plan(vpn_plan)
+        _validate_unique_vpn_plan_code(vpn_plan)
+    except VpnEntitlementValidationError as exc:
+        flash(str(exc), "error")
+        return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=False), 400
+    audit("vpn_service_plan_updated", "vpn_service_plan", str(vpn_plan.id), f"Updated VPN service plan {vpn_plan.code}")
+    db.session.commit()
+    flash("تم تحديث خطة خدمة تغيير IP / VPN.", "success")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
+@bp.post("/vpn-services/<int:vpn_plan_id>/disable")
+@login_required
+def vpn_service_disable(vpn_plan_id: int):
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    vpn_plan.is_active = False
+    audit("vpn_service_plan_disabled", "vpn_service_plan", str(vpn_plan.id), f"Disabled VPN service plan {vpn_plan.code}")
+    db.session.commit()
+    flash("تم إيقاف خطة خدمة تغيير IP / VPN.", "warning")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
+@bp.post("/vpn-services/<int:vpn_plan_id>/enable")
+@login_required
+def vpn_service_enable(vpn_plan_id: int):
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    vpn_plan.is_active = True
+    audit("vpn_service_plan_enabled", "vpn_service_plan", str(vpn_plan.id), f"Enabled VPN service plan {vpn_plan.code}")
+    db.session.commit()
+    flash("تم تفعيل خطة خدمة تغيير IP / VPN.", "success")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
+def _fill_vpn_plan(vpn_plan: VpnServicePlan) -> None:
+    vpn_plan.name = (request.form.get("name") or "").strip()
+    vpn_plan.code = clean_vpn_plan_code(request.form.get("code") or "")
+    vpn_plan.description = (request.form.get("description") or "").strip()[:2000]
+    vpn_plan.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
+    vpn_plan.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+    vpn_plan.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
+    vpn_plan.max_locations = validate_positive_limit(request.form.get("max_locations") or 1, "max_locations")
+    vpn_plan.traffic_quota_gb = parse_optional_positive_int(request.form.get("traffic_quota_gb"), "traffic_quota_gb")
+    vpn_plan.price_monthly = _nullable_decimal("price_monthly")
+    vpn_plan.is_active = bool(request.form.get("is_active"))
+    validate_vpn_plan(vpn_plan)
+
+
+def _validate_unique_vpn_plan_code(vpn_plan: VpnServicePlan) -> None:
+    with db.session.no_autoflush:
+        duplicate = VpnServicePlan.query.filter(VpnServicePlan.code == vpn_plan.code)
+        if vpn_plan.id:
+            duplicate = duplicate.filter(VpnServicePlan.id != vpn_plan.id)
+        if duplicate.first():
+            raise VpnEntitlementValidationError("VPN plan code is already used.")
 
 
 @bp.get("/licenses")

@@ -21,6 +21,22 @@
   </div>
 </section>
 <section class="card" style="margin-top:16px">
+  <div class="section-head">
+    <h2>خدمة تغيير IP / VPN</h2>
+    <a class="btn-secondary" href="{{ url_for('admin.customer_vpn_service', customer_id=customer.id) }}">إدارة الخدمة</a>
+  </div>
+  {% if customer.vpn_entitlement %}
+    <div class="detail-list">
+      <div><span>الحالة</span><strong><span class="badge {{ customer.vpn_entitlement.status|badge_class }}">{{ customer.vpn_entitlement.status|status_label }}</span></strong></div>
+      <div><span>سرعة التحميل</span><strong>{{ customer.vpn_entitlement.download_mbps or '-' }} Mbps</strong></div>
+      <div><span>سرعة الرفع</span><strong>{{ customer.vpn_entitlement.upload_mbps or '-' }} Mbps</strong></div>
+      <div><span>عدد مستخدمي VPN</span><strong>{{ customer.vpn_entitlement.max_vpn_users or '-' }}</strong></div>
+    </div>
+  {% else %}
+    <p class="empty">لم يتم تفعيل خدمة تغيير عنوان IP لهذا العميل بعد.</p>
+  {% endif %}
+</section>
+<section class="card" style="margin-top:16px">
   <div class="section-head"><h2>تراخيص العميل</h2><a class="btn" href="{{ url_for('admin.license_new') }}">ترخيص جديد</a></div>
   <div class="table-wrap">
     <table>

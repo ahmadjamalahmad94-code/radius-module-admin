@@ -77,6 +77,13 @@ def test_production_rejects_missing_license_hmac_secret():
         create_app(UnsafeSigningSecretConfig)
 
 
+def test_production_rejects_debug_mode(monkeypatch):
+    monkeypatch.setenv("FLASK_DEBUG", "1")
+
+    with pytest.raises(RuntimeError, match="FLASK_DEBUG"):
+        create_app(SafeProductionConfig)
+
+
 def test_login_rate_limit_blocks_repeated_attempts():
     app = create_app(
         TestingConfig,

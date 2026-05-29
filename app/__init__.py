@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -15,7 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from .bootstrap import BootstrapError, bootstrap_admin_from_config
 from .config import Config, TestingConfig
 from .extensions import db
-from .models import Plan, Setting, utcnow
+from .models import Plan, Setting, VpnServicePlan, utcnow
 from .security import client_ip
 
 
@@ -73,6 +74,8 @@ def _validate_production_config(app: Flask) -> None:
     if env not in {"prod", "production"}:
         return
 
+    if os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"} or app.config.get("DEBUG"):
+        raise RuntimeError("Production requires FLASK_DEBUG=0.")
     weak_passwords = {
         "",
         Config.DEFAULT_ADMIN_PASSWORD,
@@ -262,6 +265,26 @@ def seed_defaults(app: Flask) -> None:
         plan.features = features
         db.session.add(plan)
 
+    vpn_plans = [
+        ("VPN 10 Mbps", "vpn_10m", "خدمة تغيير IP / VPN بسرعة 10 Mbps", 10, 10, 25, 1, Decimal("10.00")),
+        ("VPN 50 Mbps", "vpn_50m", "خدمة تغيير IP / VPN بسرعة 50 Mbps", 50, 50, 100, 1, Decimal("35.00")),
+        ("VPN 100 Mbps", "vpn_100m", "خدمة تغيير IP / VPN بسرعة 100 Mbps", 100, 100, 250, 1, Decimal("65.00")),
+    ]
+    for name, code, description, download, upload, users, locations, price in vpn_plans:
+        if VpnServicePlan.query.filter_by(code=code).first():
+            continue
+        db.session.add(VpnServicePlan(
+            name=name,
+            code=code,
+            description=description,
+            download_mbps=download,
+            upload_mbps=upload,
+            max_vpn_users=users,
+            max_locations=locations,
+            price_monthly=price,
+            is_active=True,
+        ))
+
     defaults = {
         "product_name": "HobeRadius License Panel",
         "license_api_base_url": "http://127.0.0.1:5055",
@@ -367,6 +390,7 @@ def _install_template_helpers(app: Flask) -> None:
             "expired": "منتهي",
             "suspended": "معلق",
             "revoked": "ملغي",
+            "disabled": "معطلة",
             "trial": "تجريبي",
             "grace": "مهلة سماح",
             "paid": "مدفوع",
@@ -396,6 +420,7 @@ def _install_template_helpers(app: Flask) -> None:
             "expired": "badge-orange",
             "suspended": "badge-red",
             "revoked": "badge-gray",
+            "disabled": "badge-gray",
             "blocked": "badge-red",
             "inactive": "badge-gray",
             "paid": "badge-green",

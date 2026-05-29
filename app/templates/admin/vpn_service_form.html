@@ -1,0 +1,56 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'باقة VPN جديدة' if is_new else vpn_plan.name }}{% endblock %}
+{% block page_title %}{{ 'باقة VPN جديدة' if is_new else vpn_plan.name }}{% endblock %}
+{% block page_subtitle %}تعريف حدود خدمة تغيير IP / VPN التي يبيعها مركز التراخيص{% endblock %}
+{% block content %}
+<form method="post" class="card grid">
+  {{ csrf_input() }}
+  <div class="form-grid">
+    <div class="form-row">
+      <label>اسم الباقة</label>
+      <input name="name" value="{{ vpn_plan.name or '' }}" required>
+    </div>
+    <div class="form-row">
+      <label>الكود</label>
+      <input name="code" class="mono" value="{{ vpn_plan.code or '' }}" placeholder="vpn_50m" required>
+      <div class="hint">أحرف صغيرة وأرقام وشرطة أو شرطة سفلية فقط.</div>
+    </div>
+    <div class="form-row">
+      <label>سرعة التحميل</label>
+      <input name="download_mbps" type="number" min="1" value="{{ vpn_plan.download_mbps or '' }}" required>
+    </div>
+    <div class="form-row">
+      <label>سرعة الرفع</label>
+      <input name="upload_mbps" type="number" min="1" value="{{ vpn_plan.upload_mbps or '' }}" required>
+    </div>
+    <div class="form-row">
+      <label>عدد مستخدمي VPN</label>
+      <input name="max_vpn_users" type="number" min="1" value="{{ vpn_plan.max_vpn_users or '' }}" required>
+    </div>
+    <div class="form-row">
+      <label>عدد المواقع</label>
+      <input name="max_locations" type="number" min="1" value="{{ vpn_plan.max_locations or 1 }}" required>
+    </div>
+    <div class="form-row">
+      <label>حصة البيانات GB</label>
+      <input name="traffic_quota_gb" type="number" min="1" value="{{ vpn_plan.traffic_quota_gb or '' }}" placeholder="اختياري">
+    </div>
+    <div class="form-row">
+      <label>السعر الشهري</label>
+      <input name="price_monthly" type="number" min="0" step="0.01" value="{{ vpn_plan.price_monthly if vpn_plan.price_monthly is not none else '' }}" placeholder="اختياري">
+    </div>
+    <div class="form-row full">
+      <label>الوصف</label>
+      <textarea name="description" rows="3">{{ vpn_plan.description or '' }}</textarea>
+    </div>
+    <label class="check-item full">
+      <input type="checkbox" name="is_active" value="1" {{ 'checked' if vpn_plan.is_active else '' }}>
+      <span>الباقة مفعلة للبيع</span>
+    </label>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">حفظ الباقة</button>
+    <a class="btn-ghost" href="{{ url_for('admin.vpn_services_list') }}">رجوع</a>
+  </div>
+</form>
+{% endblock %}

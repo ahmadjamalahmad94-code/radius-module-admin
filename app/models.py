@@ -66,6 +66,7 @@ class Customer(TimestampMixin, db.Model):
 
     licenses = db.relationship("License", back_populates="customer", lazy="dynamic")
     renewals = db.relationship("Renewal", back_populates="customer", lazy="dynamic")
+    vpn_entitlement = db.relationship("CustomerVpnEntitlement", back_populates="customer", uselist=False)
 
 
 class Plan(TimestampMixin, db.Model):
@@ -103,6 +104,54 @@ class Plan(TimestampMixin, db.Model):
             "max_nas": self.max_nas,
             "max_admins": self.max_admins,
         }
+
+
+class VpnServicePlan(TimestampMixin, db.Model):
+    __tablename__ = "vpn_service_plans"
+    __table_args__ = (
+        db.Index("ix_vpn_service_plans_active_code", "is_active", "code"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(140), nullable=False)
+    code = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text, default="", nullable=False)
+    download_mbps = db.Column(db.Integer, nullable=False)
+    upload_mbps = db.Column(db.Integer, nullable=False)
+    max_vpn_users = db.Column(db.Integer, nullable=False)
+    max_locations = db.Column(db.Integer, default=1, nullable=False)
+    traffic_quota_gb = db.Column(db.Integer, nullable=True)
+    price_monthly = db.Column(db.Numeric(10, 2), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+
+    entitlements = db.relationship("CustomerVpnEntitlement", back_populates="vpn_plan", lazy="dynamic")
+
+
+class CustomerVpnEntitlement(TimestampMixin, db.Model):
+    __tablename__ = "customer_vpn_entitlements"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", name="uq_customer_vpn_entitlements_customer"),
+        db.Index("ix_customer_vpn_entitlements_customer_status", "customer_id", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    vpn_plan_id = db.Column(db.Integer, db.ForeignKey("vpn_service_plans.id"), nullable=True, index=True)
+    enabled = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    status = db.Column(db.String(20), default="disabled", nullable=False, index=True)
+    download_mbps = db.Column(db.Integer, nullable=True)
+    upload_mbps = db.Column(db.Integer, nullable=True)
+    max_vpn_users = db.Column(db.Integer, nullable=True)
+    max_locations = db.Column(db.Integer, default=1, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, default="", nullable=False)
+    updated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+    customer = db.relationship("Customer", back_populates="vpn_entitlement")
+    license = db.relationship("License")
+    vpn_plan = db.relationship("VpnServicePlan", back_populates="entitlements")
+    updated_by = db.relationship("Admin")
 
 
 class License(TimestampMixin, db.Model):

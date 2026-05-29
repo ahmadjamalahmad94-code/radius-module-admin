@@ -11,6 +11,7 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import AuditLog, License, LicenseCheck, Renewal, Setting, utcnow
+from .vpn_entitlements import vpn_services_contract_for_license
 
 KEY_ALPHABET = string.ascii_uppercase + string.digits
 
@@ -39,6 +40,10 @@ class LicenseResult:
                 "plan": lic.plan.public_dict(),
                 "features": lic.plan.features,
             })
+        data["services"] = vpn_services_contract_for_license(
+            self.license,
+            license_allows_services=self.active,
+        )
         return data
 
 

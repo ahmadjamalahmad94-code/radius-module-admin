@@ -22,8 +22,9 @@
       <nav class="nav">
         {% set ep = request.endpoint or '' %}
         <a class="{{ 'active' if ep == 'admin.dashboard' else '' }}" href="{{ url_for('admin.dashboard') }}">لوحة التحكم</a>
-        <a class="{{ 'active' if ep.startswith('admin.customer') else '' }}" href="{{ url_for('admin.customers_list') }}">العملاء</a>
+        <a class="{{ 'active' if ep.startswith('admin.customer') and ep != 'admin.customer_vpn_service' else '' }}" href="{{ url_for('admin.customers_list') }}">العملاء</a>
         <a class="{{ 'active' if ep.startswith('admin.plan') else '' }}" href="{{ url_for('admin.plans_list') }}">الخطط</a>
+        <a class="{{ 'active' if ep.startswith('admin.vpn_service') or ep == 'admin.customer_vpn_service' else '' }}" href="{{ url_for('admin.vpn_services_list') }}">خدمات VPN / تغيير IP</a>
         <a class="{{ 'active' if ep.startswith('admin.license') else '' }}" href="{{ url_for('admin.licenses_list') }}">التراخيص</a>
         <a class="{{ 'active' if ep in ['admin.payment_review_queue', 'admin.payment_request_detail', 'admin.payment_request_approve', 'admin.payment_request_reject', 'admin.payment_request_apply_license'] else '' }}" href="{{ url_for('admin.payment_review_queue') }}">مدفوعات التراخيص</a>
         <a class="{{ 'active' if ep == 'admin.payment_reports' else '' }}" href="{{ url_for('admin.payment_reports') }}">تقارير الدفع</a>

@@ -263,6 +263,19 @@ textarea { resize: vertical; }
   border-radius: 12px;
 }
 .check-item input { width: auto; }
+.check-item.full { grid-column: 1 / -1; }
+.contract-preview {
+  direction: ltr;
+  text-align: left;
+  overflow-x: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #111827;
+  color: #e5edf8;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .empty {
   padding: 28px;
   text-align: center;
