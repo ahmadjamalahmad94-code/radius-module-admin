@@ -1,57 +1,78 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}تقارير وتسوية الدفع{% endblock %}
 {% block page_title %}تقارير وتسوية الدفع{% endblock %}
 {% block page_subtitle %}مراجعة مالية وتشغيلية بدون حذف أو تفعيل تلقائي{% endblock %}
+
 {% block content %}
-<section class="grid stats-grid">
-  <div class="card stat"><div class="label">مدفوعات هذا الشهر</div><div class="value">{{ report.payments_this_month.count }}</div></div>
-  <div class="card stat"><div class="label">قيد المراجعة</div><div class="value">{{ report.pending_review_count }}</div></div>
-  <div class="card stat"><div class="label">مدفوع ولم يطبق</div><div class="value">{{ report.paid_not_applied_count }}</div></div>
-  <div class="card stat"><div class="label">تجهيزات معلقة</div><div class="value">{{ report.provisioning.pending }}</div></div>
-  <div class="card stat"><div class="label">تجهيزات فاشلة</div><div class="value">{{ report.provisioning.failed }}</div></div>
-</section>
+{{ hub.hero(
+  "تقارير الدفع",
+  subtitle="ملخص حركة الدفع والتسوية — يساعدك على رصد دفعات بدون معاملة أو دفعات لم تربط بترخيص.",
+  icon="chart-line"
+) }}
 
-<section class="grid two-grid" style="margin-top:16px">
-  <div class="card">
-    <div class="section-head"><h2>حسب الحالة</h2></div>
-    <div class="detail-list">
-      {% for key, count in report.payments_by_status.items() %}
-        <div><span>{{ key|status_label }}</span><strong>{{ count }}</strong></div>
-      {% else %}
-        <p class="empty">لا توجد مدفوعات بعد.</p>
-      {% endfor %}
-    </div>
-  </div>
-  <div class="card">
-    <div class="section-head"><h2>حسب الغرض</h2></div>
-    <div class="detail-list">
-      {% for key, count in report.payments_by_purpose.items() %}
-        <div><span>{{ key }}</span><strong>{{ count }}</strong></div>
-      {% else %}
-        <p class="empty">لا توجد مدفوعات بعد.</p>
-      {% endfor %}
-    </div>
-  </div>
-</section>
+<div class="hub-kpi-grid">
+  {{ hub.kpi("مدفوعات هذا الشهر", report.payments_this_month.count, icon="calendar-check", variant="violet") }}
+  {{ hub.kpi("قيد المراجعة", report.pending_review_count, icon="hourglass-half", variant="amber") }}
+  {{ hub.kpi("مدفوع ولم يطبق", report.paid_not_applied_count, icon="circle-exclamation", variant="red") }}
+  {{ hub.kpi("تجهيزات معلقة", report.provisioning.pending, icon="screwdriver-wrench", variant="blue") }}
+  {{ hub.kpi("تجهيزات فاشلة", report.provisioning.failed, icon="circle-xmark", variant="red") }}
+</div>
 
-<section class="card" style="margin-top:16px">
-  <div class="section-head">
-    <h2>التسوية والمخاطر</h2>
-    <form method="post" action="{{ url_for('admin.payment_expire_pending') }}">
-      {{ csrf_input() }}
-      <button class="btn-secondary" type="submit">تعليم الطلبات المنتهية</button>
-    </form>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>الفحص</th><th>العدد</th><th>ملاحظة</th></tr></thead>
+<div class="hub-grid-2">
+  {% call hub.section("حسب الحالة", icon="layer-group") %}
+    {% if report.payments_by_status %}
+      <div class="hub-detail-list">
+        {% for key, count in report.payments_by_status.items() %}
+          <div><span>{{ key|status_label }}</span><strong class="num">{{ count }}</strong></div>
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ hub.empty("لا توجد مدفوعات بعد.", icon="layer-group") }}
+    {% endif %}
+  {% endcall %}
+
+  {% call hub.section("حسب الغرض", icon="tags") %}
+    {% if report.payments_by_purpose %}
+      <div class="hub-detail-list">
+        {% for key, count in report.payments_by_purpose.items() %}
+          <div><span>{{ key }}</span><strong class="num">{{ count }}</strong></div>
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ hub.empty("لا توجد مدفوعات بعد.", icon="tags") }}
+    {% endif %}
+  {% endcall %}
+</div>
+
+{% call hub.section("التسوية والمخاطر", icon="scale-balanced",
+   meta='<form method="post" action="' ~ url_for('admin.payment_expire_pending') ~ '" style="margin:0">' ~ csrf_input()|string ~ '<button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-clock"></i> تعليم الطلبات المنتهية</button></form>') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead><tr><th>الفحص</th><th class="num">العدد</th><th>ملاحظة</th></tr></thead>
       <tbody>
-        <tr><td>مدفوع بدون معاملة</td><td>{{ reconciliation.paid_without_transaction|length }}</td><td>يحتاج مراجعة إدارية</td></tr>
-        <tr><td>مدفوع ولم يطبق</td><td>{{ reconciliation.paid_not_applied|length }}</td><td>ينتظر ربط الدفع بالترخيص</td></tr>
-        <tr><td>طلبات Pending منتهية</td><td>{{ reconciliation.expired_pending_requests|length }}</td><td>يمكن تعليمها expired بدون حذف</td></tr>
-        <tr><td>مخاطر تكرار provider transaction</td><td>{{ reconciliation.duplicate_provider_transaction_risks|length }}</td><td>يجب ألا يحدث مع القيود الحالية</td></tr>
+        <tr>
+          <td><i class="fa-solid fa-circle-exclamation" style="color:var(--hub-amber)"></i> مدفوع بدون معاملة</td>
+          <td class="num">{{ reconciliation.paid_without_transaction|length }}</td>
+          <td class="hub-muted">يحتاج مراجعة إدارية</td>
+        </tr>
+        <tr>
+          <td><i class="fa-solid fa-link" style="color:var(--hub-blue)"></i> مدفوع ولم يطبق</td>
+          <td class="num">{{ reconciliation.paid_not_applied|length }}</td>
+          <td class="hub-muted">ينتظر ربط الدفع بالترخيص</td>
+        </tr>
+        <tr>
+          <td><i class="fa-solid fa-clock" style="color:var(--hub-ink-mute)"></i> طلبات Pending منتهية</td>
+          <td class="num">{{ reconciliation.expired_pending_requests|length }}</td>
+          <td class="hub-muted">يمكن تعليمها expired بدون حذف</td>
+        </tr>
+        <tr>
+          <td><i class="fa-solid fa-copy" style="color:var(--hub-red)"></i> مخاطر تكرار provider transaction</td>
+          <td class="num">{{ reconciliation.duplicate_provider_transaction_risks|length }}</td>
+          <td class="hub-muted">يجب ألا يحدث مع القيود الحالية</td>
+        </tr>
       </tbody>
     </table>
   </div>
-</section>
+{% endcall %}
 {% endblock %}

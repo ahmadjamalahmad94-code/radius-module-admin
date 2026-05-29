@@ -1,33 +1,69 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}الخطط{% endblock %}
 {% block page_title %}خطط الاشتراك{% endblock %}
 {% block page_subtitle %}تحديد الأسعار والحدود والمزايا التي تعود للعميل عبر API الترخيص{% endblock %}
-{% block content %}
-<div class="toolbar"><span></span><a class="btn" href="{{ url_for('admin.plan_new') }}">خطة جديدة</a></div>
-<div class="card table-wrap">
-  <table>
-    <thead><tr><th>الخطة</th><th>السعر</th><th>الحدود</th><th>المزايا</th><th>الحالة</th><th></th></tr></thead>
-    <tbody>
-    {% for plan in plans %}
-      <tr>
-        <td><strong>{{ plan.name }}</strong><div class="muted mono">{{ plan.slug }}</div></td>
-        <td>{{ plan.monthly_price|money }} {{ plan.currency }} / شهر</td>
-        <td>{{ plan.max_users }} مستخدم، {{ plan.max_nas }} NAS، {{ plan.max_admins }} مدير</td>
-        <td>{{ plan.features|length }} ميزة</td>
-        <td><span class="badge {{ plan.status|badge_class }}">{{ plan.status|status_label }}</span></td>
-        <td class="actions">
-          <a class="btn-secondary" href="{{ url_for('admin.plan_edit', plan_id=plan.id) }}">تعديل</a>
-          <form method="post" action="{{ url_for('admin.plan_delete', plan_id=plan.id) }}" onsubmit="return confirm('حذف الخطة؟')">
-            {{ csrf_input() }}
-            <button class="btn-danger" type="submit">حذف</button>
-          </form>
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="6" class="empty">لا توجد خطط بعد.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endblock %}
 
+{% block content %}
+{{ hub.hero(
+  "خطط الاشتراك",
+  subtitle="حدود تجارية تظهر في عقد الترخيص. الخطط غير المستخدمة تعطّل ولا تحذف.",
+  icon="cubes",
+  actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.plan_new') ~ '"><i class="fa-solid fa-plus"></i> خطة جديدة</a>'
+) }}
+
+{% call hub.section("الخطط المعرَّفة", icon="layer-group", meta=plans|length ~ ' خطة') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الخطة</th>
+          <th class="num">السعر</th>
+          <th>الحدود</th>
+          <th class="num">المزايا</th>
+          <th>الحالة</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for plan in plans %}
+        <tr>
+          <td>
+            <strong>{{ plan.name }}</strong>
+            <div class="hub-muted mono" style="font-size:11.5px">{{ plan.slug }}</div>
+          </td>
+          <td class="num">{{ plan.monthly_price|money }} {{ plan.currency }} / شهر</td>
+          <td>
+            <span class="hub-pill hub-pill--violet" style="margin-inline-end:4px">{{ plan.max_users }} مستخدم</span>
+            <span class="hub-pill hub-pill--blue" style="margin-inline-end:4px">{{ plan.max_nas }} NAS</span>
+            <span class="hub-pill hub-pill--grey">{{ plan.max_admins }} مدير</span>
+          </td>
+          <td class="num">{{ plan.features|length }}</td>
+          <td><span class="badge {{ plan.status|badge_class }}">{{ plan.status|status_label }}</span></td>
+          <td>
+            <div class="hub-actions">
+              <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.plan_edit', plan_id=plan.id) }}">
+                <i class="fa-solid fa-pen"></i> تعديل
+              </a>
+              <form method="post" action="{{ url_for('admin.plan_delete', plan_id=plan.id) }}" id="plan-del-{{ plan.id }}" style="display:none">
+                {{ csrf_input() }}
+              </form>
+              <button type="button"
+                      class="hub-btn hub-btn--danger hub-btn--sm"
+                      data-confirm-form="plan-del-{{ plan.id }}"
+                      data-confirm-title="حذف الخطة"
+                      data-confirm-msg="هل أنت متأكد من حذف خطة «{{ plan.name }}»؟ لن يمكن استرجاعها."
+                      data-confirm-ok="حذف">
+                <i class="fa-solid fa-trash"></i> حذف
+              </button>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">{{ hub.empty("لا توجد خطط بعد.", sub="ابدأ بإنشاء خطة افتراضية لربط أول ترخيص.", icon="cubes") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

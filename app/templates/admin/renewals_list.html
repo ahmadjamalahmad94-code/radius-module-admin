@@ -1,28 +1,52 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}التجديدات{% endblock %}
 {% block page_title %}التجديدات{% endblock %}
 {% block page_subtitle %}سجل التجديد والدفع اليدوي للترخيص{% endblock %}
-{% block content %}
-<div class="card table-wrap">
-  <table>
-    <thead><tr><th>العميل</th><th>الترخيص</th><th>المدة</th><th>الفترة</th><th>المبلغ</th><th>الطريقة</th><th>الحالة</th><th>الوقت</th></tr></thead>
-    <tbody>
-    {% for item in renewals %}
-      <tr>
-        <td>{{ item.customer.company_name }}</td>
-        <td><a class="mono" href="{{ url_for('admin.license_detail', license_id=item.license_id) }}">{{ item.license.license_key }}</a></td>
-        <td>{{ item.period_months }} شهر</td>
-        <td>{{ item.period_start|date }} - {{ item.period_end|date }}</td>
-        <td>{{ item.amount|money }} {{ item.currency }}</td>
-        <td>{{ item.method }}</td>
-        <td><span class="badge {{ item.status|badge_class }}">{{ item.status|status_label }}</span></td>
-        <td>{{ item.created_at|dt }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="8" class="empty">لا توجد تجديدات بعد.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endblock %}
 
+{% block content %}
+{{ hub.hero(
+  "سجل التجديدات",
+  subtitle="مرجع تشغيلي ومالي للتجديدات اليدوية ودفعات الترخيص المقبولة.",
+  icon="rotate"
+) }}
+
+{% call hub.section("جميع التجديدات", icon="rotate", meta=renewals|length ~ ' عملية') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>العميل</th>
+          <th>الترخيص</th>
+          <th class="num">المدة</th>
+          <th class="date">الفترة</th>
+          <th class="num">المبلغ</th>
+          <th>الطريقة</th>
+          <th>الحالة</th>
+          <th class="date">الوقت</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in renewals %}
+        <tr>
+          <td>{{ item.customer.company_name }}</td>
+          <td>
+            <a class="mono" style="color:var(--hub-violet-d)" href="{{ url_for('admin.license_detail', license_id=item.license_id) }}">
+              {{ item.license.license_key }}
+            </a>
+          </td>
+          <td class="num">{{ item.period_months }} شهر</td>
+          <td class="date">{{ item.period_start|date }} → {{ item.period_end|date }}</td>
+          <td class="num">{{ item.amount|money }} {{ item.currency }}</td>
+          <td>{{ item.method }}</td>
+          <td><span class="badge {{ item.status|badge_class }}">{{ item.status|status_label }}</span></td>
+          <td class="date">{{ item.created_at|dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ hub.empty("لا توجد تجديدات بعد.", icon="rotate") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

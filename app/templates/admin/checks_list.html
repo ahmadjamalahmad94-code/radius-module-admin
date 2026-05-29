@@ -1,40 +1,66 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}فحوصات الترخيص{% endblock %}
 {% block page_title %}فحوصات الترخيص{% endblock %}
 {% block page_subtitle %}كل اتصال من أنظمة العملاء إلى API الترخيص{% endblock %}
+
 {% block content %}
-<div class="toolbar">
-  <form class="filter-form" method="get">
-    <input name="q" placeholder="بحث بالمفتاح أو البصمة أو الخادم" value="{{ search }}">
-    <select name="result">
+{{ hub.hero(
+  "سجل فحوصات API",
+  subtitle="كل صف هو طلب من نظام عميل إلى /api/license/check. ابحث بالمفتاح أو البصمة عند التشخيص.",
+  icon="shield-heart"
+) }}
+
+{% call hub.section("بحث وتصفية", icon="filter") %}
+  <form class="hub-filter-form" method="get">
+    <div class="hub-input-icon" style="flex:1; min-width:260px">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input class="hub-input" name="q" placeholder="بحث بالمفتاح أو البصمة أو الخادم" value="{{ search }}">
+    </div>
+    <select class="hub-select" name="result">
       <option value="">كل النتائج</option>
       {% for r in ['active','grace','expired','suspended','revoked','fingerprint_denied','not_found'] %}
         <option value="{{ r }}" {{ 'selected' if result == r else '' }}>{{ r|status_label }}</option>
       {% endfor %}
     </select>
-    <button class="btn-secondary" type="submit">بحث</button>
+    <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+      <i class="fa-solid fa-filter"></i> تصفية
+    </button>
   </form>
-</div>
-<div class="card table-wrap">
-  <table>
-    <thead><tr><th>المفتاح</th><th>العميل</th><th>النتيجة</th><th>الوضع</th><th>البصمة</th><th>الخادم</th><th>IP</th><th>الوقت</th></tr></thead>
-    <tbody>
-    {% for item in checks %}
-      <tr>
-        <td class="mono">{{ item.license_key }}</td>
-        <td>{{ item.customer.company_name if item.customer else '-' }}</td>
-        <td><span class="badge {{ item.result|badge_class }}">{{ item.result|status_label }}</span></td>
-        <td>{{ item.response_mode }}</td>
-        <td class="mono">{{ item.fingerprint }}</td>
-        <td>{{ item.hostname or '-' }}</td>
-        <td>{{ item.ip_address or '-' }}</td>
-        <td>{{ item.checked_at|dt }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="8" class="empty">لا توجد فحوصات بعد.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endblock %}
+{% endcall %}
 
+{% call hub.section("سجل الفحوصات", icon="list-check", meta=checks|length ~ ' سجل') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>المفتاح</th>
+          <th>العميل</th>
+          <th>النتيجة</th>
+          <th>الوضع</th>
+          <th>البصمة</th>
+          <th>الخادم</th>
+          <th>IP</th>
+          <th class="date">الوقت</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in checks %}
+        <tr>
+          <td class="mono">{{ item.license_key }}</td>
+          <td>{{ item.customer.company_name if item.customer else '—' }}</td>
+          <td><span class="badge {{ item.result|badge_class }}">{{ item.result|status_label }}</span></td>
+          <td>{{ item.response_mode }}</td>
+          <td class="mono">{{ item.fingerprint }}</td>
+          <td>{{ item.hostname or '—' }}</td>
+          <td class="ltr-cell">{{ item.ip_address or '—' }}</td>
+          <td class="date">{{ item.checked_at|dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ hub.empty("لا توجد فحوصات بعد.", icon="shield-heart") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

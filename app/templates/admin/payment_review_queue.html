@@ -1,30 +1,41 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}مراجعة مدفوعات التراخيص{% endblock %}
 {% block page_title %}مراجعة مدفوعات التراخيص{% endblock %}
 {% block page_subtitle %}قبول أو رفض إثباتات Manual Wallet قبل أي تفعيل للترخيص{% endblock %}
+
 {% block content %}
-<section class="card">
-  <div class="toolbar">
-    <form method="get" class="filter-form">
-      <select name="status">
-        {% for item in ["proof_submitted", "under_review", "paid", "rejected", "pending"] %}
-          <option value="{{ item }}" {{ "selected" if status == item else "" }}>{{ item|status_label }}</option>
-        {% endfor %}
-      </select>
-      <button class="btn-secondary" type="submit">تصفية</button>
-    </form>
-    <span class="badge badge-blue">مراجعة يدوية فقط</span>
-  </div>
-  <div class="table-wrap">
-    <table>
+{{ hub.hero(
+  "قائمة المراجعة",
+  subtitle="إثبات العميل ليس دفعًا مؤكدًا. القبول يحدث فقط بعد مطابقة كشف المحفظة يدويًا.",
+  icon="credit-card",
+  actions_html='<span class="hub-hero-chip"><i class="fa-solid fa-eye"></i> مراجعة يدوية فقط</span>'
+) }}
+
+{% call hub.section("تصفية حسب الحالة", icon="filter") %}
+  <form method="get" class="hub-filter-form">
+    <select class="hub-select" name="status">
+      {% for item in ["proof_submitted", "under_review", "paid", "rejected", "pending"] %}
+        <option value="{{ item }}" {{ "selected" if status == item else "" }}>{{ item|status_label }}</option>
+      {% endfor %}
+    </select>
+    <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+      <i class="fa-solid fa-filter"></i> عرض
+    </button>
+  </form>
+{% endcall %}
+
+{% call hub.section("طلبات الدفع", icon="credit-card", meta=requests|length ~ ' طلب') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
       <thead>
         <tr>
           <th>المرجع</th>
           <th>العميل</th>
           <th>الغرض</th>
-          <th>المبلغ</th>
+          <th class="num">المبلغ</th>
           <th>الحالة</th>
-          <th>آخر تحديث</th>
+          <th class="date">آخر تحديث</th>
           <th></th>
         </tr>
       </thead>
@@ -32,18 +43,22 @@
         {% for item in requests %}
           <tr>
             <td class="mono">{{ item.reference_code }}</td>
-            <td>{{ item.customer.company_name if item.customer else "-" }}</td>
+            <td>{{ item.customer.company_name if item.customer else "—" }}</td>
             <td>{{ item.purpose }}</td>
-            <td>{{ item.amount|money }} {{ item.currency }}</td>
+            <td class="num">{{ item.amount|money }} {{ item.currency }}</td>
             <td><span class="badge {{ item.status|badge_class }}">{{ item.status|status_label }}</span></td>
-            <td>{{ item.updated_at|dt }}</td>
-            <td><a class="btn-ghost" href="{{ url_for('admin.payment_request_detail', payment_request_id=item.id) }}">مراجعة</a></td>
+            <td class="date">{{ item.updated_at|dt }}</td>
+            <td>
+              <a class="hub-btn hub-btn--primary hub-btn--sm" href="{{ url_for('admin.payment_request_detail', payment_request_id=item.id) }}">
+                <i class="fa-solid fa-magnifying-glass"></i> مراجعة
+              </a>
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="empty">لا توجد طلبات ضمن هذا الفلتر.</td></tr>
+          <tr><td colspan="7">{{ hub.empty("لا توجد طلبات ضمن هذا الفلتر.", icon="credit-card") }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</section>
+{% endcall %}
 {% endblock %}
