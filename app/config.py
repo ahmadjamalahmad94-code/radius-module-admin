@@ -28,6 +28,17 @@ def _is_production_env() -> bool:
     return os.environ.get("LICENSE_PANEL_ENV", "local").strip().lower() in {"prod", "production"}
 
 
+def _is_bootstrap_env() -> bool:
+    return (
+        os.environ.get("LICENSE_PANEL_ENV", "local").strip().lower() == "bootstrap"
+        or _env_bool("LICENSE_PANEL_BOOTSTRAP_MODE", False)
+    )
+
+
+def _is_strict_deployment_env() -> bool:
+    return _is_production_env() or _is_bootstrap_env()
+
+
 class Config:
     DEFAULT_SECRET_KEY = "dev-secret-change-me"
     DEFAULT_ADMIN_PASSWORD = "admin12345"
@@ -37,6 +48,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URI)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     LICENSE_PANEL_ENV = os.environ.get("LICENSE_PANEL_ENV", "local")
+    BOOTSTRAP_MODE = _is_bootstrap_env()
     DEFAULT_GRACE_DAYS = _env_int("DEFAULT_GRACE_DAYS", 7)
     DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "USD")
     SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "support@example.com")
@@ -54,8 +66,8 @@ class Config:
     LICENSE_KEY_RATE_LIMIT_MAX = _env_int("LICENSE_KEY_RATE_LIMIT_MAX", 600)
     LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS = _env_int("LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS", 300)
     LICENSE_CHECK_HMAC_SECRET = os.environ.get("LICENSE_CHECK_HMAC_SECRET", "")
-    LICENSE_CHECK_SIGNATURE_REQUIRED = _env_bool("LICENSE_CHECK_SIGNATURE_REQUIRED", _is_production_env())
-    LICENSE_CHECK_ALLOW_UNSIGNED = _env_bool("LICENSE_CHECK_ALLOW_UNSIGNED", not _is_production_env())
+    LICENSE_CHECK_SIGNATURE_REQUIRED = _env_bool("LICENSE_CHECK_SIGNATURE_REQUIRED", _is_strict_deployment_env())
+    LICENSE_CHECK_ALLOW_UNSIGNED = _env_bool("LICENSE_CHECK_ALLOW_UNSIGNED", not _is_strict_deployment_env())
     LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS = _env_int("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", 300)
     LICENSE_CHECK_REPLAY_WINDOW_SECONDS = _env_int("LICENSE_CHECK_REPLAY_WINDOW_SECONDS", 600)
     LICENSE_CHECK_NONCE_CACHE_MAX = _env_int("LICENSE_CHECK_NONCE_CACHE_MAX", 5000)

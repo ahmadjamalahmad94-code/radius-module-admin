@@ -48,6 +48,9 @@
         </div>
         <div class="muted">مرحبًا {{ session.get('admin_name', 'admin') }}</div>
       </header>
+      {% if bootstrap_mode %}
+        <div class="flash warning">وضع التهيئة المؤقت مفعل. استخدم دومين و HTTPS قبل الإنتاج.</div>
+      {% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="flash-stack">

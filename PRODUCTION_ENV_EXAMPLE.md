@@ -10,6 +10,7 @@ Do not commit a real `.env` file.
 ```env
 # Required: production enables startup safety checks.
 LICENSE_PANEL_ENV=production
+FLASK_DEBUG=0
 
 # Required: long random secret. Never use dev-secret-change-me or change-this-secret.
 FLASK_SECRET=replace-with-a-long-random-secret-at-least-32-bytes
@@ -66,20 +67,61 @@ SESSION_LIFETIME_SECONDS=43200
 LOG_LEVEL=INFO
 ```
 
+## Temporary IP-Only Bootstrap Mode
+
+Use this only for first login over a raw VPS IP before the domain and TLS are
+ready. CSRF remains enabled, debug remains disabled, and all production
+password/signing secret checks still run. The only relaxed setting is the secure
+session cookie because browsers do not send `Secure` cookies over plain HTTP.
+
+Temporary values:
+
+```env
+LICENSE_PANEL_ENV=bootstrap
+FLASK_DEBUG=0
+FLASK_SECRET=replace-with-a-long-random-secret-at-least-32-bytes
+DATABASE_URL=postgresql+psycopg://license_user:replace-password@127.0.0.1:5432/license_panel
+LICENSE_ADMIN_USERNAME=admin
+LICENSE_ADMIN_PASSWORD=replace-with-a-strong-unique-password
+LICENSE_ADMIN_EMAIL=admin@example.com
+AUTO_INIT_DB=0
+RATE_LIMITS_ENABLED=1
+LICENSE_CHECK_HMAC_SECRET=replace-with-a-long-random-license-check-signing-secret
+LICENSE_CHECK_SIGNATURE_REQUIRED=1
+LICENSE_CHECK_ALLOW_UNSIGNED=0
+TRUST_PROXY_HEADERS=1
+SESSION_COOKIE_SECURE=0
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_LIFETIME_SECONDS=43200
+LOG_LEVEL=INFO
+```
+
+After the domain and HTTPS are working, switch back to:
+
+```env
+LICENSE_PANEL_ENV=production
+SESSION_COOKIE_SECURE=1
+LICENSE_CHECK_SIGNATURE_REQUIRED=1
+LICENSE_CHECK_ALLOW_UNSIGNED=0
+```
+
+Do not keep bootstrap mode enabled for real production traffic.
+
 ## Forbidden Values
 
 Production must never use:
 
 ```env
 LICENSE_PANEL_ENV=local
+LICENSE_PANEL_ENV=bootstrap
 FLASK_SECRET=dev-secret-change-me
 FLASK_SECRET=change-this-secret
 LICENSE_ADMIN_PASSWORD=admin12345
 LICENSE_ADMIN_PASSWORD=change-this-password
 ```
 
-The app refuses to start in `production` when the built-in default secret or
-admin password is still active.
+The app refuses to start in `production` or `bootstrap` when built-in default
+secrets, placeholder secrets, or the default admin password are still active.
 
 ## Minimal Local Demo Env
 

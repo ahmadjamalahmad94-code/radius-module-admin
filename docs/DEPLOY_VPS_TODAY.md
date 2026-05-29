@@ -32,6 +32,46 @@ LOG_LEVEL=INFO
 
 Keep the full template at `deploy/env/license-panel.env.example` as the source of optional rate-limit and replay-window tuning values.
 
+## Temporary IP Bootstrap
+
+If the VPS is still reachable only by raw IP over HTTP, use bootstrap mode for
+the first login only:
+
+```env
+LICENSE_PANEL_ENV=bootstrap
+FLASK_DEBUG=0
+FLASK_SECRET=replace-with-a-long-random-flask-secret
+DATABASE_URL=postgresql+psycopg://license_user:replace-password@127.0.0.1:5432/license_panel
+LICENSE_ADMIN_USERNAME=admin
+LICENSE_ADMIN_PASSWORD=replace-with-a-strong-unique-admin-password
+LICENSE_ADMIN_EMAIL=admin@example.com
+AUTO_INIT_DB=0
+RATE_LIMITS_ENABLED=1
+LICENSE_CHECK_HMAC_SECRET=replace-with-a-long-random-license-check-secret
+LICENSE_CHECK_SIGNATURE_REQUIRED=1
+LICENSE_CHECK_ALLOW_UNSIGNED=0
+TRUST_PROXY_HEADERS=1
+SESSION_COOKIE_SECURE=0
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_LIFETIME_SECONDS=43200
+LOG_LEVEL=INFO
+```
+
+Bootstrap mode keeps CSRF, strong secrets, non-default admin password, signed
+license checks, and debug-off validation. It only allows `SESSION_COOKIE_SECURE=0`
+so browser session cookies work at `http://<server-ip>/login`.
+
+After the domain and HTTPS are ready, switch back to:
+
+```env
+LICENSE_PANEL_ENV=production
+SESSION_COOKIE_SECURE=1
+LICENSE_CHECK_SIGNATURE_REQUIRED=1
+LICENSE_CHECK_ALLOW_UNSIGNED=0
+```
+
+Do not use bootstrap mode for final production traffic.
+
 ## Install And Initialize
 
 Use the existing deploy layout from `deploy/README.md`:
@@ -98,4 +138,5 @@ For small SQLite trials only, use:
 - Active VPN customers receive `services.ip_change_vpn.enabled=true`.
 - Suspended, revoked, expired, or denied licenses never receive an active VPN entitlement.
 - `LICENSE_CHECK_ALLOW_UNSIGNED=0` and `LICENSE_CHECK_SIGNATURE_REQUIRED=1` in production.
+- `LICENSE_PANEL_ENV=production` and `SESSION_COOKIE_SECURE=1` after domain/TLS are active.
 - Backups are configured and restore-tested.

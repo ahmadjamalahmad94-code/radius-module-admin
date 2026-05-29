@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app import create_app, seed_defaults
@@ -25,6 +27,13 @@ class SafeProductionConfig(UnsafeProductionConfig):
     LICENSE_CHECK_ALLOW_UNSIGNED = False
     LICENSE_CHECK_SIGNATURE_REQUIRED = True
     LICENSE_CHECK_HMAC_SECRET = "production-license-signing-secret-for-tests"
+
+
+class SafeBootstrapConfig(SafeProductionConfig):
+    LICENSE_PANEL_ENV = "bootstrap"
+    BOOTSTRAP_MODE = True
+    SESSION_COOKIE_SECURE = False
+    WTF_CSRF_ENABLED = True
 
 
 def test_production_rejects_default_secret_and_admin_password():
@@ -82,6 +91,91 @@ def test_production_rejects_debug_mode(monkeypatch):
 
     with pytest.raises(RuntimeError, match="FLASK_DEBUG"):
         create_app(SafeProductionConfig)
+
+
+def test_bootstrap_allows_insecure_session_cookie_for_ip_http():
+    app = create_app(SafeBootstrapConfig)
+
+    assert app.config["LICENSE_PANEL_ENV"] == "bootstrap"
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+    assert app.config["WTF_CSRF_ENABLED"] is True
+
+
+def test_bootstrap_rejects_default_admin_password():
+    class UnsafeBootstrapPasswordConfig(SafeBootstrapConfig):
+        ADMIN_PASSWORD = Config.DEFAULT_ADMIN_PASSWORD
+
+    with pytest.raises(RuntimeError, match="LICENSE_ADMIN_PASSWORD"):
+        create_app(UnsafeBootstrapPasswordConfig)
+
+
+def test_bootstrap_rejects_default_flask_secret():
+    class UnsafeBootstrapSecretConfig(SafeBootstrapConfig):
+        SECRET_KEY = Config.DEFAULT_SECRET_KEY
+
+    with pytest.raises(RuntimeError, match="FLASK_SECRET"):
+        create_app(UnsafeBootstrapSecretConfig)
+
+
+def test_bootstrap_rejects_missing_license_hmac_secret():
+    class UnsafeBootstrapHmacConfig(SafeBootstrapConfig):
+        LICENSE_CHECK_HMAC_SECRET = ""
+
+    with pytest.raises(RuntimeError, match="LICENSE_CHECK_HMAC_SECRET"):
+        create_app(UnsafeBootstrapHmacConfig)
+
+
+def test_bootstrap_rejects_debug_mode(monkeypatch):
+    monkeypatch.setenv("FLASK_DEBUG", "1")
+
+    with pytest.raises(RuntimeError, match="FLASK_DEBUG"):
+        create_app(SafeBootstrapConfig)
+
+
+def test_bootstrap_login_page_renders_with_warning_banner():
+    app = create_app(SafeBootstrapConfig)
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        client = app.test_client()
+
+        response = client.get("/login", base_url="http://203.0.113.10")
+
+        assert response.status_code == 200
+        assert "وضع التهيئة المؤقت مفعل" in response.get_data(as_text=True)
+        assert app.config["WTF_CSRF_ENABLED"] is True
+
+
+def test_bootstrap_csrf_remains_enabled_and_login_works_with_token_over_http():
+    app = create_app(SafeBootstrapConfig)
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        client = app.test_client()
+
+        blocked = client.post(
+            "/login",
+            data={"username": "admin", "password": "production-admin-password-for-tests"},
+            base_url="http://203.0.113.10",
+        )
+        assert blocked.status_code == 400
+
+        page = client.get("/login", base_url="http://203.0.113.10")
+        token_match = re.search(r'name="_csrf_token" value="([^"]+)"', page.get_data(as_text=True))
+        assert token_match
+        response = client.post(
+            "/login",
+            data={
+                "_csrf_token": token_match.group(1),
+                "username": "admin",
+                "password": "production-admin-password-for-tests",
+            },
+            base_url="http://203.0.113.10",
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 302
+        assert response.headers["Location"] == "/admin/dashboard"
 
 
 def test_login_rate_limit_blocks_repeated_attempts():

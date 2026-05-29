@@ -14,6 +14,9 @@
     <div class="login-mark">HBR</div>
     <h1>لوحة إدارة التراخيص</h1>
     <p class="muted">دخول آمن لإدارة العملاء والاشتراكات ومفاتيح الترخيص.</p>
+    {% if bootstrap_mode %}
+      <div class="flash warning">وضع التهيئة المؤقت مفعل. استخدم دومين و HTTPS قبل الإنتاج.</div>
+    {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <div class="flash-stack">

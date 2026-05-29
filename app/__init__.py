@@ -71,34 +71,54 @@ def _validate_production_config(app: Flask) -> None:
     if app.config.get("TESTING"):
         return
     env = str(app.config.get("LICENSE_PANEL_ENV", "")).strip().lower()
-    if env not in {"prod", "production"}:
+    bootstrap_mode = _is_bootstrap_mode(app)
+    production_mode = env in {"prod", "production"} and not bootstrap_mode
+    if not production_mode and not bootstrap_mode:
         return
 
     if os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"} or app.config.get("DEBUG"):
-        raise RuntimeError("Production requires FLASK_DEBUG=0.")
+        raise RuntimeError("Production/bootstrap deployment requires FLASK_DEBUG=0.")
     weak_passwords = {
         "",
         Config.DEFAULT_ADMIN_PASSWORD,
         "change-this-password",
         "admin",
         "password",
+        "replace-with-a-strong-unique-password",
+        "replace-with-a-strong-unique-admin-password",
     }
-    if not app.config.get("SECRET_KEY") or app.config["SECRET_KEY"] == Config.DEFAULT_SECRET_KEY:
-        raise RuntimeError("Production requires a non-default FLASK_SECRET.")
+    weak_secrets = {
+        "",
+        Config.DEFAULT_SECRET_KEY,
+        "change-this-secret",
+        "change-this-password",
+        "replace-with-a-long-random-secret-at-least-32-bytes",
+        "replace-with-a-long-random-flask-secret",
+    }
+    if str(app.config.get("SECRET_KEY", "")) in weak_secrets:
+        raise RuntimeError("Production/bootstrap deployment requires a non-default FLASK_SECRET.")
     if str(app.config.get("ADMIN_PASSWORD", "")) in weak_passwords:
-        raise RuntimeError("Production requires a non-default LICENSE_ADMIN_PASSWORD.")
+        raise RuntimeError("Production/bootstrap deployment requires a non-default LICENSE_ADMIN_PASSWORD.")
     if app.config.get("SQLALCHEMY_DATABASE_URI") == Config.DEFAULT_DATABASE_URI:
-        raise RuntimeError("Production requires an explicit DATABASE_URL.")
+        raise RuntimeError("Production/bootstrap deployment requires an explicit DATABASE_URL.")
     if not app.config.get("RATE_LIMITS_ENABLED", True):
-        raise RuntimeError("Production requires RATE_LIMITS_ENABLED=1.")
-    if not app.config.get("SESSION_COOKIE_SECURE", False):
+        raise RuntimeError("Production/bootstrap deployment requires RATE_LIMITS_ENABLED=1.")
+    if production_mode and not app.config.get("SESSION_COOKIE_SECURE", False):
         raise RuntimeError("Production requires SESSION_COOKIE_SECURE=1.")
     if app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED", False):
-        raise RuntimeError("Production requires LICENSE_CHECK_ALLOW_UNSIGNED=0.")
+        raise RuntimeError("Production/bootstrap deployment requires LICENSE_CHECK_ALLOW_UNSIGNED=0.")
     if not app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED", False):
-        raise RuntimeError("Production requires LICENSE_CHECK_SIGNATURE_REQUIRED=1.")
-    if len(str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")) < 32:
-        raise RuntimeError("Production requires a strong LICENSE_CHECK_HMAC_SECRET.")
+        raise RuntimeError("Production/bootstrap deployment requires LICENSE_CHECK_SIGNATURE_REQUIRED=1.")
+    hmac_secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
+    if len(hmac_secret) < 32 or hmac_secret.startswith("replace-with-"):
+        raise RuntimeError("Production/bootstrap deployment requires a strong LICENSE_CHECK_HMAC_SECRET.")
+
+
+def _is_bootstrap_mode(app: Flask) -> bool:
+    return (
+        str(app.config.get("LICENSE_PANEL_ENV", "")).strip().lower() == "bootstrap"
+        or bool(app.config.get("BOOTSTRAP_MODE"))
+    )
 
 
 def _install_proxy_fix(app: Flask) -> None:
@@ -445,4 +465,8 @@ def _install_template_helpers(app: Flask) -> None:
 
     @app.context_processor
     def inject_now():
-        return {"now": utcnow(), "timedelta": timedelta}
+        return {
+            "now": utcnow(),
+            "timedelta": timedelta,
+            "bootstrap_mode": _is_bootstrap_mode(app),
+        }
