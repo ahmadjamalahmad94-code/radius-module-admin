@@ -1,31 +1,82 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}{{ 'عميل جديد' if is_new else 'تعديل عميل' }}{% endblock %}
 {% block page_title %}{{ 'عميل جديد' if is_new else 'تعديل عميل' }}{% endblock %}
 {% block page_subtitle %}بيانات العميل الأساسية التي تظهر في إدارة التراخيص{% endblock %}
-{% block content %}
-<form class="card grid" method="post">
-  {{ csrf_input() }}
-  <div class="form-grid">
-    <div class="form-row"><label>اسم الشركة</label><input name="company_name" value="{{ customer.company_name or '' }}" required></div>
-    <div class="form-row"><label>اسم المسؤول</label><input name="contact_name" value="{{ customer.contact_name or '' }}"></div>
-    <div class="form-row"><label>البريد</label><input name="email" type="email" value="{{ customer.email or '' }}"></div>
-    <div class="form-row"><label>الهاتف</label><input name="phone" value="{{ customer.phone or '' }}"></div>
-    <div class="form-row"><label>الدولة</label><input name="country" value="{{ customer.country or '' }}"></div>
-    <div class="form-row"><label>المدينة</label><input name="city" value="{{ customer.city or '' }}"></div>
-    <div class="form-row">
-      <label>الحالة</label>
-      <select name="status">
-        {% for s in ['active','inactive','blocked'] %}
-          <option value="{{ s }}" {{ 'selected' if customer.status == s else '' }}>{{ s|status_label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row full"><label>ملاحظات</label><textarea name="notes" rows="4">{{ customer.notes or '' }}</textarea></div>
-  </div>
-  <div class="actions">
-    <button class="btn" type="submit">حفظ</button>
-    <a class="btn-ghost" href="{{ url_for('admin.customers_list') }}">إلغاء</a>
-  </div>
-</form>
-{% endblock %}
 
+{% block content %}
+{{ hub.hero(
+  ("إضافة عميل جديد" if is_new else "تعديل بيانات " ~ (customer.company_name or 'عميل')),
+  subtitle="بيانات تعريف وتواصل فقط — إنشاء العميل لا يفعّل أي ترخيص.",
+  icon=("user-plus" if is_new else "user-pen")
+) }}
+
+{% call hub.section("بيانات العميل", icon="id-card") %}
+  <form method="post">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("التعريف والاتصال", icon="address-book") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>اسم الشركة <span class="req">*</span></label>
+          <input class="hub-input" name="company_name" value="{{ customer.company_name or '' }}" required>
+          <div class="hub-field-hint">الاسم التجاري الذي ستراه في القوائم والتقارير.</div>
+        </div>
+        <div class="hub-field">
+          <label>اسم المسؤول</label>
+          <input class="hub-input" name="contact_name" value="{{ customer.contact_name or '' }}">
+          <div class="hub-field-hint">الشخص الذي تتواصل معه بخصوص الدفع أو الدعم.</div>
+        </div>
+        <div class="hub-field">
+          <label>البريد</label>
+          <input class="hub-input" name="email" type="email" value="{{ customer.email or '' }}">
+          <div class="hub-field-hint">للتواصل الإداري، ولا يفعّل دخولًا تلقائيًا للعميل.</div>
+        </div>
+        <div class="hub-field">
+          <label>الهاتف</label>
+          <input class="hub-input" name="phone" value="{{ customer.phone or '' }}">
+          <div class="hub-field-hint">رقم واتساب أو اتصال للمتابعة السريعة.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("الموقع والإدارة", icon="map-location-dot") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الدولة</label>
+          <input class="hub-input" name="country" value="{{ customer.country or '' }}">
+          <div class="hub-field-hint">مفيد للتقارير والدعم حسب المنطقة.</div>
+        </div>
+        <div class="hub-field">
+          <label>المدينة</label>
+          <input class="hub-input" name="city" value="{{ customer.city or '' }}">
+          <div class="hub-field-hint">اكتب المدينة أو منطقة التشغيل الأساسية.</div>
+        </div>
+        <div class="hub-field">
+          <label>الحالة</label>
+          <select class="hub-select" name="status">
+            {% for s in ['active','inactive','blocked'] %}
+              <option value="{{ s }}" {{ 'selected' if customer.status == s else '' }}>{{ s|status_label }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">نشط للمتابعة العادية، غير نشط للأرشفة، ومحظور للحالات التي لا تريد التعامل معها.</div>
+        </div>
+        <div class="hub-field full">
+          <label>ملاحظات داخلية</label>
+          <textarea class="hub-textarea" name="notes" rows="4">{{ customer.notes or '' }}</textarea>
+          <div class="hub-field-hint">ملاحظات إدارية فقط، لا تظهر في عقد الترخيص الذي يستلمه نظام العميل.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ
+      </button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customers_list') }}">إلغاء</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}

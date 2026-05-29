@@ -1,22 +1,82 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}الإعدادات{% endblock %}
 {% block page_title %}الإعدادات{% endblock %}
 {% block page_subtitle %}إعدادات عامة تظهر لك وتساعد العملاء في الاتصال بخدمة الترخيص{% endblock %}
+
 {% block content %}
-<form class="card grid" method="post">
-  {{ csrf_input() }}
-  <div class="form-grid">
-    <div class="form-row"><label>اسم المنتج</label><input name="product_name" value="{{ settings.get('product_name', '') }}"></div>
-    <div class="form-row"><label>رابط API الأساسي</label><input name="license_api_base_url" value="{{ settings.get('license_api_base_url', '') }}" class="mono"></div>
-    <div class="form-row"><label>أيام السماح الافتراضية</label><input name="default_grace_days" type="number" value="{{ settings.get('default_grace_days', '7') }}"></div>
-    <div class="form-row"><label>العملة الافتراضية</label><input name="default_currency" value="{{ settings.get('default_currency', 'USD') }}"></div>
-    <div class="form-row"><label>بريد الدعم</label><input name="support_email" value="{{ settings.get('support_email', '') }}"></div>
-    <div class="form-row"><label>هاتف الدعم</label><input name="support_phone" value="{{ settings.get('support_phone', '') }}"></div>
-    <div class="form-row"><label>فاصل الفحص المقترح</label><input name="check_interval_recommendation" value="{{ settings.get('check_interval_recommendation', '') }}"></div>
-    <div class="form-row"><label>اسم البيئة</label><input name="environment_label" value="{{ settings.get('environment_label', 'local') }}"></div>
-  </div>
-  <div class="actions">
-    <button class="btn" type="submit">حفظ الإعدادات</button>
-  </div>
-</form>
+{{ hub.hero(
+  "إعدادات اللوحة",
+  subtitle="إعدادات تشغيلية خفيفة — الأسرار والمفاتيح تبقى في متغيرات البيئة، ليس هنا.",
+  icon="gear"
+) }}
+
+{% call hub.section("الإعدادات العامة", icon="sliders") %}
+  <form method="post">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("الهوية والربط", icon="globe") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>اسم المنتج</label>
+          <input class="hub-input" name="product_name" value="{{ settings.get('product_name', '') }}">
+          <div class="hub-field-hint">الاسم التجاري الذي يظهر في اللوحة أو رسائل الدعم.</div>
+        </div>
+        <div class="hub-field">
+          <label>اسم البيئة</label>
+          <input class="hub-input" name="environment_label" value="{{ settings.get('environment_label', 'local') }}">
+          <div class="hub-field-hint">وسم مثل production أو bootstrap لتمييز البيئة.</div>
+        </div>
+        <div class="hub-field full">
+          <label>رابط API الأساسي</label>
+          <input class="hub-input mono" name="license_api_base_url" value="{{ settings.get('license_api_base_url', '') }}">
+          <div class="hub-field-hint">الرابط العام لاستخدام <span class="mono">/api/license/check</span> من نسخ العملاء.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("افتراضيات الترخيص", icon="ruler-combined") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>أيام السماح الافتراضية</label>
+          <input class="hub-input" name="default_grace_days" type="number" value="{{ settings.get('default_grace_days', '7') }}">
+          <div class="hub-field-hint">مهلة بعد انتهاء الاشتراك للترخيص الجديد.</div>
+        </div>
+        <div class="hub-field">
+          <label>العملة الافتراضية</label>
+          <input class="hub-input mono" name="default_currency" value="{{ settings.get('default_currency', 'USD') }}">
+          <div class="hub-field-hint">رمز العملة الافتراضي للخطط والتجديدات مثل USD أو ILS.</div>
+        </div>
+        <div class="hub-field full">
+          <label>فاصل الفحص المقترح</label>
+          <input class="hub-input" name="check_interval_recommendation" value="{{ settings.get('check_interval_recommendation', '') }}">
+          <div class="hub-field-hint">نص إرشادي مثل «كل 15 دقيقة»، ولا يفرض جدولة على خادم العميل.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("الدعم", icon="headset") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>بريد الدعم</label>
+          <input class="hub-input" name="support_email" value="{{ settings.get('support_email', '') }}">
+        </div>
+        <div class="hub-field">
+          <label>هاتف الدعم</label>
+          <input class="hub-input" name="support_phone" value="{{ settings.get('support_phone', '') }}">
+        </div>
+      </div>
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات
+      </button>
+    </div>
+  </form>
+{% endcall %}
 {% endblock %}

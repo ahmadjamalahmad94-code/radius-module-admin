@@ -1,0 +1,81 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}{{ 'مستخدم عميل جديد' if is_new else 'تعديل مستخدم العميل' }}{% endblock %}
+{% block page_title %}{{ 'مستخدم عميل جديد' if is_new else 'تعديل مستخدم العميل' }}{% endblock %}
+{% block page_subtitle %}{{ customer.company_name }} — كلمة المرور تدار من هنا وتنتقل للريدياس كـ hash فقط{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  ("مستخدم جديد لـ " ~ customer.company_name) if is_new else ("تعديل " ~ customer_user.username),
+  subtitle="هذا الحساب يصبح أدمن داخل الريدياس بعد المزامنة. لا يتم إرسال كلمة المرور الخام أبدًا.",
+  icon="user-shield"
+) }}
+
+{% call hub.section("بيانات المستخدم", icon="user-gear") %}
+  <form method="post">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("الهوية", icon="id-badge") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>اسم المستخدم <span class="req">*</span></label>
+          <input class="hub-input mono" name="username" value="{{ customer_user.username or '' }}" required autocomplete="username">
+          <div class="hub-field-hint">يستخدم للدخول إلى لوحة الريدياس بعد المزامنة.</div>
+        </div>
+        <div class="hub-field">
+          <label>الاسم الكامل</label>
+          <input class="hub-input" name="full_name" value="{{ customer_user.full_name or '' }}">
+        </div>
+        <div class="hub-field">
+          <label>البريد الإلكتروني</label>
+          <input class="hub-input" name="email" type="email" value="{{ customer_user.email or '' }}">
+        </div>
+        <div class="hub-field">
+          <label>الدور</label>
+          <select class="hub-select" name="role_key">
+            {% for role in ['owner','admin','support','billing','viewer'] %}
+              <option value="{{ role }}" {% if customer_user.role_key == role %}selected{% endif %}>{{ role }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">owner يترجم في الريدياس إلى مدير كامل للـ tenant.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("كلمة المرور والحالة", icon="lock") %}
+      <div class="hub-form-grid">
+        <div class="hub-field full">
+          <label>{{ 'كلمة المرور' if is_new else 'كلمة مرور جديدة (اختياري)' }}{% if is_new %} <span class="req">*</span>{% endif %}</label>
+          <div class="hub-input-icon">
+            <i class="fa-solid fa-key"></i>
+            <input class="hub-input" id="cu-pwd" name="password" type="password" {% if is_new %}required{% endif %} autocomplete="new-password">
+            <button type="button" class="pwd-toggle" data-pwd-toggle="#cu-pwd" aria-label="إظهار كلمة المرور"><i class="fa-solid fa-eye"></i></button>
+          </div>
+          <div class="hub-field-hint">عند الحفظ يخزن Werkzeug hash فقط. لا يظهر ولا يرسل password خام.</div>
+        </div>
+        <div class="hub-field full">
+          <label class="hub-check-item">
+            <input type="checkbox" name="active" value="1" {% if customer_user.active or is_new %}checked{% endif %}>
+            <span>الحساب مفعل</span>
+          </label>
+        </div>
+      </div>
+      {% if not is_new %}
+        <div class="hub-flash hub-flash--info" style="margin-top:10px">
+          <i class="fa-solid fa-circle-info"></i>
+          الإصدار الحالي لكلمة المرور: <strong class="mono">{{ customer_user.password_version }}</strong>
+        </div>
+      {% endif %}
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ
+      </button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">رجوع</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}

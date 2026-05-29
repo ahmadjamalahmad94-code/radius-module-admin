@@ -1,66 +1,72 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}لوحة التحكم{% endblock %}
 {% block page_title %}لوحة التحكم{% endblock %}
 {% block page_subtitle %}نظرة سريعة على العملاء والتراخيص وحركة الفحص الأخيرة{% endblock %}
-{% block content %}
-<section class="grid stats-grid">
-  <div class="card stat"><div class="label">إجمالي العملاء</div><div class="value">{{ stats.customers }}</div></div>
-  <div class="card stat"><div class="label">تراخيص نشطة</div><div class="value">{{ stats.active }}</div></div>
-  <div class="card stat"><div class="label">تراخيص منتهية</div><div class="value">{{ stats.expired }}</div></div>
-  <div class="card stat"><div class="label">تراخيص معلقة</div><div class="value">{{ stats.suspended }}</div></div>
-  <div class="card stat"><div class="label">تنتهي قريبًا</div><div class="value">{{ stats.expiring_soon }}</div></div>
-</section>
 
-<section class="grid two-grid" style="margin-top:16px">
-  <div class="card">
-    <div class="section-head"><h2>آخر فحوصات الترخيص</h2><a class="btn-ghost" href="{{ url_for('admin.checks_list') }}">عرض الكل</a></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>المفتاح</th><th>النتيجة</th><th>الخادم</th><th>الوقت</th></tr></thead>
+{% block content %}
+{{ hub.hero(
+  "نظرة عامة على المنصة",
+  subtitle="ملخص حركة التراخيص والتجديدات وآخر فحوصات نظام العملاء.",
+  icon="gauge-high",
+  actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin.licenses_list') ~ '"><i class="fa-solid fa-key"></i> التراخيص</a><a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.settings_page') ~ '" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)"><i class="fa-solid fa-gear"></i> الإعدادات</a>'
+) }}
+
+<div class="hub-kpi-grid">
+  {{ hub.kpi("إجمالي العملاء", stats.customers, icon="users", variant="violet") }}
+  {{ hub.kpi("تراخيص نشطة", stats.active, icon="circle-check", variant="green") }}
+  {{ hub.kpi("تراخيص منتهية", stats.expired, icon="ban", variant="red") }}
+  {{ hub.kpi("تراخيص معلقة", stats.suspended, icon="pause", variant="amber") }}
+  {{ hub.kpi("تنتهي قريبًا", stats.expiring_soon, icon="hourglass-half", variant="blue") }}
+</div>
+
+<div class="hub-grid-2">
+  {% call hub.section("آخر فحوصات الترخيص", icon="shield-heart", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.checks_list') ~ '">عرض الكل</a>') %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th>المفتاح</th><th>النتيجة</th><th>الخادم</th><th class="date">الوقت</th></tr></thead>
         <tbody>
         {% for item in recent_checks %}
           <tr>
             <td class="mono">{{ item.license_key }}</td>
             <td><span class="badge {{ item.result|badge_class }}">{{ item.result|status_label }}</span></td>
-            <td>{{ item.hostname or '-' }}</td>
-            <td>{{ item.checked_at|dt }}</td>
+            <td>{{ item.hostname or '—' }}</td>
+            <td class="date">{{ item.checked_at|dt }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="empty">لا توجد فحوصات بعد.</td></tr>
+          <tr><td colspan="4">{{ hub.empty("لا توجد فحوصات بعد.", icon="shield-heart") }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
-  <div class="card">
-    <div class="section-head"><h2>آخر التجديدات</h2><a class="btn-ghost" href="{{ url_for('admin.renewals_list') }}">عرض الكل</a></div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>العميل</th><th>المدة</th><th>المبلغ</th><th>الوقت</th></tr></thead>
+  {% endcall %}
+
+  {% call hub.section("آخر التجديدات", icon="rotate", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.renewals_list') ~ '">عرض الكل</a>') %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th>العميل</th><th class="num">المدة</th><th class="num">المبلغ</th><th class="date">الوقت</th></tr></thead>
         <tbody>
         {% for item in recent_renewals %}
           <tr>
-            <td>{{ item.customer.company_name }}</td>
-            <td>{{ item.period_months }} شهر</td>
-            <td>{{ item.amount|money }} {{ item.currency }}</td>
-            <td>{{ item.created_at|dt }}</td>
+            <td><strong>{{ item.customer.company_name }}</strong></td>
+            <td class="num">{{ item.period_months }} شهر</td>
+            <td class="num">{{ item.amount|money }} {{ item.currency }}</td>
+            <td class="date">{{ item.created_at|dt }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="empty">لا توجد تجديدات بعد.</td></tr>
+          <tr><td colspan="4">{{ hub.empty("لا توجد تجديدات بعد.", icon="rotate") }}</td></tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
-</section>
+  {% endcall %}
+</div>
 
-<section class="card" style="margin-top:16px">
-  <div class="section-head"><h2>حالة النظام</h2><a class="btn-ghost" href="{{ url_for('admin.settings_page') }}">الإعدادات</a></div>
-  <div class="detail-list">
+{% call hub.section("حالة النظام", icon="server", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.settings_page') ~ '"><i class="fa-solid fa-gear"></i> الإعدادات</a>') %}
+  <div class="hub-detail-list">
     <div><span>البيئة</span><strong>{{ health.env }}</strong></div>
     <div><span>رابط API</span><strong class="mono">{{ health.api_base }}/api/license/check</strong></div>
-    <div><span>بريد الدعم</span><strong>{{ health.support_email or '-' }}</strong></div>
+    <div><span>بريد الدعم</span><strong>{{ health.support_email or '—' }}</strong></div>
   </div>
-</section>
+{% endcall %}
 {% endblock %}
-
