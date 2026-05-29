@@ -1,0 +1,177 @@
+{# ═══════════════════════════════════════════════════════════════════════
+   HOB v2 — Jinja macro library (ported verbatim from radius-module)
+
+   Companion to app/static/css/app.css. Every macro renders a chunk of
+   the unified visual system with semantic class names. Import once:
+
+       {% import "_partials/hub.html" as hub %}
+
+   Then in any page:
+
+       {{ hub.hero("Dashboard", subtitle="overview", icon="gauge-high") }}
+       {% call hub.section("Recent activity", icon="clock-rotate-left") %}
+         ...
+       {% endcall %}
+
+   Rules:
+     • All macros render plain HTML — no JS dependencies.
+     • RTL-safe by inheritance (logical CSS).
+     • Optional kwargs default to empty so partial calls are short.
+   ═══════════════════════════════════════════════════════════════════════ #}
+
+
+{# ── Hero strip at the top of a page ─────────────────────────── #}
+{% macro hero(title, subtitle="", icon="circle-info", actions_html="") -%}
+<div class="hub-hero">
+  <div class="hub-hero-row">
+    <span class="hub-hero-icon"><i class="fa-solid fa-{{ icon }}"></i></span>
+    <div class="hub-hero-text">
+      <h1 class="hub-hero-title">{{ title }}</h1>
+      {%- if subtitle %}<div class="hub-hero-sub">{{ subtitle }}</div>{% endif -%}
+    </div>
+    {%- if actions_html -%}
+      <div class="hub-hero-actions">{{ actions_html|safe }}</div>
+    {%- endif -%}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{# ── Labelled section card; use as `{% call hub.section(...) %}...{% endcall %}` ── #}
+{% macro section(title, icon="", meta="", flush=False) -%}
+<section class="hub-section">
+  {%- if title or icon -%}
+  <header class="hub-section-head">
+    {%- if icon %}<span class="hub-section-head-icon"><i class="fa-solid fa-{{ icon }}"></i></span>{% endif -%}
+    <span class="hub-section-head-title">{{ title }}</span>
+    {%- if meta %}<span class="hub-section-head-meta">{{ meta }}</span>{% endif -%}
+  </header>
+  {%- endif -%}
+  <div class="hub-section-body{% if flush %} hub-section-body--flush{% endif %}">
+    {{ caller() }}
+  </div>
+</section>
+{%- endmacro %}
+
+
+{# ── Single KPI card ─────────────────────────────────────────── #}
+{% macro kpi(label, value, icon="chart-line", variant="brand", sub="") -%}
+<div class="hub-kpi hub-kpi--{{ variant }}">
+  <span class="hub-kpi-icon"><i class="fa-solid fa-{{ icon }}"></i></span>
+  <div class="hub-kpi-body">
+    <div class="hub-kpi-label">{{ label }}</div>
+    <div class="hub-kpi-value">{{ value }}</div>
+    {%- if sub %}<div class="hub-kpi-sub">{{ sub }}</div>{% endif -%}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{# ── Status pill ─────────────────────────────────────────────── #}
+{% macro pill(label, variant="grey", dot=True) -%}
+<span class="hub-pill hub-pill--{{ variant }}">
+  {%- if dot %}<span class="dot"></span>{% endif -%}
+  {{ label }}
+</span>
+{%- endmacro %}
+
+
+{# ── Action button ───────────────────────────────────────────── #}
+{% macro btn(label, href="", variant="primary", icon="", size="", type="button", attrs="") -%}
+{%- if href -%}
+<a class="hub-btn hub-btn--{{ variant }}{% if size %} hub-btn--{{ size }}{% endif %}"
+   href="{{ href }}" {{ attrs|safe }}>
+  {%- if icon %}<i class="fa-solid fa-{{ icon }}"></i>{% endif -%} {{ label }}
+</a>
+{%- else -%}
+<button class="hub-btn hub-btn--{{ variant }}{% if size %} hub-btn--{{ size }}{% endif %}"
+   type="{{ type }}" {{ attrs|safe }}>
+  {%- if icon %}<i class="fa-solid fa-{{ icon }}"></i>{% endif -%} {{ label }}
+</button>
+{%- endif -%}
+{%- endmacro %}
+
+
+{# ── Action card (clickable tile) ─────────────────────────────── #}
+{% macro action_card(title, sub="", icon="circle", href="", variant="brand", disabled=False, attrs="") -%}
+{%- set _cls = "hub-action" -%}
+{%- if href -%}
+<a class="{{ _cls }}" href="{{ href }}"
+   {%- if disabled %} aria-disabled="true" tabindex="-1"{% endif %} {{ attrs|safe }}>
+  <span class="hub-action-icon hub-action-icon--{{ variant }}"><i class="fa-solid fa-{{ icon }}"></i></span>
+  <div class="hub-action-body">
+    <div class="hub-action-title">{{ title }}</div>
+    {%- if sub %}<div class="hub-action-sub">{{ sub }}</div>{% endif -%}
+  </div>
+</a>
+{%- else -%}
+<button type="button" class="{{ _cls }}"
+   {% if disabled %}disabled{% endif %} {{ attrs|safe }}>
+  <span class="hub-action-icon hub-action-icon--{{ variant }}"><i class="fa-solid fa-{{ icon }}"></i></span>
+  <div class="hub-action-body">
+    <div class="hub-action-title">{{ title }}</div>
+    {%- if sub %}<div class="hub-action-sub">{{ sub }}</div>{% endif -%}
+  </div>
+</button>
+{%- endif -%}
+{%- endmacro %}
+
+
+{# ── Empty state ─────────────────────────────────────────────── #}
+{% macro empty(message, sub="", icon="inbox") -%}
+<div class="hub-empty">
+  <div class="hub-empty-icon"><i class="fa-solid fa-{{ icon }}"></i></div>
+  <div class="hub-empty-msg">{{ message }}</div>
+  {%- if sub %}<div class="hub-empty-sub">{{ sub }}</div>{% endif -%}
+</div>
+{%- endmacro %}
+
+
+{# ── Stat tile ───────────────────────────────────────────────── #}
+{% macro tile(label, value, icon="", variant="", sub="") -%}
+<div class="hub-tile{% if variant %} hub-tile--{{ variant }}{% endif %}">
+  <div class="hub-tile-label">
+    {%- if icon %}<i class="fa-solid fa-{{ icon }}"></i>{% endif -%}
+    {{ label }}
+  </div>
+  <div class="hub-tile-value">{{ value }}</div>
+  {%- if sub %}<div class="hub-tile-sub">{{ sub }}</div>{% endif -%}
+</div>
+{%- endmacro %}
+
+
+{# ── Field (form input + label) ──────────────────────────────── #}
+{% macro field(label, name, value="", type="text", required=False, hint="", placeholder="") -%}
+<div class="hub-field">
+  <label class="hub-field-label" for="hub-f-{{ name }}">
+    {{ label }}{% if required %}<span class="req">*</span>{% endif %}
+  </label>
+  <input class="hub-input" type="{{ type }}" id="hub-f-{{ name }}" name="{{ name }}"
+         value="{{ value }}" placeholder="{{ placeholder }}"
+         {% if required %}required{% endif %}>
+  {%- if hint %}<div class="hub-field-hint">{{ hint }}</div>{% endif -%}
+</div>
+{%- endmacro %}
+
+
+{# ── Fieldset (group of fields under a title) ────────────────── #}
+{% macro fieldset(title, icon="") -%}
+<div class="hub-fieldset">
+  <div class="hub-fieldset-title">
+    {%- if icon %}<i class="fa-solid fa-{{ icon }}"></i>{% endif -%}
+    {{ title }}
+  </div>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{# ── Progress bar ────────────────────────────────────────────── #}
+{% macro progress(pct, variant="") -%}
+{%- set pct = (pct|float) if pct is not none else 0 -%}
+{%- set v = (pct|int) -%}
+{%- set _auto = ('red' if v >= 90 else ('amber' if v >= 75 else 'green')) -%}
+<div class="hub-progress hub-progress--{{ variant or _auto }}">
+  <span style="width: {{ v }}%"></span>
+</div>
+{%- endmacro %}

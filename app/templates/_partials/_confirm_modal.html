@@ -1,0 +1,12 @@
+{# Shared confirm modal. JS in hub.js binds [data-confirm-form] triggers to this dialog. #}
+<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="hub-modal-card">
+    <div class="hub-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h3 class="hub-modal-title" id="hub-confirm-title">تأكيد العملية</h3>
+    <p class="hub-modal-msg" id="hub-confirm-msg">هل أنت متأكد من المتابعة؟</p>
+    <div class="hub-modal-actions">
+      <button type="button" class="hub-btn hub-btn--ghost" id="hub-confirm-cancel">إلغاء</button>
+      <button type="button" class="hub-btn hub-btn--danger" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>

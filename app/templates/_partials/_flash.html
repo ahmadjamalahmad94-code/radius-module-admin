@@ -1,0 +1,10 @@
+{# Flash messages — reads Flask's get_flashed_messages and renders into hub-flash blocks. #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="hub-flash-stack">
+      {% for category, message in messages %}
+        <div class="hub-flash hub-flash--{{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}

@@ -1,0 +1,87 @@
+{# Reusable pager.
+   Usage:
+     {% from "_partials/_pager.html" import pager %}
+     {{ pager(items, page=page, per_page=per_page, total=total, base_args=request.args) }}
+
+   Arguments:
+     items       — current-page records (used only for empty-check)
+     page        — current page (1-indexed)
+     per_page    — items per page
+     total       — total record count
+     base_args   — dict-like of existing request query args to preserve
+#}
+{% macro pager(items, page=1, per_page=10, total=0, base_args=None) %}
+{%- set page = (page or 1)|int -%}
+{%- set per_page = (per_page or 10)|int -%}
+{%- set total = (total or 0)|int -%}
+{%- set last = ((total + per_page - 1) // per_page) if total > 0 else 1 -%}
+{%- if last < 1 -%}{%- set last = 1 -%}{%- endif -%}
+{%- set window_lo = [page - 2, 1]|max -%}
+{%- set window_hi = [page + 2, last]|min -%}
+{%- set qs = {} -%}
+{%- if base_args -%}
+  {%- for k, v in base_args.items() -%}
+    {%- if k not in ['page', 'per_page'] -%}{%- set _ = qs.update({k: v}) -%}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+<div class="hub-pager">
+  <form class="hub-pager-perpage" method="get">
+    {%- for k, v in qs.items() %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {%- endfor %}
+    <label for="hub-pp">عرض</label>
+    <select id="hub-pp" name="per_page" data-pager-perpage>
+      {%- for n in [10, 20, 50, 100] %}
+        <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
+      {%- endfor %}
+    </select>
+    <span>صفوف</span>
+  </form>
+
+  <div class="hub-pager-summary">
+    {%- if total > 0 -%}
+      {%- set start = (page - 1) * per_page + 1 -%}
+      {%- set end = [start + per_page - 1, total]|min -%}
+      {{ start }}–{{ end }} من {{ total }}
+    {%- else -%}
+      لا توجد نتائج
+    {%- endif -%}
+  </div>
+
+  <nav class="hub-pager-links" aria-label="ترقيم الصفحات">
+    {%- set prev_disabled = page <= 1 -%}
+    {%- set next_disabled = page >= last -%}
+    {%- set base_qs = [] -%}
+    {%- for k, v in qs.items() -%}
+      {%- set _ = base_qs.append(k ~ '=' ~ v) -%}
+    {%- endfor -%}
+    {%- set qs_prefix = ('&' + (base_qs|join('&'))) if base_qs else '' -%}
+
+    <a class="{{ 'disabled' if prev_disabled else '' }}"
+       href="?page={{ page - 1 }}&per_page={{ per_page }}{{ qs_prefix }}"
+       aria-label="السابق">‹</a>
+
+    {%- if window_lo > 1 %}
+      <a href="?page=1&per_page={{ per_page }}{{ qs_prefix }}">1</a>
+      {%- if window_lo > 2 %}<span class="disabled">…</span>{% endif %}
+    {%- endif %}
+
+    {%- for p in range(window_lo, window_hi + 1) %}
+      {%- if p == page %}
+        <span class="active">{{ p }}</span>
+      {%- else %}
+        <a href="?page={{ p }}&per_page={{ per_page }}{{ qs_prefix }}">{{ p }}</a>
+      {%- endif %}
+    {%- endfor %}
+
+    {%- if window_hi < last %}
+      {%- if window_hi < last - 1 %}<span class="disabled">…</span>{% endif %}
+      <a href="?page={{ last }}&per_page={{ per_page }}{{ qs_prefix }}">{{ last }}</a>
+    {%- endif %}
+
+    <a class="{{ 'disabled' if next_disabled else '' }}"
+       href="?page={{ page + 1 }}&per_page={{ per_page }}{{ qs_prefix }}"
+       aria-label="التالي">›</a>
+  </nav>
+</div>
+{% endmacro %}
