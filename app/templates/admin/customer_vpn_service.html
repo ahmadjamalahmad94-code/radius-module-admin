@@ -1,101 +1,143 @@
 {% extends "admin/base.html" %}
-{% block title %}خدمة تغيير IP / VPN - {{ customer.company_name }}{% endblock %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}خدمة تغيير IP / VPN — {{ customer.company_name }}{% endblock %}
 {% block page_title %}خدمة تغيير IP / VPN{% endblock %}
 {% block page_subtitle %}{{ customer.company_name }}{% endblock %}
+
 {% block content %}
 {% set vpn_status_labels = {'active': 'مفعلة', 'suspended': 'موقوفة', 'expired': 'منتهية', 'disabled': 'معطلة'} %}
-<section class="grid two-grid">
-  <div class="card">
-    <div class="section-head"><h2>الحالة الحالية</h2><a class="btn-ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">ملف العميل</a></div>
-    <div class="detail-list">
+
+{{ hub.hero(
+  "خدمة VPN لـ " ~ customer.company_name,
+  subtitle="السرعة والحدود والاستحقاق التجاري — تنفيذ السرعة يحدث في runtime العميل.",
+  icon="shield-halved",
+  actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-up-right-from-square"></i> ملف العميل</a>'
+) }}
+
+<div class="hub-grid-2">
+  {% call hub.section("الحالة الحالية", icon="circle-info") %}
+    <div class="hub-detail-list">
       <div><span>العميل</span><strong>{{ customer.company_name }}</strong></div>
-      <div><span>حالة الترخيص</span><strong>{% if current_license %}<span class="badge {{ current_license.status|badge_class }}">{{ current_license.status|status_label }}</span>{% else %}-{% endif %}</strong></div>
+      <div><span>حالة الترخيص</span><strong>{% if current_license %}<span class="badge {{ current_license.status|badge_class }}">{{ current_license.status|status_label }}</span>{% else %}—{% endif %}</strong></div>
       <div><span>VPN</span><strong><span class="badge {{ entitlement.status|badge_class }}">{{ vpn_status_labels.get(entitlement.status, entitlement.status) }}</span></strong></div>
-      <div><span>الباقة</span><strong>{{ entitlement.vpn_plan.name if entitlement.vpn_plan else '-' }}</strong></div>
-      <div><span>سرعة التحميل</span><strong>{{ entitlement.download_mbps or '-' }} Mbps</strong></div>
-      <div><span>سرعة الرفع</span><strong>{{ entitlement.upload_mbps or '-' }} Mbps</strong></div>
-      <div><span>عدد مستخدمي VPN</span><strong>{{ entitlement.max_vpn_users or '-' }}</strong></div>
+      <div><span>الباقة</span><strong>{{ entitlement.vpn_plan.name if entitlement.vpn_plan else '—' }}</strong></div>
+      <div><span>سرعة التحميل</span><strong class="num">{{ entitlement.download_mbps or '—' }} Mbps</strong></div>
+      <div><span>سرعة الرفع</span><strong class="num">{{ entitlement.upload_mbps or '—' }} Mbps</strong></div>
+      <div><span>عدد مستخدمي VPN</span><strong class="num">{{ entitlement.max_vpn_users or '—' }}</strong></div>
       <div><span>تاريخ الانتهاء</span><strong>{{ entitlement.expires_at|dt }}</strong></div>
       <div><span>آخر تحديث</span><strong>{{ entitlement.updated_at|dt }}</strong></div>
     </div>
-  </div>
-  <div class="card">
-    <div class="section-head"><h2>Contract Preview</h2><span class="badge badge-blue mono">ip_change_vpn</span></div>
-    <pre class="contract-preview">{{ {'services': {'ip_change_vpn': contract}}|tojson(indent=2) }}</pre>
-  </div>
-</section>
+  {% endcall %}
 
-<form method="post" class="card grid" style="margin-top:16px">
-  {{ csrf_input() }}
-  <div class="form-grid">
-    <div class="form-row">
-      <label>خطة VPN</label>
-      <select name="vpn_plan_id">
-        <option value="">بدون خطة</option>
-        {% for vpn_plan in vpn_plans %}
-          <option value="{{ vpn_plan.id }}" {{ 'selected' if entitlement.vpn_plan_id == vpn_plan.id else '' }}>
-            {{ vpn_plan.name }} - {{ vpn_plan.download_mbps }}/{{ vpn_plan.upload_mbps }} Mbps{% if not vpn_plan.is_active %} (غير مفعلة){% endif %}
-          </option>
-        {% endfor %}
-      </select>
+  {% call hub.section("معاينة عقد التكامل", icon="code", meta='<span class="hub-pill hub-pill--violet mono">ip_change_vpn</span>') %}
+    <pre class="hub-code">{{ {'services': {'ip_change_vpn': contract}}|tojson(indent=2) }}</pre>
+    <p class="hub-field-hint" style="margin-top:10px">هذه البيانات التي سيراها نظام العميل عبر API. لا تظهر الملاحظات الداخلية.</p>
+  {% endcall %}
+</div>
+
+{% call hub.section("تعديل الاستحقاق", icon="sliders") %}
+  <form method="post">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("الباقة والترخيص", icon="link") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>خطة VPN</label>
+          <select class="hub-select" name="vpn_plan_id">
+            <option value="">بدون خطة</option>
+            {% for vpn_plan in vpn_plans %}
+              <option value="{{ vpn_plan.id }}" {{ 'selected' if entitlement.vpn_plan_id == vpn_plan.id else '' }}>
+                {{ vpn_plan.name }} — {{ vpn_plan.download_mbps }}/{{ vpn_plan.upload_mbps }} Mbps{% if not vpn_plan.is_active %} (غير مفعلة){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">اختيار الباقة يملأ الحدود القياسية ويمكن تجاوزها بالحقول التالية.</div>
+        </div>
+        <div class="hub-field">
+          <label>الترخيص المرتبط</label>
+          <select class="hub-select" name="license_id">
+            <option value="">حسب العميل</option>
+            {% for lic in licenses %}
+              <option value="{{ lic.id }}" {{ 'selected' if entitlement.license_id == lic.id else '' }}>
+                {{ lic.license_key }} — {{ lic.status|status_label }} — {{ lic.expires_at|date }}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">اربط الخدمة بترخيص محدد إذا كان للعميل أكثر من ترخيص.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("السرعة والحدود", icon="gauge-high") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>سرعة التحميل (Mbps)</label>
+          <input class="hub-input" name="download_mbps" type="number" min="1" value="{{ entitlement.download_mbps or '' }}" placeholder="50">
+        </div>
+        <div class="hub-field">
+          <label>سرعة الرفع (Mbps)</label>
+          <input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ entitlement.upload_mbps or '' }}" placeholder="50">
+        </div>
+        <div class="hub-field">
+          <label>عدد مستخدمي VPN</label>
+          <input class="hub-input" name="max_vpn_users" type="number" min="1" value="{{ entitlement.max_vpn_users or '' }}" placeholder="100">
+        </div>
+        <div class="hub-field">
+          <label>عدد المواقع</label>
+          <input class="hub-input" name="max_locations" type="number" min="1" value="{{ entitlement.max_locations or 1 }}">
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("الحالة والانتهاء", icon="calendar-days") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الحالة</label>
+          <select class="hub-select" name="status">
+            {% for status, label in vpn_status_labels.items() %}
+              <option value="{{ status }}" {{ 'selected' if entitlement.status == status else '' }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="hub-field">
+          <label>ينتهي في</label>
+          <input class="hub-input ltr" name="expires_at" type="datetime-local" value="{{ entitlement.expires_at.strftime('%Y-%m-%dT%H:%M') if entitlement.expires_at else '' }}">
+          <div class="hub-field-hint">اختياري — عند تجاوزه يرجع العقد منتهيًا.</div>
+        </div>
+        <label class="hub-check-item full">
+          <input type="checkbox" name="enabled" value="1" {{ 'checked' if entitlement.enabled else '' }}>
+          <span>الخدمة مفعلة (سماح تجاري)</span>
+        </label>
+        <label class="hub-check-item full">
+          <input type="checkbox" name="apply_plan_defaults" value="1">
+          <span>مقفلة حسب الخطة (انسخ حدود الباقة)</span>
+        </label>
+        <div class="hub-field full">
+          <label>ملاحظات داخلية</label>
+          <textarea class="hub-textarea" name="notes" rows="3">{{ entitlement.notes or '' }}</textarea>
+          <div class="hub-field-hint">للمدير فقط — لا تظهر في عقد التكامل.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit" name="action" value="save">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ
+      </button>
+      <button class="hub-btn hub-btn--secondary" type="submit" name="action" value="activate">
+        <i class="fa-solid fa-play"></i> تفعيل VPN
+      </button>
+      <button class="hub-btn hub-btn--danger" type="submit" name="action" value="suspend">
+        <i class="fa-solid fa-pause"></i> إيقاف مؤقت
+      </button>
+      <button class="hub-btn hub-btn--ghost" type="submit" name="action" value="disable">
+        <i class="fa-solid fa-ban"></i> تعطيل
+      </button>
     </div>
-    <div class="form-row">
-      <label>الترخيص المرتبط</label>
-      <select name="license_id">
-        <option value="">حسب العميل</option>
-        {% for lic in licenses %}
-          <option value="{{ lic.id }}" {{ 'selected' if entitlement.license_id == lic.id else '' }}>
-            {{ lic.license_key }} - {{ lic.status|status_label }} - {{ lic.expires_at|date }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row">
-      <label>سرعة التحميل</label>
-      <input name="download_mbps" type="number" min="1" value="{{ entitlement.download_mbps or '' }}" placeholder="50">
-    </div>
-    <div class="form-row">
-      <label>سرعة الرفع</label>
-      <input name="upload_mbps" type="number" min="1" value="{{ entitlement.upload_mbps or '' }}" placeholder="50">
-    </div>
-    <div class="form-row">
-      <label>عدد مستخدمي VPN</label>
-      <input name="max_vpn_users" type="number" min="1" value="{{ entitlement.max_vpn_users or '' }}" placeholder="100">
-    </div>
-    <div class="form-row">
-      <label>عدد المواقع</label>
-      <input name="max_locations" type="number" min="1" value="{{ entitlement.max_locations or 1 }}">
-    </div>
-    <div class="form-row">
-      <label>الحالة</label>
-      <select name="status">
-        {% for status, label in vpn_status_labels.items() %}
-          <option value="{{ status }}" {{ 'selected' if entitlement.status == status else '' }}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row">
-      <label>ينتهي في</label>
-      <input name="expires_at" type="datetime-local" value="{{ entitlement.expires_at.strftime('%Y-%m-%dT%H:%M') if entitlement.expires_at else '' }}">
-    </div>
-    <label class="check-item full">
-      <input type="checkbox" name="enabled" value="1" {{ 'checked' if entitlement.enabled else '' }}>
-      <span>الخدمة مفعلة</span>
-    </label>
-    <label class="check-item full">
-      <input type="checkbox" name="apply_plan_defaults" value="1">
-      <span>مقفلة حسب الخطة</span>
-    </label>
-    <div class="form-row full">
-      <label>ملاحظات داخلية</label>
-      <textarea name="notes" rows="3">{{ entitlement.notes or '' }}</textarea>
-    </div>
-  </div>
-  <div class="actions">
-    <button class="btn" type="submit" name="action" value="save">حفظ</button>
-    <button class="btn-secondary" type="submit" name="action" value="activate">تفعيل VPN</button>
-    <button class="btn-danger" type="submit" name="action" value="suspend">إيقاف مؤقت</button>
-    <button class="btn-ghost" type="submit" name="action" value="disable">تعطيل</button>
-  </div>
-</form>
+  </form>
+{% endcall %}
 {% endblock %}

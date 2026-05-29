@@ -1,117 +1,155 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}{{ payment_request.reference_code }}{% endblock %}
 {% block page_title %}{{ payment_request.reference_code }}{% endblock %}
-{% block page_subtitle %}مراجعة دفع يدوي. قبول الدفع لا يعني تفعيل الترخيص تلقائيًا في هذه المرحلة.{% endblock %}
+{% block page_subtitle %}مراجعة دفع يدوي. قبول الدفع لا يعني تفعيل الترخيص تلقائيًا.{% endblock %}
+
 {% block content %}
-<section class="grid two-grid">
-  <div class="card">
-    <div class="section-head">
-      <h2>طلب الدفع</h2>
-      <span class="badge {{ payment_request.status|badge_class }}">{{ payment_request.status|status_label }}</span>
+<div class="hub-hero">
+  <div class="hub-hero-row">
+    <span class="hub-hero-icon"><i class="fa-solid fa-credit-card"></i></span>
+    <div class="hub-hero-text">
+      <h1 class="hub-hero-title mono">{{ payment_request.reference_code }}</h1>
+      <div class="hub-hero-sub">
+        {{ payment_request.customer.company_name if payment_request.customer else "—" }} ·
+        {{ payment_request.purpose }} ·
+        {{ payment_request.amount|money }} {{ payment_request.currency }}
+      </div>
     </div>
-    <div class="detail-list">
-      <div><span>العميل</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "-" }}</strong></div>
+    <div class="hub-hero-actions">
+      <span class="hub-hero-chip"><i class="fa-solid fa-circle"></i> {{ payment_request.status|status_label }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="hub-grid-2">
+  {% call hub.section("تفاصيل الطلب", icon="circle-info") %}
+    <div class="hub-detail-list">
+      <div><span>العميل</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "—" }}</strong></div>
       <div><span>الغرض</span><strong>{{ payment_request.purpose }}</strong></div>
-      <div><span>المبلغ</span><strong>{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
+      <div><span>المبلغ</span><strong class="num">{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
       <div><span>المحفظة</span><strong class="mono">{{ payment_request.receiver_wallet }}</strong></div>
       <div><span>ينتهي في</span><strong>{{ payment_request.expires_at|dt }}</strong></div>
-      <div><span>الرابط الآمن</span><strong class="mono">/payments/requests/{{ payment_request.id }}</strong></div>
+      <div><span>الرابط الآمن</span><strong class="mono ltr">/payments/requests/{{ payment_request.id }}</strong></div>
     </div>
-  </div>
-  <div class="card">
-    <div class="section-head"><h2>قرار المراجعة</h2></div>
+  {% endcall %}
+
+  {% call hub.section("قرار المراجعة", icon="gavel") %}
     {% if payment_request.status in ["proof_submitted", "under_review"] %}
-      <form method="post" action="{{ url_for('admin.payment_request_approve', payment_request_id=payment_request.id) }}" class="grid" style="margin-bottom:12px">
+      <form method="post" action="{{ url_for('admin.payment_request_approve', payment_request_id=payment_request.id) }}" style="margin-bottom:14px">
         {{ csrf_input() }}
-        <textarea name="review_note" rows="2" placeholder="ملاحظة قبول اختيارية"></textarea>
-        <button class="btn" type="submit">قبول الدفع</button>
+        <div class="hub-field">
+          <label>ملاحظة قبول (اختيارية)</label>
+          <textarea class="hub-textarea" name="review_note" rows="2" placeholder="مرجع قصير للمراجعة لاحقًا"></textarea>
+        </div>
+        <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
+          <i class="fa-solid fa-circle-check"></i> قبول الدفع
+        </button>
       </form>
-      <form method="post" action="{{ url_for('admin.payment_request_reject', payment_request_id=payment_request.id) }}" class="grid">
-        {{ csrf_input() }}
-        <textarea name="review_note" rows="2" placeholder="سبب الرفض"></textarea>
-        <button class="btn-danger" type="submit">رفض الإثبات</button>
-      </form>
+      <div style="border-top:1px dashed var(--hub-line); padding-top:12px">
+        <form method="post" action="{{ url_for('admin.payment_request_reject', payment_request_id=payment_request.id) }}">
+          {{ csrf_input() }}
+          <div class="hub-field">
+            <label>سبب الرفض</label>
+            <textarea class="hub-textarea" name="review_note" rows="2" placeholder="يظهر في السجل الإداري"></textarea>
+          </div>
+          <button class="hub-btn hub-btn--danger" type="submit" style="margin-top:10px">
+            <i class="fa-solid fa-circle-xmark"></i> رفض الإثبات
+          </button>
+        </form>
+      </div>
     {% else %}
-      <p class="muted">لا توجد إجراءات مراجعة متاحة لهذه الحالة.</p>
+      {{ hub.empty("لا توجد إجراءات مراجعة متاحة لهذه الحالة.", icon="lock") }}
     {% endif %}
-    <div class="flash warning" style="margin-top:14px">رقم المحفظة وإرسال الإثبات لا يثبتان الدفع دون قبول إداري.</div>
-  </div>
-</section>
+    <div class="hub-flash hub-flash--warning" style="margin-top:14px">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      رقم المحفظة وإرسال الإثبات لا يثبتان الدفع دون قبول إداري.
+    </div>
+  {% endcall %}
+</div>
 
 {% if payment_request.status == "paid" %}
-<section class="card" style="margin-top:16px">
-  <div class="section-head">
-    <h2>ربط الدفع بالترخيص</h2>
-    {% if payment_request.applied_at %}
-      <span class="badge badge-green">تم التنفيذ</span>
-    {% else %}
-      <span class="badge badge-amber">بانتظار التنفيذ</span>
-    {% endif %}
-  </div>
-  <p class="muted">هذا الإجراء لا يعمل إلا بعد قبول الدفع. يتم تنفيذه مرة واحدة فقط ولا يكرر التجديد أو الترقية.</p>
+{% call hub.section("ربط الدفع بالترخيص", icon="link", meta=('<span class="hub-pill hub-pill--green"><span class="dot"></span> تم التنفيذ</span>' if payment_request.applied_at else '<span class="hub-pill hub-pill--amber"><span class="dot"></span> بانتظار التنفيذ</span>')) %}
+  <p class="hub-field-hint">هذا الإجراء يعمل بعد قبول الدفع. يتم تنفيذه مرة واحدة فقط ولا يكرر التجديد أو الترقية.</p>
   {% if payment_request.applied_at %}
-    <div class="detail-list">
+    <div class="hub-detail-list" style="margin-top:12px">
       <div><span>نوع التنفيذ</span><strong>{{ payment_request.applied_action }}</strong></div>
       <div><span>وقت التنفيذ</span><strong>{{ payment_request.applied_at|dt }}</strong></div>
     </div>
   {% else %}
-    <form method="post" action="{{ url_for('admin.payment_request_apply_license', payment_request_id=payment_request.id) }}" class="filter-form">
+    <form method="post" action="{{ url_for('admin.payment_request_apply_license', payment_request_id=payment_request.id) }}" class="hub-filter-form" style="margin-top:14px">
       {{ csrf_input() }}
-      <input name="period_months" type="number" min="1" value="1" style="max-width:140px">
-      <button class="btn-secondary" type="submit">تنفيذ ربط الدفع</button>
+      <div class="hub-field" style="max-width:160px; margin:0">
+        <label>المدة (شهر)</label>
+        <input class="hub-input" name="period_months" type="number" min="1" value="1">
+      </div>
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-link"></i> تنفيذ ربط الدفع
+      </button>
     </form>
-    <p class="hint">new_subscription يحتاج أن يكون أمر التجهيز جاهزًا أو تم تسليمه قبل إنشاء الترخيص.</p>
+    <p class="hub-field-hint" style="margin-top:8px"><span class="mono">new_subscription</span> يحتاج أن يكون أمر التجهيز جاهزًا قبل إنشاء الترخيص.</p>
   {% endif %}
-</section>
+{% endcall %}
 {% endif %}
 
-<section class="card" style="margin-top:16px">
-  <div class="section-head"><h2>الإثباتات</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>المرجع</th><th>ملاحظة العميل</th><th>حالة المراجعة</th><th>المراجع</th><th>ملاحظة المراجعة</th><th>الوقت</th></tr></thead>
+{% call hub.section("الإثباتات", icon="receipt", meta=proofs|length ~ ' إثبات') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>المرجع</th>
+          <th>ملاحظة العميل</th>
+          <th>حالة المراجعة</th>
+          <th>المراجع</th>
+          <th>ملاحظة المراجعة</th>
+          <th class="date">الوقت</th>
+        </tr>
+      </thead>
       <tbody>
         {% for proof in proofs %}
           <tr>
-            <td class="mono">{{ proof.reference_number or "-" }}</td>
-            <td>{{ proof.note or "-" }}</td>
+            <td class="mono">{{ proof.reference_number or "—" }}</td>
+            <td>{{ proof.note or "—" }}</td>
             <td>{{ proof.review_status or "بانتظار المراجعة" }}</td>
-            <td>{{ proof.reviewer.username if proof.reviewer else "-" }}</td>
-            <td>{{ proof.review_note or "-" }}</td>
-            <td>{{ proof.submitted_at|dt }}</td>
+            <td>{{ proof.reviewer.username if proof.reviewer else "—" }}</td>
+            <td>{{ proof.review_note or "—" }}</td>
+            <td class="date">{{ proof.submitted_at|dt }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="empty">لا توجد إثباتات بعد.</td></tr>
+          <tr><td colspan="6">{{ hub.empty("لا توجد إثباتات بعد.", icon="receipt") }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</section>
+{% endcall %}
 
-<section class="grid two-grid" style="margin-top:16px">
-  <div class="card">
-    <div class="section-head"><h2>المعاملات</h2></div>
-    {% for transaction in transactions %}
-      <div class="detail-list">
-        <div><span>الحالة</span><strong>{{ transaction.status }}</strong></div>
-        <div><span>المبلغ</span><strong>{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
-        <div><span>وقت التحقق</span><strong>{{ transaction.verified_at|dt }}</strong></div>
-      </div>
+<div class="hub-grid-2">
+  {% call hub.section("المعاملات", icon="receipt-card") %}
+    {% if transactions %}
+      {% for transaction in transactions %}
+        <div class="hub-detail-list">
+          <div><span>الحالة</span><strong>{{ transaction.status }}</strong></div>
+          <div><span>المبلغ</span><strong class="num">{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
+          <div><span>وقت التحقق</span><strong>{{ transaction.verified_at|dt }}</strong></div>
+        </div>
+      {% endfor %}
     {% else %}
-      <p class="empty">لا توجد معاملات مدفوعة بعد.</p>
-    {% endfor %}
-  </div>
-  <div class="card">
-    <div class="section-head"><h2>أوامر التجهيز</h2></div>
-    {% for order in orders %}
-      <div class="detail-list">
-        <div><span>الحالة</span><strong><span class="badge {{ order.status|badge_class }}">{{ order.status|status_label }}</span></strong></div>
-        <div><span>دفع في</span><strong>{{ order.paid_at|dt }}</strong></div>
-        <div><span>ملاحظات</span><strong>{{ order.notes or "-" }}</strong></div>
-      </div>
+      {{ hub.empty("لا توجد معاملات مدفوعة بعد.", icon="receipt-card") }}
+    {% endif %}
+  {% endcall %}
+
+  {% call hub.section("أوامر التجهيز", icon="screwdriver-wrench") %}
+    {% if orders %}
+      {% for order in orders %}
+        <div class="hub-detail-list">
+          <div><span>الحالة</span><strong><span class="badge {{ order.status|badge_class }}">{{ order.status|status_label }}</span></strong></div>
+          <div><span>دفع في</span><strong>{{ order.paid_at|dt }}</strong></div>
+          <div><span>ملاحظات</span><strong>{{ order.notes or "—" }}</strong></div>
+        </div>
+      {% endfor %}
     {% else %}
-      <p class="empty">لا يوجد أمر تجهيز مرتبط.</p>
-    {% endfor %}
-  </div>
-</section>
+      {{ hub.empty("لا يوجد أمر تجهيز مرتبط.", icon="screwdriver-wrench") }}
+    {% endif %}
+  {% endcall %}
+</div>
 {% endblock %}

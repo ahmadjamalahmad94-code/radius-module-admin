@@ -1,45 +1,90 @@
 {% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
 {% block title %}ترخيص جديد{% endblock %}
 {% block page_title %}ترخيص جديد{% endblock %}
 {% block page_subtitle %}سيتم توليد مفتاح آمن تلقائيًا بصيغة HBR-YYYY-XXXX-XXXX-XXXX{% endblock %}
-{% block content %}
-<form class="card grid" method="post">
-  {{ csrf_input() }}
-  <div class="form-grid">
-    <div class="form-row">
-      <label>العميل</label>
-      <select name="customer_id" required>
-        {% for customer in customers %}
-          <option value="{{ customer.id }}">{{ customer.company_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row">
-      <label>الخطة</label>
-      <select name="plan_id" required>
-        {% for plan in plans %}
-          <option value="{{ plan.id }}">{{ plan.name }} - {{ plan.monthly_price|money }} {{ plan.currency }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row">
-      <label>الحالة</label>
-      <select name="status">
-        {% for s in ['active','trial','suspended'] %}
-          <option value="{{ s }}">{{ s|status_label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-row"><label>أقصى عدد بصمات</label><input name="max_fingerprints" type="number" min="1" value="1"></div>
-    <div class="form-row"><label>بداية الترخيص</label><input name="starts_at" type="datetime-local" value="{{ today.strftime('%Y-%m-%dT%H:%M') }}"></div>
-    <div class="form-row"><label>تاريخ الانتهاء</label><input name="expires_at" type="datetime-local" value="{{ (today + timedelta(days=30)).strftime('%Y-%m-%dT%H:%M') }}"></div>
-    <div class="form-row"><label>مهلة السماح</label><input name="grace_until" type="datetime-local" value="{{ (today + timedelta(days=37)).strftime('%Y-%m-%dT%H:%M') }}"></div>
-    <div class="form-row full"><label>ملاحظات</label><textarea name="notes" rows="3"></textarea></div>
-  </div>
-  <div class="actions">
-    <button class="btn" type="submit">توليد الترخيص</button>
-    <a class="btn-ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
-  </div>
-</form>
-{% endblock %}
 
+{% block content %}
+{{ hub.hero(
+  "توليد ترخيص جديد",
+  subtitle="اربط عميلًا بخطة وحدد المدة والمهلة. مفتاح آمن يصدر تلقائيًا عند الحفظ.",
+  icon="key"
+) }}
+
+{% call hub.section("بيانات الترخيص", icon="file-signature") %}
+  <form method="post">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("العميل والخطة", icon="link") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>العميل <span class="req">*</span></label>
+          <select class="hub-select" name="customer_id" required>
+            {% for customer in customers %}
+              <option value="{{ customer.id }}">{{ customer.company_name }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">اختر الشركة التي تملك هذا المفتاح.</div>
+        </div>
+        <div class="hub-field">
+          <label>الخطة <span class="req">*</span></label>
+          <select class="hub-select" name="plan_id" required>
+            {% for plan in plans %}
+              <option value="{{ plan.id }}">{{ plan.name }} — {{ plan.monthly_price|money }} {{ plan.currency }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">الخطة تحدد الحدود الأساسية في رد API.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("الحالة والمدة", icon="calendar-days") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الحالة</label>
+          <select class="hub-select" name="status">
+            {% for s in ['active','trial','suspended'] %}
+              <option value="{{ s }}">{{ s|status_label }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">trial للتجربة، active للتشغيل، suspended لإيقاف مؤقت.</div>
+        </div>
+        <div class="hub-field">
+          <label>أقصى عدد بصمات</label>
+          <input class="hub-input" name="max_fingerprints" type="number" min="1" value="1">
+          <div class="hub-field-hint">عدد الخوادم المسموح ربطها بهذا الترخيص.</div>
+        </div>
+        <div class="hub-field">
+          <label>بداية الترخيص</label>
+          <input class="hub-input ltr" name="starts_at" type="datetime-local" value="{{ today.strftime('%Y-%m-%dT%H:%M') }}">
+          <div class="hub-field-hint">وقت بداية العقد التجاري.</div>
+        </div>
+        <div class="hub-field">
+          <label>تاريخ الانتهاء</label>
+          <input class="hub-input ltr" name="expires_at" type="datetime-local" value="{{ (today + timedelta(days=30)).strftime('%Y-%m-%dT%H:%M') }}">
+          <div class="hub-field-hint">بعد هذا التاريخ يتغير رد الترخيص حسب المهلة.</div>
+        </div>
+        <div class="hub-field">
+          <label>مهلة السماح</label>
+          <input class="hub-input ltr" name="grace_until" type="datetime-local" value="{{ (today + timedelta(days=37)).strftime('%Y-%m-%dT%H:%M') }}">
+          <div class="hub-field-hint">فترة قصيرة تسمح بوضع محدود بدل الرفض الكامل.</div>
+        </div>
+        <div class="hub-field full">
+          <label>ملاحظات داخلية</label>
+          <textarea class="hub-textarea" name="notes" rows="3"></textarea>
+          <div class="hub-field-hint">للمدير فقط — لا تظهر في API الترخيص.</div>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> توليد الترخيص
+      </button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}
