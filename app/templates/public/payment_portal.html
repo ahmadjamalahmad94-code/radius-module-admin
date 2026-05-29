@@ -1,94 +1,89 @@
-<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>تعليمات الدفع</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-</head>
-<body class="login-body">
-  <main class="login-card" style="width:min(760px,100%)">
-    <div class="section-head">
-      <div>
-        <h1 style="margin:0">تعليمات دفع الاشتراك</h1>
-        <p class="muted">رقم المحفظة لتوجيه الدفع فقط، ولا يعني أن الدفع تم تلقائيًا.</p>
-      </div>
-      <span class="badge {{ payment_request.status|badge_class }}">{{ payment_request.status|status_label }}</span>
+{% extends "_partials/portal_base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}تعليمات الدفع — {{ instructions.reference_code }}{% endblock %}
+
+{% block content %}
+<div class="hub-hero">
+  <div class="hub-hero-row">
+    <span class="hub-hero-icon"><i class="fa-solid fa-credit-card"></i></span>
+    <div class="hub-hero-text">
+      <h1 class="hub-hero-title">تعليمات دفع الاشتراك</h1>
+      <div class="hub-hero-sub">رقم المحفظة لتوجيه الدفع فقط. لا يعني أن الدفع تم تلقائيًا.</div>
     </div>
+    <div class="hub-hero-actions">
+      <span class="hub-hero-chip"><i class="fa-solid fa-circle"></i> {{ payment_request.status|status_label }}</span>
+    </div>
+  </div>
+</div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-stack">
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+{% call hub.section("تفاصيل الدفع", icon="receipt") %}
+  <div class="hub-detail-list">
+    <div><span>المبلغ</span><strong class="num" style="font-size:18px; color:var(--hub-violet-d)">{{ instructions.amount|money }} {{ instructions.currency }}</strong></div>
+    <div><span>رقم المحفظة</span><strong class="mono">{{ instructions.receiver_wallet }}</strong></div>
+    <div><span>اسم المستلم</span><strong>{{ instructions.wallet_owner_name or '—' }}</strong></div>
+    <div><span>رمز المرجع</span><strong class="mono">{{ instructions.reference_code }}</strong></div>
+    <div><span>ينتهي في</span><strong>{{ instructions.expires_at or '—' }}</strong></div>
+  </div>
+{% endcall %}
 
-    <section class="card" style="box-shadow:none">
-      <div class="detail-list">
-        <div><span>المبلغ</span><strong>{{ instructions.amount|money }} {{ instructions.currency }}</strong></div>
-        <div><span>رقم المحفظة</span><strong class="mono">{{ instructions.receiver_wallet }}</strong></div>
-        <div><span>اسم المستلم</span><strong>{{ instructions.wallet_owner_name or '-' }}</strong></div>
-        <div><span>رمز المرجع</span><strong class="mono">{{ instructions.reference_code }}</strong></div>
-        <div><span>ينتهي في</span><strong>{{ instructions.expires_at or '-' }}</strong></div>
+{% if payment_request.status == "pending" %}
+  {% call hub.section("إرسال إثبات الدفع", icon="upload") %}
+    <p class="hub-field-hint">بعد إرسال الإثبات، سيقوم المدير بمراجعته. لا يتم تفعيل الترخيص قبل قبول الدفع إداريًا.</p>
+    <form method="post" action="{{ url_for('public.payment_portal_submit_proof', request_id=payment_request.id) }}" style="display:grid; gap:12px; margin-top:14px">
+      {{ csrf_input() }}
+      <input type="hidden" name="token" value="{{ token }}">
+      <div class="hub-field">
+        <label>رقم عملية الدفع أو المرجع</label>
+        <input class="hub-input mono" name="reference_number" placeholder="مثال: 123456789">
+        <div class="hub-field-hint">رقم العملية من تطبيق الدفع أو أي مرجع واضح يظهر في الإيصال.</div>
       </div>
-    </section>
-
-    {% if payment_request.status == "pending" %}
-      <section class="card" style="box-shadow:none;margin-top:16px">
-        <div class="section-head"><h2>إرسال إثبات الدفع</h2></div>
-        <p class="hint">بعد إرسال الإثبات، سيقوم المدير بمراجعته. لا يتم تفعيل الترخيص قبل قبول الدفع إداريًا.</p>
-        <form method="post" action="{{ url_for('public.payment_portal_submit_proof', request_id=payment_request.id) }}" class="grid">
-          {{ csrf_input() }}
-          <input type="hidden" name="token" value="{{ token }}">
-          <div class="form-row">
-            <label>رقم عملية الدفع أو المرجع</label>
-            <input name="reference_number" placeholder="مثال: 123456789">
-          </div>
-          <div class="form-row">
-            <label>ملاحظة اختيارية</label>
-            <textarea name="note" rows="3" placeholder="أي تفاصيل تساعد المدير في المراجعة"></textarea>
-          </div>
-          <button class="btn" type="submit">إرسال الإثبات للمراجعة</button>
-        </form>
-      </section>
+      <div class="hub-field">
+        <label>ملاحظة اختيارية</label>
+        <textarea class="hub-textarea" name="note" rows="3" placeholder="أي تفاصيل تساعد المدير في المراجعة"></textarea>
+        <div class="hub-field-hint">مثال: اسم صاحب المحفظة، وقت الدفع، أو أي اختلاف في المبلغ.</div>
+      </div>
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-paper-plane"></i> إرسال الإثبات للمراجعة
+      </button>
+    </form>
+  {% endcall %}
+{% else %}
+  <div class="hub-flash hub-flash--warning">
+    <i class="fa-solid fa-{% if payment_request.status in ['proof_submitted', 'under_review'] %}clock{% elif payment_request.status == 'paid' %}circle-check{% else %}lock{% endif %}"></i>
+    {% if payment_request.status == "proof_submitted" or payment_request.status == "under_review" %}
+      بانتظار مراجعة الدفع من المدير.
+    {% elif payment_request.status == "paid" %}
+      تم قبول الدفع. سيتم متابعة التجهيز حسب حالة الطلب.
     {% else %}
-      <section class="flash warning" style="margin-top:16px">
-        {% if payment_request.status == "proof_submitted" or payment_request.status == "under_review" %}
-          بانتظار مراجعة الدفع من المدير.
-        {% elif payment_request.status == "paid" %}
-          تم قبول الدفع. سيتم متابعة التجهيز حسب حالة الطلب.
-        {% else %}
-          هذا الطلب غير مفتوح لإرسال إثبات جديد.
-        {% endif %}
-      </section>
+      هذا الطلب غير مفتوح لإرسال إثبات جديد.
     {% endif %}
+  </div>
+{% endif %}
 
-    {% if proofs %}
-      <section class="card" style="box-shadow:none;margin-top:16px">
-        <div class="section-head"><h2>الإثباتات المرسلة</h2></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>المرجع</th><th>الحالة</th><th>وقت الإرسال</th><th>ملاحظة</th></tr></thead>
-            <tbody>
-              {% for proof in proofs %}
-                <tr>
-                  <td class="mono">{{ proof.reference_number or '-' }}</td>
-                  <td>{{ proof.review_status or 'بانتظار المراجعة' }}</td>
-                  <td>{{ proof.submitted_at|dt }}</td>
-                  <td>{{ proof.note or '-' }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    {% endif %}
-  </main>
-</body>
-</html>
+{% if proofs %}
+  {% call hub.section("الإثباتات المرسلة", icon="list-check", meta=proofs|length ~ ' إثبات') %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead>
+          <tr>
+            <th>المرجع</th>
+            <th>الحالة</th>
+            <th class="date">وقت الإرسال</th>
+            <th>ملاحظة</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for proof in proofs %}
+            <tr>
+              <td class="mono">{{ proof.reference_number or '—' }}</td>
+              <td>{{ proof.review_status or 'بانتظار المراجعة' }}</td>
+              <td class="date">{{ proof.submitted_at|dt }}</td>
+              <td>{{ proof.note or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+{% endif %}
+{% endblock %}

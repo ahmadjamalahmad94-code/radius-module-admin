@@ -3,42 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>تسجيل الدخول - لوحة التراخيص</title>
+  <title>تسجيل الدخول — لوحة التراخيص</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
 </head>
-<body class="login-body">
-  <main class="login-card">
-    <div class="login-mark">HBR</div>
-    <h1>لوحة إدارة التراخيص</h1>
-    <p class="muted">دخول آمن لإدارة العملاء والاشتراكات ومفاتيح الترخيص.</p>
-    {% if bootstrap_mode %}
-      <div class="flash warning">وضع التهيئة المؤقت مفعل. استخدم دومين و HTTPS قبل الإنتاج.</div>
-    {% endif %}
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-stack">
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">{{ message }}</div>
-          {% endfor %}
+<body class="hub-auth-body">
+  <main class="hub-login">
+    <aside class="hub-login-brand">
+      <div class="hub-login-mark">HBR</div>
+      <div class="hub-login-headline">
+        <h2>لوحة إدارة التراخيص</h2>
+        <p>دخول آمن لإدارة العملاء، الاشتراكات، ومفاتيح الترخيص. كل عملية تسجل في سجل التدقيق.</p>
+      </div>
+      <ul class="hub-login-features">
+        <li><i class="fa-solid fa-key"></i> إصدار وتجديد مفاتيح الترخيص</li>
+        <li><i class="fa-solid fa-shield-halved"></i> تحكم خدمات VPN وتغيير IP</li>
+        <li><i class="fa-solid fa-credit-card"></i> مراجعة مدفوعات Manual Wallet</li>
+        <li><i class="fa-solid fa-shield-heart"></i> مراقبة فحوصات أنظمة العملاء</li>
+      </ul>
+    </aside>
+
+    <section class="hub-login-form">
+      <h1>أهلاً بعودتك</h1>
+      <p class="sub">سجل دخولك لمتابعة العملاء والتراخيص.</p>
+
+      {% if bootstrap_mode %}
+        <div class="hub-flash hub-flash--warning">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          وضع التهيئة المؤقت مفعل. استخدم دومين و HTTPS قبل الإنتاج.
         </div>
       {% endif %}
-    {% endwith %}
-    <form method="post" action="{{ url_for('auth.login_post') }}" class="grid">
-      {{ csrf_input() }}
-      <div class="form-row">
-        <label>اسم الدخول</label>
-        <input name="username" value="{{ username or '' }}" required autofocus>
-      </div>
-      <div class="form-row">
-        <label>كلمة المرور</label>
-        <input name="password" type="password" required>
-      </div>
-      <button class="btn" type="submit">دخول</button>
-    </form>
+
+      {% include "_partials/_flash.html" %}
+
+      <form method="post" action="{{ url_for('auth.login_post') }}" style="display:grid; gap:14px">
+        {{ csrf_input() }}
+
+        <div class="hub-field">
+          <label>اسم الدخول</label>
+          <div class="hub-input-icon">
+            <i class="fa-solid fa-user"></i>
+            <input class="hub-input" name="username" value="{{ username or '' }}" required autofocus autocomplete="username">
+          </div>
+          <div class="hub-field-hint">استخدم حساب المدير المعرّف في متغيرات بيئة السيرفر.</div>
+        </div>
+
+        <div class="hub-field">
+          <label>كلمة المرور</label>
+          <div class="hub-input-icon">
+            <i class="fa-solid fa-lock"></i>
+            <input class="hub-input" id="login-pwd" name="password" type="password" required autocomplete="current-password">
+            <button type="button" class="pwd-toggle" data-pwd-toggle="#login-pwd" aria-label="إظهار كلمة المرور">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-btn hub-btn--primary hub-btn--lg" type="submit">
+          <i class="fa-solid fa-right-to-bracket"></i> دخول
+        </button>
+
+        <p class="hub-field-hint" style="text-align:center; margin-top:4px">
+          إذا ظهر خطأ CSRF على عنوان IP عبر HTTP، فعادةً المشكلة من وضع النشر والكوكيز.
+        </p>
+      </form>
+    </section>
   </main>
 </body>
 </html>
-

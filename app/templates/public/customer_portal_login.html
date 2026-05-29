@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>دخول لوحة العميل</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
+</head>
+<body class="hub-auth-body">
+  <main class="hub-login">
+    <aside class="hub-login-brand">
+      <div class="hub-login-mark">HBR</div>
+      <div class="hub-login-headline">
+        <h2>لوحة العميل</h2>
+        <p>خدماتك، ترخيصك، المدفوعات، وطلبات الترقية من مكان واحد. كل ما تحتاجه لمتابعة اشتراكك.</p>
+      </div>
+      <ul class="hub-login-features">
+        <li><i class="fa-solid fa-key"></i> عرض حالة ترخيصك الحالية</li>
+        <li><i class="fa-solid fa-shield-halved"></i> طلب ترقية الخدمات (VPN وأكثر)</li>
+        <li><i class="fa-solid fa-credit-card"></i> متابعة طلبات الدفع وإرسال الإثبات</li>
+        <li><i class="fa-solid fa-arrow-up-right-from-square"></i> نسخ إعدادات الربط بالريدياس</li>
+      </ul>
+    </aside>
+
+    <section class="hub-login-form">
+      <h1>أهلاً بك</h1>
+      <p class="sub">سجل دخولك بحساب المدير الخاص بشركتك.</p>
+
+      {% include "_partials/_flash.html" %}
+
+      <form method="post" action="{{ url_for('public.customer_portal_login_post') }}" style="display:grid; gap:14px">
+        {{ csrf_input() }}
+
+        <div class="hub-field">
+          <label>اسم المستخدم أو البريد</label>
+          <div class="hub-input-icon">
+            <i class="fa-solid fa-user"></i>
+            <input class="hub-input" name="username" value="{{ username or '' }}" autocomplete="username" required autofocus>
+          </div>
+        </div>
+
+        <div class="hub-field">
+          <label>كلمة المرور</label>
+          <div class="hub-input-icon">
+            <i class="fa-solid fa-lock"></i>
+            <input class="hub-input" id="cust-pwd" name="password" type="password" autocomplete="current-password" required>
+            <button type="button" class="pwd-toggle" data-pwd-toggle="#cust-pwd" aria-label="إظهار كلمة المرور">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button class="hub-btn hub-btn--primary hub-btn--lg" type="submit">
+          <i class="fa-solid fa-right-to-bracket"></i> دخول
+        </button>
+
+        <div style="padding:10px 14px; background:var(--hub-violet-50); border:1px solid var(--hub-violet-100); border-radius:var(--hub-r-md); font-size:13px; color:var(--hub-ink-2); text-align:center">
+          ليس لديك حساب؟
+          <a href="{{ url_for('public.customer_portal_signup') }}" style="color:var(--hub-violet-d); font-weight:800">
+            أنشئ طلب حساب جديد
+          </a>
+          <div class="hub-field-hint" style="margin-top:4px">الطلب يبقى بانتظار موافقة الإدارة قبل التفعيل.</div>
+        </div>
+
+        <p class="hub-field-hint" style="text-align:center; margin-top:4px">
+          إذا تغيرت كلمة مرورك هنا، سيأخذ الريدياس الـ hash الجديد بعد مزامنة الهوية.
+        </p>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

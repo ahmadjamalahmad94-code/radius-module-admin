@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HoberRadius{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+
+  <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="hub-body">
+  <main style="max-width:1200px; margin:auto; padding:24px; display:grid; gap:16px">
+    {% block portal_topbar %}{% endblock %}
+    {% include "_partials/_flash.html" %}
+    {% block content %}{% endblock %}
+  </main>
+  {% include "_partials/_confirm_modal.html" %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

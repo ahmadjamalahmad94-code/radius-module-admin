@@ -4,12 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>طلب الدفع غير متاح</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="login-body">
-  <main class="login-card">
-    <h1>طلب الدفع غير متاح</h1>
-    <p class="muted">الرابط غير صحيح أو انتهت صلاحية الوصول لهذا الطلب.</p>
+<body class="hub-auth-body">
+  <main style="width: min(520px, 100%);">
+    <div class="hub-section">
+      <div class="hub-section-body" style="text-align:center; padding:40px 28px">
+        <div style="width:72px; height:72px; margin:0 auto 18px; border-radius:50%; display:grid; place-items:center; background:var(--hub-amber-50); color:var(--hub-amber); font-size:28px">
+          <i class="fa-solid fa-link-slash"></i>
+        </div>
+        <h1 style="margin:0 0 8px; font-size:22px; color:var(--hub-ink)">طلب الدفع غير متاح</h1>
+        <p style="margin:0 0 18px; color:var(--hub-ink-3); line-height:1.8; font-size:13.5px">
+          الرابط غير صحيح، أو انتهت صلاحية الطلب، أو تم إغلاقه بعد المراجعة.
+        </p>
+        <div class="hub-flash hub-flash--warning" style="text-align:start">
+          <i class="fa-solid fa-circle-info"></i>
+          تواصل مع الدعم واذكر رمز الدفع أو اسم الشركة حتى يتم إنشاء رابط جديد.
+        </div>
+      </div>
+    </div>
   </main>
 </body>
 </html>

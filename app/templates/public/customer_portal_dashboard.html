@@ -1,0 +1,214 @@
+{% extends "_partials/portal_base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}{{ customer.company_name }} — لوحة العميل{% endblock %}
+
+{% block portal_topbar %}
+<header style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 18px; background:var(--hub-surface); border:1px solid var(--hub-line); border-radius:var(--hub-r-lg); box-shadow:var(--hub-elev)">
+  <div style="display:flex; align-items:center; gap:12px">
+    <div class="hub-brand-mark">HBR</div>
+    <div>
+      <div style="font-weight:800; color:var(--hub-ink)">{{ customer.company_name }}</div>
+      <div style="font-size:12px; color:var(--hub-ink-mute)">لوحة العميل المركزية</div>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('public.customer_portal_logout') }}" style="margin:0">
+    {{ csrf_input() }}
+    <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit">
+      <i class="fa-solid fa-right-from-bracket"></i> خروج
+    </button>
+  </form>
+</header>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "أهلاً، " ~ customer.company_name,
+  subtitle="ملخص خدمات الترخيص والمدفوعات وطلبات الترقية الخاصة بشركتك.",
+  icon="building"
+) }}
+
+<div class="hub-grid-2">
+  {% call hub.section("الترخيص الحالي", icon="key") %}
+    <div class="hub-detail-list">
+      <div><span>المفتاح</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
+      <div><span>الحالة</span><strong>{{ contract.license.status|status_label }}</strong></div>
+      <div><span>ينتهي في</span><strong>{{ current_license.expires_at|date if current_license else '—' }}</strong></div>
+      <div><span>إصدار مستخدمي العميل</span><strong class="mono">{{ contract.customer_users_version }}</strong></div>
+    </div>
+  {% endcall %}
+
+  {% call hub.section("الحساب والريدياس", icon="user-shield") %}
+    <div class="hub-detail-list">
+      <div><span>المستخدم</span><strong class="mono">{{ customer_user.username }}</strong></div>
+      <div><span>password_version</span><strong class="mono">{{ customer_user.password_version }}</strong></div>
+      <div><span>رابط الريدياس / VPS</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
+    </div>
+  {% endcall %}
+</div>
+
+<div class="hub-grid-2">
+  {% call hub.section("الحدود الأساسية", icon="ruler-combined") %}
+    <div class="hub-detail-list">
+      <div><span>المشتركين</span><strong class="num">{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</strong></div>
+      <div><span>أجهزة NAS</span><strong class="num">{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</strong></div>
+      <div><span>المدراء</span><strong class="num">{{ contract.limits.admins.max_total if contract.limits.admins is defined else '—' }}</strong></div>
+    </div>
+  {% endcall %}
+
+  {% call hub.section("تغيير كلمة المرور", icon="lock") %}
+    <form method="post" action="{{ url_for('public.customer_portal_password_update') }}" style="display:grid; gap:10px">
+      {{ csrf_input() }}
+      <div class="hub-field">
+        <label>كلمة المرور الحالية</label>
+        <div class="hub-input-icon">
+          <i class="fa-solid fa-key"></i>
+          <input class="hub-input" id="cpw-cur" name="current_password" type="password" autocomplete="current-password" required>
+          <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-cur"><i class="fa-solid fa-eye"></i></button>
+        </div>
+      </div>
+      <div class="hub-field">
+        <label>كلمة المرور الجديدة</label>
+        <div class="hub-input-icon">
+          <i class="fa-solid fa-key"></i>
+          <input class="hub-input" id="cpw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+          <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-new"><i class="fa-solid fa-eye"></i></button>
+        </div>
+      </div>
+      <div class="hub-field">
+        <label>تأكيد كلمة المرور الجديدة</label>
+        <div class="hub-input-icon">
+          <i class="fa-solid fa-key"></i>
+          <input class="hub-input" id="cpw-cfm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+          <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-cfm"><i class="fa-solid fa-eye"></i></button>
+        </div>
+      </div>
+      <button class="hub-btn hub-btn--secondary" type="submit">
+        <i class="fa-solid fa-rotate"></i> تحديث كلمة المرور
+      </button>
+      <p class="hub-field-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم password hash الجديد بعد المزامنة.</p>
+    </form>
+  {% endcall %}
+</div>
+
+{% call hub.section("إعداد ربط الريدياس", icon="plug", meta='<span class="hub-pill hub-pill--violet"><i class="fa-solid fa-circle-info"></i> انسخ للسيرفر</span>') %}
+  {% if runtime_setup.available %}
+    <p class="hub-field-hint">انسخ هذه القيم إلى ملف البيئة على سيرفر الريدياس الخاص بك. لوحة التراخيص لا تدخل إلى سيرفرك ولا تعدل ملفاته.</p>
+    <div class="hub-form-grid" style="margin-top:14px">
+      <div class="hub-field">
+        <label>رابط لوحة التراخيص</label>
+        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.base_url }}">
+      </div>
+      <div class="hub-field">
+        <label>مفتاح الترخيص</label>
+        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.license_key }}">
+      </div>
+      <div class="hub-field full">
+        <label>سر التوقيع الخاص بهذا الترخيص</label>
+        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.integration_secret }}">
+      </div>
+      <div class="hub-field full">
+        <label>ملف البيئة الجاهز للنسخ</label>
+        <textarea class="hub-textarea mono ltr" readonly rows="10">{{ runtime_setup.env_snippet }}</textarea>
+        <div class="hub-field-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص.</div>
+      </div>
+    </div>
+  {% else %}
+    {{ hub.empty("لا يوجد ترخيص متاح لشركتك حتى الآن.", sub="تواصل مع الدعم لتفعيل أول ترخيص.", icon="key") }}
+  {% endif %}
+{% endcall %}
+
+{% call hub.section("الخدمات الفعالة وتفاصيلها", icon="shapes") %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الخدمة</th>
+          <th>الحالة</th>
+          <th>التفاصيل</th>
+          <th>طلب</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in service_catalog %}
+        {% set svc = contract.services.get(item.service_key, {}) %}
+        <tr>
+          <td>
+            <strong>{{ item.name_ar or item.name }}</strong>
+            <div class="hub-muted mono" style="font-size:11.5px">{{ item.service_key }}</div>
+          </td>
+          <td>
+            <span class="badge {{ svc.status|default('disabled')|badge_class }}">
+              {{ svc.status|default('disabled')|status_label }}
+            </span>
+          </td>
+          <td>
+            {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
+              تحميل <strong class="num">{{ svc.download_mbps }} Mbps</strong> · رفع <strong class="num">{{ svc.upload_mbps }} Mbps</strong> · مستخدمو VPN <strong class="num">{{ svc.max_vpn_users }}</strong>
+            {% elif svc.limits %}
+              <span class="mono" style="font-size:12px">{{ svc.limits }}</span>
+            {% else %}
+              <span class="hub-muted" style="font-size:12.5px">{{ item.description }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}" style="margin:0">
+              {{ csrf_input() }}
+              <input type="hidden" name="request_type" value="{{ 'upgrade' if svc.enabled else 'activation' }}">
+              <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
+                <i class="fa-solid fa-{{ 'arrow-up' if svc.enabled else 'play' }}"></i>
+                {{ 'طلب ترقية' if svc.enabled else 'طلب تفعيل' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+
+<div class="hub-grid-2">
+  {% call hub.section("طلبات الدفع", icon="credit-card") %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th>المرجع</th><th class="num">المبلغ</th><th>الحالة</th><th></th></tr></thead>
+        <tbody>
+        {% for req in payment_requests %}
+          <tr>
+            <td class="mono">{{ req.reference_code }}</td>
+            <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
+            <td><span class="badge {{ req.status|badge_class }}">{{ req.status|status_label }}</span></td>
+            <td>
+              <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('public.payment_portal', request_id=req.id, token=req.access_token) }}">
+                <i class="fa-solid fa-receipt"></i> الدفع/الإثبات
+              </a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">{{ hub.empty("لا توجد طلبات دفع.", icon="credit-card") }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+
+  {% call hub.section("طلبات الخدمات", icon="list-check") %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th></tr></thead>
+        <tbody>
+        {% for req in service_requests %}
+          <tr>
+            <td class="mono">{{ req.service_key }}</td>
+            <td>{{ req.request_type }}</td>
+            <td>{{ req.status|status_label }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">{{ hub.empty("لا توجد طلبات حالية.", icon="list-check") }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}
