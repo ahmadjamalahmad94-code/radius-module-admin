@@ -1014,7 +1014,7 @@ def license_create():
         starts_at=starts_at,
         expires_at=expires_at,
         grace_until=_dt("grace_until", expires_at + timedelta(days=default_grace_days())),
-        max_fingerprints=_int("max_fingerprints", plan.max_devices or 1),
+        max_fingerprints=_int("max_fingerprints", max(3, plan.max_devices or 3)),
         notes=(request.form.get("notes") or "").strip(),
     )
     db.session.add(lic)

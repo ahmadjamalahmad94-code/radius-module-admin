@@ -489,7 +489,7 @@ class License(TimestampMixin, db.Model):
     starts_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     grace_until = db.Column(db.DateTime)
-    max_fingerprints = db.Column(db.Integer, default=1, nullable=False)
+    max_fingerprints = db.Column(db.Integer, default=3, nullable=False)
     allowed_fingerprints_json = db.Column(db.Text, default="[]", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)
     last_check_at = db.Column(db.DateTime)
