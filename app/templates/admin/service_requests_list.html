@@ -1,0 +1,69 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}طلبات الخدمات{% endblock %}
+{% block page_title %}طلبات الخدمات والدعم{% endblock %}
+{% block page_subtitle %}صندوق مركزي لكل طلب تفعيل أو ترقية قبل تحويله إلى صلاحية يقرأها الريدياس.{% endblock %}
+
+{% block content %}
+{{ hub.hero("طلبات الخدمات", subtitle="كل طلب يصل هنا كتذكرة مفتوحة: مراجعة، دفع، تجربة، موافقة أو رفض.", icon="headset") }}
+
+{% call hub.section("تصفية الطلبات", icon="filter") %}
+  <form class="hub-filter-form" method="get">
+    <input class="hub-input" name="q" value="{{ q }}" placeholder="بحث بالعميل أو رقم الطلب أو الخدمة">
+    <select class="hub-input" name="status">
+      <option value="">كل الحالات</option>
+      {% for item in status_options %}
+        <option value="{{ item }}" {{ "selected" if status == item else "" }}>{{ item|service_request_status_label }}{% if counts.get(item) %} - {{ counts.get(item) }}{% endif %}</option>
+      {% endfor %}
+    </select>
+    <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> عرض</button>
+  </form>
+{% endcall %}
+
+{% call hub.section("صندوق الطلبات", icon="inbox", meta=service_requests|length ~ " طلب") %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الطلب</th>
+          <th>العميل</th>
+          <th>الخدمة</th>
+          <th>النوع</th>
+          <th>الدفع</th>
+          <th>الحالة</th>
+          <th class="date">آخر تحديث</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for req in service_requests %}
+        <tr>
+          <td>
+            <strong class="mono">{{ req.public_reference or ("SR-" ~ req.id) }}</strong>
+            <div class="hub-muted">{{ req.title }}</div>
+          </td>
+          <td>
+            <a href="{{ url_for('admin.customer_detail', customer_id=req.customer_id) }}">{{ req.customer.company_name }}</a>
+            <div class="hub-muted">{{ req.customer.contact_name or req.customer.email }}</div>
+          </td>
+          <td>{{ req.service_key|service_key_label }}</td>
+          <td>{{ req.request_type|request_type_label }}</td>
+          <td><span class="badge {{ req.payment_status|badge_class }}">{{ req.payment_status|status_label }}</span></td>
+          <td><span class="badge {{ req.status|badge_class }}">{{ req.status|service_request_status_label }}</span></td>
+          <td class="date">{{ req.updated_at|dt }}</td>
+          <td>
+            <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.service_request_detail', request_id=req.id) }}">
+              <i class="fa-solid fa-comments"></i> فتح
+            </a>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="8">{{ hub.empty("لا توجد طلبات خدمات حالياً.", sub="عندما يطلب العميل خدمة أو ترقية ستظهر هنا فوراً.", icon="inbox") }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

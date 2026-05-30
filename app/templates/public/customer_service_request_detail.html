@@ -1,0 +1,72 @@
+{% extends "_partials/portal_base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}{{ service_request.public_reference or ("SR-" ~ service_request.id) }}{% endblock %}
+
+{% block content %}
+<div class="hub-page">
+  <div class="hub-hero">
+    <div class="hub-hero-row">
+      <span class="hub-hero-icon"><i class="fa-solid fa-comments"></i></span>
+      <div class="hub-hero-text">
+        <h1 class="hub-hero-title">{{ service_request.title or (service_request.service_key|service_key_label) }}</h1>
+        <div class="hub-hero-sub">
+          {{ service_request.public_reference or ("SR-" ~ service_request.id) }} · {{ service_request.service_key|service_key_label }} · {{ service_request.status|service_request_status_label }}
+        </div>
+      </div>
+      <div class="hub-hero-actions">
+        <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('public.customer_portal_dashboard') }}">
+          <i class="fa-solid fa-arrow-right"></i> رجوع
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="hub-grid-2">
+    {% call hub.section("تفاصيل الطلب", icon="circle-info") %}
+      <div class="hub-detail-list">
+        <div><span>الخدمة</span><strong>{{ service_request.service_key|service_key_label }}</strong></div>
+        <div><span>نوع الطلب</span><strong>{{ service_request.request_type|request_type_label }}</strong></div>
+        <div><span>الحالة</span><strong><span class="badge {{ service_request.status|badge_class }}">{{ service_request.status|service_request_status_label }}</span></strong></div>
+        <div><span>الدفع</span><strong><span class="badge {{ service_request.payment_status|badge_class }}">{{ service_request.payment_status|status_label }}</span></strong></div>
+        <div><span>تاريخ الطلب</span><strong>{{ service_request.requested_at|dt }}</strong></div>
+      </div>
+      {% if payment_request %}
+        <a class="hub-btn hub-btn--primary hub-btn--sm" style="margin-top:12px" href="{{ url_for('public.payment_portal', request_id=payment_request.id, token=payment_request.access_token) }}">
+          <i class="fa-solid fa-receipt"></i> فتح صفحة الدفع والإثبات
+        </a>
+      {% endif %}
+    {% endcall %}
+
+    {% call hub.section("إرسال رسالة للإدارة", icon="paper-plane") %}
+      <form method="post" action="{{ url_for('public.customer_portal_service_request_reply', request_id=service_request.id) }}">
+        {{ csrf_input() }}
+        <div class="hub-field">
+          <label>رسالتك</label>
+          <textarea class="hub-textarea" name="message" rows="7" placeholder="اكتب استفسارك أو ملاحظتك حول الطلب"></textarea>
+        </div>
+        <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
+          <i class="fa-solid fa-paper-plane"></i> إرسال
+        </button>
+      </form>
+    {% endcall %}
+  </div>
+
+  {% call hub.section("المحادثة", icon="comments") %}
+    <div class="hub-stack">
+      {% for message in messages %}
+        <div class="hub-section" style="box-shadow:none; margin:0; border-radius:10px">
+          <div class="hub-section-body">
+            <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+              <strong>{% if message.sender_type == "admin" %}الإدارة{% elif message.sender_type == "customer" %}أنت{% else %}النظام{% endif %}</strong>
+              <span class="hub-muted">{{ message.created_at|dt }}</span>
+            </div>
+            <p style="white-space:pre-wrap; margin:10px 0 0">{{ message.body }}</p>
+          </div>
+        </div>
+      {% else %}
+        {{ hub.empty("لا توجد رسائل بعد.", icon="comments") }}
+      {% endfor %}
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}

@@ -343,17 +343,23 @@
   {% call hub.section("طلبات الخدمات", icon="list-check") %}
     <div class="hub-table-wrap">
       <table class="hub-table">
-        <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th><th class="date">الوقت</th></tr></thead>
+        <thead><tr><th>الطلب</th><th>الخدمة</th><th>النوع</th><th>الحالة</th><th class="date">الوقت</th><th></th></tr></thead>
         <tbody>
         {% for req in service_requests %}
           <tr>
+            <td class="mono">{{ req.public_reference or ("SR-" ~ req.id) }}</td>
             <td>{{ req.service_key|service_key_label }}</td>
             <td>{{ req.request_type|request_type_label }}</td>
-            <td>{{ req.status|status_label }}</td>
+            <td><span class="badge {{ req.status|badge_class }}">{{ req.status|service_request_status_label }}</span></td>
             <td class="date">{{ req.created_at|dt }}</td>
+            <td>
+              <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.service_request_detail', request_id=req.id) }}">
+                <i class="fa-solid fa-comments"></i> فتح
+              </a>
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="4">{{ hub.empty("لا توجد طلبات خدمات.", icon="list-check") }}</td></tr>
+          <tr><td colspan="6">{{ hub.empty("لا توجد طلبات خدمات.", icon="list-check") }}</td></tr>
         {% endfor %}
         </tbody>
       </table>

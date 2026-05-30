@@ -252,6 +252,7 @@ def ensure_schema_compatibility(app: Flask) -> None:
     if "customers" in tables:
         _add_columns_if_missing("customers", {
             "runtime_url": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
         })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
@@ -480,6 +481,12 @@ def _install_template_helpers(app: Flask) -> None:
 
         return service_request_type_label(str(value or ""))
 
+    @app.template_filter("service_request_status_label")
+    def service_request_status_label_filter(value):
+        from .services.customer_control import service_request_status_label
+
+        return service_request_status_label(str(value or ""))
+
     @app.template_filter("payment_purpose_label")
     def payment_purpose_label_filter(value):
         from .services.customer_control import payment_purpose_label
@@ -520,6 +527,10 @@ def _install_template_helpers(app: Flask) -> None:
             "unpaid": "غير مدفوع",
             "waived": "معفى",
             "pending": "بانتظار الدفع",
+            "not_required": "غير مطلوب",
+            "approved": "موافق عليه",
+            "completed": "مكتمل",
+            "trial_active": "تجربة مفعلة",
             "proof_submitted": "بانتظار المراجعة",
             "under_review": "قيد المراجعة",
             "rejected": "مرفوض",
@@ -551,6 +562,10 @@ def _install_template_helpers(app: Flask) -> None:
             "unpaid": "badge-orange",
             "waived": "badge-blue",
             "pending": "badge-amber",
+            "not_required": "badge-gray",
+            "approved": "badge-green",
+            "completed": "badge-green",
+            "trial_active": "badge-blue",
             "proof_submitted": "badge-blue",
             "under_review": "badge-blue",
             "rejected": "badge-red",

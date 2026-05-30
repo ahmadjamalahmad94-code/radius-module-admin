@@ -156,7 +156,7 @@ def check_license(
             # fingerprint.  Operators who truly want to hard-lock to one
             # server can set max_fingerprints = 1 explicitly; the floor
             # respects any value >= 3.
-            slot_limit = max(3, lic.max_fingerprints)
+            slot_limit = 1 if int(lic.max_fingerprints or 0) == 1 else max(3, int(lic.max_fingerprints or 0))
             if len(fingerprints) < slot_limit:
                 fingerprints.append(fingerprint)
                 lic.fingerprints = fingerprints

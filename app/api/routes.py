@@ -173,12 +173,22 @@ def hoberadius_service_requests():
         )
     except CustomerControlValidationError as exc:
         return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+    audit_customer_control(
+        actor_admin_id=None,
+        action="customer_service_request_created",
+        entity_type="customer_service_request",
+        entity_id=str(service_request.id),
+        summary=f"فتح الريدياس طلب خدمة {service_request.public_reference}",
+        metadata={"customer_id": result.license.customer_id, "service_key": service_request.service_key},
+    )
     db.session.commit()
     return jsonify({
         "ok": True,
         "status": "pending",
         "service_request": {
             "id": service_request.id,
+            "reference": service_request.public_reference,
+            "title": service_request.title,
             "service_key": service_request.service_key,
             "request_type": service_request.request_type,
             "status": service_request.status,

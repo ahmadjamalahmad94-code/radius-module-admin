@@ -293,6 +293,12 @@ class CustomerServiceRequest(TimestampMixin, db.Model):
     requested_by_admin = db.relationship("Admin", foreign_keys=[requested_by_admin_id])
     approved_by_admin = db.relationship("Admin", foreign_keys=[approved_by_admin_id])
     activated_by_admin = db.relationship("Admin", foreign_keys=[activated_by_admin_id])
+    messages = db.relationship(
+        "CustomerServiceRequestMessage",
+        back_populates="service_request",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
 
     @property
     def request_metadata(self) -> dict:
@@ -339,6 +345,38 @@ class CustomerServiceRequest(TimestampMixin, db.Model):
     @desired_limits.setter
     def desired_limits(self, value: dict) -> None:
         self.config_json = json_dumps(value or {})
+
+
+class CustomerServiceRequestMessage(TimestampMixin, db.Model):
+    __tablename__ = "customer_service_request_messages"
+    __table_args__ = (
+        db.Index("ix_customer_service_request_messages_request_created", "service_request_id", "created_at"),
+        db.Index("ix_customer_service_request_messages_customer_created", "customer_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_request_id = db.Column(db.Integer, db.ForeignKey("customer_service_requests.id"), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    customer_user_id = db.Column(db.Integer, db.ForeignKey("customer_users.id"), nullable=True, index=True)
+    sender_type = db.Column(db.String(30), default="system", nullable=False, index=True)
+    event_type = db.Column(db.String(60), default="message", nullable=False, index=True)
+    body = db.Column(db.Text, default="", nullable=False)
+    internal = db.Column(db.Boolean, default=False, nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+
+    service_request = db.relationship("CustomerServiceRequest", back_populates="messages")
+    customer = db.relationship("Customer")
+    admin = db.relationship("Admin")
+    customer_user = db.relationship("CustomerUser")
+
+    @property
+    def message_metadata(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @message_metadata.setter
+    def message_metadata(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
 
 
 class Plan(TimestampMixin, db.Model):

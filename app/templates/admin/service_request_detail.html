@@ -1,0 +1,204 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}{{ service_request.public_reference or ("SR-" ~ service_request.id) }}{% endblock %}
+{% block page_title %}{{ service_request.public_reference or ("SR-" ~ service_request.id) }}{% endblock %}
+{% block page_subtitle %}تذكرة خدمة مفتوحة بين العميل والإدارة. القرار النهائي يحدّث عقد الصلاحيات الذي يسحبه الريدياس.{% endblock %}
+
+{% block content %}
+<div class="hub-hero">
+  <div class="hub-hero-row">
+    <span class="hub-hero-icon"><i class="fa-solid fa-headset"></i></span>
+    <div class="hub-hero-text">
+      <h1 class="hub-hero-title">{{ service_request.title or (service_request.service_key|service_key_label) }}</h1>
+      <div class="hub-hero-sub">
+        {{ customer.company_name }} · {{ service_request.service_key|service_key_label }} · {{ service_request.request_type|request_type_label }}
+      </div>
+    </div>
+    <div class="hub-hero-actions">
+      <span class="hub-hero-chip"><i class="fa-solid fa-circle"></i> {{ service_request.status|service_request_status_label }}</span>
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.service_requests_list') }}">
+        <i class="fa-solid fa-arrow-right"></i> رجوع
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="hub-grid-2">
+  {% call hub.section("ملخص الطلب", icon="circle-info") %}
+    <div class="hub-detail-list">
+      <div><span>رقم الطلب</span><strong class="mono">{{ service_request.public_reference or ("SR-" ~ service_request.id) }}</strong></div>
+      <div><span>العميل</span><strong><a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">{{ customer.company_name }}</a></strong></div>
+      <div><span>الخدمة</span><strong>{{ service_request.service_key|service_key_label }}</strong></div>
+      <div><span>الحالة</span><strong><span class="badge {{ service_request.status|badge_class }}">{{ service_request.status|service_request_status_label }}</span></strong></div>
+      <div><span>الدفع</span><strong><span class="badge {{ service_request.payment_status|badge_class }}">{{ service_request.payment_status|status_label }}</span></strong></div>
+      <div><span>وقت الطلب</span><strong>{{ service_request.requested_at|dt }}</strong></div>
+      <div><span>آخر تحديث</span><strong>{{ service_request.updated_at|dt }}</strong></div>
+      {% if payment_request %}
+        <div><span>طلب الدفع</span><strong><a class="mono" href="{{ url_for('admin.payment_request_detail', payment_request_id=payment_request.id) }}">{{ payment_request.reference_code }}</a></strong></div>
+      {% endif %}
+    </div>
+  {% endcall %}
+
+  {% call hub.section("قرار الإدارة", icon="gavel") %}
+    <p class="hub-field-hint">الموافقة أو التجربة تحدث صلاحية العميل فوراً داخل عقد التشغيل. الريدياس يطبقها بعد المزامنة، وليس من هذه الصفحة مباشرة.</p>
+
+    <form method="post" action="{{ url_for('admin.service_request_approve', request_id=service_request.id) }}" style="margin-top:12px">
+      {{ csrf_input() }}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الترخيص المرتبط</label>
+          <select class="hub-input" name="license_id">
+            <option value="">اختيار تلقائي</option>
+            {% for lic in licenses %}
+              <option value="{{ lic.id }}" {{ "selected" if service_request.license_id == lic.id else "" }}>{{ lic.license_key }} - {{ lic.status|status_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="hub-field">
+          <label>ينتهي في</label>
+          <input class="hub-input" type="datetime-local" name="expires_at">
+        </div>
+        {% for key, label, hint in service_limit_fields %}
+          <div class="hub-field">
+            <label>{{ label }}</label>
+            <input class="hub-input" type="number" min="0" name="limit_{{ key }}" value="{{ desired_limits.get(key, '') }}">
+            <div class="hub-field-hint">{{ hint }}</div>
+          </div>
+        {% endfor %}
+        {% if service_request.service_key == "ip_change_vpn" %}
+          <div class="hub-field">
+            <label>باقة VPN</label>
+            <select class="hub-input" name="vpn_plan_id">
+              <option value="">اختيار تلقائي</option>
+              {% for plan in vpn_plans %}
+                <option value="{{ plan.id }}">{{ plan.name }} - {{ plan.download_mbps }}/{{ plan.upload_mbps }} ميجابت</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="hub-field">
+            <label>سرعة التحميل</label>
+            <input class="hub-input" type="number" min="1" name="download_mbps" value="{{ desired_limits.get('download_mbps', '') }}">
+          </div>
+          <div class="hub-field">
+            <label>سرعة الرفع</label>
+            <input class="hub-input" type="number" min="1" name="upload_mbps" value="{{ desired_limits.get('upload_mbps', '') }}">
+          </div>
+          <div class="hub-field">
+            <label>عدد مستخدمي VPN</label>
+            <input class="hub-input" type="number" min="1" name="max_vpn_users" value="{{ desired_limits.get('max_vpn_users', '') }}">
+          </div>
+          <div class="hub-field">
+            <label>عدد المواقع</label>
+            <input class="hub-input" type="number" min="1" name="max_locations" value="{{ desired_limits.get('max_locations', '') }}">
+          </div>
+        {% endif %}
+        <div class="hub-field full">
+          <label>ملاحظة الاعتماد</label>
+          <textarea class="hub-textarea" name="admin_note" rows="3" placeholder="تظهر للعميل داخل التذكرة">{{ service_request.admin_note }}</textarea>
+        </div>
+      </div>
+      <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:12px">
+        <i class="fa-solid fa-circle-check"></i> اعتماد وتفعيل الخدمة
+      </button>
+    </form>
+
+    <div style="border-top:1px dashed var(--hub-line); margin-top:16px; padding-top:14px">
+      <form method="post" action="{{ url_for('admin.service_request_open_trial', request_id=service_request.id) }}" class="hub-filter-form">
+        {{ csrf_input() }}
+        <input class="hub-input" type="number" min="1" max="365" name="trial_days" value="7" placeholder="أيام التجربة">
+        <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-clock"></i> فتح تجربة</button>
+      </form>
+    </div>
+
+    <div style="border-top:1px dashed var(--hub-line); margin-top:16px; padding-top:14px">
+      <form method="post" action="{{ url_for('admin.service_request_reject', request_id=service_request.id) }}">
+        {{ csrf_input() }}
+        <div class="hub-field">
+          <label>سبب الرفض</label>
+          <textarea class="hub-textarea" name="reason" rows="2" placeholder="اكتب سبباً واضحاً يظهر للعميل"></textarea>
+        </div>
+        <button class="hub-btn hub-btn--danger" type="submit" style="margin-top:10px">
+          <i class="fa-solid fa-circle-xmark"></i> رفض الطلب
+        </button>
+      </form>
+    </div>
+  {% endcall %}
+</div>
+
+<div class="hub-grid-2">
+  {% call hub.section("الدفع والتجربة", icon="credit-card") %}
+    {% if payment_request %}
+      <div class="hub-detail-list">
+        <div><span>مرجع الدفع</span><strong class="mono">{{ payment_request.reference_code }}</strong></div>
+        <div><span>المبلغ</span><strong class="num">{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
+        <div><span>الحالة</span><strong><span class="badge {{ payment_request.status|badge_class }}">{{ payment_request.status|status_label }}</span></strong></div>
+      </div>
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" style="margin-top:12px" href="{{ url_for('public.payment_portal', request_id=payment_request.id, token=payment_request.access_token) }}">
+        <i class="fa-solid fa-receipt"></i> رابط دفع العميل
+      </a>
+    {% else %}
+      <p class="hub-field-hint">استخدم هذا الخيار عندما تتفق مع العميل على مبلغ قبل التفعيل.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('admin.service_request_create_payment', request_id=service_request.id) }}" class="hub-filter-form" style="margin-top:12px">
+      {{ csrf_input() }}
+      <input class="hub-input" type="number" min="0.01" step="0.01" name="amount" value="{{ service_request.amount if service_request.amount else '' }}" placeholder="المبلغ">
+      <input class="hub-input" name="currency" value="{{ service_request.currency or 'USD' }}" placeholder="العملة">
+      <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-file-invoice-dollar"></i> إنشاء طلب دفع</button>
+    </form>
+    <form method="post" action="{{ url_for('admin.service_request_confirm_payment', request_id=service_request.id) }}" style="margin-top:12px">
+      {{ csrf_input() }}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>مرجع الاستلام</label>
+          <input class="hub-input" name="manual_reference" placeholder="رقم الحركة أو ملاحظة داخلية">
+        </div>
+        <div class="hub-field">
+          <label>المبلغ عند عدم وجود طلب دفع</label>
+          <input class="hub-input" type="number" min="0.01" step="0.01" name="amount" value="{{ service_request.amount if service_request.amount else '' }}">
+        </div>
+        <div class="hub-field full">
+          <label>ملاحظة مراجعة الدفع</label>
+          <textarea class="hub-textarea" name="review_note" rows="2">تم تأكيد استلام المبلغ من الإدارة.</textarea>
+        </div>
+      </div>
+      <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
+        <i class="fa-solid fa-hand-holding-dollar"></i> تأكيد استلام المبلغ
+      </button>
+    </form>
+  {% endcall %}
+
+  {% call hub.section("إضافة رد للعميل", icon="comment-dots") %}
+    <form method="post" action="{{ url_for('admin.service_request_reply', request_id=service_request.id) }}">
+      {{ csrf_input() }}
+      <div class="hub-field">
+        <label>الرسالة</label>
+        <textarea class="hub-textarea" name="message" rows="7" placeholder="اكتب ردك أو شروط التفعيل أو طلب معلومات إضافية"></textarea>
+      </div>
+      <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
+        <i class="fa-solid fa-paper-plane"></i> إرسال الرد
+      </button>
+    </form>
+  {% endcall %}
+</div>
+
+{% call hub.section("المحادثة وسجل القرار", icon="comments") %}
+  <div class="hub-stack">
+    {% for message in messages %}
+      <div class="hub-section" style="box-shadow:none; margin:0; border-radius:10px">
+        <div class="hub-section-body">
+          <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap">
+            <strong>
+              {% if message.sender_type == "admin" %}الإدارة{% elif message.sender_type == "customer" %}العميل{% else %}النظام{% endif %}
+              {% if message.internal %}<span class="badge badge-gray">داخلي</span>{% endif %}
+            </strong>
+            <span class="hub-muted">{{ message.created_at|dt }}</span>
+          </div>
+          <p style="white-space:pre-wrap; margin:10px 0 0">{{ message.body }}</p>
+        </div>
+      </div>
+    {% else %}
+      {{ hub.empty("لا توجد رسائل في هذه التذكرة بعد.", icon="comments") }}
+    {% endfor %}
+  </div>
+{% endcall %}
+{% endblock %}

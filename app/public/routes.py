@@ -7,6 +7,7 @@ from ..license_signing import license_integration_secret
 from ..models import Customer, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting
 from ..services.customer_control import (
     CustomerControlValidationError,
+    add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
     clean_username,
@@ -16,6 +17,7 @@ from ..services.customer_control import (
     service_catalog_items,
     service_label,
     service_limit_summary,
+    visible_service_request_messages,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
 )
@@ -246,6 +248,14 @@ def customer_portal_service_request(service_key: str):
                 "purpose": "capacity_increase",
                 "amount": amount,
             })
+        audit_customer_control(
+            actor_admin_id=None,
+            action="customer_service_request_created",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"فتح العميل طلب خدمة {service_request.public_reference}",
+            metadata={"customer_id": user.customer_id, "customer_user_id": user.id, "service_key": service_key},
+        )
     except (CustomerControlValidationError, LicensePaymentValidationError, ValueError) as exc:
         flash(payment_error_message(exc), "error")
         return redirect(url_for("public.customer_portal_dashboard"))
@@ -258,6 +268,53 @@ def customer_portal_service_request(service_key: str):
     verb = "ترقية" if req_type == "upgrade" else "تفعيل"
     flash(f"تم تسجيل طلب {verb} خدمة «{svc_name}» بنجاح. ستتم مراجعته وإشعارك عند التفعيل.", "success")
     return redirect(url_for("public.customer_portal_dashboard"))
+
+
+@bp.get("/portal/service-requests/<int:request_id>")
+def customer_portal_service_request_detail(request_id: int):
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    service_request = CustomerServiceRequest.query.filter_by(id=request_id, customer_id=user.customer_id).first_or_404()
+    return render_template(
+        "public/customer_service_request_detail.html",
+        customer=user.customer,
+        customer_user=user,
+        service_request=service_request,
+        messages=visible_service_request_messages(service_request),
+        payment_request=service_request.payment_request,
+    )
+
+
+@bp.post("/portal/service-requests/<int:request_id>/reply")
+def customer_portal_service_request_reply(request_id: int):
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    service_request = CustomerServiceRequest.query.filter_by(id=request_id, customer_id=user.customer_id).first_or_404()
+    try:
+        add_service_request_message(
+            service_request,
+            sender_type="customer",
+            customer_user_id=user.id,
+            body=request.form.get("message") or "",
+        )
+        if service_request.status == "pending":
+            service_request.status = "under_review"
+        audit_customer_control(
+            actor_admin_id=None,
+            action="customer_service_request_replied",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"رد العميل على طلب الخدمة {service_request.public_reference}",
+            metadata={"customer_id": user.customer_id, "customer_user_id": user.id},
+        )
+        db.session.commit()
+        flash("تم إرسال رسالتك للإدارة.", "success")
+    except CustomerControlValidationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("public.customer_portal_service_request_detail", request_id=service_request.id))
 
 
 def _current_customer_user() -> CustomerUser | None:

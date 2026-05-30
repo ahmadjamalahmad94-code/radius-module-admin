@@ -14,6 +14,7 @@ from ..models import (
     Customer,
     CustomerServiceEntitlement,
     CustomerServiceRequest,
+    CustomerServiceRequestMessage,
     CustomerUser,
     CustomerVpnEntitlement,
     License,
@@ -31,9 +32,11 @@ from ..models import (
 )
 from ..services.customer_control import (
     CustomerControlValidationError,
+    add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
     clean_role_key,
+    clean_service_request_status,
     clean_service_key,
     clean_service_status,
     clean_username,
@@ -64,6 +67,7 @@ from ..services.license_payments import (
     LicensePaymentReviewService,
     LicensePaymentValidationError,
     PlatformPaymentSettingsRepository,
+    LicensePaymentProofService,
     instructions_for_request,
     payment_error_message,
     request_to_dict,
@@ -229,6 +233,150 @@ def _sync_generic_vpn_entitlement(customer: Customer, entitlement: CustomerServi
         db.session.add(vpn_entitlement)
 
 
+def _service_request_status_options() -> tuple[str, ...]:
+    return (
+        "pending",
+        "under_review",
+        "payment_pending",
+        "trial_active",
+        "approved",
+        "rejected",
+        "completed",
+        "cancelled",
+    )
+
+
+def _service_request_query(status: str = "", q: str = ""):
+    query = CustomerServiceRequest.query.join(Customer)
+    if status:
+        query = query.filter(CustomerServiceRequest.status == status)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            CustomerServiceRequest.public_reference.ilike(like)
+            | CustomerServiceRequest.title.ilike(like)
+            | Customer.company_name.ilike(like)
+            | Customer.contact_name.ilike(like)
+            | Customer.email.ilike(like)
+        )
+    return query.order_by(CustomerServiceRequest.updated_at.desc(), CustomerServiceRequest.created_at.desc())
+
+
+def _request_amount(default_amount=None) -> Decimal:
+    raw = request.form.get("amount")
+    if raw not in (None, ""):
+        return parse_service_decimal(raw, field="amount") or Decimal("0")
+    if default_amount not in (None, ""):
+        return Decimal(default_amount)
+    return Decimal("0")
+
+
+def _request_trial_expiry() -> datetime:
+    expires_at = parse_optional_datetime(request.form.get("expires_at"))
+    if expires_at:
+        return expires_at
+    days = _int("trial_days", 7)
+    days = max(1, min(days, 365))
+    return utcnow() + timedelta(days=days)
+
+
+def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expires_at: datetime | None = None) -> None:
+    customer = service_request.customer
+    vpn_entitlement = get_or_create_customer_vpn_entitlement(customer)
+    selected_license = customer.licenses.filter_by(id=_int("license_id")).first() if request.form.get("license_id") else find_best_customer_license(customer)
+    selected_plan = None
+    if request.form.get("vpn_plan_id"):
+        selected_plan = VpnServicePlan.query.filter_by(id=_int("vpn_plan_id"), is_active=True).first()
+        if not selected_plan:
+            raise CustomerControlValidationError("باقة خدمة تغيير العنوان غير صحيحة.")
+    if not selected_plan and not vpn_entitlement.vpn_plan_id:
+        selected_plan = VpnServicePlan.query.filter_by(is_active=True).order_by(VpnServicePlan.download_mbps.asc()).first()
+    if selected_plan:
+        apply_plan_defaults(vpn_entitlement, selected_plan)
+
+    desired = service_request.desired_limits or {}
+    if request.form.get("download_mbps") or desired.get("download_mbps"):
+        vpn_entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps") or desired.get("download_mbps"), "download_mbps")
+    if request.form.get("upload_mbps") or desired.get("upload_mbps"):
+        vpn_entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps") or desired.get("upload_mbps"), "upload_mbps")
+    if request.form.get("max_vpn_users") or desired.get("max_vpn_users"):
+        vpn_entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users") or desired.get("max_vpn_users"), "max_vpn_users")
+    if request.form.get("max_locations") or desired.get("max_locations"):
+        vpn_entitlement.max_locations = validate_positive_limit(request.form.get("max_locations") or desired.get("max_locations"), "max_locations")
+    if not vpn_entitlement.download_mbps:
+        vpn_entitlement.download_mbps = 10
+    if not vpn_entitlement.upload_mbps:
+        vpn_entitlement.upload_mbps = 10
+    if not vpn_entitlement.max_vpn_users:
+        vpn_entitlement.max_vpn_users = 10
+    if not vpn_entitlement.max_locations:
+        vpn_entitlement.max_locations = 1
+    vpn_entitlement.license_id = selected_license.id if selected_license else None
+    vpn_entitlement.enabled = True
+    vpn_entitlement.status = "active"
+    vpn_entitlement.expires_at = expires_at
+    vpn_entitlement.notes = (request.form.get("admin_note") or service_request.admin_note or "").strip()[:2000]
+    vpn_entitlement.updated_by_admin_id = session.get("admin_id")
+    validate_customer_vpn_entitlement(vpn_entitlement)
+    db.session.add(vpn_entitlement)
+
+
+def _apply_generic_service_request(service_request: CustomerServiceRequest, *, expires_at: datetime | None = None) -> CustomerServiceEntitlement:
+    customer = service_request.customer
+    key = clean_service_key(service_request.service_key)
+    entitlement = get_or_create_service_entitlement(customer, key)
+    selected_license = customer.licenses.filter_by(id=_int("license_id")).first() if request.form.get("license_id") else find_best_customer_license(customer)
+    entitlement.license_id = selected_license.id if selected_license else None
+    entitlement.status = "active"
+    entitlement.enabled = True
+    entitlement.plan_code = (request.form.get("plan_code") or entitlement.plan_code or "").strip()[:80]
+    limits = _service_limits_from_request(key)
+    if not limits:
+        limits = service_request.desired_limits or {}
+    entitlement.limits = limits
+    entitlement.config = parse_json_object(request.form.get("config_json"), field="إعدادات الخدمة") if "config_json" in request.form else entitlement.config
+    entitlement.price_monthly = parse_service_decimal(request.form.get("price_monthly"), field="price_monthly") if request.form.get("price_monthly") else entitlement.price_monthly
+    entitlement.expires_at = expires_at
+    entitlement.notes = (request.form.get("admin_note") or service_request.admin_note or "").strip()[:2000]
+    entitlement.updated_by_admin_id = session.get("admin_id")
+    db.session.add(entitlement)
+    if key == "ip_change_vpn":
+        _apply_vpn_service_request(service_request, expires_at=expires_at)
+    return entitlement
+
+
+def _mark_service_request(
+    service_request: CustomerServiceRequest,
+    status: str,
+    *,
+    note: str = "",
+    event_type: str = "status",
+    public: bool = True,
+) -> None:
+    service_request.status = clean_service_request_status(status)
+    service_request.admin_note = (note or service_request.admin_note or "").strip()[:2000]
+    now = utcnow()
+    if status in {"approved", "active", "trial_active"}:
+        service_request.approved_by_admin_id = session.get("admin_id")
+        service_request.approved_at = service_request.approved_at or now
+    if status in {"approved", "active", "trial_active", "completed"}:
+        service_request.activated_by_admin_id = session.get("admin_id")
+        service_request.activated_at = service_request.activated_at or now
+    if status == "completed":
+        service_request.completed_at = service_request.completed_at or now
+    if status == "rejected":
+        service_request.rejected_at = service_request.rejected_at or now
+    if public:
+        add_service_request_message(
+            service_request,
+            sender_type="admin",
+            admin_id=session.get("admin_id"),
+            event_type=event_type,
+            body=note or "تم تحديث حالة طلب الخدمة.",
+        )
+    db.session.add(service_request)
+
+
 @bp.get("/")
 @bp.get("/dashboard")
 @login_required
@@ -318,6 +466,268 @@ def customer_detail(customer_id: int):
         service_limit_summary=service_limit_summary,
         customer_backups=list_customer_backups(customer.id),
     )
+
+
+@bp.get("/service-requests")
+@login_required
+def service_requests_list():
+    status = (request.args.get("status") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    if status:
+        try:
+            clean_service_request_status(status)
+        except CustomerControlValidationError:
+            status = ""
+    service_requests = _service_request_query(status=status, q=q).all()
+    counts = {
+        item_status: count
+        for item_status, count in db.session.query(CustomerServiceRequest.status, func.count(CustomerServiceRequest.id)).group_by(CustomerServiceRequest.status).all()
+    }
+    return render_template(
+        "admin/service_requests_list.html",
+        service_requests=service_requests,
+        status=status,
+        q=q,
+        counts=counts,
+        status_options=_service_request_status_options(),
+    )
+
+
+@bp.get("/service-requests/<int:request_id>")
+@login_required
+def service_request_detail(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    customer = service_request.customer
+    return render_template(
+        "admin/service_request_detail.html",
+        service_request=service_request,
+        customer=customer,
+        messages=service_request.messages.order_by(CustomerServiceRequestMessage.created_at.asc()).all(),
+        current_license=find_best_customer_license(customer),
+        licenses=customer.licenses.order_by(License.created_at.desc()).all(),
+        payment_request=service_request.payment_request,
+        service_limit_fields=service_limit_fields(service_request.service_key),
+        vpn_plans=VpnServicePlan.query.filter_by(is_active=True).order_by(VpnServicePlan.download_mbps.asc()).all(),
+        desired_limits=service_request.desired_limits or {},
+    )
+
+
+@bp.post("/service-requests/<int:request_id>/reply")
+@login_required
+def service_request_reply(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    message = (request.form.get("message") or "").strip()
+    try:
+        add_service_request_message(
+            service_request,
+            sender_type="admin",
+            admin_id=session.get("admin_id"),
+            body=message,
+        )
+        if service_request.status == "pending":
+            service_request.status = "under_review"
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_request_replied",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"تمت إضافة رد على طلب الخدمة {service_request.public_reference}",
+            metadata={"customer_id": service_request.customer_id, "service_key": service_request.service_key},
+        )
+        db.session.commit()
+        flash("تم إرسال الرد للعميل داخل صفحة الرسائل.", "success")
+    except CustomerControlValidationError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+
+
+@bp.post("/service-requests/<int:request_id>/payment-request")
+@login_required
+def service_request_create_payment(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    catalog_item = ServiceCatalogItem.query.filter_by(service_key=service_request.service_key).first()
+    try:
+        amount = _request_amount(catalog_item.price_monthly if catalog_item else None)
+        if amount <= 0:
+            raise CustomerControlValidationError("المبلغ يجب أن يكون أكبر من صفر.")
+        payment_request = LicensePaymentRequestService().create_request({
+            "customer_id": service_request.customer_id,
+            "license_id": request.form.get("license_id") or (service_request.license_id or ""),
+            "purpose": request.form.get("purpose") or "capacity_increase",
+            "amount": amount,
+            "currency": request.form.get("currency") or _setting("default_currency", "USD"),
+        })
+        service_request.payment_request_id = payment_request.id
+        service_request.amount = payment_request.amount
+        service_request.currency = payment_request.currency
+        service_request.payment_status = "pending"
+        _mark_service_request(
+            service_request,
+            "payment_pending",
+            note=(
+                f"تم إنشاء طلب دفع بقيمة {payment_request.amount} {payment_request.currency}. "
+                "ارفع إثبات الدفع من صفحة الدفع ليتم اعتماد الخدمة."
+            ),
+            event_type="payment_request",
+        )
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_request_payment_requested",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"تم إنشاء طلب دفع لطلب الخدمة {service_request.public_reference}",
+            metadata={"payment_request_id": payment_request.id, "customer_id": service_request.customer_id},
+        )
+        db.session.commit()
+        flash("تم إنشاء طلب الدفع وربطه بتذكرة الخدمة.", "success")
+    except (CustomerControlValidationError, LicensePaymentValidationError, ValueError) as exc:
+        db.session.rollback()
+        flash(payment_error_message(exc), "error")
+    return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+
+
+@bp.post("/service-requests/<int:request_id>/confirm-payment")
+@login_required
+def service_request_confirm_payment(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    try:
+        payment_request = service_request.payment_request
+        if not payment_request:
+            catalog_item = ServiceCatalogItem.query.filter_by(service_key=service_request.service_key).first()
+            amount = _request_amount(catalog_item.price_monthly if catalog_item else None)
+            if amount <= 0:
+                raise CustomerControlValidationError("حدد المبلغ المستلم قبل تأكيد الدفع.")
+            payment_request = LicensePaymentRequestService().create_request({
+                "customer_id": service_request.customer_id,
+                "license_id": request.form.get("license_id") or (service_request.license_id or ""),
+                "purpose": request.form.get("purpose") or "capacity_increase",
+                "amount": amount,
+                "currency": request.form.get("currency") or _setting("default_currency", "USD"),
+            })
+            service_request.payment_request_id = payment_request.id
+            service_request.amount = payment_request.amount
+            service_request.currency = payment_request.currency
+        if payment_request.status == "pending":
+            LicensePaymentProofService().submit_manual_proof(
+                payment_request=payment_request,
+                reference_number=request.form.get("manual_reference") or f"manual:{payment_request.reference_code}",
+                note=request.form.get("review_note") or "تأكيد استلام يدوي من الإدارة.",
+            )
+        if payment_request.status in {"proof_submitted", "under_review"}:
+            LicensePaymentReviewService().approve(
+                payment_request=payment_request,
+                reviewed_by=session.get("admin_id"),
+                review_note=request.form.get("review_note") or "تم تأكيد استلام المبلغ من الإدارة.",
+            )
+        service_request.payment_status = "paid"
+        if service_request.status in {"pending", "payment_pending"}:
+            service_request.status = "under_review"
+        add_service_request_message(
+            service_request,
+            sender_type="admin",
+            admin_id=session.get("admin_id"),
+            event_type="payment_confirmed",
+            body="تم تأكيد استلام المبلغ. الطلب بانتظار قرار التفعيل النهائي من الإدارة.",
+        )
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_request_payment_confirmed",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"تم تأكيد دفع طلب الخدمة {service_request.public_reference}",
+            metadata={"payment_request_id": payment_request.id, "customer_id": service_request.customer_id},
+        )
+        db.session.commit()
+        flash("تم تأكيد الدفع. لم يتم تفعيل الخدمة إلا إذا ضغطت اعتماد وتفعيل.", "success")
+    except (CustomerControlValidationError, LicensePaymentValidationError, ValueError) as exc:
+        db.session.rollback()
+        flash(payment_error_message(exc), "error")
+    return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+
+
+@bp.post("/service-requests/<int:request_id>/trial")
+@login_required
+def service_request_open_trial(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    try:
+        expires_at = _request_trial_expiry()
+        _apply_generic_service_request(service_request, expires_at=expires_at)
+        _mark_service_request(
+            service_request,
+            "trial_active",
+            note=f"تم فتح تجربة للخدمة حتى {expires_at.strftime('%Y-%m-%d')}.",
+            event_type="trial",
+        )
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_request_trial_opened",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"تم فتح تجربة لطلب الخدمة {service_request.public_reference}",
+            metadata={"customer_id": service_request.customer_id, "service_key": service_request.service_key},
+        )
+        db.session.commit()
+        flash("تم فتح التجربة. الريدياس سيأخذ الصلاحية عند المزامنة القادمة.", "success")
+    except (CustomerControlValidationError, VpnEntitlementValidationError) as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+
+
+@bp.post("/service-requests/<int:request_id>/approve")
+@login_required
+def service_request_approve(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    try:
+        _apply_generic_service_request(service_request, expires_at=parse_optional_datetime(request.form.get("expires_at")))
+        _mark_service_request(
+            service_request,
+            "approved",
+            note=request.form.get("admin_note") or "تمت الموافقة على الطلب وتفعيل الخدمة.",
+            event_type="approved",
+        )
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_request_approved",
+            entity_type="customer_service_request",
+            entity_id=str(service_request.id),
+            summary=f"تم اعتماد طلب الخدمة {service_request.public_reference}",
+            metadata={"customer_id": service_request.customer_id, "service_key": service_request.service_key},
+        )
+        db.session.commit()
+        flash("تم اعتماد الطلب وتحديث صلاحيات العميل. الريدياس يطبقها بعد المزامنة.", "success")
+    except (CustomerControlValidationError, VpnEntitlementValidationError) as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+    return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+
+
+@bp.post("/service-requests/<int:request_id>/reject")
+@login_required
+def service_request_reject(request_id: int):
+    service_request = db.get_or_404(CustomerServiceRequest, request_id)
+    reason = (request.form.get("reason") or "").strip()
+    if not reason:
+        flash("سبب الرفض مطلوب حتى يفهم العميل القرار.", "error")
+        return redirect(url_for("admin.service_request_detail", request_id=service_request.id))
+    _mark_service_request(
+        service_request,
+        "rejected",
+        note=reason,
+        event_type="rejected",
+    )
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="customer_service_request_rejected",
+        entity_type="customer_service_request",
+        entity_id=str(service_request.id),
+        summary=f"تم رفض طلب الخدمة {service_request.public_reference}",
+        metadata={"customer_id": service_request.customer_id, "service_key": service_request.service_key},
+    )
+    db.session.commit()
+    flash("تم رفض الطلب وإرسال السبب للعميل داخل صفحة الرسائل.", "warning")
+    return redirect(url_for("admin.service_requests_list"))
 
 
 _ALLOWED_PORTAL_SECTIONS = frozenset({

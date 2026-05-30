@@ -13,8 +13,11 @@ from app.models import (
     AuditLog,
     Customer,
     CustomerServiceEntitlement,
+    CustomerServiceRequest,
+    CustomerServiceRequestMessage,
     CustomerUser,
     License,
+    LicensePaymentRequest,
     Plan,
     PlatformPaymentSettings,
     ServiceCatalogItem,
@@ -89,6 +92,21 @@ def test_init_database_upgrades_old_license_payment_request_schema(tmp_path):
     )
     with app.app_context():
         db.session.execute(text("""
+            CREATE TABLE customers (
+                id INTEGER PRIMARY KEY,
+                company_name VARCHAR(180) NOT NULL,
+                contact_name VARCHAR(160) NOT NULL DEFAULT '',
+                email VARCHAR(180) NOT NULL DEFAULT '',
+                phone VARCHAR(80) NOT NULL DEFAULT '',
+                country VARCHAR(100) NOT NULL DEFAULT '',
+                city VARCHAR(100) NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """))
+        db.session.execute(text("""
             CREATE TABLE license_payment_requests (
                 id INTEGER PRIMARY KEY,
                 customer_id INTEGER NOT NULL,
@@ -134,6 +152,8 @@ def test_init_database_upgrades_old_license_payment_request_schema(tmp_path):
             "ready_at",
             "assigned_operator",
         }.issubset(provisioning_columns)
+        customer_columns = {column["name"] for column in inspect(db.engine).get_columns("customers")}
+        assert {"runtime_url", "portal_config_json"}.issubset(customer_columns)
 
 
 def test_customer_user_create_edit_disable_and_portal_login(client):
@@ -558,3 +578,103 @@ def test_service_payment_request_uses_existing_manual_wallet(client):
 
     assert res.status_code == 302
     assert AuditLog.query.filter_by(action="customer_service_payment_request_created").count() == 1
+
+
+def test_customer_service_request_opens_ticket_and_admin_pages_render(client):
+    customer, _lic = _customer_with_license()
+    user = CustomerUser(
+        customer_id=customer.id,
+        username="portal-owner",
+        email="portal-owner@example.com",
+        full_name="Portal Owner",
+        role_key="owner",
+        active=True,
+    )
+    user.set_password("Secret123!", increment_version=False)
+    db.session.add(user)
+    db.session.commit()
+
+    login = client.post("/portal/login", data={"username": "portal-owner", "password": "Secret123!"})
+    assert login.status_code == 302
+    created = client.post("/portal/services/cards/request", data={
+        "request_type": "activation",
+        "notes": "نريد تفعيل خدمة الكروت.",
+    })
+    assert created.status_code == 302
+
+    ticket = CustomerServiceRequest.query.filter_by(customer_id=customer.id, service_key="cards").one()
+    assert ticket.public_reference.startswith("SR-")
+    assert ticket.status == "pending"
+    assert CustomerServiceRequestMessage.query.filter_by(service_request_id=ticket.id, internal=False).count() == 1
+
+    portal_detail = client.get(f"/portal/service-requests/{ticket.id}")
+    assert portal_detail.status_code == 200
+    assert ticket.public_reference in portal_detail.get_data(as_text=True)
+
+    _login(client)
+    admin_list = client.get("/admin/service-requests")
+    assert admin_list.status_code == 200
+    assert ticket.public_reference in admin_list.get_data(as_text=True)
+    admin_detail = client.get(f"/admin/service-requests/{ticket.id}")
+    assert admin_detail.status_code == 200
+    assert "اعتماد وتفعيل الخدمة" in admin_detail.get_data(as_text=True)
+
+
+def test_admin_service_request_payment_confirm_and_approve_updates_contract(client):
+    client.application.config["LICENSE_CHECK_HMAC_SECRET"] = SIGNING_SECRET
+    _login(client)
+    customer, lic = _customer_with_license()
+    db.session.add(PlatformPaymentSettings(
+        enabled=True,
+        provider="manual_wallet",
+        wallet_number="0599999999",
+        wallet_owner_name="Hobe",
+        currency="USD",
+    ))
+    request_row = CustomerServiceRequest(
+        public_reference="SR-TESTPAY",
+        customer_id=customer.id,
+        license_id=lic.id,
+        service_key="cards",
+        title="طلب تفعيل الكروت",
+        status="pending",
+        payment_status="not_required",
+    )
+    request_row.request_type = "activation"
+    db.session.add(request_row)
+    db.session.commit()
+
+    payment = client.post(f"/admin/service-requests/{request_row.id}/payment-request", data={
+        "amount": "25",
+        "currency": "USD",
+    })
+    assert payment.status_code == 302
+    db.session.refresh(request_row)
+    assert request_row.status == "payment_pending"
+    assert request_row.payment_request_id is not None
+
+    confirmed = client.post(f"/admin/service-requests/{request_row.id}/confirm-payment", data={
+        "review_note": "تم استلام المبلغ نقداً.",
+    })
+    assert confirmed.status_code == 302
+    db.session.refresh(request_row)
+    payment_request = db.session.get(LicensePaymentRequest, request_row.payment_request_id)
+    assert payment_request.status == "paid"
+    assert request_row.payment_status == "paid"
+
+    approved = client.post(f"/admin/service-requests/{request_row.id}/approve", data={
+        "license_id": str(lic.id),
+        "limit_generate_per_batch": "200",
+        "admin_note": "تم التفعيل بعد اعتماد الدفع.",
+    })
+    assert approved.status_code == 302
+    db.session.refresh(request_row)
+    entitlement = CustomerServiceEntitlement.query.filter_by(customer_id=customer.id, service_key="cards").one()
+    assert request_row.status == "approved"
+    assert entitlement.enabled is True
+    assert entitlement.status == "active"
+    assert entitlement.limits["generate_per_batch"] == 200
+    contract = client.post("/api/integration/hoberadius/runtime-contract", json=_signed_payload(lic.license_key), base_url="https://license-panel.test")
+    assert contract.status_code == 200
+    assert contract.get_json()["services"]["cards"]["enabled"] is True
+    assert AuditLog.query.filter_by(action="customer_service_request_approved").count() == 1

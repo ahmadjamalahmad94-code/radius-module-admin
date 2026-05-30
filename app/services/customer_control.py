@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -14,6 +15,7 @@ from ..models import (
     Customer,
     CustomerServiceEntitlement,
     CustomerServiceRequest,
+    CustomerServiceRequestMessage,
     CustomerUser,
     License,
     ServiceCatalogItem,
@@ -24,6 +26,18 @@ from .vpn_entitlements import SERVICE_KEY as VPN_SERVICE_KEY
 from .vpn_entitlements import vpn_services_contract_for_license
 
 SERVICE_STATUS_ALLOWLIST = {"active", "suspended", "expired", "disabled"}
+SERVICE_REQUEST_STATUS_ALLOWLIST = {
+    "pending",
+    "under_review",
+    "payment_pending",
+    "trial_active",
+    "approved",
+    "active",
+    "rejected",
+    "cancelled",
+    "completed",
+}
+SERVICE_REQUEST_SENDER_TYPES = {"customer", "admin", "system"}
 ROLE_KEYS = {"owner", "admin", "support", "billing", "viewer"}
 SERVICE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,79}$")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{3,80}$")
@@ -560,6 +574,18 @@ SERVICE_REQUEST_TYPE_LABELS = {
     "support": "طلب مساعدة",
 }
 
+SERVICE_REQUEST_STATUS_LABELS = {
+    "pending": "جديد",
+    "under_review": "قيد المراجعة",
+    "payment_pending": "بانتظار الدفع",
+    "trial_active": "تجربة مفعلة",
+    "approved": "موافق عليه",
+    "active": "مفعل",
+    "rejected": "مرفوض",
+    "cancelled": "ملغي",
+    "completed": "مكتمل",
+}
+
 PAYMENT_PURPOSE_LABELS = {
     "new_subscription": "اشتراك جديد",
     "renewal": "تجديد",
@@ -587,6 +613,13 @@ AUDIT_ACTION_LABELS = {
     "customer_service_entitlement_updated": "تحديث خدمة عميل",
     "customer_service_payment_request_created": "إنشاء طلب دفع خدمة",
     "customer_service_request_created": "إنشاء طلب خدمة",
+    "customer_service_request_updated": "تحديث طلب خدمة",
+    "customer_service_request_replied": "إضافة رد على طلب خدمة",
+    "customer_service_request_payment_requested": "طلب دفع لخدمة",
+    "customer_service_request_payment_confirmed": "تأكيد دفع خدمة",
+    "customer_service_request_trial_opened": "فتح تجربة خدمة",
+    "customer_service_request_approved": "اعتماد طلب خدمة",
+    "customer_service_request_rejected": "رفض طلب خدمة",
     "customer_vpn_entitlement_updated": "تحديث خدمة الشبكة الخاصة للعميل",
     "plan_created": "إنشاء خطة",
     "plan_updated": "تحديث خطة",
@@ -758,6 +791,67 @@ def service_request_type_label(value: str) -> str:
     return SERVICE_REQUEST_TYPE_LABELS.get(str(value or "").strip(), str(value or "—"))
 
 
+def service_request_status_label(value: str) -> str:
+    return SERVICE_REQUEST_STATUS_LABELS.get(str(value or "").strip(), str(value or "—"))
+
+
+def clean_service_request_status(value: str) -> str:
+    status = str(value or "pending").strip().lower()
+    if status not in SERVICE_REQUEST_STATUS_ALLOWLIST:
+        raise CustomerControlValidationError("حالة طلب الخدمة غير مسموحة.")
+    return status
+
+
+def clean_service_request_sender_type(value: str) -> str:
+    sender_type = str(value or "system").strip().lower()
+    if sender_type not in SERVICE_REQUEST_SENDER_TYPES:
+        raise CustomerControlValidationError("نوع مرسل الرسالة غير مسموح.")
+    return sender_type
+
+
+def generate_service_request_reference() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    for _ in range(100):
+        suffix = "".join(secrets.choice(alphabet) for _ in range(8))
+        reference = f"SR-{suffix}"
+        if not CustomerServiceRequest.query.filter_by(public_reference=reference).first():
+            return reference
+    raise RuntimeError("service_request_reference_collision")
+
+
+def add_service_request_message(
+    service_request: CustomerServiceRequest,
+    *,
+    body: str,
+    sender_type: str = "system",
+    event_type: str = "message",
+    admin_id: int | None = None,
+    customer_user_id: int | None = None,
+    internal: bool = False,
+    metadata: dict[str, Any] | None = None,
+) -> CustomerServiceRequestMessage:
+    text = str(body or "").strip()
+    if not text:
+        raise CustomerControlValidationError("نص الرسالة مطلوب.")
+    message = CustomerServiceRequestMessage(
+        service_request_id=service_request.id,
+        customer_id=service_request.customer_id,
+        admin_id=admin_id,
+        customer_user_id=customer_user_id,
+        sender_type=clean_service_request_sender_type(sender_type),
+        event_type=str(event_type or "message").strip()[:60],
+        body=text[:4000],
+        internal=bool(internal),
+    )
+    message.message_metadata = metadata or {}
+    db.session.add(message)
+    return message
+
+
+def visible_service_request_messages(service_request: CustomerServiceRequest):
+    return service_request.messages.filter_by(internal=False).order_by(CustomerServiceRequestMessage.created_at.asc()).all()
+
+
 def payment_purpose_label(value: str) -> str:
     return PAYMENT_PURPOSE_LABELS.get(str(value or "").strip(), str(value or "—"))
 
@@ -927,16 +1021,43 @@ def create_customer_service_request(
     key = clean_service_key(service_key)
     if not ServiceCatalogItem.query.filter_by(service_key=key).first():
         raise CustomerControlValidationError("لم يتم العثور على الخدمة المطلوبة.")
+    req_type = str(request_type or "activation").strip()[:40]
+    svc_name = service_label(key)
     row = CustomerServiceRequest(
+        public_reference=generate_service_request_reference(),
         customer_id=customer.id,
         customer_user_id=customer_user_id,
         service_key=key,
-        request_type=str(request_type or "activation").strip()[:40],
+        request_type=req_type,
+        title=f"{service_request_type_label(req_type)} - {svc_name}",
         status="pending",
         notes=str(notes or "").strip()[:2000],
     )
     row.desired_limits = desired_limits or {}
     db.session.add(row)
+    db.session.flush()
+    add_service_request_message(
+        row,
+        sender_type="customer" if customer_user_id else "system",
+        customer_user_id=customer_user_id,
+        event_type="created",
+        body=str(notes or "").strip() or f"تم فتح طلب {service_request_type_label(req_type)} لخدمة {svc_name}.",
+    )
+    add_service_request_message(
+        row,
+        sender_type="system",
+        event_type="notification",
+        internal=True,
+        body=(
+            "تم تجهيز إشعار داخلي للإدارة والعميل. "
+            "إرسال الرسائل النصية يعتمد على مزود الرسائل عند ربطه من الإعدادات."
+        ),
+        metadata={
+            "customer_phone": customer.phone,
+            "service_key": key,
+            "request_type": req_type,
+        },
+    )
     return row
 
 
