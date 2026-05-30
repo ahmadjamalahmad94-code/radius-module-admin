@@ -53,15 +53,22 @@ def verify_instance_secret(app: Flask, license_key: str, provided_secret: str) -
     operator configured as HOBERADIUS_ADMIN_SHARED_SECRET on the instance.
     """
     provided = str(provided_secret or "").strip()
-    if not provided:
-        return False
     candidates = [
         license_integration_secret(app, license_key),
         str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "").strip(),
     ]
-    for expected in candidates:
-        if expected and hmac.compare_digest(provided, expected):
-            return True
+    if provided:
+        for expected in candidates:
+            if expected and hmac.compare_digest(provided, expected):
+                return True
+    # Consistency with the other integration endpoints: if the panel allows
+    # unsigned license checks (lenient / non-production posture), accept the
+    # upload the same way contract/identity sync are accepted. In production
+    # (signature required), only the shared-secret header above is honoured.
+    required = bool(app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED"))
+    allow_unsigned = bool(app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED"))
+    if not required and allow_unsigned:
+        return True
     return False
 
 
