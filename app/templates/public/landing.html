@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5b21b6">
+  <title>HobeRadius — منصّة التراخيص وإدارة الريدياس</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    .lp-body{
+      min-height:100dvh; margin:0;
+      font-family:'Cairo',system-ui,-apple-system,'Segoe UI',sans-serif;
+      color:var(--hub-ink,#0f172a);
+      background:
+        radial-gradient(820px 520px at 88% -8%, rgba(124,58,237,.12) 0%, transparent 55%),
+        radial-gradient(720px 520px at -8% 108%, rgba(99,102,241,.10) 0%, transparent 55%),
+        var(--hub-bg,#f1f5f9);
+      display:flex; flex-direction:column;
+    }
+    .lp-wrap{ width:100%; max-width:1080px; margin:auto; padding:32px 24px; display:grid; gap:26px; }
+
+    /* top bar */
+    .lp-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .lp-brand{ display:flex; align-items:center; gap:12px; }
+    .lp-mark{
+      width:48px; height:48px; border-radius:14px;
+      background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff;
+      display:grid; place-items:center; font-weight:900; letter-spacing:.5px; font-size:16px;
+      box-shadow:0 8px 20px rgba(124,58,237,.30);
+    }
+    .lp-brand b{ display:block; font-size:17px; font-weight:900; }
+    .lp-brand span{ font-size:12px; color:var(--hub-ink-mute,#94a3b8); }
+    .lp-top-link{
+      display:inline-flex; align-items:center; gap:8px; text-decoration:none;
+      padding:9px 15px; border-radius:11px; font-size:13.5px; font-weight:800;
+      color:var(--hub-ink-3,#475569); border:1px solid var(--hub-line,#cbd5e1); background:#fff;
+      transition:.15s;
+    }
+    .lp-top-link:hover{ border-color:var(--hub-violet-300,#c4b5fd); color:var(--hub-violet-d,#5b21b6); background:var(--hub-violet-50,#f5f3ff); }
+
+    /* hero */
+    .lp-hero{
+      position:relative; overflow:hidden; color:#fff;
+      border-radius:24px; padding:46px 40px;
+      background:
+        radial-gradient(460px 260px at 100% 0%, rgba(255,255,255,.18) 0%, transparent 60%),
+        radial-gradient(380px 220px at 0% 100%, rgba(255,255,255,.10) 0%, transparent 60%),
+        linear-gradient(135deg,#7c3aed 0%, #5b21b6 100%);
+      box-shadow:0 24px 60px rgba(91,33,182,.28);
+    }
+    .lp-hero::before, .lp-hero::after{ content:""; position:absolute; border-radius:50%; background:rgba(255,255,255,.08); filter:blur(8px); pointer-events:none; }
+    .lp-hero::before{ width:300px; height:300px; top:-110px; inset-inline-end:-70px; }
+    .lp-hero::after{ width:220px; height:220px; bottom:-90px; inset-inline-start:-50px; }
+    .lp-hero h1{ position:relative; z-index:1; margin:0; font-size:30px; font-weight:900; line-height:1.45; }
+    .lp-hero p{ position:relative; z-index:1; margin:14px 0 0; max-width:640px; font-size:15px; line-height:1.95; color:rgba(255,255,255,.9); }
+    .lp-chips{ position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }
+    .lp-chip{ display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border-radius:11px; font-size:13px; font-weight:700; background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.2); }
+    .lp-chip i{ font-size:12px; }
+
+    /* entry cards */
+    .lp-cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:16px; }
+    .lp-card{
+      display:flex; flex-direction:column; gap:13px;
+      background:#fff; border:1px solid var(--hub-line-2,#e2e8f0); border-radius:18px;
+      padding:24px 22px; text-decoration:none; color:inherit;
+      box-shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 4px 14px rgba(15,23,42,.05);
+      transition:transform .14s, border-color .14s, box-shadow .14s;
+    }
+    .lp-card:hover{ transform:translateY(-3px); border-color:var(--hub-violet-100,#ede9fe); box-shadow:0 14px 30px rgba(124,58,237,.14); }
+    .lp-card-ico{ width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-size:21px; flex:0 0 auto; }
+    .lp-card-ico.is-primary{ background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff; box-shadow:0 8px 20px rgba(124,58,237,.30); }
+    .lp-card-ico.is-soft{ background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6); }
+    .lp-card-ico.is-slate{ background:var(--hub-grey-50,#f8fafc); color:var(--hub-ink-3,#475569); border:1px solid var(--hub-line-2,#e2e8f0); }
+    .lp-card h3{ margin:0; font-size:17px; font-weight:900; }
+    .lp-card p{ margin:0; font-size:13.5px; line-height:1.85; color:var(--hub-ink-3,#475569); }
+    .lp-card-go{ margin-top:auto; display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:800; color:var(--hub-violet-d,#5b21b6); }
+    .lp-card:hover .lp-card-go i{ transform:translateX(-4px); }
+    .lp-card-go i{ transition:transform .14s; }
+    .lp-card-tag{ align-self:flex-start; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6); border:1px solid var(--hub-violet-100,#ede9fe); }
+
+    /* footer */
+    .lp-foot{ text-align:center; font-size:12.5px; color:var(--hub-ink-mute,#94a3b8); padding:4px 0 8px; }
+    .lp-foot i{ color:var(--hub-violet,#7c3aed); }
+
+    @media (max-width:640px){
+      .lp-hero{ padding:34px 24px; }
+      .lp-hero h1{ font-size:24px; }
+    }
+  </style>
+</head>
+<body class="lp-body">
+  <div class="lp-wrap">
+
+    <header class="lp-top">
+      <div class="lp-brand">
+        <div class="lp-mark">HBR</div>
+        <div>
+          <b>HobeRadius</b>
+          <span>منصّة التراخيص وإدارة الريدياس</span>
+        </div>
+      </div>
+      <a class="lp-top-link" href="{{ url_for('auth.login') }}">
+        <i class="fa-solid fa-user-shield"></i> دخول الإدارة
+      </a>
+    </header>
+
+    <section class="lp-hero">
+      <h1>أهلاً بك في منصّة HobeRadius</h1>
+      <p>نقطة الانطلاق لإدارة تراخيص الريدياس والعقود والخدمات والمدفوعات. سواء كنت عميلاً تتابع اشتراكك أو مشغّلاً يدير المنصّة — ابدأ من هنا.</p>
+      <div class="lp-chips">
+        <span class="lp-chip"><i class="fa-solid fa-key"></i> تراخيص وعقود</span>
+        <span class="lp-chip"><i class="fa-solid fa-shapes"></i> خدمات وحدود واضحة</span>
+        <span class="lp-chip"><i class="fa-solid fa-credit-card"></i> مدفوعات وإثباتات</span>
+        <span class="lp-chip"><i class="fa-solid fa-database"></i> نسخ احتياطية في ملف العميل</span>
+      </div>
+    </section>
+
+    <section class="lp-cards">
+      <a class="lp-card" href="{{ url_for('public.customer_portal_login') }}">
+        <span class="lp-card-ico is-primary"><i class="fa-solid fa-right-to-bracket"></i></span>
+        <span class="lp-card-tag">للعملاء</span>
+        <h3>بوابة العميل</h3>
+        <p>تابع حالة ترخيصك وخدماتك المفعّلة، أرسل طلبات الترقية، وراجع المدفوعات وإثباتها من مكان واحد.</p>
+        <span class="lp-card-go">دخول البوابة <i class="fa-solid fa-arrow-left"></i></span>
+      </a>
+
+      <a class="lp-card" href="{{ url_for('public.customer_portal_signup') }}">
+        <span class="lp-card-ico is-soft"><i class="fa-solid fa-user-plus"></i></span>
+        <span class="lp-card-tag">حساب جديد</span>
+        <h3>تسجيل عميل جديد</h3>
+        <p>أنشئ طلب حساب لشركتك. يبقى الطلب بانتظار موافقة الإدارة قبل تفعيله وإصدار الترخيص.</p>
+        <span class="lp-card-go">إنشاء طلب <i class="fa-solid fa-arrow-left"></i></span>
+      </a>
+
+      <a class="lp-card" href="{{ url_for('auth.login') }}">
+        <span class="lp-card-ico is-slate"><i class="fa-solid fa-user-shield"></i></span>
+        <span class="lp-card-tag">للمشغّل</span>
+        <h3>لوحة الإدارة</h3>
+        <p>إدارة العملاء والتراخيص والخطط والخدمات ومراجعة المدفوعات والنسخ الاحتياطية المستلمة.</p>
+        <span class="lp-card-go">دخول الإدارة <i class="fa-solid fa-arrow-left"></i></span>
+      </a>
+    </section>
+
+    <footer class="lp-foot">
+      <i class="fa-solid fa-shield-halved"></i> اتصال آمن · HobeRadius © 2026
+    </footer>
+
+  </div>
+</body>
+</html>

@@ -51,7 +51,12 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     @app.get("/")
     def root():
-        return redirect(url_for("admin.dashboard"))
+        from flask import session as flask_session
+        if flask_session.get("admin_id"):
+            return redirect(url_for("admin.dashboard"))
+        if flask_session.get("customer_user_id"):
+            return redirect(url_for("public.customer_portal_dashboard"))
+        return render_template("public/landing.html")
 
     _register_cli_commands(app)
 
