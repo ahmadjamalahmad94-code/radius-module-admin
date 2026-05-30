@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#5b21b6">
+  <meta name="robots" content="index, follow">
+  <title>سياسة الخصوصية — HobeRadius</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    .lg-body{ min-height:100dvh; margin:0; font-family:'Cairo',system-ui,-apple-system,'Segoe UI',sans-serif; color:var(--hub-ink,#0f172a);
+      background:radial-gradient(820px 520px at 88% -8%, rgba(124,58,237,.10) 0%, transparent 55%), var(--hub-bg,#f1f5f9); }
+    .lg-wrap{ max-width:860px; margin:auto; padding:28px 22px 60px; }
+    .lg-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+    .lg-brand{ display:flex; align-items:center; gap:11px; }
+    .lg-mark{ width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff; display:grid; place-items:center; font-weight:900; font-size:14px; box-shadow:0 6px 16px rgba(124,58,237,.30); }
+    .lg-brand b{ display:block; font-size:15px; font-weight:900; }
+    .lg-brand span{ font-size:11px; color:var(--hub-ink-mute,#94a3b8); }
+    .lg-home{ display:inline-flex; align-items:center; gap:8px; text-decoration:none; padding:9px 15px; border-radius:11px; font-size:13px; font-weight:800; color:var(--hub-ink-3,#475569); border:1px solid var(--hub-line,#cbd5e1); background:#fff; }
+    .lg-home:hover{ border-color:var(--hub-violet-300,#c4b5fd); color:var(--hub-violet-d,#5b21b6); background:var(--hub-violet-50,#f5f3ff); }
+    .lg-doc{ background:#fff; border:1px solid var(--hub-line-2,#e2e8f0); border-radius:20px; box-shadow:0 4px 16px rgba(15,23,42,.05); overflow:hidden; }
+    .lg-doc-head{ padding:28px 30px; background:radial-gradient(600px 220px at 100% 0%, rgba(124,58,237,.10), transparent 60%), linear-gradient(180deg,#faf8ff,#fff); border-bottom:1px solid var(--hub-line-2,#e2e8f0); }
+    .lg-doc-head h1{ margin:0; font-size:26px; font-weight:900; }
+    .lg-doc-head .upd{ margin-top:8px; font-size:12.5px; color:var(--hub-ink-mute,#94a3b8); font-weight:700; }
+    .lg-doc-body{ padding:14px 30px 30px; }
+    .lg-doc-body h2{ font-size:17px; font-weight:900; color:var(--hub-ink,#0f172a); margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--hub-line-soft,#eef2f7); display:flex; align-items:center; gap:9px; }
+    .lg-doc-body h2 i{ color:var(--hub-violet,#7c3aed); font-size:15px; }
+    .lg-doc-body h2:first-of-type{ border-top:0; padding-top:0; }
+    .lg-doc-body p, .lg-doc-body li{ font-size:14px; line-height:1.95; color:var(--hub-ink-2,#1e293b); }
+    .lg-doc-body ul{ margin:8px 0; padding-inline-start:22px; display:grid; gap:6px; }
+    .lg-callout{ margin:14px 0; padding:14px 16px; border-radius:12px; background:var(--hub-violet-50,#f5f3ff); border:1px solid var(--hub-violet-100,#ede9fe); font-size:13.5px; line-height:1.9; color:var(--hub-violet-d,#5b21b6); font-weight:700; }
+    .lg-doc-body a{ color:var(--hub-violet-d,#5b21b6); font-weight:800; }
+    .lg-foot{ text-align:center; font-size:12px; color:var(--hub-ink-mute,#94a3b8); margin-top:18px; }
+    .lg-foot a{ color:var(--hub-ink-3,#475569); text-decoration:none; font-weight:700; }
+    .lg-foot a:hover{ color:var(--hub-violet-d,#5b21b6); }
+  </style>
+</head>
+<body class="lg-body">
+  <div class="lg-wrap">
+    <header class="lg-top">
+      <div class="lg-brand">
+        <div class="lg-mark">HBR</div>
+        <div><b>HobeRadius</b><span>منصّة التراخيص وإدارة الريدياس</span></div>
+      </div>
+      <a class="lg-home" href="/"><i class="fa-solid fa-house"></i> الصفحة الرئيسية</a>
+    </header>
+
+    <article class="lg-doc">
+      <div class="lg-doc-head">
+        <h1>سياسة الخصوصية</h1>
+        <div class="upd">آخر تحديث: مايو 2026</div>
+      </div>
+      <div class="lg-doc-body">
+
+        <h2><i class="fa-solid fa-circle-info"></i> مقدمة</h2>
+        <p>تشرح هذه السياسة كيف تجمع منصّة <strong>HobeRadius</strong> («المنصّة»، «نحن») البيانات وتستخدمها وتحميها عند استخدامك للوحة التراخيص وبوابة العميل والخدمات المرتبطة بها. باستخدامك للمنصّة فإنك توافق على ما ورد في هذه السياسة.</p>
+
+        <h2><i class="fa-solid fa-database"></i> البيانات التي نجمعها</h2>
+        <ul>
+          <li><strong>بيانات الحساب:</strong> اسم الشركة، اسم المسؤول، البريد الإلكتروني، رقم الهاتف، الدولة والمدينة.</li>
+          <li><strong>بيانات الترخيص والخدمات:</strong> مفتاح الترخيص، الخطة، الخدمات المفعّلة وحدودها، وحالة الاشتراك.</li>
+          <li><strong>بيانات تشغيلية:</strong> سجلّات الدخول والتدقيق، وطلبات الخدمات والمدفوعات.</li>
+          <li><strong>النسخ الاحتياطية:</strong> نسخ قاعدة بيانات نظامك التي ترفعها أنت إلى ملف عميلك أو إلى مساحتك السحابية.</li>
+        </ul>
+
+        <h2><i class="fa-brands fa-google"></i> الوصول إلى بيانات Google (Google Drive)</h2>
+        <p>عند ربط حساب Google Drive الخاص بك لتمكين النسخ الاحتياطي السحابي، نطلب <strong>أقل قدر ممكن من الصلاحيات</strong> (النطاق <span class="mono" dir="ltr">drive.file</span>)، وهو نطاق يتيح لنا فقط إنشاء ورفع وإدارة <strong>الملفات التي ينشئها تطبيقنا</strong> داخل درايفك.</p>
+        <ul>
+          <li>نرفع نسخك الاحتياطية فقط إلى <strong>حساب Google Drive الخاص بك أنت</strong>، داخل مجلد مخصّص للتطبيق.</li>
+          <li><strong>لا نقرأ</strong> ولا نطّلع على بقية ملفات درايفك، ولا نصل إلى أي ملفات لم ينشئها تطبيقنا.</li>
+          <li><strong>لا نبيع</strong> بيانات Google ولا نشاركها مع أي طرف ثالث، ولا نستخدمها للإعلانات.</li>
+          <li>نخزّن رموز الوصول (refresh token) <strong>مشفّرة</strong> وتُستخدم حصراً لرفع نسخك إلى درايفك.</li>
+        </ul>
+        <div class="lg-callout">
+          <i class="fa-solid fa-shield-halved"></i>
+          يلتزم استخدام HobeRadius للمعلومات المستلمة من واجهات Google APIs، ونقلها إلى أي تطبيق آخر، بـ
+          <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">سياسة بيانات مستخدم خدمات Google API</a>،
+          بما في ذلك متطلبات «الاستخدام المحدود» (Limited Use).
+        </div>
+
+        <h2><i class="fa-solid fa-gears"></i> كيف نستخدم بياناتك</h2>
+        <ul>
+          <li>تشغيل الخدمة، إدارة ترخيصك وخدماتك، ومعالجة طلبات التفعيل والدفع.</li>
+          <li>حفظ واستعادة النسخ الاحتياطية بناءً على طلبك.</li>
+          <li>الدعم الفني والتواصل بخصوص حسابك.</li>
+          <li>تحسين الأمان واكتشاف إساءة الاستخدام.</li>
+        </ul>
+
+        <h2><i class="fa-solid fa-clock-rotate-left"></i> الاحتفاظ بالبيانات</h2>
+        <p>تُحفظ النسخ الاحتياطية (المحلية وعلى لوحة التراخيص) لمدة <strong>30 يومًا</strong> ثم تُحذف تلقائيًا. تبقى بيانات الحساب والترخيص طوال فترة اشتراكك، وتُحذف أو تُجهَّل خلال مدة معقولة بعد إنهاء الحساب ما لم يُلزمنا القانون بخلاف ذلك.</p>
+
+        <h2><i class="fa-solid fa-lock"></i> الأمان</h2>
+        <p>نطبّق ضوابط تقنية وتنظيمية لحماية بياناتك، منها التشفير أثناء النقل، وتشفير رموز الوصول الحساسة عند التخزين، وتقييد الوصول الإداري. لا يطّلع مدراء المنصّة على رموز Google الخاصة بك مباشرةً.</p>
+
+        <h2><i class="fa-solid fa-user-shield"></i> حقوقك والتحكم</h2>
+        <ul>
+          <li>يمكنك <strong>فصل/إلغاء ربط</strong> Google Drive في أي وقت من بوابة العميل، ما يوقف أي وصول مستقبلي.</li>
+          <li>يمكنك أيضًا إلغاء الصلاحية مباشرةً من <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">إعدادات أمان حساب Google</a>.</li>
+          <li>يمكنك طلب الاطّلاع على بياناتك أو تصحيحها أو حذفها عبر التواصل معنا.</li>
+        </ul>
+
+        <h2><i class="fa-solid fa-cookie-bite"></i> ملفات تعريف الارتباط</h2>
+        <p>نستخدم ملفات ارتباط ضرورية للجلسة وتسجيل الدخول فقط، ولا نستخدمها للتتبّع الإعلاني.</p>
+
+        <h2><i class="fa-solid fa-pen-to-square"></i> التغييرات على هذه السياسة</h2>
+        <p>قد نحدّث هذه السياسة من وقت لآخر، وسننشر النسخة المحدّثة على هذه الصفحة مع تحديث تاريخ آخر تعديل.</p>
+
+        <h2><i class="fa-solid fa-envelope"></i> التواصل</h2>
+        <p>لأي استفسار حول الخصوصية أو بياناتك:
+          {% if support_email %}<br>البريد: <a href="mailto:{{ support_email }}" dir="ltr">{{ support_email }}</a>{% endif %}
+          {% if support_phone %}<br>الهاتف: <span dir="ltr">{{ support_phone }}</span>{% endif %}
+        </p>
+      </div>
+    </article>
+
+    <div class="lg-foot">
+      <a href="/terms">شروط الاستخدام</a> · <a href="/privacy">سياسة الخصوصية</a> · HobeRadius © 2026
+    </div>
+  </div>
+</body>
+</html>

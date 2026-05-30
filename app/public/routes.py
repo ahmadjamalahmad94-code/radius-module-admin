@@ -34,6 +34,24 @@ from ..services.vpn_entitlements import find_best_customer_license, license_allo
 bp = Blueprint("public", __name__)
 
 
+@bp.get("/privacy")
+def privacy_policy():
+    return render_template(
+        "public/privacy.html",
+        support_email=current_app.config.get("SUPPORT_EMAIL", ""),
+        support_phone=current_app.config.get("SUPPORT_PHONE", ""),
+    )
+
+
+@bp.get("/terms")
+def terms_of_service():
+    return render_template(
+        "public/terms.html",
+        support_email=current_app.config.get("SUPPORT_EMAIL", ""),
+        support_phone=current_app.config.get("SUPPORT_PHONE", ""),
+    )
+
+
 def _get_portal_request(request_id: int) -> LicensePaymentRequest | None:
     token = (request.args.get("token") or request.form.get("token") or "").strip()
     return LicensePaymentRequestRepository().get_for_portal(request_id, token)
