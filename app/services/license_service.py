@@ -150,15 +150,19 @@ def check_license(
     if fingerprint:
         fingerprints = lic.fingerprints
         if fingerprint not in fingerprints:
-            # Commercial deployments use a minimum slot floor of 3 so that
-            # server reboots / container restarts / hardware changes don't
-            # immediately lock out the customer before they can pin a stable
-            # fingerprint.  Operators who truly want to hard-lock to one
-            # server can set max_fingerprints = 1 explicitly; the floor
-            # respects any value >= 3.
+            # Fingerprint is recorded for information, but is NON-BLOCKING by
+            # default: a server reboot / container restart / hardware change
+            # must never lock a paying customer out. Strict hard-lock is opt-in
+            # via LICENSE_FINGERPRINT_STRICT=1.
             slot_limit = 1 if int(lic.max_fingerprints or 0) == 1 else max(3, int(lic.max_fingerprints or 0))
+            strict = bool(current_app.config.get("LICENSE_FINGERPRINT_STRICT", False))
             if len(fingerprints) < slot_limit:
                 fingerprints.append(fingerprint)
+                lic.fingerprints = fingerprints
+            elif not strict:
+                # Slots full → rotate: keep the most recent `slot_limit`
+                # fingerprints. Never deny.
+                fingerprints = (fingerprints + [fingerprint])[-slot_limit:]
                 lic.fingerprints = fingerprints
             else:
                 result = LicenseResult(
