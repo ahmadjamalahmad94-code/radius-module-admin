@@ -64,6 +64,15 @@ class Customer(TimestampMixin, db.Model):
     runtime_url = db.Column(db.String(255), default="", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
+    portal_config_json = db.Column(db.Text, default="{}", nullable=False)
+
+    @property
+    def portal_config(self) -> dict:
+        return json_loads(self.portal_config_json, {})
+
+    @portal_config.setter
+    def portal_config(self, value: dict) -> None:
+        self.portal_config_json = json_dumps(value or {})
 
     licenses = db.relationship("License", back_populates="customer", lazy="dynamic")
     renewals = db.relationship("Renewal", back_populates="customer", lazy="dynamic")

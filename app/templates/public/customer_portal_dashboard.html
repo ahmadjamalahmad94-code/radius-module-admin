@@ -203,7 +203,10 @@
 {% endblock %}
 
 {% block content %}
-{# ── category → icon + arabic label maps ───────────────────────── #}
+{# ── portal visibility config from license contract ─────────────── #}
+{% set _pc = contract.customer.get('portal_config', {}) if contract.customer is mapping else {} %}
+{% set _hidden = _pc.get('hidden_sections', []) %}
+{# category → icon + arabic label maps ──────────────────────────── #}
 {% set cat_icons = {
   'network':'network-wired', 'core':'cubes', 'support':'headset', 'radius':'wifi',
   'billing':'file-invoice-dollar', 'sales':'tags', 'security':'shield-halved',
@@ -274,7 +277,9 @@
   </section>
 
   {# ════ Account + license + password ════ #}
+  {% if 'account' not in _hidden or 'password' not in _hidden %}
   <div class="hub-grid-2">
+    {% if 'account' not in _hidden %}
     {% call hub.section("الترخيص والحساب", icon="key") %}
       <div class="hub-detail-list">
         <div><span>مفتاح الترخيص</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
@@ -283,7 +288,9 @@
         <div><span>رابط الريدياس / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
       </div>
     {% endcall %}
+    {% endif %}
 
+    {% if 'password' not in _hidden %}
     {% call hub.section("تغيير كلمة المرور", icon="lock") %}
       <form method="post" action="{{ url_for('public.customer_portal_password_update') }}" style="display:grid; gap:10px">
         {{ csrf_input() }}
@@ -317,9 +324,12 @@
         <p class="hub-field-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفرة الجديدة بعد المزامنة.</p>
       </form>
     {% endcall %}
+    {% endif %}
   </div>
+  {% endif %}
 
   {# ════ Services — card grid with filter/search ════ #}
+  {% if 'services' not in _hidden %}
   {% call hub.section("الخدمات وتفاصيلها", icon="shapes") %}
     <div class="cp-svc-bar">
       <div class="cp-svc-counts">
@@ -433,9 +443,12 @@
       </div>
     </div>
   {% endcall %}
+  {% endif %}
 
   {# ════ Requests ════ #}
+  {% if 'payments' not in _hidden or 'requests' not in _hidden %}
   <div class="hub-grid-2">
+    {% if 'payments' not in _hidden %}
     {% call hub.section("طلبات الدفع", icon="credit-card") %}
       <div class="hub-table-wrap">
         <table class="hub-table">
@@ -459,7 +472,9 @@
         </table>
       </div>
     {% endcall %}
+    {% endif %}
 
+    {% if 'requests' not in _hidden %}
     {% call hub.section("طلبات الخدمات", icon="list-check") %}
       <div class="hub-table-wrap">
         <table class="hub-table">
@@ -478,9 +493,12 @@
         </table>
       </div>
     {% endcall %}
+    {% endif %}
   </div>
+  {% endif %}
 
   {# ════ Tech setup (collapsed) ════ #}
+  {% if 'tech_setup' not in _hidden %}
   {% call hub.section("إعداد ربط الريدياس", icon="plug", meta='<span class="hub-pill hub-pill--violet"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span>') %}
     {% if runtime_setup.available %}
       <p class="hub-field-hint">هذه القيم خاصة بربط الريدياس بلوحة التراخيص. لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
@@ -506,6 +524,7 @@
       {{ hub.empty("لا يوجد ترخيص متاح لشركتك حتى الآن.", sub="تواصل مع الدعم لتفعيل أول ترخيص.", icon="key") }}
     {% endif %}
   {% endcall %}
+  {% endif %}
 
 </div>
 

@@ -14,6 +14,7 @@ from ..services.customer_control import (
     normalize_contact_email,
     normalize_contact_phone,
     service_catalog_items,
+    service_label,
     service_limit_summary,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
@@ -249,10 +250,13 @@ def customer_portal_service_request(service_key: str):
         flash(payment_error_message(exc), "error")
         return redirect(url_for("public.customer_portal_dashboard"))
     db.session.commit()
+    svc_name = service_label(service_key)
     if payment_request:
-        flash("تم إنشاء طلب الخدمة وطلب الدفع اليدوي.", "success")
+        flash(f"تم إنشاء طلب تفعيل «{svc_name}» وطلب الدفع اليدوي.", "success")
         return redirect(url_for("public.payment_portal", request_id=payment_request.id, token=payment_request.access_token))
-    flash(f"تم تسجيل طلب الخدمة رقم {service_request.id}.", "success")
+    req_type = service_request.request_type or "activation"
+    verb = "ترقية" if req_type == "upgrade" else "تفعيل"
+    flash(f"تم تسجيل طلب {verb} خدمة «{svc_name}» بنجاح. ستتم مراجعته وإشعارك عند التفعيل.", "success")
     return redirect(url_for("public.customer_portal_dashboard"))
 
 

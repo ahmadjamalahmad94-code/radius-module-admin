@@ -408,4 +408,52 @@
     {{ hub.empty("لم يتم استلام أي نسخة احتياطية من ريدياس هذا العميل بعد.", sub="تُرفع النسخ تلقائيًا من صفحة النسخ الاحتياطي في لوحة الريدياس عند تفعيل الجسر.", icon="database") }}
   {% endif %}
 {% endcall %}
+
+{# ── Portal section visibility ── #}
+{% set pc = customer.portal_config %}
+{% set hidden_secs = pc.get('hidden_sections', []) %}
+{% set portal_sections = [
+  ('account',      'الترخيص والحساب',         'key'),
+  ('password',     'تغيير كلمة المرور',         'lock'),
+  ('services',     'الخدمات وتفاصيلها',          'shapes'),
+  ('payments',     'طلبات الدفع',               'credit-card'),
+  ('requests',     'طلبات الخدمات',              'list-check'),
+  ('tech_setup',   'إعداد ربط الريدياس',          'plug'),
+] %}
+{% call hub.section("إعدادات بوابة العميل", icon="sliders", meta='<span class="hub-pill hub-pill--violet">يُطبَّق فوراً على بوابة العميل</span>') %}
+  <form method="post" action="{{ url_for('admin.customer_portal_config_save', customer_id=customer.id) }}">
+    {{ csrf_input() }}
+    <p class="hub-field-hint" style="margin:0 0 14px">
+      اختر الأقسام التي تريد <strong>إخفاءها</strong> عن هذا العميل في بوابة العميل.
+      الأقسام المخفية لا تُعرض ولا يمكن الوصول إليها.
+    </p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; margin-bottom:16px">
+      {% for sec_key, sec_label, sec_icon in portal_sections %}
+        {% set is_hidden = sec_key in hidden_secs %}
+        <label style="display:flex; align-items:center; gap:10px; padding:11px 13px; border-radius:11px; border:1px solid var(--hub-line-2); background:{{ '#fff7f7' if is_hidden else '#fff' }}; cursor:pointer; transition:.15s">
+          <input type="checkbox" name="hidden_sections" value="{{ sec_key }}"
+                 {{ 'checked' if is_hidden else '' }}
+                 style="width:17px;height:17px;accent-color:#dc2626">
+          <span style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:800; color:{{ '#dc2626' if is_hidden else 'var(--hub-ink)' }}">
+            <i class="fa-solid fa-{{ sec_icon }}" style="color:{{ '#dc2626' if is_hidden else '#7c3aed' }}; width:14px"></i>
+            {{ sec_label }}
+          </span>
+          {% if is_hidden %}
+            <span style="margin-inline-start:auto; font-size:11px; color:#dc2626; font-weight:700">مخفي</span>
+          {% endif %}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="hub-flex-row" style="gap:8px">
+      <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات
+      </button>
+      {% if hidden_secs %}
+        <span class="hub-pill hub-pill--red"><span class="dot"></span>{{ hidden_secs|length }} قسم مخفي</span>
+      {% else %}
+        <span class="hub-pill hub-pill--green"><span class="dot"></span>جميع الأقسام ظاهرة</span>
+      {% endif %}
+    </div>
+  </form>
+{% endcall %}
 {% endblock %}

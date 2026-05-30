@@ -320,6 +320,36 @@ def customer_detail(customer_id: int):
     )
 
 
+_ALLOWED_PORTAL_SECTIONS = frozenset({
+    "account", "password", "services", "payments", "requests", "tech_setup"
+})
+
+
+@bp.post("/customers/<int:customer_id>/portal-config")
+@login_required
+def customer_portal_config_save(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    raw_hidden = request.form.getlist("hidden_sections")
+    hidden = sorted({s for s in raw_hidden if s in _ALLOWED_PORTAL_SECTIONS})
+    cfg = customer.portal_config
+    cfg["hidden_sections"] = hidden
+    customer.portal_config = cfg
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="customer_portal_config_updated",
+        entity_type="customer",
+        entity_id=str(customer.id),
+        summary=f"تحديث إعدادات بوابة العميل {customer.company_name} — أقسام مخفية: {hidden or 'لا شيء'}",
+        metadata={"hidden_sections": hidden},
+    )
+    db.session.commit()
+    if hidden:
+        flash(f"تم حفظ الإعدادات. أقسام مخفية: {len(hidden)}.", "success")
+    else:
+        flash("تم حفظ الإعدادات. جميع الأقسام ظاهرة الآن.", "success")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+
+
 @bp.get("/customers/<int:customer_id>/backups/<int:artifact_id>/download")
 @login_required
 def customer_backup_download(customer_id: int, artifact_id: int):

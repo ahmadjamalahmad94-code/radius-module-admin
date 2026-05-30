@@ -873,6 +873,7 @@ def build_runtime_contract_for_license(
             "id": customer.id if customer else None,
             "company_name": customer.company_name if customer else "",
             "runtime_url": customer.runtime_url if customer else "",
+            "portal_config": customer.portal_config if customer else {},
         },
         "services": services,
         "limits": _limits_contract(lic, customer),
