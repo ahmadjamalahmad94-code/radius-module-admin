@@ -417,6 +417,53 @@ class CustomerVpnEntitlement(TimestampMixin, db.Model):
     updated_by = db.relationship("Admin")
 
 
+class CustomerBackupArtifact(TimestampMixin, db.Model):
+    """A database backup uploaded by a customer's RADIUS instance to the panel.
+
+    Stored in the customer's file so the operator always has an off-site copy
+    of each instance's local backup. Metadata is always recorded; the actual
+    SQLite file is stored on disk only when the instance uploaded its content.
+    """
+    __tablename__ = "customer_backup_artifacts"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "backup_reference", name="uq_customer_backup_reference"),
+        db.Index("ix_customer_backup_artifacts_customer_created", "customer_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    license_key = db.Column(db.String(64), default="", nullable=False, index=True)
+    backup_reference = db.Column(db.String(160), default="", nullable=False)
+    module = db.Column(db.String(60), default="radius-module", nullable=False)
+    instance_id = db.Column(db.String(120), default="", nullable=False)
+    kind = db.Column(db.String(40), default="sqlite", nullable=False)
+    size = db.Column(db.Integer, default=0, nullable=False)
+    checksum_sha256 = db.Column(db.String(64), default="", nullable=False)
+    upload_mode = db.Column(db.String(40), default="metadata_only", nullable=False)
+    content_included = db.Column(db.Boolean, default=False, nullable=False)
+    stored_filename = db.Column(db.String(255), default="", nullable=False)
+    result_status = db.Column(db.String(40), default="received", nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+    remote_created_at = db.Column(db.String(40), default="", nullable=False)
+    received_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+    @property
+    def artifact_metadata(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @artifact_metadata.setter
+    def artifact_metadata(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.content_included and self.stored_filename)
+
+
 class License(TimestampMixin, db.Model):
     __tablename__ = "licenses"
     __table_args__ = (

@@ -229,6 +229,25 @@ def hoberadius_customer_user_password_change():
     })
 
 
+@bp.post("/integration/hoberadius/backups/upload")
+def hoberadius_backup_upload():
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "رفع النسخ الاحتياطية يتطلب HTTPS."}), 426
+    from ..services.customer_backups import BackupUploadError, record_backup_upload
+
+    provided_secret = request.headers.get("X-HobeRadius-Admin-Secret", "")
+    try:
+        result = record_backup_upload(
+            license_key=body.get("license_key") or "",
+            payload=body,
+            provided_secret=provided_secret,
+        )
+    except BackupUploadError as exc:
+        return jsonify({"ok": False, "status": exc.code, "message": exc.message}), exc.status_code
+    return jsonify(result), 201
+
+
 def _customer_user_from_password_change_body(customer_id: int, body: dict) -> CustomerUser:
     user = None
     external_user_id = body.get("external_user_id")

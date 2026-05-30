@@ -360,4 +360,52 @@
     </div>
   {% endcall %}
 </div>
+
+{# ── Backups received from this customer's RADIUS instance ── #}
+{% call hub.section("النسخ الاحتياطية المستلمة", icon="database", meta='نسخ قاعدة بيانات الريدياس التي رفعها هذا العميل تلقائيًا') %}
+  {% if customer_backups %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead>
+          <tr>
+            <th>المرجع</th>
+            <th>الحالة</th>
+            <th class="num">الحجم</th>
+            <th>البصمة (SHA-256)</th>
+            <th class="date">وقت الاستلام</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for b in customer_backups %}
+          <tr>
+            <td class="mono">{{ b.backup_reference }}</td>
+            <td>
+              {% if b.has_content %}
+                <span class="badge badge-green">ملف مخزّن</span>
+              {% else %}
+                <span class="badge badge-gray">بيانات وصفية فقط</span>
+              {% endif %}
+            </td>
+            <td class="num">{{ '%.2f'|format((b.size or 0) / 1048576) }} MB</td>
+            <td class="mono" style="font-size:11px">{{ (b.checksum_sha256 or '—')[:16] }}{% if b.checksum_sha256 %}…{% endif %}</td>
+            <td class="date">{{ b.received_at|dt }}</td>
+            <td>
+              {% if b.has_content %}
+                <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.customer_backup_download', customer_id=customer.id, artifact_id=b.id) }}">
+                  <i class="fa-solid fa-download"></i> تنزيل
+                </a>
+              {% else %}
+                <span class="hub-muted" style="font-size:12px">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {{ hub.empty("لم يتم استلام أي نسخة احتياطية من ريدياس هذا العميل بعد.", sub="تُرفع النسخ تلقائيًا من صفحة النسخ الاحتياطي في لوحة الريدياس عند تفعيل الجسر.", icon="database") }}
+  {% endif %}
+{% endcall %}
 {% endblock %}

@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required
@@ -51,6 +51,10 @@ from ..services.customer_control import (
     service_limit_summary,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
+)
+from ..services.customer_backups import (
+    get_artifact_file,
+    list_customer_backups,
 )
 from ..services.license_payments import (
     LicensePaymentApplyService,
@@ -312,7 +316,26 @@ def customer_detail(customer_id: int):
         users_version=customer_users_version(customer),
         service_limit_fields=service_limit_fields,
         service_limit_summary=service_limit_summary,
+        customer_backups=list_customer_backups(customer.id),
     )
+
+
+@bp.get("/customers/<int:customer_id>/backups/<int:artifact_id>/download")
+@login_required
+def customer_backup_download(customer_id: int, artifact_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    resolved = get_artifact_file(customer.id, artifact_id)
+    if not resolved:
+        abort(404)
+    path, download_name = resolved
+    audit(
+        "customer_backup_downloaded",
+        "customer_backup",
+        str(artifact_id),
+        f"Downloaded backup {download_name} for customer {customer.company_name}",
+    )
+    db.session.commit()
+    return send_file(str(path), as_attachment=True, download_name=download_name)
 
 
 @bp.get("/customers/<int:customer_id>/users/new")
