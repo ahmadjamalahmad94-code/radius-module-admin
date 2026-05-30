@@ -1,12 +1,12 @@
 {% extends "admin/base.html" %}
 {% import "_partials/hub.html" as hub %}
-{% block title %}{{ 'باقة VPN جديدة' if is_new else vpn_plan.name }}{% endblock %}
-{% block page_title %}{{ 'باقة VPN جديدة' if is_new else vpn_plan.name }}{% endblock %}
-{% block page_subtitle %}تعريف حدود خدمة تغيير IP / VPN التي يبيعها مركز التراخيص{% endblock %}
+{% block title %}{{ 'باقة شبكة خاصة جديدة' if is_new else vpn_plan.name }}{% endblock %}
+{% block page_title %}{{ 'باقة شبكة خاصة جديدة' if is_new else vpn_plan.name }}{% endblock %}
+{% block page_subtitle %}تعريف حدود خدمة تغيير عنوان الإنترنت والشبكة الخاصة التي يبيعها مركز التراخيص{% endblock %}
 
 {% block content %}
 {{ hub.hero(
-  ("إنشاء باقة VPN جديدة" if is_new else "تعديل باقة " ~ (vpn_plan.name or '')),
+  ("إنشاء باقة شبكة خاصة جديدة" if is_new else "تعديل باقة " ~ (vpn_plan.name or '')),
   subtitle="حدود تجارية فقط — التطبيق الفعلي للسرعة يحدث داخل نسخة الريدياس عند العميل.",
   icon="shield-halved"
 ) }}
@@ -20,7 +20,7 @@
         <div class="hub-field">
           <label>اسم الباقة <span class="req">*</span></label>
           <input class="hub-input" name="name" value="{{ vpn_plan.name or '' }}" required>
-          <div class="hub-field-hint">اسم واضح مثل «VPN 50 Mbps».</div>
+          <div class="hub-field-hint">اسم واضح مثل «شبكة خاصة 50 ميجابت».</div>
         </div>
         <input type="hidden" name="code" value="{{ vpn_plan.code or '' }}">
         <div class="hub-field full">
@@ -36,15 +36,15 @@
     {% call hub.fieldset("السرعة والحدود", icon="gauge-high") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>سرعة التحميل (Mbps) <span class="req">*</span></label>
+          <label>سرعة التحميل بالميجابت/ثانية <span class="req">*</span></label>
           <input class="hub-input" name="download_mbps" type="number" min="1" value="{{ vpn_plan.download_mbps or '' }}" required>
         </div>
         <div class="hub-field">
-          <label>سرعة الرفع (Mbps) <span class="req">*</span></label>
+          <label>سرعة الرفع بالميجابت/ثانية <span class="req">*</span></label>
           <input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ vpn_plan.upload_mbps or '' }}" required>
         </div>
         <div class="hub-field">
-          <label>عدد مستخدمي VPN <span class="req">*</span></label>
+          <label>عدد مستخدمي الشبكة الخاصة <span class="req">*</span></label>
           <input class="hub-input" name="max_vpn_users" type="number" min="1" value="{{ vpn_plan.max_vpn_users or '' }}" required>
         </div>
         <div class="hub-field">

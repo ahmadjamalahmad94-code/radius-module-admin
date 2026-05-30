@@ -550,7 +550,7 @@ def customer_vpn_service_update(customer_id: int):
         "customer_vpn_entitlement_updated",
         "customer_vpn_entitlement",
         str(entitlement.id),
-        f"تم تحديث خدمة VPN للعميل {customer.company_name}",
+        f"تم تحديث خدمة الشبكة الخاصة للعميل {customer.company_name}",
         {
             "customer_id": customer.id,
             "status": entitlement.status,
@@ -561,7 +561,7 @@ def customer_vpn_service_update(customer_id: int):
         },
     )
     db.session.commit()
-    flash("تم حفظ خدمة تغيير IP / VPN للعميل.", "success")
+    flash("تم حفظ خدمة تغيير العنوان والشبكة الخاصة للعميل.", "success")
     return redirect(url_for("admin.customer_vpn_service", customer_id=customer.id))
 
 
@@ -592,7 +592,7 @@ def _fill_customer_vpn_entitlement(customer: Customer, entitlement: CustomerVpnE
     plan_id = _int("vpn_plan_id") if request.form.get("vpn_plan_id") else None
     selected_plan = db.session.get(VpnServicePlan, plan_id) if plan_id else None
     if plan_id and not selected_plan:
-        raise VpnEntitlementValidationError("لم يتم العثور على خطة VPN المختارة.")
+        raise VpnEntitlementValidationError("لم يتم العثور على باقة الشبكة الخاصة المختارة.")
 
     license_id = _int("license_id") if request.form.get("license_id") else None
     selected_license = customer.licenses.filter_by(id=license_id).first() if license_id else None
@@ -870,9 +870,9 @@ def vpn_service_create():
         return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=True), 400
     db.session.add(vpn_plan)
     db.session.flush()
-    audit("vpn_service_plan_created", "vpn_service_plan", str(vpn_plan.id), f"Created VPN service plan {vpn_plan.code}")
+    audit("vpn_service_plan_created", "vpn_service_plan", str(vpn_plan.id), f"تم إنشاء باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم إنشاء خطة خدمة تغيير IP / VPN.", "success")
+    flash("تم إنشاء خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -893,9 +893,9 @@ def vpn_service_update(vpn_plan_id: int):
     except VpnEntitlementValidationError as exc:
         flash(str(exc), "error")
         return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=False), 400
-    audit("vpn_service_plan_updated", "vpn_service_plan", str(vpn_plan.id), f"Updated VPN service plan {vpn_plan.code}")
+    audit("vpn_service_plan_updated", "vpn_service_plan", str(vpn_plan.id), f"تم تحديث باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم تحديث خطة خدمة تغيير IP / VPN.", "success")
+    flash("تم تحديث خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -904,9 +904,9 @@ def vpn_service_update(vpn_plan_id: int):
 def vpn_service_disable(vpn_plan_id: int):
     vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
     vpn_plan.is_active = False
-    audit("vpn_service_plan_disabled", "vpn_service_plan", str(vpn_plan.id), f"Disabled VPN service plan {vpn_plan.code}")
+    audit("vpn_service_plan_disabled", "vpn_service_plan", str(vpn_plan.id), f"تم إيقاف باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم إيقاف خطة خدمة تغيير IP / VPN.", "warning")
+    flash("تم إيقاف خطة خدمة تغيير العنوان والشبكة الخاصة.", "warning")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -915,9 +915,9 @@ def vpn_service_disable(vpn_plan_id: int):
 def vpn_service_enable(vpn_plan_id: int):
     vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
     vpn_plan.is_active = True
-    audit("vpn_service_plan_enabled", "vpn_service_plan", str(vpn_plan.id), f"Enabled VPN service plan {vpn_plan.code}")
+    audit("vpn_service_plan_enabled", "vpn_service_plan", str(vpn_plan.id), f"تم تفعيل باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم تفعيل خطة خدمة تغيير IP / VPN.", "success")
+    flash("تم تفعيل خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -942,7 +942,7 @@ def _validate_unique_vpn_plan_code(vpn_plan: VpnServicePlan) -> None:
         if vpn_plan.id:
             duplicate = duplicate.filter(VpnServicePlan.id != vpn_plan.id)
         if duplicate.first():
-            raise VpnEntitlementValidationError("توجد باقة VPN بنفس التعريف الداخلي.")
+            raise VpnEntitlementValidationError("توجد باقة شبكة خاصة بنفس التعريف الداخلي.")
 
 
 @bp.get("/licenses")
@@ -1322,7 +1322,7 @@ def payment_reconciliation_api():
 @login_required
 def payment_expire_pending():
     count = LicensePaymentReportingService().expire_pending_requests()
-    audit("license_payments_expired", "license_payment_request", "batch", f"Expired {count} pending payment request(s)")
+    audit("license_payments_expired", "license_payment_request", "batch", f"تم إنهاء {count} طلب دفع معلّق")
     db.session.commit()
-    flash(f"تم تعليم {count} طلب دفع منتهي كـ expired.", "success")
+    flash(f"تم تعليم {count} طلب دفع معلّق كمنتهي.", "success")
     return redirect(url_for("admin.payment_reports"))

@@ -43,7 +43,7 @@ def license_check():
             "active": False,
             "status": "denied",
             "mode": "denied",
-            "message": "License check authorization failed.",
+            "message": "فشل التحقق من صلاحية فحص الترخيص.",
         }), 401
 
     try:
@@ -105,7 +105,7 @@ def hoberadius_identity_sync():
 def hoberadius_runtime_contract():
     body = request.get_json(silent=True) or {}
     if not _integration_request_is_secure():
-        return jsonify({"ok": False, "status": "https_required", "message": "عقد runtime يتطلب HTTPS."}), 426
+        return jsonify({"ok": False, "status": "https_required", "message": "عقد التشغيل يتطلب اتصالًا آمنًا."}), 426
     signed = _verify_integration_signature(body)
     if signed is not None:
         return signed
@@ -212,7 +212,7 @@ def hoberadius_customer_user_password_change():
             action="customer_user_password_changed_from_runtime",
             entity_type="customer_user",
             entity_id=str(user.id),
-            summary=f"مستخدم العميل {user.username} غيّر كلمة المرور من runtime الريدياس",
+            summary=f"مستخدم العميل {user.username} غيّر كلمة المرور من واجهة الريدياس التشغيلية",
             metadata={"customer_id": user.customer_id, "password_version": user.password_version},
         )
         db.session.commit()

@@ -335,9 +335,9 @@ def seed_defaults(app: Flask) -> None:
         db.session.add(plan)
 
     vpn_plans = [
-        ("VPN 10 Mbps", "vpn_10m", "خدمة تغيير IP / VPN بسرعة 10 Mbps", 10, 10, 25, 1, Decimal("10.00")),
-        ("VPN 50 Mbps", "vpn_50m", "خدمة تغيير IP / VPN بسرعة 50 Mbps", 50, 50, 100, 1, Decimal("35.00")),
-        ("VPN 100 Mbps", "vpn_100m", "خدمة تغيير IP / VPN بسرعة 100 Mbps", 100, 100, 250, 1, Decimal("65.00")),
+        ("شبكة خاصة 10 ميجابت", "vpn_10m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 10 ميجابت/ثانية", 10, 10, 25, 1, Decimal("10.00")),
+        ("شبكة خاصة 50 ميجابت", "vpn_50m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 50 ميجابت/ثانية", 50, 50, 100, 1, Decimal("35.00")),
+        ("شبكة خاصة 100 ميجابت", "vpn_100m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 100 ميجابت/ثانية", 100, 100, 250, 1, Decimal("65.00")),
     ]
     for name, code, description, download, upload, users, locations, price in vpn_plans:
         if VpnServicePlan.query.filter_by(code=code).first():

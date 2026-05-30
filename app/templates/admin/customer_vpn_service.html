@@ -1,14 +1,14 @@
 {% extends "admin/base.html" %}
 {% import "_partials/hub.html" as hub %}
-{% block title %}خدمة تغيير IP / VPN — {{ customer.company_name }}{% endblock %}
-{% block page_title %}خدمة تغيير IP / VPN{% endblock %}
+{% block title %}خدمة تغيير العنوان والشبكة الخاصة — {{ customer.company_name }}{% endblock %}
+{% block page_title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
 {% block page_subtitle %}{{ customer.company_name }}{% endblock %}
 
 {% block content %}
 {% set vpn_status_labels = {'active': 'مفعلة', 'suspended': 'موقوفة', 'expired': 'منتهية', 'disabled': 'معطلة'} %}
 
 {{ hub.hero(
-  "خدمة VPN لـ " ~ customer.company_name,
+  "خدمة الشبكة الخاصة لـ " ~ customer.company_name,
   subtitle="السرعة والحدود والاستحقاق التجاري — تنفيذ السرعة يحدث داخل نسخة الريدياس عند العميل.",
   icon="shield-halved",
   actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-up-right-from-square"></i> ملف العميل</a>'
@@ -19,11 +19,11 @@
     <div class="hub-detail-list">
       <div><span>العميل</span><strong>{{ customer.company_name }}</strong></div>
       <div><span>حالة الترخيص</span><strong>{% if current_license %}<span class="badge {{ current_license.status|badge_class }}">{{ current_license.status|status_label }}</span>{% else %}—{% endif %}</strong></div>
-      <div><span>VPN</span><strong><span class="badge {{ entitlement.status|badge_class }}">{{ vpn_status_labels.get(entitlement.status, entitlement.status) }}</span></strong></div>
+      <div><span>الشبكة الخاصة</span><strong><span class="badge {{ entitlement.status|badge_class }}">{{ vpn_status_labels.get(entitlement.status, entitlement.status) }}</span></strong></div>
       <div><span>الباقة</span><strong>{{ entitlement.vpn_plan.name if entitlement.vpn_plan else '—' }}</strong></div>
-      <div><span>سرعة التحميل</span><strong class="num">{{ entitlement.download_mbps or '—' }} Mbps</strong></div>
-      <div><span>سرعة الرفع</span><strong class="num">{{ entitlement.upload_mbps or '—' }} Mbps</strong></div>
-      <div><span>عدد مستخدمي VPN</span><strong class="num">{{ entitlement.max_vpn_users or '—' }}</strong></div>
+      <div><span>سرعة التحميل</span><strong class="num">{{ entitlement.download_mbps or '—' }} ميجابت/ثانية</strong></div>
+      <div><span>سرعة الرفع</span><strong class="num">{{ entitlement.upload_mbps or '—' }} ميجابت/ثانية</strong></div>
+      <div><span>عدد مستخدمي الشبكة الخاصة</span><strong class="num">{{ entitlement.max_vpn_users or '—' }}</strong></div>
       <div><span>تاريخ الانتهاء</span><strong>{{ entitlement.expires_at|dt }}</strong></div>
       <div><span>آخر تحديث</span><strong>{{ entitlement.updated_at|dt }}</strong></div>
     </div>
@@ -33,9 +33,9 @@
     <div class="hub-detail-list">
       <div><span>تفعيل الخدمة</span><strong>{{ 'مسموح' if contract.enabled else 'غير مسموح' }}</strong></div>
       <div><span>حالة الخدمة</span><strong>{{ contract.status|status_label }}</strong></div>
-      <div><span>سرعة التحميل</span><strong class="num">{{ contract.download_mbps|default('—') }} Mbps</strong></div>
-      <div><span>سرعة الرفع</span><strong class="num">{{ contract.upload_mbps|default('—') }} Mbps</strong></div>
-      <div><span>مستخدمو VPN</span><strong class="num">{{ contract.max_vpn_users|default('—') }}</strong></div>
+      <div><span>سرعة التحميل</span><strong class="num">{{ contract.download_mbps|default('—') }} ميجابت/ثانية</strong></div>
+      <div><span>سرعة الرفع</span><strong class="num">{{ contract.upload_mbps|default('—') }} ميجابت/ثانية</strong></div>
+      <div><span>مستخدمو الشبكة الخاصة</span><strong class="num">{{ contract.max_vpn_users|default('—') }}</strong></div>
       <div><span>عدد المواقع</span><strong class="num">{{ contract.max_locations|default('—') }}</strong></div>
     </div>
     <p class="hub-field-hint" style="margin-top:10px">لوحة التراخيص ترسل الصلاحية والحدود فقط. التنفيذ الفعلي يبقى داخل ريدياس العميل.</p>
@@ -49,12 +49,12 @@
     {% call hub.fieldset("الباقة والترخيص", icon="link") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>خطة VPN</label>
+          <label>باقة الشبكة الخاصة</label>
           <select class="hub-select" name="vpn_plan_id">
             <option value="">بدون خطة</option>
             {% for vpn_plan in vpn_plans %}
               <option value="{{ vpn_plan.id }}" {{ 'selected' if entitlement.vpn_plan_id == vpn_plan.id else '' }}>
-                {{ vpn_plan.name }} — {{ vpn_plan.download_mbps }}/{{ vpn_plan.upload_mbps }} Mbps{% if not vpn_plan.is_active %} (غير مفعلة){% endif %}
+                {{ vpn_plan.name }} — {{ vpn_plan.download_mbps }}/{{ vpn_plan.upload_mbps }} ميجابت/ثانية{% if not vpn_plan.is_active %} (غير مفعلة){% endif %}
               </option>
             {% endfor %}
           </select>
@@ -80,15 +80,15 @@
     {% call hub.fieldset("السرعة والحدود", icon="gauge-high") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>سرعة التحميل (Mbps)</label>
+          <label>سرعة التحميل بالميجابت/ثانية</label>
           <input class="hub-input" name="download_mbps" type="number" min="1" value="{{ entitlement.download_mbps or '' }}" placeholder="50">
         </div>
         <div class="hub-field">
-          <label>سرعة الرفع (Mbps)</label>
+          <label>سرعة الرفع بالميجابت/ثانية</label>
           <input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ entitlement.upload_mbps or '' }}" placeholder="50">
         </div>
         <div class="hub-field">
-          <label>عدد مستخدمي VPN</label>
+          <label>عدد مستخدمي الشبكة الخاصة</label>
           <input class="hub-input" name="max_vpn_users" type="number" min="1" value="{{ entitlement.max_vpn_users or '' }}" placeholder="100">
         </div>
         <div class="hub-field">
@@ -136,7 +136,7 @@
         <i class="fa-solid fa-floppy-disk"></i> حفظ
       </button>
       <button class="hub-btn hub-btn--secondary" type="submit" name="action" value="activate">
-        <i class="fa-solid fa-play"></i> تفعيل VPN
+        <i class="fa-solid fa-play"></i> تفعيل الشبكة الخاصة
       </button>
       <button class="hub-btn hub-btn--danger" type="submit" name="action" value="suspend">
         <i class="fa-solid fa-pause"></i> إيقاف مؤقت

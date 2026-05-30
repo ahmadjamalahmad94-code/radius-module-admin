@@ -33,7 +33,7 @@ class EffectiveVpnEntitlement:
 def clean_vpn_plan_code(value: str) -> str:
     code = (value or "").strip().lower()
     if not PLAN_CODE_RE.match(code):
-        raise VpnEntitlementValidationError("تعريف باقة VPN الداخلي غير صحيح.")
+        raise VpnEntitlementValidationError("التعريف الداخلي لباقة الشبكة الخاصة غير صحيح.")
     return code
 
 
@@ -48,7 +48,7 @@ def validate_positive_limit(value: Any, field_name: str) -> int:
 def validate_entitlement_status(value: str) -> str:
     status = (value or "disabled").strip().lower()
     if status not in VALID_ENTITLEMENT_STATUSES:
-        raise VpnEntitlementValidationError("حالة VPN غير مسموحة.")
+        raise VpnEntitlementValidationError("حالة الشبكة الخاصة غير مسموحة.")
     return status
 
 
@@ -74,7 +74,7 @@ def parse_optional_decimal(value: Any, field_name: str) -> Decimal | None:
 
 def validate_vpn_plan(plan: VpnServicePlan) -> None:
     if not (plan.name or "").strip():
-        raise VpnEntitlementValidationError("اسم خطة VPN مطلوب.")
+        raise VpnEntitlementValidationError("اسم باقة الشبكة الخاصة مطلوب.")
     plan.code = clean_vpn_plan_code(plan.code)
     plan.download_mbps = validate_vpn_speed(plan.download_mbps, "download_mbps")
     plan.upload_mbps = validate_vpn_speed(plan.upload_mbps, "upload_mbps")

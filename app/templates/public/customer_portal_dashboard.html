@@ -358,7 +358,7 @@
         {% endif %}
         {# limit summary text for modal #}
         {% if item.service_key == 'ip_change_vpn' and is_on %}
-          {% set lim_text = 'تحميل ' ~ svc.download_mbps ~ ' Mbps · رفع ' ~ svc.upload_mbps ~ ' Mbps · مستخدمو VPN ' ~ svc.max_vpn_users %}
+          {% set lim_text = 'تحميل ' ~ svc.download_mbps ~ ' ميجابت/ثانية · رفع ' ~ svc.upload_mbps ~ ' ميجابت/ثانية · مستخدمو الشبكة الخاصة ' ~ svc.max_vpn_users %}
         {% elif svc.limits %}
           {% set lim_text = service_limit_summary(svc.limits) %}
         {% else %}
@@ -381,9 +381,9 @@
 
           {% if item.service_key == 'ip_change_vpn' and is_on %}
             <div class="cp-svc-chips">
-              <span class="cp-chip"><i class="fa-solid fa-download"></i> تحميل <span class="num">{{ svc.download_mbps }}</span> Mbps</span>
-              <span class="cp-chip"><i class="fa-solid fa-upload"></i> رفع <span class="num">{{ svc.upload_mbps }}</span> Mbps</span>
-              <span class="cp-chip"><i class="fa-solid fa-user-group"></i> مستخدمو VPN <span class="num">{{ svc.max_vpn_users }}</span></span>
+              <span class="cp-chip"><i class="fa-solid fa-download"></i> تحميل <span class="num">{{ svc.download_mbps }}</span> ميجابت/ثانية</span>
+              <span class="cp-chip"><i class="fa-solid fa-upload"></i> رفع <span class="num">{{ svc.upload_mbps }}</span> ميجابت/ثانية</span>
+              <span class="cp-chip"><i class="fa-solid fa-user-group"></i> مستخدمو الشبكة الخاصة <span class="num">{{ svc.max_vpn_users }}</span></span>
             </div>
           {% elif svc.limits %}
             <div class="cp-svc-chips">

@@ -330,7 +330,7 @@ def test_customer_portal_shows_radius_runtime_license_setup(client):
     body = res.get_data(as_text=True)
 
     assert res.status_code == 200
-    assert "رابط لوحة التراخيص" in body
+    assert "إعداد ربط الريدياس" in body
     assert "قيم الربط الجاهزة للنسخ" not in body
     assert "HOBERADIUS_ADMIN_BASE_URL" not in body
     assert lic.license_key in body
@@ -368,7 +368,7 @@ def test_customer_360_renders_services_users_payments_and_contract(client):
 
     assert res.status_code == 200
     assert "ملف العميل 360" in body
-    assert "خدمة تغيير IP / VPN" in body
+    assert "خدمة تغيير العنوان والشبكة الخاصة" in body
     assert "limits JSON" not in body
     assert "config JSON" not in body
     assert "owner أولًا" not in body

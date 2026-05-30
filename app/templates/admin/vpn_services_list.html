@@ -1,13 +1,13 @@
 {% extends "admin/base.html" %}
 {% import "_partials/hub.html" as hub %}
-{% block title %}خدمات VPN / تغيير IP{% endblock %}
-{% block page_title %}خدمات VPN / تغيير IP{% endblock %}
-{% block page_subtitle %}إدارة باقات خدمة تغيير عنوان IP التي تظهر كاستحقاق مرخص للعميل{% endblock %}
+{% block title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
+{% block page_title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
+{% block page_subtitle %}إدارة باقات خدمة تغيير عنوان الإنترنت التي تظهر كاستحقاق مرخص للعميل{% endblock %}
 
 {% block content %}
 {{ hub.hero(
-  "باقات تغيير IP / VPN",
-  subtitle="عروض تجارية للسرعة وعدد المستخدمين والمواقع — اللوحة لا تنفذ WireGuard أو MikroTik.",
+  "باقات تغيير العنوان والشبكة الخاصة",
+  subtitle="عروض تجارية للسرعة وعدد المستخدمين والمواقع. لوحة التراخيص ترسل الصلاحية فقط، والتطبيق الفعلي يتم داخل نسخة العميل.",
   icon="shield-halved",
   actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.vpn_service_new') ~ '"><i class="fa-solid fa-plus"></i> باقة جديدة</a>'
 ) }}
@@ -20,7 +20,7 @@
           <th>الباقة</th>
           <th class="num">تحميل</th>
           <th class="num">رفع</th>
-          <th class="num">مستخدمو VPN</th>
+          <th class="num">مستخدمو الشبكة الخاصة</th>
           <th class="num">المواقع</th>
           <th class="num">السعر/شهر</th>
           <th>الحالة</th>
@@ -34,8 +34,8 @@
             <strong>{{ vpn_plan.name }}</strong>
             <div class="hub-muted" style="font-size:11.5px">{{ vpn_plan.description or '—' }}</div>
           </td>
-          <td class="num">{{ vpn_plan.download_mbps }} Mbps</td>
-          <td class="num">{{ vpn_plan.upload_mbps }} Mbps</td>
+          <td class="num">{{ vpn_plan.download_mbps }} ميجابت/ثانية</td>
+          <td class="num">{{ vpn_plan.upload_mbps }} ميجابت/ثانية</td>
           <td class="num">{{ vpn_plan.max_vpn_users }}</td>
           <td class="num">{{ vpn_plan.max_locations }}</td>
           <td class="num">{{ vpn_plan.price_monthly|money if vpn_plan.price_monthly is not none else '—' }}</td>
@@ -60,7 +60,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="8">{{ hub.empty("لا توجد باقات VPN بعد.", icon="shield-halved") }}</td></tr>
+        <tr><td colspan="8">{{ hub.empty("لا توجد باقات للشبكة الخاصة بعد.", icon="shield-halved") }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

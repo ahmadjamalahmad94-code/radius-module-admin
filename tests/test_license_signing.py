@@ -93,7 +93,7 @@ def test_invalid_signature_is_denied_without_license_lookup_details():
             "active": False,
             "status": "denied",
             "mode": "denied",
-            "message": "License check authorization failed.",
+            "message": "فشل التحقق من صلاحية فحص الترخيص.",
         }
 
 
@@ -151,7 +151,7 @@ def test_replayed_nonce_is_denied():
 
         assert first.status_code == 200
         assert second.status_code == 401
-        assert second.get_json()["message"] == "License check authorization failed."
+        assert second.get_json()["message"] == "فشل التحقق من صلاحية فحص الترخيص."
 
 
 def test_unsigned_compatibility_mode_keeps_existing_client_working():

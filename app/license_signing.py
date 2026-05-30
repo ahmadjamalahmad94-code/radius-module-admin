@@ -44,22 +44,22 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
 
     if not signature:
         if required or not allow_unsigned:
-            raise LicenseSignatureError("License check authorization failed.")
+            raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
         return "unsigned"
 
     secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
     if not secret:
-        raise LicenseSignatureError("License check authorization failed.")
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     timestamp = _parse_timestamp(body.get("timestamp"))
     nonce = str(body.get("nonce") or body.get("request_id") or "").strip()
     if not nonce:
-        raise LicenseSignatureError("License check authorization failed.")
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     now = int(time.time())
     skew = int(app.config.get("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", 300))
     if abs(now - timestamp) > skew:
-        raise LicenseSignatureError("License check authorization failed.")
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     expected = sign_license_payload(body, secret)
     accepted = hmac.compare_digest(signature, expected)
@@ -68,7 +68,7 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
         if per_license_secret:
             accepted = hmac.compare_digest(signature, sign_license_payload(body, per_license_secret))
     if not accepted:
-        raise LicenseSignatureError("License check authorization failed.")
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     _remember_nonce(app, nonce, now)
     return "signed"
@@ -78,7 +78,7 @@ def _parse_timestamp(value) -> int:
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise LicenseSignatureError("License check authorization failed.") from exc
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.") from exc
 
 
 def _remember_nonce(app: Flask, nonce: str, now: int) -> None:
@@ -91,7 +91,7 @@ def _remember_nonce(app: Flask, nonce: str, now: int) -> None:
             cache.pop(key, None)
 
     if nonce in cache:
-        raise LicenseSignatureError("License check authorization failed.")
+        raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     cache[nonce] = now + replay_window
     while len(cache) > max_items:
