@@ -196,6 +196,32 @@ def hoberadius_service_requests():
     }), 201
 
 
+@bp.post("/integration/hoberadius/portal-sso")
+def hoberadius_portal_sso():
+    """Mint a short-lived SSO link so the radius can open the customer portal."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "الدخول الموحّد يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license or not result.active:
+        return jsonify({"ok": False, "status": result.status, "message": "الترخيص ليس نشطًا."}), 403
+    customer = result.license.customer
+    user = customer.users.filter_by(active=True).order_by(CustomerUser.id.asc()).first() if customer else None
+    if not user:
+        return jsonify({"ok": False, "status": "no_user", "message": "لا يوجد مستخدم عميل نشط."}), 404
+    from itsdangerous import URLSafeTimedSerializer
+
+    serializer = URLSafeTimedSerializer(str(current_app.config.get("SECRET_KEY") or ""), salt="hoberadius-portal-sso")
+    sso_token = serializer.dumps({"uid": user.id, "cid": customer.id})
+    sso_url = url_for("public.customer_portal_sso", _external=True) + "?t=" + sso_token
+    return jsonify({"ok": True, "status": "ok", "sso_url": sso_url, "expires_in": 90})
+
+
 @bp.post("/integration/hoberadius/customer-users/password-change")
 def hoberadius_customer_user_password_change():
     body = request.get_json(silent=True) or {}

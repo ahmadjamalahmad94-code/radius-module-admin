@@ -90,6 +90,29 @@ def payment_portal_submit_proof(request_id: int):
     return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
 
 
+@bp.get("/portal/sso")
+def customer_portal_sso():
+    """One-click SSO from the radius into the customer portal (short-lived token)."""
+    from itsdangerous import URLSafeTimedSerializer
+
+    token = request.args.get("t") or ""
+    serializer = URLSafeTimedSerializer(str(current_app.config.get("SECRET_KEY") or ""), salt="hoberadius-portal-sso")
+    try:
+        data = serializer.loads(token, max_age=90)
+    except Exception:
+        flash("رابط الدخول الموحّد غير صالح أو انتهت صلاحيته. أعد المحاولة من الريدياس.", "error")
+        return redirect(url_for("public.customer_portal_login"))
+    user = db.session.get(CustomerUser, int(data.get("uid", 0) or 0))
+    if not user or not user.active or not user.customer or user.customer.status != "active":
+        flash("تعذّر إكمال الدخول الموحّد.", "error")
+        return redirect(url_for("public.customer_portal_login"))
+    session["customer_user_id"] = user.id
+    session["customer_id"] = user.customer_id
+    session["customer_name"] = user.full_name or user.username
+    flash("تم الدخول إلى بوابة العميل من الريدياس.", "success")
+    return redirect(url_for("public.customer_portal_dashboard"))
+
+
 @bp.get("/portal/login")
 def customer_portal_login():
     if session.get("customer_user_id"):
