@@ -23,7 +23,7 @@ from flask import Flask, current_app
 
 from ..extensions import db
 from ..license_signing import license_integration_secret
-from ..models import CustomerBackupArtifact, License
+from ..models import CustomerBackupArtifact, License, utcnow
 from ..services.customer_control import audit_customer_control
 
 
@@ -173,6 +173,8 @@ def record_backup_upload(
     )
     db.session.commit()
 
+    prune_customer_backups(customer.id)
+
     return {
         "ok": True,
         "status": artifact.result_status,
@@ -181,6 +183,44 @@ def record_backup_upload(
         "backup_reference": backup_reference,
         "size": artifact.size,
     }
+
+
+BACKUP_RETENTION_DAYS = 30
+
+
+def prune_customer_backups(customer_id: int, *, days: int = BACKUP_RETENTION_DAYS) -> int:
+    """Delete a customer's backup artifacts (and stored files) older than `days`.
+
+    Mirrors the 30-day retention enforced on the instance's local backups.
+    Quiet/safe: rolls back on any error. Returns the count removed.
+    """
+    from datetime import timedelta
+
+    if days <= 0:
+        return 0
+    cutoff = utcnow() - timedelta(days=days)
+    try:
+        stale = CustomerBackupArtifact.query.filter(
+            CustomerBackupArtifact.customer_id == int(customer_id),
+            CustomerBackupArtifact.received_at < cutoff,
+        ).all()
+        if not stale:
+            return 0
+        cust_dir = (_backups_root() / str(customer_id)).resolve()
+        for art in stale:
+            if art.stored_filename:
+                try:
+                    fp = (cust_dir / art.stored_filename).resolve()
+                    if cust_dir in fp.parents and fp.exists():
+                        fp.unlink()
+                except OSError:
+                    pass
+            db.session.delete(art)
+        db.session.commit()
+        return len(stale)
+    except Exception:  # noqa: BLE001 — retention must never break an upload
+        db.session.rollback()
+        return 0
 
 
 def list_customer_backups(customer_id: int, *, limit: int = 50) -> list[CustomerBackupArtifact]:
