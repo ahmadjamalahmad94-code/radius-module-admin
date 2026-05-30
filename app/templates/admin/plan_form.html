@@ -7,7 +7,7 @@
 {% block content %}
 {{ hub.hero(
   ("إضافة خطة جديدة" if is_new else "تعديل خطة " ~ (plan.name or '')),
-  subtitle="القيم هنا تظهر في عقد الترخيص — لا تغيّر الـ slug إلا لسبب قوي.",
+  subtitle="القيم هنا تظهر في عقد الترخيص الذي يقرأه الريدياس. اكتب الاسم والحدود فقط.",
   icon=("cube" if is_new else "cubes-stacked")
 ) }}
 
@@ -22,11 +22,7 @@
           <input class="hub-input" name="name" value="{{ plan.name or '' }}" required>
           <div class="hub-field-hint">الاسم التجاري الظاهر في القوائم واختيار التراخيص.</div>
         </div>
-        <div class="hub-field">
-          <label>المعرّف المختصر <span class="req">*</span></label>
-          <input class="hub-input mono" name="slug" value="{{ plan.slug or '' }}" required>
-          <div class="hub-field-hint">كود ثابت مثل <span class="mono">pro</span>. أحرف صغيرة وأرقام فقط.</div>
-        </div>
+        <input type="hidden" name="slug" value="{{ plan.slug or '' }}">
         <div class="hub-field">
           <label>السعر الشهري</label>
           <input class="hub-input" name="monthly_price" type="number" step="0.01" value="{{ plan.monthly_price or 0 }}">
@@ -56,12 +52,12 @@
         <div class="hub-field">
           <label>أقصى عدد مستخدمين</label>
           <input class="hub-input" name="max_users" type="number" min="1" value="{{ plan.max_users or 0 }}">
-          <div class="hub-field-hint">الحد التجاري لعدد مستخدمي RADIUS في تثبيت العميل.</div>
+          <div class="hub-field-hint">الحد التجاري لعدد مستخدمي الريدياس في تثبيت العميل.</div>
         </div>
         <div class="hub-field">
-          <label>أقصى عدد NAS</label>
+          <label>أقصى عدد أجهزة شبكة</label>
           <input class="hub-input" name="max_nas" type="number" min="1" value="{{ plan.max_nas or 0 }}">
-          <div class="hub-field-hint">عدد أجهزة NAS أو MikroTik المسموح ربطها.</div>
+          <div class="hub-field-hint">عدد أجهزة الشبكة أو MikroTik المسموح ربطها.</div>
         </div>
         <div class="hub-field">
           <label>أقصى عدد مدراء</label>

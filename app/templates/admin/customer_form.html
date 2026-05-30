@@ -54,14 +54,19 @@
           <input class="hub-input" name="city" value="{{ customer.city or '' }}">
           <div class="hub-field-hint">اكتب المدينة أو منطقة التشغيل الأساسية.</div>
         </div>
+        <div class="hub-field full">
+          <label>رابط لوحة الريدياس / الخادم</label>
+          <input class="hub-input" name="runtime_url" value="{{ customer.runtime_url or '' }}" placeholder="https://radius.example.com أو http://187.77.70.18/">
+          <div class="hub-field-hint">يظهر للعميل كرابط دخول أو سيرفر تشغيل. مزامنة كلمات المرور تتم من الريدياس إلى لوحة التراخيص عبر HTTPS.</div>
+        </div>
         <div class="hub-field">
           <label>الحالة</label>
           <select class="hub-select" name="status">
-            {% for s in ['active','inactive','blocked'] %}
+            {% for s in ['pending','active','inactive','blocked'] %}
               <option value="{{ s }}" {{ 'selected' if customer.status == s else '' }}>{{ s|status_label }}</option>
             {% endfor %}
           </select>
-          <div class="hub-field-hint">نشط للمتابعة العادية، غير نشط للأرشفة، ومحظور للحالات التي لا تريد التعامل معها.</div>
+          <div class="hub-field-hint">pending تعني أن العميل بانتظار موافقة الإدارة. active فقط يسمح بدخول بوابة العميل ومزامنة الهوية إلى الريدياس.</div>
         </div>
         <div class="hub-field full">
           <label>ملاحظات داخلية</label>

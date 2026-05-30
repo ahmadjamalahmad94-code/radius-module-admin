@@ -44,7 +44,7 @@
   <header class="hub-section-head">
     {%- if icon %}<span class="hub-section-head-icon"><i class="fa-solid fa-{{ icon }}"></i></span>{% endif -%}
     <span class="hub-section-head-title">{{ title }}</span>
-    {%- if meta %}<span class="hub-section-head-meta">{{ meta }}</span>{% endif -%}
+    {%- if meta %}<span class="hub-section-head-meta">{{ meta|safe }}</span>{% endif -%}
   </header>
   {%- endif -%}
   <div class="hub-section-body{% if flush %} hub-section-body--flush{% endif %}">

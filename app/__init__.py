@@ -240,16 +240,43 @@ def init_database(app: Flask) -> None:
 
 
 def ensure_schema_compatibility(app: Flask) -> None:
-    if db.engine.dialect.name != "sqlite":
+    if db.engine.dialect.name not in {"sqlite", "postgresql"}:
         return
     inspector = inspect(db.engine)
     tables = set(inspector.get_table_names())
-    if "customers" not in tables:
-        return
-    customer_columns = {column["name"] for column in inspector.get_columns("customers")}
-    if "runtime_url" not in customer_columns:
-        db.session.execute(text("ALTER TABLE customers ADD COLUMN runtime_url VARCHAR(255) NOT NULL DEFAULT ''"))
-        db.session.commit()
+    if "customers" in tables:
+        _add_columns_if_missing("customers", {
+            "runtime_url": "VARCHAR(255) NOT NULL DEFAULT ''",
+        })
+    if "license_payment_requests" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("license_payment_requests", {
+            "access_token": "VARCHAR(96) NOT NULL DEFAULT ''",
+            "applied_at": datetime_type,
+            "applied_action": "VARCHAR(60) NOT NULL DEFAULT ''",
+            "applied_result_json": "TEXT NOT NULL DEFAULT '{}'",
+        })
+    if "provisioning_orders" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("provisioning_orders", {
+            "license_payment_request_id": "INTEGER",
+            "target_plan_id": "INTEGER",
+            "requested_at": datetime_type,
+            "paid_at": datetime_type,
+            "provisioning_started_at": datetime_type,
+            "ready_at": datetime_type,
+            "assigned_operator": "VARCHAR(160) NOT NULL DEFAULT ''",
+        })
+
+
+def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
+    inspector = inspect(db.engine)
+    existing = {column["name"] for column in inspector.get_columns(table_name)}
+    for column_name, definition in columns.items():
+        if column_name in existing:
+            continue
+        db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"))
+    db.session.commit()
 
 
 def seed_defaults(app: Flask) -> None:
@@ -418,6 +445,48 @@ def _install_template_helpers(app: Flask) -> None:
             return "0.00"
         return f"{Decimal(value):,.2f}"
 
+    @app.template_filter("role_label")
+    def role_label_filter(value):
+        from .services.customer_control import role_label
+
+        return role_label(str(value or ""))
+
+    @app.template_filter("service_key_label")
+    def service_key_label_filter(value):
+        from .services.customer_control import service_label
+
+        return service_label(str(value or ""))
+
+    @app.template_filter("request_type_label")
+    def request_type_label_filter(value):
+        from .services.customer_control import service_request_type_label
+
+        return service_request_type_label(str(value or ""))
+
+    @app.template_filter("payment_purpose_label")
+    def payment_purpose_label_filter(value):
+        from .services.customer_control import payment_purpose_label
+
+        return payment_purpose_label(str(value or ""))
+
+    @app.template_filter("audit_action_label")
+    def audit_action_label_filter(value):
+        from .services.customer_control import audit_action_label
+
+        return audit_action_label(str(value or ""))
+
+    @app.template_filter("audit_summary_label")
+    def audit_summary_label_filter(value):
+        from .services.customer_control import audit_summary_label
+
+        return audit_summary_label(str(value or ""))
+
+    @app.template_filter("entity_type_label")
+    def entity_type_label_filter(value):
+        from .services.customer_control import entity_type_label
+
+        return entity_type_label(str(value or ""))
+
     @app.template_filter("status_label")
     def status_label(value):
         return {
@@ -446,6 +515,7 @@ def _install_template_helpers(app: Flask) -> None:
             "ready": "جاهز",
             "delivered": "تم التسليم",
             "needs_manual_review": "يحتاج مراجعة",
+            "not_found": "غير موجود",
         }.get(str(value), value)
 
     @app.template_filter("badge_class")

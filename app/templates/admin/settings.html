@@ -28,9 +28,9 @@
           <div class="hub-field-hint">وسم مثل production أو bootstrap لتمييز البيئة.</div>
         </div>
         <div class="hub-field full">
-          <label>رابط API الأساسي</label>
+          <label>رابط واجهة الترخيص الأساسي</label>
           <input class="hub-input mono" name="license_api_base_url" value="{{ settings.get('license_api_base_url', '') }}">
-          <div class="hub-field-hint">الرابط العام لاستخدام <span class="mono">/api/license/check</span> من نسخ العملاء.</div>
+          <div class="hub-field-hint">الرابط العام الذي تستخدمه نسخ العملاء لفحص الترخيص وسحب الصلاحيات.</div>
         </div>
       </div>
     {% endcall %}

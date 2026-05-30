@@ -36,7 +36,7 @@
     {% if report.payments_by_purpose %}
       <div class="hub-detail-list">
         {% for key, count in report.payments_by_purpose.items() %}
-          <div><span>{{ key }}</span><strong class="num">{{ count }}</strong></div>
+          <div><span>{{ key|payment_purpose_label }}</span><strong class="num">{{ count }}</strong></div>
         {% endfor %}
       </div>
     {% else %}
@@ -67,7 +67,7 @@
           <td class="hub-muted">يمكن تعليمها expired بدون حذف</td>
         </tr>
         <tr>
-          <td><i class="fa-solid fa-copy" style="color:var(--hub-red)"></i> مخاطر تكرار provider transaction</td>
+          <td><i class="fa-solid fa-copy" style="color:var(--hub-red)"></i> مخاطر تكرار رقم عملية الدفع</td>
           <td class="num">{{ reconciliation.duplicate_provider_transaction_risks|length }}</td>
           <td class="hub-muted">يجب ألا يحدث مع القيود الحالية</td>
         </tr>

@@ -11,7 +11,12 @@ from ..services.customer_control import (
     build_runtime_contract_for_license,
     clean_username,
     create_customer_service_request,
+    normalize_contact_email,
+    normalize_contact_phone,
     service_catalog_items,
+    service_limit_summary,
+    validate_unique_customer_contact,
+    validate_unique_customer_user_email,
 )
 from ..services.license_payments import (
     LicensePaymentProofService,
@@ -19,6 +24,7 @@ from ..services.license_payments import (
     LicensePaymentRequestService,
     LicensePaymentValidationError,
     instructions_for_request,
+    payment_error_message,
 )
 from ..services.vpn_entitlements import find_best_customer_license, license_allows_vpn_services
 
@@ -57,7 +63,7 @@ def payment_portal_submit_proof(request_id: int):
             note=request.form.get("note") or "",
         )
     except LicensePaymentValidationError as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
     flash("تم إرسال إثبات الدفع. بانتظار مراجعة الدفع من المدير.", "success")
     return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
@@ -81,7 +87,8 @@ def customer_portal_signup():
 def customer_portal_signup_post():
     try:
         username = clean_username(request.form.get("username") or "")
-        email = (request.form.get("email") or "").strip()[:180]
+        email = normalize_contact_email(request.form.get("email") or "")
+        phone = normalize_contact_phone(request.form.get("phone") or "")
         password = request.form.get("password") or ""
         password_confirm = request.form.get("password_confirm") or ""
         if not email:
@@ -92,14 +99,12 @@ def customer_portal_signup_post():
             raise CustomerControlValidationError("تأكيد كلمة المرور غير مطابق.")
         if CustomerUser.query.filter_by(username=username).first():
             raise CustomerControlValidationError("اسم المستخدم مستخدم بالفعل.")
-        if CustomerUser.query.filter_by(email=email).first():
-            raise CustomerControlValidationError("البريد الإلكتروني مستخدم بالفعل.")
 
         customer = Customer(
             company_name=(request.form.get("company_name") or "").strip()[:180] or email,
             contact_name=(request.form.get("full_name") or "").strip()[:160],
             email=email,
-            phone=(request.form.get("phone") or "").strip()[:80],
+            phone=phone,
             country=(request.form.get("country") or "").strip()[:100],
             city=(request.form.get("city") or "").strip()[:100],
             status="pending",
@@ -112,6 +117,8 @@ def customer_portal_signup_post():
             role_key="owner",
             active=False,
         )
+        validate_unique_customer_contact(customer, email, phone)
+        validate_unique_customer_user_email(user, email)
         user.set_password(password, increment_version=False)
         user.password_version = max(1, int(user.password_version or 0))
         db.session.add(customer)
@@ -209,6 +216,7 @@ def customer_portal_dashboard():
         contract=contract,
         runtime_setup=_runtime_setup_for_license(lic),
         service_catalog=service_catalog_items(),
+        service_limit_summary=service_limit_summary,
         licenses=customer.licenses.order_by(License.created_at.desc()).all(),
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
@@ -238,7 +246,7 @@ def customer_portal_service_request(service_key: str):
                 "amount": amount,
             })
     except (CustomerControlValidationError, LicensePaymentValidationError, ValueError) as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("public.customer_portal_dashboard"))
     db.session.commit()
     if payment_request:

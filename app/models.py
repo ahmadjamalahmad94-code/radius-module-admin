@@ -61,12 +61,275 @@ class Customer(TimestampMixin, db.Model):
     phone = db.Column(db.String(80), default="", nullable=False)
     country = db.Column(db.String(100), default="", nullable=False)
     city = db.Column(db.String(100), default="", nullable=False)
+    runtime_url = db.Column(db.String(255), default="", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
 
     licenses = db.relationship("License", back_populates="customer", lazy="dynamic")
     renewals = db.relationship("Renewal", back_populates="customer", lazy="dynamic")
     vpn_entitlement = db.relationship("CustomerVpnEntitlement", back_populates="customer", uselist=False)
+    users = db.relationship("CustomerUser", back_populates="customer", lazy="dynamic")
+    service_entitlements = db.relationship("CustomerServiceEntitlement", back_populates="customer", lazy="dynamic")
+    service_requests = db.relationship("CustomerServiceRequest", back_populates="customer", lazy="dynamic")
+
+
+class CustomerUser(TimestampMixin, db.Model):
+    __tablename__ = "customer_users"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "username", name="uq_customer_users_customer_username"),
+        db.Index("ix_customer_users_customer_active", "customer_id", "active"),
+        db.Index("ix_customer_users_username", "username"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    username = db.Column(db.String(80), nullable=False)
+    email = db.Column(db.String(180), default="", nullable=False, index=True)
+    full_name = db.Column(db.String(160), default="", nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    password_hash_scheme = db.Column(db.String(40), default="werkzeug", nullable=False)
+    password_version = db.Column(db.Integer, default=1, nullable=False)
+    role_key = db.Column(db.String(40), default="owner", nullable=False, index=True)
+    active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    last_password_changed_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    customer = db.relationship("Customer", back_populates="users")
+
+    def set_password(self, password: str, *, increment_version: bool = True) -> None:
+        self.password_hash = generate_password_hash(password)
+        self.password_hash_scheme = "werkzeug"
+        self.last_password_changed_at = utcnow()
+        if increment_version:
+            self.password_version = int(self.password_version or 0) + 1
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+
+class ServiceCatalogItem(TimestampMixin, db.Model):
+    __tablename__ = "service_catalog_items"
+    __table_args__ = (
+        db.Index("ix_service_catalog_status_sort", "status", "sort_order"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_key = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    title = db.Column(db.String(180), default="", nullable=False)
+    short_description = db.Column(db.String(500), default="", nullable=False)
+    details = db.Column(db.Text, default="", nullable=False)
+    category = db.Column(db.String(80), default="core", nullable=False, index=True)
+    price = db.Column(db.Numeric(12, 2), default=0, nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    billing_mode = db.Column(db.String(40), default="monthly", nullable=False)
+    requires_payment = db.Column(db.Boolean, default=False, nullable=False)
+    requires_admin_approval = db.Column(db.Boolean, default=True, nullable=False)
+    activation_mode = db.Column(db.String(60), default="manual", nullable=False)
+    command_key = db.Column(db.String(100), default="", nullable=False)
+    status = db.Column(db.String(30), default="active", nullable=False, index=True)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+
+    entitlements = db.relationship("CustomerServiceEntitlement", back_populates="catalog_item", lazy="dynamic")
+
+    @property
+    def catalog_metadata(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @catalog_metadata.setter
+    def catalog_metadata(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
+
+    def _set_metadata_value(self, key: str, value) -> None:
+        data = self.catalog_metadata
+        data[key] = value
+        self.catalog_metadata = data
+
+    @property
+    def name(self) -> str:
+        return str(self.catalog_metadata.get("name") or self.title or "")
+
+    @name.setter
+    def name(self, value: str) -> None:
+        text = str(value or "").strip()
+        self._set_metadata_value("name", text)
+        if not self.title:
+            self.title = text
+
+    @property
+    def name_ar(self) -> str:
+        return str(self.catalog_metadata.get("name_ar") or self.title or "")
+
+    @name_ar.setter
+    def name_ar(self, value: str) -> None:
+        text = str(value or "").strip()
+        self._set_metadata_value("name_ar", text)
+        if text:
+            self.title = text
+
+    @property
+    def description(self) -> str:
+        return self.short_description or self.details or ""
+
+    @description.setter
+    def description(self, value: str) -> None:
+        text = str(value or "").strip()
+        self.short_description = text[:500]
+        self.details = text
+
+    @property
+    def default_enabled(self) -> bool:
+        return bool(self.catalog_metadata.get("default_enabled", False))
+
+    @default_enabled.setter
+    def default_enabled(self, value: bool) -> None:
+        self._set_metadata_value("default_enabled", bool(value))
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "active"
+
+    @is_active.setter
+    def is_active(self, value: bool) -> None:
+        self.status = "active" if value else "inactive"
+
+    @property
+    def price_monthly(self):
+        return self.price
+
+    @price_monthly.setter
+    def price_monthly(self, value) -> None:
+        self.price = value or 0
+
+
+class CustomerServiceEntitlement(TimestampMixin, db.Model):
+    __tablename__ = "customer_service_entitlements"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "service_key", name="uq_customer_service_entitlements_customer_service"),
+        db.Index("ix_customer_service_entitlements_customer_status", "customer_id", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    service_key = db.Column(db.String(80), db.ForeignKey("service_catalog_items.service_key"), nullable=False, index=True)
+    enabled = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    status = db.Column(db.String(20), default="disabled", nullable=False, index=True)
+    plan_code = db.Column(db.String(80), default="", nullable=False)
+    limits_json = db.Column(db.Text, default="{}", nullable=False)
+    config_json = db.Column(db.Text, default="{}", nullable=False)
+    price_monthly = db.Column(db.Numeric(10, 2), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, default="", nullable=False)
+    updated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+    customer = db.relationship("Customer", back_populates="service_entitlements")
+    license = db.relationship("License")
+    catalog_item = db.relationship("ServiceCatalogItem", back_populates="entitlements")
+    updated_by = db.relationship("Admin")
+
+    @property
+    def limits(self) -> dict:
+        return json_loads(self.limits_json, {})
+
+    @limits.setter
+    def limits(self, value: dict) -> None:
+        self.limits_json = json_dumps(value or {})
+
+    @property
+    def config(self) -> dict:
+        return json_loads(self.config_json, {})
+
+    @config.setter
+    def config(self, value: dict) -> None:
+        self.config_json = json_dumps(value or {})
+
+
+class CustomerServiceRequest(TimestampMixin, db.Model):
+    __tablename__ = "customer_service_requests"
+    __table_args__ = (
+        db.Index("ix_customer_service_requests_customer_status", "customer_id", "status"),
+        db.Index("ix_customer_service_requests_service_status", "service_key", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    public_reference = db.Column(db.String(40), default="", nullable=False)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    service_id = db.Column(db.Integer, nullable=True)
+    payment_request_id = db.Column(db.Integer, db.ForeignKey("license_payment_requests.id"), nullable=True, index=True)
+    requested_by_access_id = db.Column(db.Integer, nullable=True)
+    requested_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    approved_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    activated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    service_key = db.Column(db.String(80), db.ForeignKey("service_catalog_items.service_key"), nullable=False, index=True)
+    title = db.Column(db.String(180), default="", nullable=False)
+    status = db.Column(db.String(40), default="pending", nullable=False, index=True)
+    payment_status = db.Column(db.String(40), default="not_required", nullable=False)
+    amount = db.Column(db.Numeric(12, 2), default=0, nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
+    customer_note = db.Column(db.Text, default="", nullable=False)
+    admin_note = db.Column(db.Text, default="", nullable=False)
+    requested_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    activated_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    rejected_at = db.Column(db.DateTime, nullable=True)
+    config_json = db.Column(db.Text, default="{}", nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+
+    customer = db.relationship("Customer", back_populates="service_requests")
+    catalog_item = db.relationship("ServiceCatalogItem")
+    license = db.relationship("License")
+    payment_request = db.relationship("LicensePaymentRequest")
+    requested_by_admin = db.relationship("Admin", foreign_keys=[requested_by_admin_id])
+    approved_by_admin = db.relationship("Admin", foreign_keys=[approved_by_admin_id])
+    activated_by_admin = db.relationship("Admin", foreign_keys=[activated_by_admin_id])
+
+    @property
+    def request_metadata(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @request_metadata.setter
+    def request_metadata(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
+
+    def _set_metadata_value(self, key: str, value) -> None:
+        data = self.request_metadata
+        data[key] = value
+        self.request_metadata = data
+
+    @property
+    def customer_user_id(self) -> int | None:
+        value = self.request_metadata.get("customer_user_id")
+        return int(value) if value not in (None, "") else None
+
+    @customer_user_id.setter
+    def customer_user_id(self, value: int | None) -> None:
+        self._set_metadata_value("customer_user_id", value)
+
+    @property
+    def request_type(self) -> str:
+        return str(self.request_metadata.get("request_type") or "activation")
+
+    @request_type.setter
+    def request_type(self, value: str) -> None:
+        self._set_metadata_value("request_type", str(value or "activation").strip()[:40])
+
+    @property
+    def notes(self) -> str:
+        return self.customer_note
+
+    @notes.setter
+    def notes(self, value: str) -> None:
+        self.customer_note = str(value or "")
+
+    @property
+    def desired_limits(self) -> dict:
+        return json_loads(self.config_json, {})
+
+    @desired_limits.setter
+    def desired_limits(self, value: dict) -> None:
+        self.config_json = json_dumps(value or {})
 
 
 class Plan(TimestampMixin, db.Model):

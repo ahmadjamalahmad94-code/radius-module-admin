@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% import "_partials/hub.html" as hub %}
 {% block title %}{{ customer.company_name }}{% endblock %}
-{% block page_title %}Customer 360 — {{ customer.company_name }}{% endblock %}
+{% block page_title %}ملف العميل 360 — {{ customer.company_name }}{% endblock %}
 {% block page_subtitle %}مرجع العميل المركزي: الهوية، الترخيص، الخدمات، الدفع، والعقد الذي يستهلكه الريدياس{% endblock %}
 
 {% block head_extra %}
@@ -26,7 +26,7 @@
     border-radius: var(--hub-r-md);
     display: grid; gap: 10px;
   }
-  .cd-limits { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; direction: ltr; unicode-bidi: isolate; color: var(--hub-ink-3); max-width: 220px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
+  .cd-limits { color: var(--hub-ink-2); font-size: 12.5px; line-height: 1.7; display: inline-block; max-width: 240px; }
 </style>
 {% endblock %}
 
@@ -47,6 +47,14 @@
       {% if current_license %}
         <span class="hub-hero-chip"><i class="fa-solid fa-key"></i> {{ current_license.license_key[:16] }}…</span>
       {% endif %}
+      {% if customer.status == 'pending' %}
+        <form method="post" action="{{ url_for('admin.customer_approve', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+            <i class="fa-solid fa-circle-check"></i> موافقة وتفعيل
+          </button>
+        </form>
+      {% endif %}
       <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">
         <i class="fa-solid fa-pen"></i> تعديل
       </a>
@@ -59,7 +67,7 @@
   {{ hub.kpi("التراخيص", licenses|length, icon="key", variant="violet") }}
   {{ hub.kpi("مستخدمو العميل", customer_users|length, icon="user-shield", variant="blue") }}
   {{ hub.kpi("طلبات الدفع", payment_requests|length, icon="credit-card", variant="amber") }}
-  {{ hub.kpi("إصدار المستخدمين", users_version, icon="code-branch", variant="grey") }}
+  {{ hub.kpi("إصدار الدخول", users_version, icon="rotate", variant="grey") }}
 </div>
 
 {# ── Identity + contract ── #}
@@ -71,16 +79,18 @@
       <div><span>البريد</span><strong class="ltr">{{ customer.email or '—' }}</strong></div>
       <div><span>الهاتف</span><strong class="ltr">{{ customer.phone or '—' }}</strong></div>
       <div><span>الموقع</span><strong>{{ customer.city }} {{ customer.country }}</strong></div>
-      <div><span>إصدار مستخدمي العميل</span><strong class="mono">{{ users_version }}</strong></div>
+      <div><span>رابط الريدياس / الخادم</span><strong class="mono">{{ customer.runtime_url or '—' }}</strong></div>
+      <div><span>إصدار الدخول</span><strong class="num">{{ users_version }}</strong></div>
     </div>
   {% endcall %}
 
   {% call hub.section("العقد الفعال للريدياس", icon="file-contract") %}
+    {% set license_status = contract.license.status %}
     <div class="hub-detail-list">
       <div><span>الترخيص الحالي</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
-      <div><span>حالة الترخيص</span><strong>{{ contract.license.status|status_label }}</strong></div>
+      <div><span>حالة الترخيص</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
       <div><span>المشتركين</span><strong>{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</strong></div>
-      <div><span>أجهزة NAS</span><strong>{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</strong></div>
+      <div><span>أجهزة الشبكة</span><strong>{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</strong></div>
     </div>
     <p class="hub-field-hint" style="margin-top:12px">هذا ملخص العقد الذي ستسحبه نسخة الريدياس. لا يتم تنفيذ أوامر WireGuard أو MikroTik من هنا.</p>
   {% endcall %}
@@ -96,7 +106,7 @@
           <th>البريد</th>
           <th>الدور</th>
           <th>الحالة</th>
-          <th class="num">الإصدار</th>
+          <th class="num">إصدار الدخول</th>
           <th class="date">آخر تغيير</th>
           <th></th>
         </tr>
@@ -106,19 +116,39 @@
         <tr>
           <td class="mono">{{ user.username }}</td>
           <td class="ltr-cell" style="text-align:start">{{ user.email or '—' }}</td>
-          <td>{{ user.role_key }}</td>
+          <td>{{ user.role_key|role_label }}</td>
           <td>
             <span class="badge {{ ('active' if user.active else 'disabled')|badge_class }}">
               {{ 'مفعل' if user.active else 'معطل' }}
             </span>
           </td>
-          <td class="num mono">{{ user.password_version }}</td>
+          <td class="num">{{ user.password_version }}</td>
           <td class="date">{{ user.last_password_changed_at|dt }}</td>
           <td>
             <div class="hub-actions">
               <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.customer_user_edit', customer_id=customer.id, user_id=user.id) }}">
                 <i class="fa-solid fa-pen"></i> تعديل
               </a>
+              <details class="control-details" style="display:inline-block;min-width:220px">
+                <summary class="hub-btn hub-btn--secondary hub-btn--sm" style="list-style:none;cursor:pointer">
+                  <i class="fa-solid fa-key"></i> تعيين كلمة المرور
+                </summary>
+                <form method="post" action="{{ url_for('admin.customer_user_password_set', customer_id=customer.id, user_id=user.id) }}" class="hub-form" style="margin-top:8px;padding:10px;border:1px solid var(--hub-line-2);border-radius:10px;background:#fff;min-width:260px">
+                  {{ csrf_input() }}
+                  <div class="hub-field">
+                    <label>كلمة مرور جديدة</label>
+                    <input class="hub-input" name="password" type="password" minlength="8" required autocomplete="new-password">
+                  </div>
+                  <div class="hub-field">
+                    <label>تأكيد كلمة المرور</label>
+                    <input class="hub-input" name="password_confirm" type="password" minlength="8" required autocomplete="new-password">
+                    <div class="hub-field-hint">ستحفظ لوحة التراخيص نسخة مشفرة فقط وتزيد إصدار الدخول.</div>
+                  </div>
+                  <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+                    <i class="fa-solid fa-floppy-disk"></i> حفظ كلمة المرور
+                  </button>
+                </form>
+              </details>
               {% if user.active %}
                 <form method="post" action="{{ url_for('admin.customer_user_disable', customer_id=customer.id, user_id=user.id) }}" style="display:inline">
                   {{ csrf_input() }}
@@ -134,7 +164,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="7">{{ hub.empty("لا يوجد مستخدمون بعد.", sub="أنشئ owner أولًا ليصبح مرجع دخول الريدياس.", icon="user-shield") }}</td></tr>
+        <tr><td colspan="7">{{ hub.empty("لا يوجد مستخدمون بعد.", sub="أنشئ مستخدمًا رئيسيًا أولًا ليصبح مرجع دخول الريدياس.", icon="user-shield") }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -142,7 +172,7 @@
 {% endcall %}
 
 {# ── Services 360 ── #}
-{% call hub.section("الخدمات والتحكم 360", icon="shapes", meta='تفعيل وتعطيل سريع + JSON متقدم') %}
+{% call hub.section("الخدمات والتحكم 360", icon="shapes", meta='تفعيل وتعطيل وحدود واضحة لكل خدمة') %}
   <div class="hub-table-wrap">
     <table class="hub-table">
       <thead>
@@ -161,7 +191,6 @@
         <tr>
           <td>
             <strong>{{ item.name_ar or item.name }}</strong>
-            <div class="hub-muted mono" style="font-size:11.5px">{{ item.service_key }}</div>
           </td>
           <td>
             <span class="badge {{ service_contract.status|default('disabled')|badge_class }}">
@@ -169,7 +198,7 @@
             </span>
           </td>
           <td style="max-width:260px">{{ item.description }}</td>
-          <td><span class="cd-limits">{{ ent.limits_json if ent else '{}' }}</span></td>
+          <td><span class="cd-limits">{{ service_limit_summary(ent.limits if ent else {}) }}</span></td>
           <td>
             {% if item.service_key == 'ip_change_vpn' %}
               <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_vpn_service', customer_id=customer.id) }}">
@@ -179,8 +208,8 @@
             <form method="post" action="{{ url_for('admin.customer_service_update', customer_id=customer.id, service_key=item.service_key) }}" class="cd-svc-form">
               {{ csrf_input() }}
               <input type="hidden" name="enabled" value="1">
-              <input type="hidden" name="limits_json" value='{{ ent.limits_json if ent else "{}" }}'>
-              <input type="hidden" name="config_json" value='{{ ent.config_json if ent else "{}" }}'>
+                <input type="hidden" name="limits_json" value='{{ ent.limits_json if ent else "{}" }}'>
+                <input type="hidden" name="config_json" value='{{ ent.config_json if ent else "{}" }}'>
               <input type="hidden" name="notes" value="{{ ent.notes if ent else '' }}">
               <button class="hub-btn hub-btn--primary hub-btn--sm" name="action" value="activate" type="submit">تفعيل</button>
               <button class="hub-btn hub-btn--secondary hub-btn--sm" name="action" value="suspend" type="submit">تعليق</button>
@@ -203,8 +232,22 @@
                   <input type="checkbox" name="enabled" value="1" {% if service_contract.enabled %}checked{% endif %}>
                   <span>مفعلة</span>
                 </label>
-                <div class="hub-field"><label>limits JSON</label><textarea class="hub-textarea mono" name="limits_json" rows="3">{{ ent.limits_json if ent else '{}' }}</textarea></div>
-                <div class="hub-field"><label>config JSON</label><textarea class="hub-textarea mono" name="config_json" rows="3">{{ ent.config_json if ent else '{}' }}</textarea></div>
+                {% set limit_fields = service_limit_fields(item.service_key) %}
+                {% if limit_fields %}
+                  <div class="hub-form-grid">
+                    {% for field_key, field_label, field_hint in limit_fields %}
+                      <div class="hub-field">
+                        <label>{{ field_label }}</label>
+                        <input class="hub-input" name="limit_{{ field_key }}" type="number" min="0" value="{{ ent.limits.get(field_key, '') if ent else '' }}">
+                        <div class="hub-field-hint">{{ field_hint }}</div>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <input type="hidden" name="limits_json" value='{{ ent.limits_json if ent else "{}" }}'>
+                  <p class="hub-field-hint">هذه الخدمة لا تحتاج حدودًا رقمية خاصة. يكفي اختيار الحالة والتفعيل.</p>
+                {% endif %}
+                <input type="hidden" name="config_json" value='{{ ent.config_json if ent else "{}" }}'>
                 <div class="hub-field"><label>ملاحظات داخلية</label><textarea class="hub-textarea" name="notes" rows="2">{{ ent.notes if ent else '' }}</textarea></div>
                 <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
                   <i class="fa-solid fa-floppy-disk"></i> حفظ الخدمة
@@ -280,7 +323,7 @@
         {% for req in payment_requests %}
           <tr>
             <td class="mono">{{ req.reference_code }}</td>
-            <td>{{ req.purpose }}</td>
+            <td>{{ req.purpose|payment_purpose_label }}</td>
             <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
             <td><span class="badge {{ req.status|badge_class }}">{{ req.status|status_label }}</span></td>
             <td>
@@ -304,8 +347,8 @@
         <tbody>
         {% for req in service_requests %}
           <tr>
-            <td class="mono">{{ req.service_key }}</td>
-            <td>{{ req.request_type }}</td>
+            <td>{{ req.service_key|service_key_label }}</td>
+            <td>{{ req.request_type|request_type_label }}</td>
             <td>{{ req.status|status_label }}</td>
             <td class="date">{{ req.created_at|dt }}</td>
           </tr>

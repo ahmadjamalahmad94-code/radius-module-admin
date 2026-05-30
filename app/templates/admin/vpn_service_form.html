@@ -7,7 +7,7 @@
 {% block content %}
 {{ hub.hero(
   ("إنشاء باقة VPN جديدة" if is_new else "تعديل باقة " ~ (vpn_plan.name or '')),
-  subtitle="حدود تجارية فقط — التطبيق الفعلي للسرعة يحدث في runtime العميل.",
+  subtitle="حدود تجارية فقط — التطبيق الفعلي للسرعة يحدث داخل نسخة الريدياس عند العميل.",
   icon="shield-halved"
 ) }}
 
@@ -22,11 +22,7 @@
           <input class="hub-input" name="name" value="{{ vpn_plan.name or '' }}" required>
           <div class="hub-field-hint">اسم واضح مثل «VPN 50 Mbps».</div>
         </div>
-        <div class="hub-field">
-          <label>الكود <span class="req">*</span></label>
-          <input class="hub-input mono" name="code" value="{{ vpn_plan.code or '' }}" placeholder="vpn_50m" required>
-          <div class="hub-field-hint">أحرف صغيرة وأرقام وشرطة فقط.</div>
-        </div>
+        <input type="hidden" name="code" value="{{ vpn_plan.code or '' }}">
         <div class="hub-field full">
           <label>الوصف</label>
           <textarea class="hub-textarea" name="description" rows="2">{{ vpn_plan.description or '' }}</textarea>

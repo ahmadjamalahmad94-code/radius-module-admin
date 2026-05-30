@@ -2,7 +2,7 @@
 {% import "_partials/hub.html" as hub %}
 {% block title %}الخطط{% endblock %}
 {% block page_title %}خطط الاشتراك{% endblock %}
-{% block page_subtitle %}تحديد الأسعار والحدود والمزايا التي تعود للعميل عبر API الترخيص{% endblock %}
+{% block page_subtitle %}تحديد الأسعار والحدود والمزايا التي تعود للعميل عبر عقد الترخيص{% endblock %}
 
 {% block content %}
 {{ hub.hero(
@@ -30,12 +30,11 @@
         <tr>
           <td>
             <strong>{{ plan.name }}</strong>
-            <div class="hub-muted mono" style="font-size:11.5px">{{ plan.slug }}</div>
           </td>
           <td class="num">{{ plan.monthly_price|money }} {{ plan.currency }} / شهر</td>
           <td>
             <span class="hub-pill hub-pill--violet" style="margin-inline-end:4px">{{ plan.max_users }} مستخدم</span>
-            <span class="hub-pill hub-pill--blue" style="margin-inline-end:4px">{{ plan.max_nas }} NAS</span>
+            <span class="hub-pill hub-pill--blue" style="margin-inline-end:4px">{{ plan.max_nas }} جهاز شبكة</span>
             <span class="hub-pill hub-pill--grey">{{ plan.max_admins }} مدير</span>
           </td>
           <td class="num">{{ plan.features|length }}</td>

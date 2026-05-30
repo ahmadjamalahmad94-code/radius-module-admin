@@ -2,7 +2,7 @@
 {% import "_partials/hub.html" as hub %}
 {% block title %}{{ 'مستخدم عميل جديد' if is_new else 'تعديل مستخدم العميل' }}{% endblock %}
 {% block page_title %}{{ 'مستخدم عميل جديد' if is_new else 'تعديل مستخدم العميل' }}{% endblock %}
-{% block page_subtitle %}{{ customer.company_name }} — كلمة المرور تدار من هنا وتنتقل للريدياس كـ hash فقط{% endblock %}
+{% block page_subtitle %}{{ customer.company_name }} — كلمة المرور تدار من لوحة التراخيص وتصل للريدياس كنسخة مشفرة فقط{% endblock %}
 
 {% block content %}
 {{ hub.hero(
@@ -34,10 +34,10 @@
           <label>الدور</label>
           <select class="hub-select" name="role_key">
             {% for role in ['owner','admin','support','billing','viewer'] %}
-              <option value="{{ role }}" {% if customer_user.role_key == role %}selected{% endif %}>{{ role }}</option>
+              <option value="{{ role }}" {% if customer_user.role_key == role %}selected{% endif %}>{{ role|role_label }}</option>
             {% endfor %}
           </select>
-          <div class="hub-field-hint">owner يترجم في الريدياس إلى مدير كامل للـ tenant.</div>
+          <div class="hub-field-hint">مالك الحساب يحصل على صلاحية إدارة كاملة داخل ريدياس هذا العميل.</div>
         </div>
       </div>
     {% endcall %}
@@ -53,7 +53,7 @@
             <input class="hub-input" id="cu-pwd" name="password" type="password" {% if is_new %}required{% endif %} autocomplete="new-password">
             <button type="button" class="pwd-toggle" data-pwd-toggle="#cu-pwd" aria-label="إظهار كلمة المرور"><i class="fa-solid fa-eye"></i></button>
           </div>
-          <div class="hub-field-hint">عند الحفظ يخزن Werkzeug hash فقط. لا يظهر ولا يرسل password خام.</div>
+          <div class="hub-field-hint">عند الحفظ تخزن اللوحة نسخة مشفرة فقط. لا تظهر كلمة المرور ولا ترسل كنص مكشوف.</div>
         </div>
         <div class="hub-field full">
           <label class="hub-check-item">
@@ -65,7 +65,7 @@
       {% if not is_new %}
         <div class="hub-flash hub-flash--info" style="margin-top:10px">
           <i class="fa-solid fa-circle-info"></i>
-          الإصدار الحالي لكلمة المرور: <strong class="mono">{{ customer_user.password_version }}</strong>
+          إصدار الدخول الحالي: <strong class="num">{{ customer_user.password_version }}</strong>
         </div>
       {% endif %}
     {% endcall %}

@@ -6,6 +6,8 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from sqlalchemy import func
+
 from ..extensions import db
 from ..models import (
     AuditLog,
@@ -31,32 +33,121 @@ class CustomerControlValidationError(ValueError):
     pass
 
 
+def normalize_contact_email(value: str | None) -> str:
+    return str(value or "").strip().lower()[:180]
+
+
+def normalize_contact_phone(value: str | None) -> str:
+    raw = str(value or "").strip()[:80]
+    if not raw:
+        return ""
+    prefix = "+" if raw.startswith("+") else ""
+    digits = re.sub(r"\D+", "", raw)
+    return f"{prefix}{digits}" if digits else ""
+
+
+def validate_unique_customer_contact(customer: Customer, email: str, phone: str) -> None:
+    normalized_email = normalize_contact_email(email)
+    normalized_phone = normalize_contact_phone(phone)
+
+    with db.session.no_autoflush:
+        if normalized_email:
+            customer_email_query = Customer.query.filter(func.lower(Customer.email) == normalized_email)
+            if customer.id:
+                customer_email_query = customer_email_query.filter(Customer.id != customer.id)
+            if customer_email_query.first():
+                raise CustomerControlValidationError("البريد الإلكتروني مستخدم لعميل آخر.")
+
+            user_email_query = CustomerUser.query.filter(func.lower(CustomerUser.email) == normalized_email)
+            if customer.id:
+                user_email_query = user_email_query.filter(CustomerUser.customer_id != customer.id)
+            if user_email_query.first():
+                raise CustomerControlValidationError("البريد الإلكتروني مستخدم في حساب عميل آخر.")
+
+        if normalized_phone:
+            rows = Customer.query.with_entities(Customer.id, Customer.phone).all()
+            for row in rows:
+                if customer.id and row.id == customer.id:
+                    continue
+                if normalize_contact_phone(row.phone) == normalized_phone:
+                    raise CustomerControlValidationError("رقم الجوال مستخدم لعميل آخر.")
+
+
+def validate_unique_customer_user_email(customer_user: CustomerUser, email: str) -> None:
+    normalized_email = normalize_contact_email(email)
+    if not normalized_email:
+        return
+
+    with db.session.no_autoflush:
+        duplicate_user = CustomerUser.query.filter(func.lower(CustomerUser.email) == normalized_email)
+        if customer_user.id:
+            duplicate_user = duplicate_user.filter(CustomerUser.id != customer_user.id)
+        if duplicate_user.first():
+            raise CustomerControlValidationError("البريد الإلكتروني مستخدم بالفعل.")
+
+        duplicate_customer = Customer.query.filter(func.lower(Customer.email) == normalized_email)
+        if customer_user.customer_id:
+            duplicate_customer = duplicate_customer.filter(Customer.id != customer_user.customer_id)
+        if duplicate_customer.first():
+            raise CustomerControlValidationError("البريد الإلكتروني مستخدم لعميل آخر.")
+
+
 DEFAULT_SERVICE_CATALOG = [
     {
         "service_key": VPN_SERVICE_KEY,
-        "name": "IP Change / VPN Service",
+        "name": "خدمة تغيير IP / VPN",
         "name_ar": "خدمة تغيير IP / VPN",
-        "description": "Commercial entitlement only. The customer runtime applies WireGuard/tc/CHR queue enforcement locally.",
+        "description": "صلاحية تجارية تحدد السرعة والمستخدمين والمواقع. الريدياس عند العميل هو الذي يطبق السرعة محليًا.",
         "category": "network",
         "default_enabled": False,
         "sort_order": 10,
         "price_monthly": Decimal("10.00"),
     },
     {
+        "service_key": "public_ip_change",
+        "name": "تغيير عنوان الإنترنت العام",
+        "name_ar": "تغيير عنوان الإنترنت العام",
+        "description": "طلب تجاري لتغيير عنوان الإنترنت العام المرتبط بنسخة العميل عند توفره.",
+        "category": "network",
+        "default_enabled": False,
+        "sort_order": 12,
+        "price_monthly": None,
+    },
+    {
         "service_key": "customer_portal",
-        "name": "Customer Portal",
+        "name": "بوابة العميل",
         "name_ar": "بوابة العميل",
-        "description": "Customer-facing portal for services, payment requests, and account visibility.",
+        "description": "صفحة العميل التي تعرض الترخيص والخدمات وطلبات الدفع وطلبات الترقية.",
         "category": "core",
         "default_enabled": True,
         "sort_order": 20,
         "price_monthly": None,
     },
     {
+        "service_key": "remote_support",
+        "name": "دعم فني عن بعد",
+        "name_ar": "دعم فني عن بعد",
+        "description": "خدمة تدخل دعم فني لتشخيص مشكلة النسخة التشغيلية وإصلاحها.",
+        "category": "support",
+        "default_enabled": False,
+        "sort_order": 25,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "remote_health_fix",
+        "name": "صيانة النسخة عن بعد",
+        "name_ar": "صيانة النسخة عن بعد",
+        "description": "فحص صحة النسخة ومراجعة الأخطاء التشغيلية بدون تغيير إعدادات العميل إلا بموافقة.",
+        "category": "support",
+        "default_enabled": False,
+        "sort_order": 27,
+        "price_monthly": None,
+    },
+    {
         "service_key": "cards",
-        "name": "Card Marketplace",
+        "name": "الكروت",
         "name_ar": "الكروت",
-        "description": "Create and manage prepaid cards in the customer RADIUS runtime.",
+        "description": "إنشاء وإدارة كروت الشحن والبيع والطباعة داخل الريدياس.",
         "category": "radius",
         "default_enabled": True,
         "sort_order": 30,
@@ -64,9 +155,9 @@ DEFAULT_SERVICE_CATALOG = [
     },
     {
         "service_key": "subscribers",
-        "name": "Subscribers",
+        "name": "المشتركين",
         "name_ar": "المشتركين",
-        "description": "Subscriber account management and RADIUS access lifecycle.",
+        "description": "إدارة حسابات المشتركين وتفعيلهم وتجديدهم داخل الريدياس.",
         "category": "radius",
         "default_enabled": True,
         "sort_order": 40,
@@ -74,9 +165,9 @@ DEFAULT_SERVICE_CATALOG = [
     },
     {
         "service_key": "nas",
-        "name": "NAS / Routers",
+        "name": "أجهزة الشبكة",
         "name_ar": "أجهزة الشبكة",
-        "description": "Managed NAS/router records available to the customer installation.",
+        "description": "إدارة أجهزة الشبكة والراوترات التي يتصل بها الريدياس.",
         "category": "radius",
         "default_enabled": True,
         "sort_order": 50,
@@ -84,41 +175,477 @@ DEFAULT_SERVICE_CATALOG = [
     },
     {
         "service_key": "profiles",
-        "name": "Profiles and Plans",
-        "name_ar": "البروفايلات والباقات",
-        "description": "Package/profile management in the customer RADIUS runtime.",
+        "name": "الباقات والبروفايلات",
+        "name_ar": "الباقات والبروفايلات",
+        "description": "تعريف باقات السرعة والصلاحيات التي يستخدمها المشترك أو الكرت.",
         "category": "radius",
         "default_enabled": True,
         "sort_order": 60,
         "price_monthly": None,
     },
     {
-        "service_key": "reports",
-        "name": "Reports",
-        "name_ar": "التقارير",
-        "description": "Operational and accounting reports exposed by the customer runtime.",
-        "category": "analytics",
-        "default_enabled": False,
+        "service_key": "routers",
+        "name": "إدارة الراوترات",
+        "name_ar": "إدارة الراوترات",
+        "description": "لوحات مراقبة الراوتر، الصحة، النسخ، التنبيهات، وخدمات MikroTik من الريدياس.",
+        "category": "network",
+        "default_enabled": True,
         "sort_order": 70,
         "price_monthly": None,
     },
     {
-        "service_key": "backups",
-        "name": "Backups",
-        "name_ar": "النسخ الاحتياطي",
-        "description": "Backup upload and restore coordination between runtime and license panel.",
-        "category": "ops",
-        "default_enabled": False,
+        "service_key": "sessions",
+        "name": "الجلسات والمتصلون",
+        "name_ar": "الجلسات والمتصلون",
+        "description": "عرض الجلسات النشطة وسجل الدخول وحالة الاتصال.",
+        "category": "radius",
+        "default_enabled": True,
         "sort_order": 80,
         "price_monthly": None,
     },
+    {
+        "service_key": "accounting",
+        "name": "الحسابات والتحصيل",
+        "name_ar": "الحسابات والتحصيل",
+        "description": "دفعات المشتركين، الديون، القروض، المحافظ، وسجل الحركة المالية.",
+        "category": "billing",
+        "default_enabled": True,
+        "sort_order": 90,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "invoices",
+        "name": "الفواتير",
+        "name_ar": "الفواتير",
+        "description": "إصدار وإدارة فواتير العملاء والمشتركين.",
+        "category": "billing",
+        "default_enabled": False,
+        "sort_order": 100,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "payment_collection",
+        "name": "تحصيل المدفوعات",
+        "name_ar": "تحصيل المدفوعات",
+        "description": "طلبات التحصيل والمراجعة والمطابقة المالية داخل الريدياس.",
+        "category": "billing",
+        "default_enabled": False,
+        "sort_order": 110,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "finance_center",
+        "name": "المركز المالي",
+        "name_ar": "المركز المالي",
+        "description": "المحافظ، الإيرادات، الديون، القروض، ودفتر القيود داخل الريدياس.",
+        "category": "billing",
+        "default_enabled": False,
+        "sort_order": 115,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "vouchers",
+        "name": "الكوبونات",
+        "name_ar": "الكوبونات",
+        "description": "إدارة كوبونات الخصم أو التحصيل المرتبطة بحسابات العملاء.",
+        "category": "billing",
+        "default_enabled": False,
+        "sort_order": 118,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "print_templates",
+        "name": "قوالب الطباعة",
+        "name_ar": "قوالب الطباعة",
+        "description": "تصميم وطباعة قوالب الكروت والإيصالات.",
+        "category": "radius",
+        "default_enabled": True,
+        "sort_order": 120,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "subscriber_groups",
+        "name": "مجموعات المشتركين",
+        "name_ar": "مجموعات المشتركين",
+        "description": "تجميع المشتركين وتطبيق خدمات أو حدود مشتركة عليهم.",
+        "category": "radius",
+        "default_enabled": True,
+        "sort_order": 130,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "card_marketplace",
+        "name": "سوق البطاقات",
+        "name_ar": "سوق البطاقات",
+        "description": "بيع البطاقات الإلكترونية وربطها بالمستخدمين ونقاط البيع.",
+        "category": "sales",
+        "default_enabled": False,
+        "sort_order": 132,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "card_users",
+        "name": "مستخدمو البطاقات",
+        "name_ar": "مستخدمو البطاقات",
+        "description": "إدارة حسابات مستخدمي البطاقات الإلكترونية وشحنها ومتابعتها.",
+        "category": "sales",
+        "default_enabled": False,
+        "sort_order": 134,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "cards_recharge",
+        "name": "بطاقات الشحن المسبق",
+        "name_ar": "بطاقات الشحن المسبق",
+        "description": "إدارة دفعات بطاقات الشحن المسبق ومراجعة حركتها.",
+        "category": "sales",
+        "default_enabled": False,
+        "sort_order": 136,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "admins",
+        "name": "مدراء الريدياس والصلاحيات",
+        "name_ar": "مدراء الريدياس والصلاحيات",
+        "description": "إدارة مدراء الريدياس والأدوار والصلاحيات المحلية.",
+        "category": "security",
+        "default_enabled": True,
+        "sort_order": 140,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "setup_wizard",
+        "name": "معالج التجهيز",
+        "name_ar": "معالج التجهيز",
+        "description": "تجهيز راوترات وخدمات Hotspot أو Broadband خطوة بخطوة.",
+        "category": "network",
+        "default_enabled": True,
+        "sort_order": 150,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "ip_pools",
+        "name": "نطاقات العناوين",
+        "name_ar": "نطاقات العناوين",
+        "description": "إدارة نطاقات العناوين التي يستخدمها الريدياس والراوترات.",
+        "category": "network",
+        "default_enabled": True,
+        "sort_order": 155,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "network_policies",
+        "name": "سياسات الشبكة",
+        "name_ar": "سياسات الشبكة",
+        "description": "إدارة سياسات الشبكة، السماح والحجب، ومراجعة التأثير قبل التطبيق.",
+        "category": "network",
+        "default_enabled": False,
+        "sort_order": 160,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "router_diagnostics",
+        "name": "تشخيص الراوترات",
+        "name_ar": "تشخيص الراوترات",
+        "description": "فحوصات الراوترات، المشاكل، الصحة، والتنبيهات الذكية.",
+        "category": "network",
+        "default_enabled": False,
+        "sort_order": 165,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "bandwidth_control",
+        "name": "السرعات والجدولة",
+        "name_ar": "السرعات والجدولة",
+        "description": "أدوات ضبط السرعات وجدولة تغييرات السرعة للمشتركين.",
+        "category": "network",
+        "default_enabled": True,
+        "sort_order": 170,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "site_exit",
+        "name": "خروج المواقع",
+        "name_ar": "خروج المواقع",
+        "description": "خدمات توجيه أو فصل مواقع محددة حسب سياسة العميل.",
+        "category": "network",
+        "default_enabled": False,
+        "sort_order": 180,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "communications",
+        "name": "الرسائل والتنبيهات",
+        "name_ar": "الرسائل والتنبيهات",
+        "description": "إرسال رسائل وتنبيهات للمشتركين ومتابعة الحملات والقوالب.",
+        "category": "communications",
+        "default_enabled": False,
+        "sort_order": 190,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "operations_center",
+        "name": "مركز العمليات",
+        "name_ar": "مركز العمليات",
+        "description": "متابعة التشغيل اليومي والمشاكل والمهام التي تحتاج تدخلًا.",
+        "category": "ops",
+        "default_enabled": False,
+        "sort_order": 195,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "risk_events",
+        "name": "الأحداث والمخاطر",
+        "name_ar": "الأحداث والمخاطر",
+        "description": "مركز أحداث الأمان والمخاطر والتحقيقات داخل الريدياس.",
+        "category": "security",
+        "default_enabled": False,
+        "sort_order": 198,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "customer_support",
+        "name": "الدعم والتذاكر",
+        "name_ar": "الدعم والتذاكر",
+        "description": "إدارة تذاكر الدعم ومتابعة طلبات العملاء.",
+        "category": "support",
+        "default_enabled": False,
+        "sort_order": 200,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "reports",
+        "name": "التقارير",
+        "name_ar": "التقارير",
+        "description": "تقارير التشغيل، الجلسات، الدخول، المحاسبة، والأرشيف.",
+        "category": "analytics",
+        "default_enabled": False,
+        "sort_order": 210,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "backups",
+        "name": "النسخ الاحتياطي",
+        "name_ar": "النسخ الاحتياطي",
+        "description": "تنسيق النسخ الاحتياطية والاستعادة للريدياس والراوترات.",
+        "category": "ops",
+        "default_enabled": False,
+        "sort_order": 220,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "lifecycle",
+        "name": "الأرشفة التلقائية",
+        "name_ar": "الأرشفة التلقائية",
+        "description": "سياسات الأرشفة والتنظيف الدوري للعناصر القديمة.",
+        "category": "ops",
+        "default_enabled": False,
+        "sort_order": 225,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "audit_logs",
+        "name": "سجل التدقيق",
+        "name_ar": "سجل التدقيق",
+        "description": "عرض سجل العمليات والمراجعة الأمنية داخل الريدياس.",
+        "category": "security",
+        "default_enabled": True,
+        "sort_order": 230,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "distributors",
+        "name": "الموزعون",
+        "name_ar": "الموزعون",
+        "description": "إدارة الموزعين وربطهم بالكروت والمشتركين المسموحين.",
+        "category": "sales",
+        "default_enabled": False,
+        "sort_order": 240,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "radius_customer_portals",
+        "name": "بوابات عملاء الريدياس",
+        "name_ar": "بوابات عملاء الريدياس",
+        "description": "إدارة بوابات دخول المشتركين وبوابات البطاقات داخل الريدياس.",
+        "category": "support",
+        "default_enabled": False,
+        "sort_order": 245,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "remote_access",
+        "name": "الوصول البعيد",
+        "name_ar": "الوصول البعيد",
+        "description": "أدوات الوصول البعيد الآمن للراوترات أو الأجهزة عند الحاجة.",
+        "category": "network",
+        "default_enabled": False,
+        "sort_order": 250,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "integration_bridge",
+        "name": "جسر التكامل",
+        "name_ar": "جسر التكامل",
+        "description": "مزامنة الترخيص والهوية والعقد التشغيلي بين اللوحة والريدياس.",
+        "category": "integration",
+        "default_enabled": True,
+        "sort_order": 260,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "webhooks",
+        "name": "إشعارات الربط",
+        "name_ar": "إشعارات الربط",
+        "description": "إعدادات إشعارات الربط والتكامل الخارجي عند الحاجة.",
+        "category": "integration",
+        "default_enabled": False,
+        "sort_order": 270,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "integration_tokens",
+        "name": "مفاتيح الواجهة",
+        "name_ar": "مفاتيح الواجهة",
+        "description": "إدارة مفاتيح الواجهة المخصصة للتكاملات الآمنة.",
+        "category": "integration",
+        "default_enabled": False,
+        "sort_order": 280,
+        "price_monthly": None,
+    },
+    {
+        "service_key": "multi_tenant",
+        "name": "المستأجرون",
+        "name_ar": "المستأجرون",
+        "description": "إدارة أكثر من مستأجر أو شركة داخل نفس نسخة الريدياس.",
+        "category": "ops",
+        "default_enabled": False,
+        "sort_order": 290,
+        "price_monthly": None,
+    },
 ]
+
+SERVICE_LIMIT_FIELDS = {
+    "subscribers": [("max_total", "أقصى عدد مشتركين", "عدد المشتركين المسموح إنشاؤهم.")],
+    "cards": [
+        ("generate_per_batch", "أقصى كروت في الدفعة", "الحد الأعلى عند توليد دفعة كروت واحدة."),
+        ("monthly_generated", "أقصى كروت شهريًا", "إجمالي الكروت المسموح توليدها خلال الشهر."),
+    ],
+    "nas": [("max_total", "أقصى عدد أجهزة شبكة", "عدد أجهزة الشبكة أو الراوترات المسموح ربطها.")],
+    "routers": [("max_total", "أقصى عدد راوترات", "عدد الراوترات المدارة من لوحة الريدياس.")],
+    "profiles": [("max_total", "أقصى عدد باقات", "عدد الباقات أو البروفايلات المسموح إنشاؤها.")],
+    "print_templates": [("max_active", "أقصى قوالب طباعة فعالة", "عدد قوالب الطباعة النشطة.")],
+    "admins": [("max_total", "أقصى عدد مدراء", "عدد حسابات الإدارة المحلية في الريدياس.")],
+    "card_marketplace": [("max_sellers", "أقصى عدد بائعين", "عدد بائعي البطاقات الإلكترونيين.")],
+    "card_users": [("max_total", "أقصى عدد مستخدمي بطاقات", "عدد حسابات مستخدمي البطاقات.")],
+    "cards_recharge": [("monthly_generated", "أقصى بطاقات شحن شهريًا", "إجمالي بطاقات الشحن المسبق خلال الشهر.")],
+    "ip_pools": [("max_total", "أقصى عدد نطاقات", "عدد نطاقات العناوين المسموحة.")],
+    "finance_center": [("max_wallets", "أقصى عدد محافظ", "عدد المحافظ المالية داخل الريدياس.")],
+    "distributors": [("max_total", "أقصى عدد موزعين", "عدد الموزعين المسموح إدارتهم.")],
+    "multi_tenant": [("max_total", "أقصى عدد مستأجرين", "عدد الشركات أو المستأجرين داخل النسخة.")],
+}
+
+ROLE_LABELS = {
+    "owner": "مالك الحساب",
+    "admin": "مدير",
+    "support": "دعم فني",
+    "billing": "محاسبة",
+    "viewer": "مشاهدة فقط",
+}
+
+SERVICE_REQUEST_TYPE_LABELS = {
+    "activation": "طلب تفعيل",
+    "upgrade": "طلب ترقية",
+    "change": "طلب تعديل",
+    "support": "طلب مساعدة",
+}
+
+PAYMENT_PURPOSE_LABELS = {
+    "new_subscription": "اشتراك جديد",
+    "renewal": "تجديد",
+    "upgrade": "ترقية",
+    "capacity_increase": "رفع حدود",
+    "setup_fee": "رسوم تجهيز",
+    "failed": "تعذر التنفيذ",
+}
+
+AUDIT_ACTION_LABELS = {
+    "login": "تسجيل دخول",
+    "logout": "تسجيل خروج",
+    "customer_created": "إنشاء عميل",
+    "customer_updated": "تحديث عميل",
+    "customer_deleted": "حذف عميل",
+    "customer_approved": "اعتماد عميل",
+    "customer_user_created": "إنشاء مستخدم عميل",
+    "customer_user_updated": "تحديث مستخدم عميل",
+    "customer_user_disabled": "تعطيل مستخدم عميل",
+    "customer_user_enabled": "تفعيل مستخدم عميل",
+    "customer_user_password_changed": "تغيير كلمة مرور عميل",
+    "customer_user_password_changed_from_runtime": "تغيير كلمة المرور من الريدياس",
+    "customer_user_password_changed_from_portal": "تغيير كلمة المرور من بوابة العميل",
+    "customer_user_password_set_by_admin": "تعيين كلمة مرور من الإدارة",
+    "customer_service_entitlement_updated": "تحديث خدمة عميل",
+    "customer_service_payment_request_created": "إنشاء طلب دفع خدمة",
+    "customer_service_request_created": "إنشاء طلب خدمة",
+    "customer_vpn_entitlement_updated": "تحديث خدمة VPN للعميل",
+    "plan_created": "إنشاء خطة",
+    "plan_updated": "تحديث خطة",
+    "plan_deleted": "حذف خطة",
+    "vpn_service_plan_created": "إنشاء باقة VPN",
+    "vpn_service_plan_updated": "تحديث باقة VPN",
+    "vpn_service_plan_disabled": "تعطيل باقة VPN",
+    "vpn_service_plan_enabled": "تفعيل باقة VPN",
+    "license_generated": "توليد ترخيص",
+    "license_renewed": "تجديد ترخيص",
+    "license_active": "تفعيل ترخيص",
+    "license_suspended": "تعليق ترخيص",
+    "license_revoked": "إلغاء ترخيص",
+    "fingerprint_added": "إضافة بصمة خادم",
+    "fingerprint_removed": "حذف بصمة خادم",
+    "fingerprints_reset": "إعادة ضبط البصمات",
+    "settings_updated": "تحديث الإعدادات",
+    "payment_settings_updated": "تحديث إعدادات الدفع",
+    "payment_request_created": "إنشاء طلب دفع",
+    "license_payment_approved": "قبول دفع",
+    "license_payment_rejected": "رفض دفع",
+    "license_payments_expired": "إنهاء طلبات دفع منتهية",
+    "payment_capacity_followup": "متابعة رفع حدود",
+    "payment_setup_fee_recorded": "تسجيل رسوم تجهيز",
+    "payment_license_renewed": "تجديد ترخيص من دفع",
+    "payment_license_upgraded": "ترقية ترخيص من دفع",
+    "payment_license_created": "إنشاء ترخيص من دفع",
+}
+
+ENTITY_TYPE_LABELS = {
+    "admin": "مدير",
+    "customer": "عميل",
+    "customer_user": "مستخدم عميل",
+    "customer_service_entitlement": "خدمة عميل",
+    "customer_service_request": "طلب خدمة",
+    "customer_vpn_entitlement": "خدمة VPN للعميل",
+    "plan": "خطة",
+    "vpn_service_plan": "باقة VPN",
+    "license": "ترخيص",
+    "settings": "إعدادات",
+    "platform_payment_settings": "إعدادات الدفع",
+    "license_payment_request": "طلب دفع",
+    "provisioning_order": "أمر تجهيز",
+    "batch": "دفعة",
+}
 
 
 def seed_service_catalog() -> None:
     for item in DEFAULT_SERVICE_CATALOG:
         existing = ServiceCatalogItem.query.filter_by(service_key=item["service_key"]).first()
         if existing:
+            existing.name = item["name"]
+            existing.name_ar = item["name_ar"]
+            existing.description = item["description"]
+            existing.category = item["category"]
+            existing.default_enabled = item["default_enabled"]
+            existing.sort_order = item["sort_order"]
+            if existing.price_monthly in (None, Decimal("0")) and item["price_monthly"] is not None:
+                existing.price_monthly = item["price_monthly"]
             continue
         db.session.add(ServiceCatalogItem(**item))
 
@@ -159,9 +686,9 @@ def parse_json_object(raw: Any, *, field: str) -> dict[str, Any]:
     try:
         parsed = json.loads(str(raw))
     except (TypeError, ValueError) as exc:
-        raise CustomerControlValidationError(f"الحقل {field} يجب أن يكون كائن JSON صحيحًا.") from exc
+        raise CustomerControlValidationError(f"الحقل {field} يحتوي صيغة إعدادات غير صحيحة.") from exc
     if not isinstance(parsed, dict):
-        raise CustomerControlValidationError(f"الحقل {field} يجب أن يكون كائن JSON صحيحًا.")
+        raise CustomerControlValidationError(f"الحقل {field} يحتوي صيغة إعدادات غير صحيحة.")
     return _sanitize_json_object(parsed)
 
 
@@ -216,6 +743,108 @@ def service_catalog_items() -> list[ServiceCatalogItem]:
     return ServiceCatalogItem.query.order_by(ServiceCatalogItem.sort_order.asc(), ServiceCatalogItem.service_key.asc()).all()
 
 
+def service_label(service_key: str) -> str:
+    item = ServiceCatalogItem.query.filter_by(service_key=str(service_key or "")).first()
+    if item:
+        return item.name_ar or item.name or item.service_key
+    return str(service_key or "—")
+
+
+def role_label(role_key: str) -> str:
+    return ROLE_LABELS.get(str(role_key or "").strip(), str(role_key or "—"))
+
+
+def service_request_type_label(value: str) -> str:
+    return SERVICE_REQUEST_TYPE_LABELS.get(str(value or "").strip(), str(value or "—"))
+
+
+def payment_purpose_label(value: str) -> str:
+    return PAYMENT_PURPOSE_LABELS.get(str(value or "").strip(), str(value or "—"))
+
+
+def audit_action_label(value: str) -> str:
+    return AUDIT_ACTION_LABELS.get(str(value or "").strip(), "إجراء إداري")
+
+
+def entity_type_label(value: str) -> str:
+    return ENTITY_TYPE_LABELS.get(str(value or "").strip(), "سجل إداري")
+
+
+def audit_summary_label(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "—"
+    replacements = (
+        ("Admin logged out", "تم تسجيل خروج المدير"),
+        ("Updated system settings", "تم تحديث إعدادات النظام"),
+        ("Updated license payment settings", "تم تحديث إعدادات دفع التراخيص"),
+    )
+    for source, target in replacements:
+        if text == source:
+            return target
+    if text.startswith("Admin ") and text.endswith(" logged in"):
+        return "تم تسجيل دخول المدير " + text.removeprefix("Admin ").removesuffix(" logged in")
+    prefix_map = {
+        "Created customer ": "تم إنشاء العميل ",
+        "Updated customer ": "تم تحديث العميل ",
+        "Deleted customer ": "تم حذف العميل ",
+        "Created plan ": "تم إنشاء الخطة ",
+        "Updated plan ": "تم تحديث الخطة ",
+        "Deleted plan ": "تم حذف الخطة ",
+        "Created VPN service plan ": "تم إنشاء باقة VPN ",
+        "Updated VPN service plan ": "تم تحديث باقة VPN ",
+        "Disabled VPN service plan ": "تم تعطيل باقة VPN ",
+        "Enabled VPN service plan ": "تم تفعيل باقة VPN ",
+        "Generated license ": "تم توليد الترخيص ",
+        "Added fingerprint to ": "تمت إضافة بصمة خادم إلى ",
+        "Removed fingerprint from ": "تم حذف بصمة خادم من ",
+        "Fingerprints reset for ": "تمت إعادة ضبط البصمات للترخيص ",
+        "Created payment request ": "تم إنشاء طلب الدفع ",
+        "Approved payment ": "تم قبول الدفع ",
+        "Rejected payment ": "تم رفض الدفع ",
+        "Updated VPN entitlement for ": "تم تحديث خدمة VPN للعميل ",
+    }
+    for source, target in prefix_map.items():
+        if text.startswith(source):
+            return target + text[len(source):]
+    if text.startswith("Renewed ") and " for " in text:
+        license_key, months = text.removeprefix("Renewed ").split(" for ", 1)
+        return f"تم تجديد الترخيص {license_key} لمدة {months.replace('month(s)', 'شهر')}"
+    if text.startswith("License ") and " changed to " in text:
+        license_key, status = text.removeprefix("License ").split(" changed to ", 1)
+        return f"تغيرت حالة الترخيص {license_key} إلى {status}"
+    if text.startswith("Expired ") and " pending payment request" in text:
+        count = text.removeprefix("Expired ").split(" pending payment request", 1)[0]
+        return f"تم إنهاء {count} طلب دفع منتهي"
+    if any(("A" <= ch <= "Z") or ("a" <= ch <= "z") for ch in text):
+        return "تفاصيل محفوظة في السجل"
+    return text
+
+
+def service_limit_fields(service_key: str) -> list[tuple[str, str, str]]:
+    return list(SERVICE_LIMIT_FIELDS.get(str(service_key or ""), []))
+
+
+def service_limit_summary(limits: dict[str, Any] | None) -> str:
+    data = limits or {}
+    if not data:
+        return "لا توجد حدود خاصة"
+    labels = {
+        "max_total": "الحد الأقصى",
+        "generate_per_batch": "الكروت في الدفعة",
+        "monthly_generated": "الكروت شهريًا",
+        "max_active": "العناصر الفعالة",
+        "max_sellers": "البائعون",
+        "max_wallets": "المحافظ",
+    }
+    parts = []
+    for key, value in data.items():
+        if value in (None, ""):
+            continue
+        parts.append(f"{labels.get(str(key), str(key))}: {value}")
+    return "، ".join(parts) if parts else "لا توجد حدود خاصة"
+
+
 def customer_service_map(customer: Customer) -> dict[str, CustomerServiceEntitlement]:
     return {
         item.service_key: item
@@ -246,7 +875,7 @@ def build_runtime_contract_for_license(
             "runtime_url": customer.runtime_url if customer else "",
         },
         "services": services,
-        "limits": _limits_contract(lic),
+        "limits": _limits_contract(lic, customer),
         "customer_users_version": customer_users_version(customer) if customer else 0,
     }
 
@@ -423,15 +1052,39 @@ def _serialize_service(
     return payload
 
 
-def _limits_contract(lic: License | None) -> dict[str, Any]:
+def _limits_contract(lic: License | None, customer: Customer | None = None) -> dict[str, Any]:
     if not lic or not lic.plan:
         return {}
-    return {
+    limits = {
         "subscribers": {"max_total": int(lic.plan.max_users or 0)},
         "nas": {"max_total": int(lic.plan.max_nas or 0)},
         "admins": {"max_total": int(lic.plan.max_admins or 0)},
         "devices": {"max_total": int(lic.plan.max_devices or 0)},
     }
+    if not customer:
+        return limits
+    entitlement_map = customer_service_map(customer)
+    for service_key in SERVICE_LIMIT_FIELDS:
+        entitlement = entitlement_map.get(service_key)
+        if not entitlement or not entitlement.enabled or entitlement.status != "active":
+            continue
+        service_limits = entitlement.limits
+        if not service_limits:
+            continue
+        limits.setdefault(service_key, {})
+        limits[service_key].update({
+            key: int(value)
+            for key, value in service_limits.items()
+            if _is_non_negative_int(value)
+        })
+    return limits
+
+
+def _is_non_negative_int(value: Any) -> bool:
+    try:
+        return int(value) >= 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _sanitize_json_object(raw: dict[str, Any]) -> dict[str, Any]:

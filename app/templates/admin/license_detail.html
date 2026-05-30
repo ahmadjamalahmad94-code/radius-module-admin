@@ -93,7 +93,7 @@
         </button>
       </form>
     </div>
-    <p class="hub-field-hint" style="margin-top:12px">الإلغاء والتعليق يعيدان <span class="mono">mode=denied</span> من API الترخيص.</p>
+    <p class="hub-field-hint" style="margin-top:12px">الإلغاء والتعليق يمنعان نسخة العميل من الحصول على صلاحية تشغيل فعالة.</p>
   {% endcall %}
 </div>
 
@@ -151,7 +151,7 @@
         <i class="fa-solid fa-plus"></i> إضافة
       </button>
     </form>
-    <p class="hub-field-hint" style="margin-top:8px">أضف بصمة يدويًا فقط عند ربط خادم معروف قبل أول فحص API.</p>
+    <p class="hub-field-hint" style="margin-top:8px">أضف بصمة يدويًا فقط عند ربط خادم معروف قبل أول فحص ترخيص.</p>
     <div style="display:grid; gap:8px; margin-top:12px">
       {% for fp in license.fingerprints %}
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; background:var(--hub-surface-2); border:1px solid var(--hub-line-2); border-radius:var(--hub-r-md)">

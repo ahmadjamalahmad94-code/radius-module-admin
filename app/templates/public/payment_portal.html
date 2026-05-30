@@ -76,7 +76,7 @@
           {% for proof in proofs %}
             <tr>
               <td class="mono">{{ proof.reference_number or '—' }}</td>
-              <td>{{ proof.review_status or 'بانتظار المراجعة' }}</td>
+              <td>{{ (proof.review_status or 'pending')|status_label }}</td>
               <td class="date">{{ proof.submitted_at|dt }}</td>
               <td>{{ proof.note or '—' }}</td>
             </tr>

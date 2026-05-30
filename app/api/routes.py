@@ -12,6 +12,7 @@ from ..services.license_payments import (
     LicensePaymentRequestService,
     LicensePaymentValidationError,
     instructions_for_request,
+    payment_error_message,
     proof_to_dict,
 )
 from ..services.license_service import check_license
@@ -42,7 +43,7 @@ def license_check():
             "active": False,
             "status": "denied",
             "mode": "denied",
-            "message": "فشل التحقق من صلاحية فحص الترخيص.",
+            "message": "License check authorization failed.",
         }), 401
 
     try:
@@ -284,8 +285,11 @@ def _integration_request_is_secure() -> bool:
     return False
 
 
-def _payment_error(message: str, status_code: int = 400):
-    return jsonify({"ok": False, "error": message}), status_code
+def _payment_error(message: str, status_code: int = 400, *, detail: str = ""):
+    payload = {"ok": False, "error": message}
+    if detail:
+        payload["message"] = detail
+    return jsonify(payload), status_code
 
 
 @bp.post("/license-payments/requests")
@@ -295,6 +299,8 @@ def create_license_payment_request():
     try:
         payment_request = LicensePaymentRequestService().create_request(body)
     except (LicensePaymentValidationError, ValueError) as exc:
+        if isinstance(exc, LicensePaymentValidationError):
+            return _payment_error(exc.code, 400, detail=exc.message_ar)
         return _payment_error(str(exc), 400)
     db.session.commit()
     return jsonify({"ok": True, "payment_request": LicensePaymentRequestService().portal_payload(payment_request)}), 201
@@ -323,5 +329,5 @@ def submit_license_payment_proof(payment_request_id: int):
             note=body.get("note") or "",
         )
     except LicensePaymentValidationError as exc:
-        return _payment_error(str(exc), 400)
+        return _payment_error(exc.code, 400, detail=payment_error_message(exc))
     return jsonify({"ok": True, "proof": proof_to_dict(proof), "status": payment_request.status}), 201

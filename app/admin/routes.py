@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -42,7 +43,14 @@ from ..services.customer_control import (
     parse_json_object,
     parse_optional_datetime,
     parse_optional_decimal as parse_service_decimal,
+    normalize_contact_email,
+    normalize_contact_phone,
     service_catalog_items,
+    service_label,
+    service_limit_fields,
+    service_limit_summary,
+    validate_unique_customer_contact,
+    validate_unique_customer_user_email,
 )
 from ..services.license_payments import (
     LicensePaymentApplyService,
@@ -53,6 +61,7 @@ from ..services.license_payments import (
     LicensePaymentValidationError,
     PlatformPaymentSettingsRepository,
     instructions_for_request,
+    payment_error_message,
     request_to_dict,
     settings_to_dict,
 )
@@ -85,9 +94,9 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 FEATURES = [
     ("cards", "البطاقات"),
-    ("mikrotik", "MikroTik"),
+    ("mikrotik", "إدارة MikroTik"),
     ("reports", "التقارير"),
-    ("api_access", "API"),
+    ("api_access", "واجهة التكامل"),
     ("multi_admin", "عدة مدراء"),
     ("backups", "النسخ الاحتياطي"),
     ("advanced_logs", "السجلات المتقدمة"),
@@ -143,13 +152,8 @@ def _fill_customer_user(customer_user: CustomerUser, *, require_password: bool) 
             duplicate = duplicate.filter(CustomerUser.id != customer_user.id)
         if duplicate.first():
             raise CustomerControlValidationError("اسم المستخدم مستخدم بالفعل.")
-        email = (request.form.get("email") or "").strip()[:180]
-        if email:
-            duplicate_email = CustomerUser.query.filter(CustomerUser.email == email)
-            if customer_user.id:
-                duplicate_email = duplicate_email.filter(CustomerUser.id != customer_user.id)
-            if duplicate_email.first():
-                raise CustomerControlValidationError("البريد الإلكتروني مستخدم بالفعل.")
+        email = normalize_contact_email(request.form.get("email") or "")
+        validate_unique_customer_user_email(customer_user, email)
     customer_user.username = username
     customer_user.email = email
     customer_user.full_name = (request.form.get("full_name") or "").strip()[:160]
@@ -185,12 +189,30 @@ def _fill_customer_service_entitlement(customer: Customer, entitlement: Customer
     if status != "active":
         entitlement.enabled = False
     entitlement.plan_code = (request.form.get("plan_code") or "").strip()[:80]
-    entitlement.limits = parse_json_object(request.form.get("limits_json"), field="limits_json")
-    entitlement.config = parse_json_object(request.form.get("config_json"), field="config_json")
+    entitlement.limits = _service_limits_from_request(entitlement.service_key)
+    entitlement.config = parse_json_object(request.form.get("config_json"), field="إعدادات الخدمة")
     entitlement.price_monthly = parse_service_decimal(request.form.get("price_monthly"), field="price_monthly")
     entitlement.expires_at = parse_optional_datetime(request.form.get("expires_at"))
     entitlement.notes = (request.form.get("notes") or "").strip()[:2000]
     entitlement.updated_by_admin_id = session.get("admin_id")
+
+
+def _service_limits_from_request(service_key: str) -> dict:
+    if "limits_json" in request.form:
+        return parse_json_object(request.form.get("limits_json"), field="حدود الخدمة")
+    limits = {}
+    for field_key, _label, _hint in service_limit_fields(service_key):
+        raw = (request.form.get(f"limit_{field_key}") or "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise CustomerControlValidationError("حدود الخدمة يجب أن تكون أرقامًا صحيحة.") from exc
+        if value < 0:
+            raise CustomerControlValidationError("حدود الخدمة لا يمكن أن تكون سالبة.")
+        limits[field_key] = value
+    return limits
 
 
 def _sync_generic_vpn_entitlement(customer: Customer, entitlement: CustomerServiceEntitlement) -> None:
@@ -288,6 +310,8 @@ def customer_detail(customer_id: int):
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
         audit_logs=AuditLog.query.filter_by(entity_type="customer", entity_id=str(customer.id)).order_by(AuditLog.created_at.desc()).limit(12).all(),
         users_version=customer_users_version(customer),
+        service_limit_fields=service_limit_fields,
+        service_limit_summary=service_limit_summary,
     )
 
 
@@ -319,7 +343,7 @@ def customer_user_create(customer_id: int):
         metadata={"customer_id": customer.id, "role_key": customer_user.role_key},
     )
     db.session.commit()
-    flash("تم إنشاء مستخدم العميل. كلمة المرور ستصل للريدياس كـ hash فقط عند مزامنة الهوية.", "success")
+    flash("تم إنشاء مستخدم العميل. كلمة المرور ستصل للريدياس كنسخة مشفرة فقط عند مزامنة الهوية.", "success")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
@@ -351,6 +375,33 @@ def customer_user_update(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تحديث مستخدم العميل.", "success")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/users/<int:user_id>/password")
+@login_required
+def customer_user_password_set(customer_id: int, user_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    customer_user = CustomerUser.query.filter_by(id=user_id, customer_id=customer.id).first_or_404()
+    password = request.form.get("password") or ""
+    password_confirm = request.form.get("password_confirm") or ""
+    if len(password) < 8:
+        flash("كلمة المرور يجب أن تكون 8 أحرف على الأقل.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    if password != password_confirm:
+        flash("تأكيد كلمة المرور غير مطابق.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    customer_user.set_password(password, increment_version=True)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="customer_user_password_set_by_admin",
+        entity_type="customer_user",
+        entity_id=str(customer_user.id),
+        summary=f"تم تعيين كلمة مرور مستخدم العميل {customer_user.username} من الإدارة",
+        metadata={"customer_id": customer.id, "password_version": customer_user.password_version},
+    )
+    db.session.commit()
+    flash("تم تعيين كلمة مرور العميل. سيستلم الريدياس النسخة المشفرة الجديدة عند مزامنة الهوية.", "success")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
@@ -411,7 +462,7 @@ def customer_service_update(customer_id: int, service_key: str):
         action="customer_service_entitlement_updated",
         entity_type="customer_service_entitlement",
         entity_id=str(entitlement.id),
-        summary=f"تم تحديث استحقاق الخدمة {key} لـ {customer.company_name}",
+        summary=f"تم تحديث خدمة {service_label(key)} للعميل {customer.company_name}",
         metadata={"customer_id": customer.id, "service_key": key, "status": entitlement.status, "enabled": entitlement.enabled},
     )
     db.session.commit()
@@ -437,14 +488,14 @@ def customer_service_payment_request(customer_id: int, service_key: str):
             "currency": request.form.get("currency") or _setting("default_currency", "USD"),
         })
     except (CustomerControlValidationError, LicensePaymentValidationError, ValueError) as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("admin.customer_detail", customer_id=customer.id))
     audit_customer_control(
         actor_admin_id=session.get("admin_id"),
         action="customer_service_payment_request_created",
         entity_type="license_payment_request",
         entity_id=str(payment_request.id),
-        summary=f"تم إنشاء طلب دفع للخدمة {key}",
+        summary=f"تم إنشاء طلب دفع لخدمة {service_label(key)}",
         metadata={"customer_id": customer.id, "service_key": key, "reference_code": payment_request.reference_code},
     )
     db.session.commit()
@@ -476,7 +527,7 @@ def customer_vpn_service_update(customer_id: int):
         "customer_vpn_entitlement_updated",
         "customer_vpn_entitlement",
         str(entitlement.id),
-        f"Updated VPN entitlement for {customer.company_name}",
+        f"تم تحديث خدمة VPN للعميل {customer.company_name}",
         {
             "customer_id": customer.id,
             "status": entitlement.status,
@@ -613,12 +664,13 @@ def customer_delete(customer_id: int):
 def _fill_customer(customer: Customer) -> None:
     customer.company_name = (request.form.get("company_name") or "").strip()
     customer.contact_name = (request.form.get("contact_name") or "").strip()
-    customer.email = (request.form.get("email") or "").strip()
-    customer.phone = (request.form.get("phone") or "").strip()
+    customer.email = normalize_contact_email(request.form.get("email") or "")
+    customer.phone = normalize_contact_phone(request.form.get("phone") or "")
     customer.country = (request.form.get("country") or "").strip()
     customer.city = (request.form.get("city") or "").strip()
     customer.runtime_url = _clean_runtime_url(request.form.get("runtime_url") or "")
     customer.notes = (request.form.get("notes") or "").strip()
+    validate_unique_customer_contact(customer, customer.email, customer.phone)
     status = (request.form.get("status") or "active").strip().lower()
     if status not in {"pending", "active", "inactive", "blocked"}:
         raise CustomerControlValidationError("حالة العميل غير مسموحة.")
@@ -725,7 +777,7 @@ def plan_delete(plan_id: int):
 
 def _fill_plan(plan: Plan) -> None:
     plan.name = (request.form.get("name") or "").strip()
-    plan.slug = (request.form.get("slug") or "").strip().lower()
+    plan.slug = _plan_slug(plan, request.form.get("slug") or "")
     plan.monthly_price = _decimal("monthly_price")
     plan.currency = (request.form.get("currency") or _setting("default_currency", "USD")).strip()
     plan.max_users = _int("max_users", 100)
@@ -751,6 +803,23 @@ def _validate_plan(plan: Plan) -> list[str]:
         if duplicate.first():
             errors.append("المعرّف المختصر مستخدم في خطة أخرى.")
     return errors
+
+
+def _plan_slug(plan: Plan, raw_slug: str) -> str:
+    explicit = (raw_slug or "").strip().lower()
+    if explicit:
+        return re.sub(r"[^a-z0-9_-]+", "-", explicit).strip("-_")[:80]
+    if plan.slug:
+        return plan.slug
+    base = re.sub(r"[^a-z0-9]+", "-", (plan.name or "").strip().lower()).strip("-") or "plan"
+    base = base[:60]
+    candidate = base
+    suffix = 2
+    with db.session.no_autoflush:
+        while Plan.query.filter(Plan.slug == candidate).first():
+            candidate = f"{base}-{suffix}"[:80]
+            suffix += 1
+    return candidate
 
 
 @bp.get("/vpn-services")
@@ -831,10 +900,11 @@ def vpn_service_enable(vpn_plan_id: int):
 
 def _fill_vpn_plan(vpn_plan: VpnServicePlan) -> None:
     vpn_plan.name = (request.form.get("name") or "").strip()
-    vpn_plan.code = clean_vpn_plan_code(request.form.get("code") or "")
     vpn_plan.description = (request.form.get("description") or "").strip()[:2000]
     vpn_plan.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
     vpn_plan.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+    raw_code = (request.form.get("code") or "").strip() or f"vpn_{vpn_plan.download_mbps}m"
+    vpn_plan.code = clean_vpn_plan_code(raw_code)
     vpn_plan.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
     vpn_plan.max_locations = validate_positive_limit(request.form.get("max_locations") or 1, "max_locations")
     vpn_plan.traffic_quota_gb = parse_optional_positive_int(request.form.get("traffic_quota_gb"), "traffic_quota_gb")
@@ -849,7 +919,7 @@ def _validate_unique_vpn_plan_code(vpn_plan: VpnServicePlan) -> None:
         if vpn_plan.id:
             duplicate = duplicate.filter(VpnServicePlan.id != vpn_plan.id)
         if duplicate.first():
-            raise VpnEntitlementValidationError("كود خطة VPN مستخدم بالفعل.")
+            raise VpnEntitlementValidationError("توجد باقة VPN بنفس التعريف الداخلي.")
 
 
 @bp.get("/licenses")
@@ -873,7 +943,7 @@ def license_new():
     customers = Customer.query.order_by(Customer.company_name.asc()).all()
     plans = Plan.query.filter_by(status="active").order_by(Plan.name.asc()).all()
     today = utcnow()
-    return render_template("admin/license_form.html", customers=customers, plans=plans, today=today)
+    return render_template("admin/license_form.html", customers=customers, plans=plans, today=today, timedelta=timedelta)
 
 
 @bp.post("/licenses/new")
@@ -1074,6 +1144,8 @@ def payment_settings_api_patch():
     try:
         settings = PlatformPaymentSettingsRepository().upsert(**body)
     except (LicensePaymentValidationError, ValueError) as exc:
+        if isinstance(exc, LicensePaymentValidationError):
+            return jsonify({"ok": False, "error": exc.code, "message": exc.message_ar}), 400
         return _payment_error(str(exc), 400)
     audit("payment_settings_updated", "platform_payment_settings", str(settings.id), "Updated license payment settings")
     db.session.commit()
@@ -1110,6 +1182,8 @@ def payment_requests_api_create():
     try:
         payment_request = LicensePaymentRequestService().create_request(body)
     except (LicensePaymentValidationError, ValueError) as exc:
+        if isinstance(exc, LicensePaymentValidationError):
+            return jsonify({"ok": False, "error": exc.code, "message": exc.message_ar}), 400
         return _payment_error(str(exc), 400)
     audit("payment_request_created", "license_payment_request", str(payment_request.id), f"Created payment request {payment_request.reference_code}")
     db.session.commit()
@@ -1154,7 +1228,7 @@ def payment_request_approve(payment_request_id: int):
             review_note=request.form.get("review_note") or "",
         )
     except LicensePaymentValidationError as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
     audit("license_payment_approved", "license_payment_request", str(payment_request.id), f"Approved payment {payment_request.reference_code}")
     db.session.commit()
@@ -1173,7 +1247,7 @@ def payment_request_reject(payment_request_id: int):
             review_note=request.form.get("review_note") or "",
         )
     except LicensePaymentValidationError as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
     audit("license_payment_rejected", "license_payment_request", str(payment_request.id), f"Rejected payment {payment_request.reference_code}")
     db.session.commit()
@@ -1192,7 +1266,7 @@ def payment_request_apply_license(payment_request_id: int):
             period_months=_int("period_months", 1),
         )
     except LicensePaymentValidationError as exc:
-        flash(str(exc), "error")
+        flash(payment_error_message(exc), "error")
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
     flash(f"تم تنفيذ ربط الدفع بالترخيص: {result.get('status')}", "success")
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))

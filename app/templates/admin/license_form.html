@@ -33,7 +33,7 @@
               <option value="{{ plan.id }}">{{ plan.name }} — {{ plan.monthly_price|money }} {{ plan.currency }}</option>
             {% endfor %}
           </select>
-          <div class="hub-field-hint">الخطة تحدد الحدود الأساسية في رد API.</div>
+          <div class="hub-field-hint">الخطة تحدد الحدود الأساسية في عقد الترخيص.</div>
         </div>
       </div>
     {% endcall %}
@@ -49,7 +49,7 @@
               <option value="{{ s }}">{{ s|status_label }}</option>
             {% endfor %}
           </select>
-          <div class="hub-field-hint">trial للتجربة، active للتشغيل، suspended لإيقاف مؤقت.</div>
+          <div class="hub-field-hint">اختر تجربة للفترة التجريبية، نشط للتشغيل، أو معلق لإيقاف مؤقت.</div>
         </div>
         <div class="hub-field">
           <label>أقصى عدد بصمات</label>
@@ -74,7 +74,7 @@
         <div class="hub-field full">
           <label>ملاحظات داخلية</label>
           <textarea class="hub-textarea" name="notes" rows="3"></textarea>
-          <div class="hub-field-hint">للمدير فقط — لا تظهر في API الترخيص.</div>
+          <div class="hub-field-hint">للمدير فقط — لا تظهر في عقد الترخيص.</div>
         </div>
       </div>
     {% endcall %}

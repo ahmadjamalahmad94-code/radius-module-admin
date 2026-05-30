@@ -65,7 +65,7 @@
 {% call hub.section("حالة النظام", icon="server", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.settings_page') ~ '"><i class="fa-solid fa-gear"></i> الإعدادات</a>') %}
   <div class="hub-detail-list">
     <div><span>البيئة</span><strong>{{ health.env }}</strong></div>
-    <div><span>رابط API</span><strong class="mono">{{ health.api_base }}/api/license/check</strong></div>
+      <div><span>رابط لوحة التراخيص</span><strong class="mono">{{ health.api_base }}</strong></div>
     <div><span>بريد الدعم</span><strong>{{ health.support_email or '—' }}</strong></div>
   </div>
 {% endcall %}

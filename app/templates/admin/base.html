@@ -22,7 +22,7 @@
         <div class="hub-brand-mark">HBR</div>
         <div>
           <div class="hub-brand-title">لوحة التراخيص</div>
-          <div class="hub-brand-subtitle">إدارة اشتراكات RADIUS</div>
+          <div class="hub-brand-subtitle">إدارة اشتراكات الريدياس</div>
         </div>
       </div>
       <nav class="hub-nav">
@@ -79,7 +79,8 @@
         </div>
         <div class="hub-user-chip">
           <i class="fa-solid fa-user-shield"></i>
-          {{ session.get('admin_name', 'admin') }}
+          {% set admin_display = session.get('admin_name') or session.get('admin_user') or '' %}
+          {{ 'مدير النظام' if admin_display in ['', 'admin', 'License Admin'] else admin_display }}
         </div>
       </header>
 

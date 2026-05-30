@@ -33,7 +33,7 @@ class EffectiveVpnEntitlement:
 def clean_vpn_plan_code(value: str) -> str:
     code = (value or "").strip().lower()
     if not PLAN_CODE_RE.match(code):
-        raise VpnEntitlementValidationError("كود خطة VPN يجب أن يكون أحرفًا إنجليزية صغيرة وأرقامًا وشرطات سفلية فقط.")
+        raise VpnEntitlementValidationError("تعريف باقة VPN الداخلي غير صحيح.")
     return code
 
 

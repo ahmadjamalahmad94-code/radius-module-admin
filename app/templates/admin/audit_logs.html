@@ -7,7 +7,7 @@
 {% block content %}
 {{ hub.hero(
   "سجل التدقيق",
-  subtitle="سجل إداري للوحة الترخيص فقط (ليس سجل مرور RADIUS أو VPN من خوادم العملاء).",
+  subtitle="سجل إداري للوحة الترخيص فقط، وليس سجل مرور الريدياس أو خوادم العملاء.",
   icon="clipboard-list"
 ) }}
 
@@ -17,7 +17,7 @@
       <thead>
         <tr>
           <th>الإجراء</th>
-          <th>الكيان</th>
+          <th>السجل</th>
           <th>الملخص</th>
           <th>المدير</th>
           <th class="date">الوقت</th>
@@ -26,9 +26,9 @@
       <tbody>
       {% for item in logs %}
         <tr>
-          <td class="mono">{{ item.action }}</td>
-          <td><span class="hub-mono">{{ item.entity_type }} #{{ item.entity_id }}</span></td>
-          <td>{{ item.summary }}</td>
+          <td>{{ item.action|audit_action_label }}</td>
+          <td>{{ item.entity_type|entity_type_label }}{% if item.entity_id %} رقم {{ item.entity_id }}{% endif %}</td>
+          <td>{{ item.summary|audit_summary_label }}</td>
           <td>{{ item.actor.username if item.actor else '—' }}</td>
           <td class="date">{{ item.created_at|dt }}</td>
         </tr>

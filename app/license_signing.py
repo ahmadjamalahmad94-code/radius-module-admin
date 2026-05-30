@@ -28,6 +28,15 @@ def sign_license_payload(body: dict[str, Any], secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def license_integration_secret(app: Flask, license_key: str) -> str:
+    root_secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
+    key = str(license_key or "").strip().upper()
+    if not root_secret or not key:
+        return ""
+    message = f"hoberadius-license-integration:{key}"
+    return hmac.new(root_secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
     signature = str(body.get("signature") or body.get("hmac_signature") or "").strip().lower()
     required = bool(app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED"))
@@ -53,7 +62,12 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
         raise LicenseSignatureError("License check authorization failed.")
 
     expected = sign_license_payload(body, secret)
-    if not hmac.compare_digest(signature, expected):
+    accepted = hmac.compare_digest(signature, expected)
+    if not accepted:
+        per_license_secret = license_integration_secret(app, str(body.get("license_key") or ""))
+        if per_license_secret:
+            accepted = hmac.compare_digest(signature, sign_license_payload(body, per_license_secret))
+    if not accepted:
         raise LicenseSignatureError("License check authorization failed.")
 
     _remember_nonce(app, nonce, now)

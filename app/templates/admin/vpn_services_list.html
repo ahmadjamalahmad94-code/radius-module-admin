@@ -9,7 +9,7 @@
   "باقات تغيير IP / VPN",
   subtitle="عروض تجارية للسرعة وعدد المستخدمين والمواقع — اللوحة لا تنفذ WireGuard أو MikroTik.",
   icon="shield-halved",
-  actions_html='<span class="hub-hero-chip"><i class="fa-solid fa-code"></i> ip_change_vpn</span><a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.vpn_service_new') ~ '"><i class="fa-solid fa-plus"></i> باقة جديدة</a>'
+  actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.vpn_service_new') ~ '"><i class="fa-solid fa-plus"></i> باقة جديدة</a>'
 ) }}
 
 {% call hub.section("الباقات المعرَّفة", icon="layer-group", meta=vpn_plans|length ~ ' باقة') %}
@@ -18,7 +18,6 @@
       <thead>
         <tr>
           <th>الباقة</th>
-          <th>الكود</th>
           <th class="num">تحميل</th>
           <th class="num">رفع</th>
           <th class="num">مستخدمو VPN</th>
@@ -35,7 +34,6 @@
             <strong>{{ vpn_plan.name }}</strong>
             <div class="hub-muted" style="font-size:11.5px">{{ vpn_plan.description or '—' }}</div>
           </td>
-          <td class="mono">{{ vpn_plan.code }}</td>
           <td class="num">{{ vpn_plan.download_mbps }} Mbps</td>
           <td class="num">{{ vpn_plan.upload_mbps }} Mbps</td>
           <td class="num">{{ vpn_plan.max_vpn_users }}</td>
@@ -62,7 +60,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="9">{{ hub.empty("لا توجد باقات VPN بعد.", icon="shield-halved") }}</td></tr>
+        <tr><td colspan="8">{{ hub.empty("لا توجد باقات VPN بعد.", icon="shield-halved") }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

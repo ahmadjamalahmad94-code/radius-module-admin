@@ -69,11 +69,24 @@ _PAYMENT_ERROR_MESSAGES_AR: dict[str, str] = {
 
 
 class LicensePaymentValidationError(ValueError):
-    """رسائل الدفع تستخدم رموزًا قصيرة. ‎__str__‎ يحوّلها إلى نص عربي للمستخدم."""
+    """Payment errors keep stable codes; UI layers render Arabic messages."""
+
+    @property
+    def code(self) -> str:
+        return super().__str__()
+
+    @property
+    def message_ar(self) -> str:
+        return _PAYMENT_ERROR_MESSAGES_AR.get(self.code, self.code)
 
     def __str__(self) -> str:  # noqa: D401
-        code = super().__str__()
-        return _PAYMENT_ERROR_MESSAGES_AR.get(code, code)
+        return self.code
+
+
+def payment_error_message(error: Exception) -> str:
+    if isinstance(error, LicensePaymentValidationError):
+        return error.message_ar
+    return str(error)
 
 
 def _choice(value: str, allowed: set[str], field: str) -> str:

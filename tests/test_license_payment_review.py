@@ -116,7 +116,7 @@ def test_admin_cannot_approve_twice_or_duplicate_transaction(client):
 
     assert second.status_code == 200
     assert LicensePaymentTransaction.query.filter_by(license_payment_request_id=payment_request.id).count() == 1
-    assert "request_already_paid" in second.get_data(as_text=True)
+    assert "تمت معالجة هذا الطلب وقبوله مسبقًا" in second.get_data(as_text=True)
 
 
 def test_customer_cannot_approve_payment(client):

@@ -12,7 +12,7 @@
       <h1 class="hub-hero-title mono">{{ payment_request.reference_code }}</h1>
       <div class="hub-hero-sub">
         {{ payment_request.customer.company_name if payment_request.customer else "—" }} ·
-        {{ payment_request.purpose }} ·
+        {{ payment_request.purpose|payment_purpose_label }} ·
         {{ payment_request.amount|money }} {{ payment_request.currency }}
       </div>
     </div>
@@ -26,7 +26,7 @@
   {% call hub.section("تفاصيل الطلب", icon="circle-info") %}
     <div class="hub-detail-list">
       <div><span>العميل</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "—" }}</strong></div>
-      <div><span>الغرض</span><strong>{{ payment_request.purpose }}</strong></div>
+      <div><span>الغرض</span><strong>{{ payment_request.purpose|payment_purpose_label }}</strong></div>
       <div><span>المبلغ</span><strong class="num">{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
       <div><span>المحفظة</span><strong class="mono">{{ payment_request.receiver_wallet }}</strong></div>
       <div><span>ينتهي في</span><strong>{{ payment_request.expires_at|dt }}</strong></div>
@@ -71,9 +71,9 @@
 {% if payment_request.status == "paid" %}
 {% call hub.section("ربط الدفع بالترخيص", icon="link", meta=('<span class="hub-pill hub-pill--green"><span class="dot"></span> تم التنفيذ</span>' if payment_request.applied_at else '<span class="hub-pill hub-pill--amber"><span class="dot"></span> بانتظار التنفيذ</span>')) %}
   <p class="hub-field-hint">هذا الإجراء يعمل بعد قبول الدفع. يتم تنفيذه مرة واحدة فقط ولا يكرر التجديد أو الترقية.</p>
-  {% if payment_request.applied_at %}
+      {% if payment_request.applied_at %}
     <div class="hub-detail-list" style="margin-top:12px">
-      <div><span>نوع التنفيذ</span><strong>{{ payment_request.applied_action }}</strong></div>
+      <div><span>نوع التنفيذ</span><strong>{{ payment_request.applied_action|payment_purpose_label }}</strong></div>
       <div><span>وقت التنفيذ</span><strong>{{ payment_request.applied_at|dt }}</strong></div>
     </div>
   {% else %}
@@ -87,7 +87,7 @@
         <i class="fa-solid fa-link"></i> تنفيذ ربط الدفع
       </button>
     </form>
-    <p class="hub-field-hint" style="margin-top:8px"><span class="mono">new_subscription</span> يحتاج أن يكون أمر التجهيز جاهزًا قبل إنشاء الترخيص.</p>
+    <p class="hub-field-hint" style="margin-top:8px">الاشتراك الجديد يحتاج أن يكون أمر التجهيز جاهزًا قبل إنشاء الترخيص.</p>
   {% endif %}
 {% endcall %}
 {% endif %}
@@ -110,7 +110,7 @@
           <tr>
             <td class="mono">{{ proof.reference_number or "—" }}</td>
             <td>{{ proof.note or "—" }}</td>
-            <td>{{ proof.review_status or "بانتظار المراجعة" }}</td>
+            <td>{{ (proof.review_status or "pending")|status_label }}</td>
             <td>{{ proof.reviewer.username if proof.reviewer else "—" }}</td>
             <td>{{ proof.review_note or "—" }}</td>
             <td class="date">{{ proof.submitted_at|dt }}</td>
@@ -128,7 +128,7 @@
     {% if transactions %}
       {% for transaction in transactions %}
         <div class="hub-detail-list">
-          <div><span>الحالة</span><strong>{{ transaction.status }}</strong></div>
+          <div><span>الحالة</span><strong>{{ transaction.status|status_label }}</strong></div>
           <div><span>المبلغ</span><strong class="num">{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
           <div><span>وقت التحقق</span><strong>{{ transaction.verified_at|dt }}</strong></div>
         </div>

@@ -29,19 +29,20 @@
 
 <div class="hub-grid-2">
   {% call hub.section("الترخيص الحالي", icon="key") %}
+    {% set license_status = contract.license.status %}
     <div class="hub-detail-list">
       <div><span>المفتاح</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
-      <div><span>الحالة</span><strong>{{ contract.license.status|status_label }}</strong></div>
+      <div><span>الحالة</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
       <div><span>ينتهي في</span><strong>{{ current_license.expires_at|date if current_license else '—' }}</strong></div>
-      <div><span>إصدار مستخدمي العميل</span><strong class="mono">{{ contract.customer_users_version }}</strong></div>
+      <div><span>إصدار الدخول</span><strong class="num">{{ contract.customer_users_version }}</strong></div>
     </div>
   {% endcall %}
 
   {% call hub.section("الحساب والريدياس", icon="user-shield") %}
     <div class="hub-detail-list">
-      <div><span>المستخدم</span><strong class="mono">{{ customer_user.username }}</strong></div>
-      <div><span>password_version</span><strong class="mono">{{ customer_user.password_version }}</strong></div>
-      <div><span>رابط الريدياس / VPS</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
+      <div><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
+      <div><span>إصدار كلمة المرور</span><strong class="num">{{ customer_user.password_version }}</strong></div>
+      <div><span>رابط الريدياس / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
     </div>
   {% endcall %}
 </div>
@@ -50,7 +51,7 @@
   {% call hub.section("الحدود الأساسية", icon="ruler-combined") %}
     <div class="hub-detail-list">
       <div><span>المشتركين</span><strong class="num">{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</strong></div>
-      <div><span>أجهزة NAS</span><strong class="num">{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</strong></div>
+      <div><span>أجهزة الشبكة</span><strong class="num">{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</strong></div>
       <div><span>المدراء</span><strong class="num">{{ contract.limits.admins.max_total if contract.limits.admins is defined else '—' }}</strong></div>
     </div>
   {% endcall %}
@@ -85,33 +86,36 @@
       <button class="hub-btn hub-btn--secondary" type="submit">
         <i class="fa-solid fa-rotate"></i> تحديث كلمة المرور
       </button>
-      <p class="hub-field-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم password hash الجديد بعد المزامنة.</p>
+      <p class="hub-field-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفرة الجديدة بعد المزامنة.</p>
     </form>
   {% endcall %}
 </div>
 
-{% call hub.section("إعداد ربط الريدياس", icon="plug", meta='<span class="hub-pill hub-pill--violet"><i class="fa-solid fa-circle-info"></i> انسخ للسيرفر</span>') %}
+{% call hub.section("إعداد ربط الريدياس", icon="plug", meta='<span class="hub-pill hub-pill--violet"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span>') %}
   {% if runtime_setup.available %}
-    <p class="hub-field-hint">انسخ هذه القيم إلى ملف البيئة على سيرفر الريدياس الخاص بك. لوحة التراخيص لا تدخل إلى سيرفرك ولا تعدل ملفاته.</p>
-    <div class="hub-form-grid" style="margin-top:14px">
-      <div class="hub-field">
-        <label>رابط لوحة التراخيص</label>
-        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.base_url }}">
+    <p class="hub-field-hint">هذه القيم خاصة بربط الريدياس بلوحة التراخيص. لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
+    <details style="margin-top:12px">
+      <summary class="hub-btn hub-btn--secondary hub-btn--sm" style="display:inline-flex;cursor:pointer;list-style:none">
+        <i class="fa-solid fa-screwdriver-wrench"></i> عرض إعداد الربط التقني
+      </summary>
+      <div class="hub-form-grid" style="margin-top:14px">
+        <div class="hub-field">
+          <label>رابط لوحة التراخيص</label>
+          <input class="hub-input mono ltr" readonly value="{{ runtime_setup.base_url }}">
+        </div>
+        <div class="hub-field">
+          <label>مفتاح الترخيص</label>
+          <input class="hub-input mono ltr" readonly value="{{ runtime_setup.license_key }}">
+        </div>
+        <div class="hub-field full">
+          <label>سر التوقيع الخاص بهذا الترخيص</label>
+          <input class="hub-input mono ltr" readonly value="{{ runtime_setup.integration_secret }}">
+        </div>
+        <div class="hub-field full">
+          <div class="hub-field-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص، ولا يرسل كلمة مرور خام.</div>
+        </div>
       </div>
-      <div class="hub-field">
-        <label>مفتاح الترخيص</label>
-        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.license_key }}">
-      </div>
-      <div class="hub-field full">
-        <label>سر التوقيع الخاص بهذا الترخيص</label>
-        <input class="hub-input mono ltr" readonly value="{{ runtime_setup.integration_secret }}">
-      </div>
-      <div class="hub-field full">
-        <label>ملف البيئة الجاهز للنسخ</label>
-        <textarea class="hub-textarea mono ltr" readonly rows="10">{{ runtime_setup.env_snippet }}</textarea>
-        <div class="hub-field-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص.</div>
-      </div>
-    </div>
+    </details>
   {% else %}
     {{ hub.empty("لا يوجد ترخيص متاح لشركتك حتى الآن.", sub="تواصل مع الدعم لتفعيل أول ترخيص.", icon="key") }}
   {% endif %}
@@ -134,7 +138,6 @@
         <tr>
           <td>
             <strong>{{ item.name_ar or item.name }}</strong>
-            <div class="hub-muted mono" style="font-size:11.5px">{{ item.service_key }}</div>
           </td>
           <td>
             <span class="badge {{ svc.status|default('disabled')|badge_class }}">
@@ -145,7 +148,7 @@
             {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
               تحميل <strong class="num">{{ svc.download_mbps }} Mbps</strong> · رفع <strong class="num">{{ svc.upload_mbps }} Mbps</strong> · مستخدمو VPN <strong class="num">{{ svc.max_vpn_users }}</strong>
             {% elif svc.limits %}
-              <span class="mono" style="font-size:12px">{{ svc.limits }}</span>
+              <span style="font-size:12.5px">{{ service_limit_summary(svc.limits) }}</span>
             {% else %}
               <span class="hub-muted" style="font-size:12.5px">{{ item.description }}</span>
             {% endif %}
@@ -199,8 +202,8 @@
         <tbody>
         {% for req in service_requests %}
           <tr>
-            <td class="mono">{{ req.service_key }}</td>
-            <td>{{ req.request_type }}</td>
+            <td>{{ req.service_key|service_key_label }}</td>
+            <td>{{ req.request_type|request_type_label }}</td>
             <td>{{ req.status|status_label }}</td>
           </tr>
         {% else %}

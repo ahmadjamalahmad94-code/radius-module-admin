@@ -2,7 +2,7 @@
 {% import "_partials/hub.html" as hub %}
 {% block title %}مراجعة مدفوعات التراخيص{% endblock %}
 {% block page_title %}مراجعة مدفوعات التراخيص{% endblock %}
-{% block page_subtitle %}قبول أو رفض إثباتات Manual Wallet قبل أي تفعيل للترخيص{% endblock %}
+{% block page_subtitle %}قبول أو رفض إثباتات المحفظة اليدوية قبل أي تفعيل للترخيص{% endblock %}
 
 {% block content %}
 {{ hub.hero(
@@ -44,7 +44,7 @@
           <tr>
             <td class="mono">{{ item.reference_code }}</td>
             <td>{{ item.customer.company_name if item.customer else "—" }}</td>
-            <td>{{ item.purpose }}</td>
+            <td>{{ item.purpose|payment_purpose_label }}</td>
             <td class="num">{{ item.amount|money }} {{ item.currency }}</td>
             <td><span class="badge {{ item.status|badge_class }}">{{ item.status|status_label }}</span></td>
             <td class="date">{{ item.updated_at|dt }}</td>

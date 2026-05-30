@@ -237,9 +237,9 @@ def test_vpn_admin_pages_render(client):
     customer_page = client.get(f"/admin/customers/{customer.id}/vpn-service")
 
     assert plans.status_code == 200
-    assert "ip_change_vpn" in plans.get_data(as_text=True)
+    assert "خدمات VPN / تغيير IP" in plans.get_data(as_text=True)
     assert customer_page.status_code == 200
-    assert "Contract Preview" in customer_page.get_data(as_text=True)
+    assert "ما سيصل للريدياس" in customer_page.get_data(as_text=True)
 
 
 def test_customer_vpn_entitlement_update_creates_audit_record(client):
