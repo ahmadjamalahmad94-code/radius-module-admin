@@ -1,265 +1,168 @@
 {% extends "_partials/portal_base.html" %}
-{% import "_partials/hub.html" as hub %}
 {% block title %}{{ customer.company_name }} — لوحة العميل{% endblock %}
 
 {% block head_extra %}
 {{ super() }}
-<style>
-  /* ════════ Customer portal — scoped (.cp-*) ════════ */
-  .cp-page{ display:grid; gap:16px; }
-
-  /* ── Mega-hero: greeting + license identity + KPI strip ───────── */
-  .cp-hero{
-    position:relative; display:grid; gap:18px;
-    padding:22px 24px; border-radius:20px; overflow:hidden;
-    background:
-      radial-gradient(720px 360px at 100% 0%, rgba(124,58,237,.10) 0%, transparent 60%),
-      linear-gradient(180deg, #faf8ff 0%, #fff 100%);
-    border:1px solid var(--hub-line-2, #e2e8f0);
-    box-shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 4px 16px rgba(15,23,42,.05);
-  }
-  .cp-hero-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  .cp-hero-id{ display:flex; align-items:center; gap:14px; min-width:0; }
-  .cp-hero-ico{
-    width:52px; height:52px; flex:0 0 auto; border-radius:15px;
-    background:linear-gradient(135deg, var(--hub-violet,#7c3aed), var(--hub-violet-d,#5b21b6));
-    color:#fff; display:grid; place-items:center; font-size:22px;
-    box-shadow:0 8px 20px rgba(124,58,237,.30);
-  }
-  .cp-hero-title{ margin:0; font-size:22px; font-weight:800; color:var(--hub-ink,#0f172a); }
-  .cp-hero-sub{ margin-top:4px; font-size:13px; color:var(--hub-ink-3,#475569); line-height:1.6; }
-  .cp-hero-kpis{
-    display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px;
-    padding-top:16px; border-top:1px solid var(--hub-line-2,#e2e8f0);
-  }
-  .cp-kpi{
-    display:flex; align-items:center; gap:11px; padding:12px 13px;
-    background:#fff; border:1px solid var(--hub-line-2,#e2e8f0); border-radius:13px;
-  }
-  .cp-kpi-ico{ width:38px; height:38px; flex:0 0 auto; border-radius:10px; display:grid; place-items:center; font-size:15px; }
-  .cp-kpi-ico.is-violet{ background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6); }
-  .cp-kpi-ico.is-green{ background:var(--hub-green-50,#ecfdf5); color:var(--hub-green,#16a34a); }
-  .cp-kpi-ico.is-amber{ background:var(--hub-amber-50,#fffbeb); color:var(--hub-amber,#d97706); }
-  .cp-kpi-ico.is-blue{ background:var(--hub-blue-50,#eff6ff); color:var(--hub-blue,#2563eb); }
-  .cp-kpi-l{ font-size:11.5px; color:var(--hub-ink-mute,#94a3b8); font-weight:700; }
-  .cp-kpi-v{ font-size:16px; font-weight:800; color:var(--hub-ink,#0f172a); line-height:1.3; }
-  .cp-kpi-v.mono{ font-family:ui-monospace,Consolas,monospace; font-size:13px; direction:ltr; unicode-bidi:isolate; }
-
-  /* ── Services toolbar ─────────────────────────────────────────── */
-  .cp-svc-bar{
-    display:flex; align-items:center; justify-content:space-between;
-    gap:12px; flex-wrap:wrap; margin-bottom:14px;
-  }
-  .cp-svc-counts{ display:flex; gap:8px; flex-wrap:wrap; }
-  .cp-count{
-    display:inline-flex; align-items:center; gap:7px; padding:6px 12px;
-    border-radius:999px; font-size:12.5px; font-weight:800; border:1px solid;
-  }
-  .cp-count .n{ font-size:13.5px; }
-  .cp-count.is-on{ background:var(--hub-green-50,#ecfdf5); color:var(--hub-green,#16a34a); border-color:var(--hub-green-100,#d1fae5); }
-  .cp-count.is-off{ background:var(--hub-grey-50,#f8fafc); color:var(--hub-grey,#475569); border-color:var(--hub-grey-100,#e2e8f0); }
-  .cp-svc-tools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .cp-search{
-    position:relative; display:flex; align-items:center;
-    background:#fff; border:1px solid var(--hub-line,#cbd5e1); border-radius:999px;
-    transition:border-color .15s, box-shadow .15s;
-  }
-  .cp-search:focus-within{ border-color:var(--hub-violet,#7c3aed); box-shadow:0 0 0 4px var(--hub-ring,rgba(124,58,237,.28)); }
-  .cp-search i{ width:38px; text-align:center; color:var(--hub-ink-mute,#94a3b8); font-size:13px; }
-  .cp-search input{ border:0; outline:0; background:transparent; font:inherit; font-size:13px; height:38px; padding:0 14px 0 4px; min-width:170px; color:var(--hub-ink,#0f172a); }
-  .cp-filters{ display:inline-flex; background:var(--hub-grey-50,#f8fafc); border:1px solid var(--hub-line-2,#e2e8f0); border-radius:999px; padding:3px; gap:2px; }
-  .cp-filter{
-    border:0; background:transparent; cursor:pointer; font:inherit; font-size:12.5px; font-weight:800;
-    color:var(--hub-ink-3,#475569); padding:7px 14px; border-radius:999px; transition:.15s;
-  }
-  .cp-filter:hover{ color:var(--hub-violet-d,#5b21b6); }
-  .cp-filter.is-active{ background:#fff; color:var(--hub-violet-d,#5b21b6); box-shadow:0 1px 3px rgba(15,23,42,.10); }
-
-  /* ── Service card grid ────────────────────────────────────────── */
-  .cp-svc-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:12px; }
-  .cp-svc{
-    position:relative; display:flex; flex-direction:column; gap:10px;
-    padding:15px 15px 13px; border-radius:15px;
-    background:#fff; border:1px solid var(--hub-line-2,#e2e8f0);
-    transition:border-color .15s, box-shadow .15s, transform .12s;
-  }
-  .cp-svc::before{
-    content:""; position:absolute; inset-inline-start:0; top:14px; bottom:14px;
-    width:3px; border-radius:0 3px 3px 0; background:var(--hub-line,#cbd5e1);
-  }
-  .cp-svc:hover{ border-color:var(--hub-violet-100,#ede9fe); box-shadow:0 6px 18px rgba(124,58,237,.08); transform:translateY(-1px); }
-  .cp-svc.is-on::before{ background:var(--hub-green,#16a34a); }
-  .cp-svc.is-on{ background:linear-gradient(180deg,#f6fef9 0%, #fff 42%); }
-  .cp-svc.is-expired::before{ background:var(--hub-amber,#d97706); }
-  .cp-svc.is-suspended::before{ background:var(--hub-red,#dc2626); }
-  .cp-svc-top{ display:flex; align-items:flex-start; gap:11px; }
-  .cp-svc-ico{
-    width:40px; height:40px; flex:0 0 auto; border-radius:11px;
-    background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6);
-    display:grid; place-items:center; font-size:16px;
-  }
-  .cp-svc.is-on .cp-svc-ico{ background:var(--hub-green-50,#ecfdf5); color:var(--hub-green,#16a34a); }
-  .cp-svc-name{ font-weight:800; font-size:14px; color:var(--hub-ink,#0f172a); line-height:1.4; }
-  .cp-svc-cat{ font-size:11px; color:var(--hub-ink-mute,#94a3b8); font-weight:700; margin-top:2px; }
-  .cp-svc-status{
-    margin-inline-start:auto; flex:0 0 auto;
-    display:inline-flex; align-items:center; gap:6px; padding:5px 11px;
-    border-radius:999px; font-size:11.5px; font-weight:800; border:1px solid;
-  }
-  .cp-svc-status .dot{ width:7px; height:7px; border-radius:50%; background:currentColor; }
-  .cp-st-on{ background:var(--hub-green-50,#ecfdf5); color:var(--hub-green,#16a34a); border-color:var(--hub-green-100,#d1fae5); }
-  .cp-st-off{ background:var(--hub-grey-50,#f8fafc); color:var(--hub-grey,#475569); border-color:var(--hub-grey-100,#e2e8f0); }
-  .cp-st-amber{ background:var(--hub-amber-50,#fffbeb); color:var(--hub-amber,#d97706); border-color:var(--hub-amber-100,#fef3c7); }
-  .cp-st-red{ background:var(--hub-red-50,#fef2f2); color:var(--hub-red,#dc2626); border-color:var(--hub-red-100,#fee2e2); }
-  .cp-st-blue{ background:var(--hub-blue-50,#eff6ff); color:var(--hub-blue,#2563eb); border-color:var(--hub-blue-100,#dbeafe); }
-  .cp-svc-desc{ font-size:12.5px; color:var(--hub-ink-3,#475569); line-height:1.7; margin:0; }
-  .cp-svc-chips{ display:flex; flex-wrap:wrap; gap:6px; }
-  .cp-chip{
-    display:inline-flex; align-items:center; gap:5px; padding:4px 9px;
-    border-radius:999px; background:var(--hub-grey-50,#f8fafc);
-    border:1px solid var(--hub-line-2,#e2e8f0); color:var(--hub-ink-3,#475569);
-    font-size:11.5px; font-weight:700;
-  }
-  .cp-chip i{ color:var(--hub-violet,#7c3aed); font-size:10px; }
-  .cp-chip .num{ direction:ltr; unicode-bidi:isolate; font-weight:800; color:var(--hub-ink,#0f172a); }
-  .cp-svc-foot{
-    display:flex; align-items:center; gap:8px; margin-top:auto;
-    padding-top:11px; border-top:1px solid var(--hub-line-soft,#eef2f7);
-  }
-  .cp-svc-foot form{ margin:0; }
-  .cp-more{
-    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
-    border:1px solid var(--hub-line,#cbd5e1); background:#fff;
-    color:var(--hub-ink-3,#475569); font:inherit; font-size:12px; font-weight:800;
-    padding:7px 12px; border-radius:9px; transition:.15s;
-  }
-  .cp-more:hover{ border-color:var(--hub-violet-300,#c4b5fd); color:var(--hub-violet-d,#5b21b6); background:var(--hub-violet-50,#f5f3ff); }
-  .cp-svc-empty{ grid-column:1/-1; }
-
-  /* ── Floating details modal ───────────────────────────────────── */
-  .cp-modal{
-    position:fixed; inset:0; z-index:120; display:none;
-    align-items:center; justify-content:center; padding:20px;
-    background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
-  }
-  .cp-modal.is-open{ display:flex; }
-  .cp-dialog{
-    width:100%; max-width:520px; max-height:88vh; overflow:auto;
-    background:#fff; border:1px solid var(--hub-line-2,#e2e8f0); border-radius:18px;
-    box-shadow:0 24px 60px rgba(15,23,42,.28); animation:cpPop .16s ease-out;
-  }
-  @keyframes cpPop{ from{ opacity:0; transform:translateY(10px) scale(.98);} to{ opacity:1; transform:none;} }
-  .cp-dlg-head{
-    display:flex; align-items:center; gap:13px; padding:18px 20px;
-    border-bottom:1px solid var(--hub-line-2,#e2e8f0);
-    background:linear-gradient(180deg,#faf8ff,#fff);
-  }
-  .cp-dlg-ico{
-    width:44px; height:44px; flex:0 0 auto; border-radius:12px;
-    background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6);
-    display:grid; place-items:center; font-size:18px;
-  }
-  .cp-dlg-title{ font-size:16px; font-weight:800; color:var(--hub-ink,#0f172a); }
-  .cp-dlg-x{
-    margin-inline-start:auto; width:34px; height:34px; flex:0 0 auto; cursor:pointer;
-    border:1px solid var(--hub-line-2,#e2e8f0); background:#fff; border-radius:9px;
-    color:var(--hub-ink-3,#475569); display:grid; place-items:center; font-size:14px; transition:.15s;
-  }
-  .cp-dlg-x:hover{ background:var(--hub-red-50,#fef2f2); border-color:var(--hub-red-100,#fee2e2); color:var(--hub-red,#dc2626); }
-  .cp-dlg-body{ padding:18px 20px; display:grid; gap:14px; }
-  .cp-dlg-desc{ font-size:13.5px; color:var(--hub-ink-3,#475569); line-height:1.85; margin:0; }
-  .cp-dlg-block-t{ font-size:12px; font-weight:800; color:var(--hub-ink-mute,#94a3b8); margin:0 0 8px; }
-  .cp-dlg-limits{ display:flex; flex-wrap:wrap; gap:7px; }
-  .cp-dlg-foot{
-    padding:14px 20px; border-top:1px solid var(--hub-line-2,#e2e8f0);
-    display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;
-  }
-  .cp-dlg-foot form{ margin:0; }
-
-  @media (max-width:640px){
-    .cp-svc-bar{ flex-direction:column; align-items:stretch; }
-    .cp-svc-tools{ justify-content:space-between; }
-    .cp-search input{ min-width:0; flex:1; }
-  }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customer_portal.css') }}">
 {% endblock %}
 
+{# ════════════════════════════════════════════════════════════════════
+   Service metadata (frontend-only mapping — no DB schema change)
+   ════════════════════════════════════════════════════════════════════ #}
+{% set service_icons = {
+  'customer_portal':'circle-user', 'radius_customer_portals':'door-open',
+  'customer_support':'headset', 'subscribers':'users', 'subscriber_groups':'layer-group',
+  'admins':'user-shield', 'card_users':'user-tag', 'distributors':'people-group',
+  'operations_center':'tower-observation',
+  'invoices':'file-invoice', 'payment_collection':'money-bill-wave', 'finance_center':'coins',
+  'accounting':'chart-bar', 'cards':'id-card', 'cards_recharge':'wallet',
+  'card_marketplace':'tags', 'vouchers':'ticket', 'print_templates':'print',
+  'ip_change_vpn':'shield-halved', 'public_ip_change':'globe', 'nas':'server',
+  'routers':'wifi', 'profiles':'sliders', 'ip_pools':'list-ol', 'network_policies':'traffic-light',
+  'router_diagnostics':'stethoscope', 'bandwidth_control':'gauge-high', 'site_exit':'right-from-bracket',
+  'setup_wizard':'wand-magic-sparkles', 'sessions':'signal',
+  'backups':'database', 'lifecycle':'rotate', 'recycle_bin':'trash-can',
+  'remote_support':'screwdriver-wrench', 'remote_health_fix':'heart-pulse', 'remote_access':'laptop-code',
+  'reports':'chart-column', 'audit_logs':'clipboard-list', 'multi_tenant':'building',
+  'risk_events':'triangle-exclamation', 'communications':'paper-plane',
+  'integration_bridge':'link', 'integration_tokens':'key', 'webhooks':'webhook'
+} %}
+
+{% set service_categories = [
+  ('customers', 'إدارة العملاء والحسابات', 'users-gear',
+    ['customer_portal','radius_customer_portals','customer_support','subscribers','subscriber_groups','admins','card_users','distributors','operations_center']),
+  ('billing', 'الفوترة والتحصيل', 'file-invoice-dollar',
+    ['invoices','payment_collection','finance_center','accounting','cards','cards_recharge','card_marketplace','vouchers','print_templates']),
+  ('network', 'الشبكة والبنية التحتية', 'network-wired',
+    ['ip_change_vpn','public_ip_change','nas','routers','profiles','ip_pools','network_policies','router_diagnostics','bandwidth_control','site_exit','setup_wizard','sessions']),
+  ('support', 'النسخ والصيانة والدعم', 'headset',
+    ['backups','lifecycle','recycle_bin','remote_support','remote_health_fix','remote_access']),
+  ('tools', 'الأدوات والتقارير', 'chart-line',
+    ['reports','audit_logs','multi_tenant']),
+  ('security', 'الأمان والتكامل والإدارة', 'shield-halved',
+    ['risk_events','communications','integration_bridge','integration_tokens','webhooks'])
+] %}
+
+{# ── reusable service card macro ── #}
+{% macro svc_card(item, svc, icon, limit_text) %}
+  {% set is_on = svc.enabled %}
+  {% set st = svc.status|default('disabled') %}
+  {% if is_on %}
+    {% set state = 'on' %}{% set cls = 'cp-svc-status is-on' %}{% set card = 'is-on' %}{% set txt = 'مفعّلة' %}
+  {% elif st == 'pending' %}
+    {% set state = 'trial' %}{% set cls = 'cp-svc-status is-blue' %}{% set card = 'is-trial' %}{% set txt = 'تجريبية' %}
+  {% elif st == 'expired' %}
+    {% set state = 'off' %}{% set cls = 'cp-svc-status is-amber' %}{% set card = 'is-expired' %}{% set txt = 'منتهية' %}
+  {% elif st == 'suspended' %}
+    {% set state = 'off' %}{% set cls = 'cp-svc-status is-red' %}{% set card = 'is-suspended' %}{% set txt = 'موقوفة' %}
+  {% else %}
+    {% set state = 'off' %}{% set cls = 'cp-svc-status is-off' %}{% set card = '' %}{% set txt = 'غير مفعّلة' %}
+  {% endif %}
+  <article class="cp-svc {{ card }}" data-state="{{ state }}"
+           data-name="{{ (item.name_ar or item.name or item.service_key)|lower }} {{ item.service_key }}">
+    <div class="cp-svc-top">
+      <span class="cp-svc-ico"><i class="fa-solid fa-{{ icon }}"></i></span>
+      <span class="cp-svc-name">{{ item.name_ar or item.name or item.service_key }}</span>
+      <span class="{{ cls }}"><span class="dot"></span>{{ txt }}</span>
+    </div>
+    {% if item.description %}<p class="cp-svc-desc">{{ item.description }}</p>{% endif %}
+    {% if limit_text %}<div class="cp-svc-limit"><i class="fa-solid fa-gauge"></i> {{ limit_text }}</div>{% endif %}
+    <div class="cp-svc-foot">
+      <button type="button" class="cp-more" data-cp-more
+              data-name="{{ item.name_ar or item.name or item.service_key }}"
+              data-icon="{{ icon }}" data-status="{{ txt }}" data-status-cls="{{ cls }}"
+              data-desc="{{ item.description or 'صلاحية ضمن عقد ترخيصك. تظهر تفاصيلها وحدودها عند تفعيلها من لوحة التراخيص.' }}"
+              data-limits="{{ limit_text }}">
+        <i class="fa-solid fa-circle-info"></i> المزيد
+      </button>
+      {% if is_on %}
+        <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
+          {{ csrf_input() }}
+          <input type="hidden" name="request_type" value="upgrade">
+          <button type="submit" class="cp-req-btn is-upgrade"><i class="fa-solid fa-arrow-up"></i> طلب ترقية</button>
+        </form>
+      {% else %}
+        <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
+          {{ csrf_input() }}
+          <input type="hidden" name="request_type" value="activation">
+          <button type="submit" class="cp-req-btn"><i class="fa-solid fa-paper-plane"></i> طلب تفعيل</button>
+        </form>
+      {% endif %}
+    </div>
+  </article>
+{% endmacro %}
+
 {% block portal_topbar %}
-<header style="display:flex; justify-content:space-between; align-items:center; gap:14px; padding:14px 18px; background:var(--hub-surface); border:1px solid var(--hub-line); border-radius:var(--hub-r-lg); box-shadow:var(--hub-elev)">
-  <div style="display:flex; align-items:center; gap:12px">
-    <div class="hub-brand-mark">HBR</div>
+<nav class="cp-nav" id="cp-nav">
+  <div class="cp-nav-brand">
+    <div class="cp-nav-mark">HBR</div>
     <div>
-      <div style="font-weight:800; color:var(--hub-ink)">{{ customer.company_name }}</div>
-      <div style="font-size:12px; color:var(--hub-ink-mute)">لوحة العميل المركزية</div>
+      <b>{{ customer.company_name }}</b>
+      <span>لوحة العميل المركزية</span>
     </div>
   </div>
-  <form method="post" action="{{ url_for('public.customer_portal_logout') }}" style="margin:0">
-    {{ csrf_input() }}
-    <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit">
-      <i class="fa-solid fa-right-from-bracket"></i> خروج
-    </button>
-  </form>
-</header>
+  <div class="cp-nav-links">
+    <a class="cp-nav-link is-active" href="#cp-top" data-cp-navlink><i class="fa-solid fa-house"></i> الرئيسية</a>
+    <a class="cp-nav-link" href="#cp-services" data-cp-navlink><i class="fa-solid fa-shapes"></i> الخدمات</a>
+    <a class="cp-nav-link" href="#cp-payments" data-cp-navlink><i class="fa-solid fa-credit-card"></i> الفواتير</a>
+    <a class="cp-nav-link" href="#cp-requests" data-cp-navlink><i class="fa-solid fa-headset"></i> الطلبات والدعم</a>
+    <a class="cp-nav-link" href="#cp-account-settings" data-cp-navlink><i class="fa-solid fa-gear"></i> الإعدادات</a>
+  </div>
+  <div class="cp-nav-user">
+    <span class="cp-nav-avatar"><i class="fa-solid fa-user"></i></span>
+    <form method="post" action="{{ url_for('public.customer_portal_logout') }}">
+      {{ csrf_input() }}
+      <button class="cp-btn cp-btn--ghost cp-btn--sm" type="submit"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
+    </form>
+    <button type="button" class="cp-nav-toggle" id="cp-nav-toggle" aria-label="القائمة"><i class="fa-solid fa-bars"></i></button>
+  </div>
+</nav>
 {% endblock %}
 
 {% block content %}
-{# ── portal visibility config from license contract ─────────────── #}
+{# portal visibility config #}
 {% set _pc = contract.customer.get('portal_config', {}) if contract.customer is mapping else {} %}
 {% set _hidden = _pc.get('hidden_sections', []) %}
-{# category → icon + arabic label maps ──────────────────────────── #}
-{% set cat_icons = {
-  'network':'network-wired', 'core':'cubes', 'support':'headset', 'radius':'wifi',
-  'billing':'file-invoice-dollar', 'sales':'tags', 'security':'shield-halved',
-  'communications':'tower-broadcast', 'ops':'gears', 'analytics':'chart-line',
-  'integration':'plug'
-} %}
-{% set cat_labels = {
-  'network':'الشبكة', 'core':'أساسي', 'support':'الدعم', 'radius':'الريدياس',
-  'billing':'الفوترة', 'sales':'المبيعات', 'security':'الأمان',
-  'communications':'الاتصالات', 'ops':'العمليات', 'analytics':'التحليلات',
-  'integration':'التكامل'
-} %}
-{% set lim_labels = {
-  'max_total':'الحد الأقصى', 'generate_per_batch':'الكروت/دفعة', 'monthly_generated':'كروت/شهر',
-  'max_active':'العناصر الفعالة', 'max_sellers':'البائعون', 'max_wallets':'المحافظ'
-} %}
 
-{# ── count active vs total ─────────────────────────────────────── #}
+{# count active services #}
 {% set ns = namespace(on=0) %}
 {% for item in service_catalog %}
   {% if contract.services.get(item.service_key, {}).enabled %}{% set ns.on = ns.on + 1 %}{% endif %}
 {% endfor %}
+{% set license_status = contract.license.status %}
 
-<div class="cp-page">
+<div class="cp-shell" id="cp-top">
 
-  {# ════ Mega-hero: greeting + KPI strip ════ #}
-  {% set license_status = contract.license.status %}
-  <section class="cp-hero">
+  {# ════ Hero ════ #}
+  <section class="cp-hero cp-anchor">
     <div class="cp-hero-row">
       <div class="cp-hero-id">
-        <span class="cp-hero-ico"><i class="fa-solid fa-building"></i></span>
+        <div class="cp-hero-logo"><b>H</b></div>
         <div>
           <h1 class="cp-hero-title">أهلاً، {{ customer.company_name }}</h1>
-          <div class="cp-hero-sub">ملخص ترخيصك وحدودك وخدماتك المفعّلة، وطلبات الترقية والمدفوعات — كل شيء في مكان واحد.</div>
+          <div class="cp-hero-sub">إدارة جميع خدماتك وترخيصك ومدفوعاتك وطلبات الترقية من مكان واحد.</div>
         </div>
       </div>
-      {% if license_status == 'active' %}
-        <span class="cp-svc-status cp-st-on"><span class="dot"></span> الترخيص نشط</span>
-      {% elif license_status == 'not_found' %}
-        <span class="cp-svc-status cp-st-off"><span class="dot"></span> لا يوجد ترخيص</span>
-      {% else %}
-        <span class="cp-svc-status cp-st-amber"><span class="dot"></span> {{ license_status|status_label }}</span>
-      {% endif %}
+      <div class="cp-hero-side">
+        {% if license_status == 'active' %}
+          <span class="cp-pill is-on"><span class="dot"></span> ترخيص نشط</span>
+        {% elif license_status == 'not_found' %}
+          <span class="cp-pill is-off"><span class="dot"></span> لا يوجد ترخيص</span>
+        {% else %}
+          <span class="cp-pill is-amber"><span class="dot"></span> {{ license_status|status_label }}</span>
+        {% endif %}
+        <span class="cp-hero-avatar"><i class="fa-solid fa-user"></i></span>
+      </div>
     </div>
 
-    <div class="cp-hero-kpis">
+    <div class="cp-kpis">
       <div class="cp-kpi">
         <span class="cp-kpi-ico is-green"><i class="fa-solid fa-shapes"></i></span>
-        <div><div class="cp-kpi-l">الخدمات المفعّلة</div><div class="cp-kpi-v">{{ ns.on }} <span style="font-size:12px;color:var(--hub-ink-mute);font-weight:700">/ {{ service_catalog|length }}</span></div></div>
+        <div><div class="cp-kpi-l">خدمات مفعّلة</div><div class="cp-kpi-v">{{ ns.on }} <small>/ {{ service_catalog|length }}</small></div></div>
       </div>
       <div class="cp-kpi">
         <span class="cp-kpi-ico is-violet"><i class="fa-solid fa-calendar-day"></i></span>
-        <div><div class="cp-kpi-l">ينتهي الترخيص</div><div class="cp-kpi-v" style="font-size:13.5px">{{ current_license.expires_at|date if current_license else '—' }}</div></div>
+        <div><div class="cp-kpi-l">تاريخ الانتهاء</div><div class="cp-kpi-v" style="font-size:14px">{{ current_license.expires_at|date if current_license else '—' }}</div></div>
       </div>
       <div class="cp-kpi">
         <span class="cp-kpi-ico is-blue"><i class="fa-solid fa-users"></i></span>
@@ -276,266 +179,275 @@
     </div>
   </section>
 
-  {# ════ Account + license + password ════ #}
+  {# ════ Account + Password ════ #}
   {% if 'account' not in _hidden or 'password' not in _hidden %}
-  <div class="hub-grid-2">
+  <div class="cp-grid-2">
     {% if 'account' not in _hidden %}
-    {% call hub.section("الترخيص والحساب", icon="key") %}
-      <div class="hub-detail-list">
-        <div><span>مفتاح الترخيص</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
-        <div><span>حالة الترخيص</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
-        <div><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
-        <div><span>رابط الريدياس / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
+    <section class="cp-card cp-anchor" id="cp-account">
+      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-key"></i></span><h2>الترخيص والحساب</h2></div>
+      <div class="cp-card-body">
+        <div class="cp-rows">
+          <div class="cp-row"><span>مفتاح الترخيص</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
+          <div class="cp-row"><span>حالة الترخيص</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
+          <div class="cp-row"><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
+          <div class="cp-row"><span>رابط الوصول / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
+        </div>
       </div>
-    {% endcall %}
+    </section>
     {% endif %}
 
     {% if 'password' not in _hidden %}
-    {% call hub.section("تغيير كلمة المرور", icon="lock") %}
-      <form method="post" action="{{ url_for('public.customer_portal_password_update') }}" style="display:grid; gap:10px">
-        {{ csrf_input() }}
-        <div class="hub-field">
-          <label>كلمة المرور الحالية</label>
-          <div class="hub-input-icon">
-            <i class="fa-solid fa-key"></i>
-            <input class="hub-input" id="cpw-cur" name="current_password" type="password" autocomplete="current-password" required>
-            <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-cur"><i class="fa-solid fa-eye"></i></button>
+    <section class="cp-card">
+      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-lock"></i></span><h2>تغيير كلمة المرور</h2></div>
+      <div class="cp-card-body">
+        <form method="post" action="{{ url_for('public.customer_portal_password_update') }}">
+          {{ csrf_input() }}
+          <div class="cp-field">
+            <label>كلمة المرور الحالية</label>
+            <div class="cp-input-wrap">
+              <i class="fa-solid fa-key"></i>
+              <input id="cpw-cur" name="current_password" type="password" autocomplete="current-password" required>
+              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-cur"><i class="fa-solid fa-eye"></i></button>
+            </div>
           </div>
-        </div>
-        <div class="hub-field">
-          <label>كلمة المرور الجديدة</label>
-          <div class="hub-input-icon">
-            <i class="fa-solid fa-key"></i>
-            <input class="hub-input" id="cpw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
-            <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-new"><i class="fa-solid fa-eye"></i></button>
+          <div class="cp-field">
+            <label>كلمة المرور الجديدة</label>
+            <div class="cp-input-wrap">
+              <i class="fa-solid fa-key"></i>
+              <input id="cpw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-new"><i class="fa-solid fa-eye"></i></button>
+            </div>
           </div>
-        </div>
-        <div class="hub-field">
-          <label>تأكيد كلمة المرور الجديدة</label>
-          <div class="hub-input-icon">
-            <i class="fa-solid fa-key"></i>
-            <input class="hub-input" id="cpw-cfm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
-            <button type="button" class="pwd-toggle" data-pwd-toggle="#cpw-cfm"><i class="fa-solid fa-eye"></i></button>
+          <div class="cp-field">
+            <label>تأكيد كلمة المرور الجديدة</label>
+            <div class="cp-input-wrap">
+              <i class="fa-solid fa-key"></i>
+              <input id="cpw-cfm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-cfm"><i class="fa-solid fa-eye"></i></button>
+            </div>
           </div>
-        </div>
-        <button class="hub-btn hub-btn--secondary" type="submit">
-          <i class="fa-solid fa-rotate"></i> تحديث كلمة المرور
-        </button>
-        <p class="hub-field-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفرة الجديدة بعد المزامنة.</p>
-      </form>
-    {% endcall %}
+          <button class="cp-btn cp-btn--primary" type="submit"><i class="fa-solid fa-rotate"></i> تحديث كلمة المرور</button>
+          <p class="cp-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفرة الجديدة بعد المزامنة.</p>
+        </form>
+      </div>
+    </section>
     {% endif %}
   </div>
   {% endif %}
 
-  {# ════ Services — card grid with filter/search ════ #}
+  {# ════ Services — categorized ════ #}
   {% if 'services' not in _hidden %}
-  {% call hub.section("الخدمات وتفاصيلها", icon="shapes") %}
-    <div class="cp-svc-bar">
-      <div class="cp-svc-counts">
-        <span class="cp-count is-on"><i class="fa-solid fa-circle-check"></i> مفعّلة <span class="n">{{ ns.on }}</span></span>
-        <span class="cp-count is-off"><i class="fa-solid fa-circle-minus"></i> غير مفعّلة <span class="n">{{ service_catalog|length - ns.on }}</span></span>
-      </div>
-      <div class="cp-svc-tools">
-        <div class="cp-search">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" id="cp-svc-search" placeholder="ابحث عن خدمة…" autocomplete="off">
-        </div>
-        <div class="cp-filters" id="cp-svc-filters">
-          <button type="button" class="cp-filter is-active" data-filter="all">الكل</button>
-          <button type="button" class="cp-filter" data-filter="on">المفعّلة</button>
-          <button type="button" class="cp-filter" data-filter="off">غير المفعّلة</button>
-        </div>
-      </div>
+  <section class="cp-card cp-anchor" id="cp-services">
+    <div class="cp-card-head">
+      <span class="ic"><i class="fa-solid fa-shapes"></i></span>
+      <h2>الخدمات ومنتجاتها</h2>
     </div>
-
-    <div class="cp-svc-grid" id="cp-svc-grid">
-      {% for item in service_catalog %}
-        {% set svc = contract.services.get(item.service_key, {}) %}
-        {% set is_on = svc.enabled %}
-        {% set st = svc.status|default('disabled') %}
-        {# resolve display status #}
-        {% if is_on %}
-          {% set st_cls = 'cp-st-on' %}{% set st_txt = 'مفعّلة' %}{% set card_cls = 'is-on' %}
-        {% elif st == 'expired' %}
-          {% set st_cls = 'cp-st-amber' %}{% set st_txt = 'منتهية' %}{% set card_cls = 'is-expired' %}
-        {% elif st == 'suspended' %}
-          {% set st_cls = 'cp-st-red' %}{% set st_txt = 'موقوفة' %}{% set card_cls = 'is-suspended' %}
-        {% elif st == 'pending' %}
-          {% set st_cls = 'cp-st-blue' %}{% set st_txt = 'قيد المراجعة' %}{% set card_cls = '' %}
-        {% else %}
-          {% set st_cls = 'cp-st-off' %}{% set st_txt = 'غير مفعّلة' %}{% set card_cls = '' %}
-        {% endif %}
-        {# limit summary text for modal #}
-        {% if item.service_key == 'ip_change_vpn' and is_on %}
-          {% set lim_text = 'تحميل ' ~ svc.download_mbps ~ ' ميجابت/ثانية · رفع ' ~ svc.upload_mbps ~ ' ميجابت/ثانية · مستخدمو الشبكة الخاصة ' ~ svc.max_vpn_users %}
-        {% elif svc.limits %}
-          {% set lim_text = service_limit_summary(svc.limits) %}
-        {% else %}
-          {% set lim_text = '' %}
-        {% endif %}
-
-        <article class="cp-svc {{ card_cls }}"
-                 data-state="{{ 'on' if is_on else 'off' }}"
-                 data-name="{{ (item.name_ar or item.name)|lower }} {{ item.service_key }}">
-          <div class="cp-svc-top">
-            <span class="cp-svc-ico"><i class="fa-solid fa-{{ cat_icons.get(item.category, 'cube') }}"></i></span>
-            <div style="min-width:0">
-              <div class="cp-svc-name">{{ item.name_ar or item.name }}</div>
-              <div class="cp-svc-cat">{{ cat_labels.get(item.category, 'خدمة') }}</div>
-            </div>
-            <span class="cp-svc-status {{ st_cls }}"><span class="dot"></span> {{ st_txt }}</span>
+    <div class="cp-card-body">
+      <div class="cp-svc-bar">
+        <div class="cp-counts">
+          <span class="cp-count is-on"><i class="fa-solid fa-circle-check"></i> {{ ns.on }} مفعّلة</span>
+          <span class="cp-count is-all"><i class="fa-solid fa-shapes"></i> {{ service_catalog|length }} خدمة</span>
+        </div>
+        <div class="cp-svc-tools">
+          <div class="cp-search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="cp-svc-search" placeholder="ابحث عن خدمة…" autocomplete="off">
           </div>
+          <div class="cp-filters" id="cp-svc-filters">
+            <button type="button" class="cp-filter is-active" data-filter="all">الكل</button>
+            <button type="button" class="cp-filter" data-filter="on">مفعّلة</button>
+            <button type="button" class="cp-filter" data-filter="trial">تجريبية</button>
+            <button type="button" class="cp-filter" data-filter="off">غير مفعّلة</button>
+          </div>
+        </div>
+      </div>
 
-          {% if item.description %}<p class="cp-svc-desc">{{ item.description }}</p>{% endif %}
-
-          {% if item.service_key == 'ip_change_vpn' and is_on %}
-            <div class="cp-svc-chips">
-              <span class="cp-chip"><i class="fa-solid fa-download"></i> تحميل <span class="num">{{ svc.download_mbps }}</span> ميجابت/ثانية</span>
-              <span class="cp-chip"><i class="fa-solid fa-upload"></i> رفع <span class="num">{{ svc.upload_mbps }}</span> ميجابت/ثانية</span>
-              <span class="cp-chip"><i class="fa-solid fa-user-group"></i> مستخدمو الشبكة الخاصة <span class="num">{{ svc.max_vpn_users }}</span></span>
+      <div id="cp-svc-root">
+        {# precompute which keys are rendered in categories #}
+        {% set ns2 = namespace(seen=[]) %}
+        {% for cat_key, cat_label, cat_icon, cat_keys in service_categories %}
+          {# gather items present in catalog for this category, preserving catalog order #}
+          {% set present = [] %}
+          {% for item in service_catalog if item.service_key in cat_keys %}
+            {% if present.append(item) %}{% endif %}
+            {% if ns2.seen.append(item.service_key) %}{% endif %}
+          {% endfor %}
+          {% if present %}
+            {% set con = namespace(on=0) %}
+            {% for item in present %}{% if contract.services.get(item.service_key, {}).enabled %}{% set con.on = con.on + 1 %}{% endif %}{% endfor %}
+            <div class="cp-cat" data-cp-cat>
+              <div class="cp-cat-head">
+                <span class="cp-cat-ic"><i class="fa-solid fa-{{ cat_icon }}"></i></span>
+                <span class="cp-cat-title">{{ cat_label }}</span>
+                <span class="cp-cat-count {{ 'has-on' if con.on else 'no-on' }}">{{ con.on }} / {{ present|length }} مفعّلة</span>
+              </div>
+              <div class="cp-svc-grid">
+                {% for item in present %}
+                  {% set svc = contract.services.get(item.service_key, {}) %}
+                  {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
+                    {% set limit_text = 'تحميل ' ~ svc.download_mbps ~ ' · رفع ' ~ svc.upload_mbps ~ ' Mbps · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
+                  {% elif svc.limits %}
+                    {% set limit_text = service_limit_summary(svc.limits) %}
+                  {% else %}
+                    {% set limit_text = '' %}
+                  {% endif %}
+                  {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), limit_text) }}
+                {% endfor %}
+              </div>
             </div>
-          {% elif svc.limits %}
-            <div class="cp-svc-chips">
-              {% for k, v in svc.limits.items() %}
-                {% if v not in (None, '') %}
-                  <span class="cp-chip"><i class="fa-solid fa-gauge"></i> {{ lim_labels.get(k|string, k) }} <span class="num">{{ v }}</span></span>
-                {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {# catch-all: any service not mapped to a category #}
+        {% set extras = [] %}
+        {% for item in service_catalog if item.service_key not in ns2.seen %}
+          {% if extras.append(item) %}{% endif %}
+        {% endfor %}
+        {% if extras %}
+          <div class="cp-cat" data-cp-cat>
+            <div class="cp-cat-head">
+              <span class="cp-cat-ic"><i class="fa-solid fa-cube"></i></span>
+              <span class="cp-cat-title">خدمات أخرى</span>
+            </div>
+            <div class="cp-svc-grid">
+              {% for item in extras %}
+                {% set svc = contract.services.get(item.service_key, {}) %}
+                {% set limit_text = service_limit_summary(svc.limits) if svc.limits else '' %}
+                {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), limit_text) }}
               {% endfor %}
             </div>
-          {% elif is_on %}
-            <div class="cp-svc-chips"><span class="cp-chip"><i class="fa-solid fa-infinity"></i> بدون حدود خاصة</span></div>
-          {% endif %}
-
-          <div class="cp-svc-foot">
-            <button type="button" class="cp-more"
-                    data-cp-more
-                    data-name="{{ item.name_ar or item.name }}"
-                    data-icon="{{ cat_icons.get(item.category, 'cube') }}"
-                    data-status="{{ st_txt }}"
-                    data-status-cls="{{ st_cls }}"
-                    data-desc="{{ item.details or item.description or 'لا يوجد وصف تفصيلي متاح لهذه الخدمة بعد.' }}"
-                    data-limits="{{ lim_text }}">
-              <i class="fa-solid fa-circle-info"></i> المزيد
-            </button>
-            {% if not is_on %}
-              <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
-                {{ csrf_input() }}
-                <input type="hidden" name="request_type" value="activation">
-                <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
-                  <i class="fa-solid fa-play"></i> طلب تفعيل
-                </button>
-              </form>
-            {% else %}
-              <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
-                {{ csrf_input() }}
-                <input type="hidden" name="request_type" value="upgrade">
-                <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
-                  <i class="fa-solid fa-arrow-up"></i> طلب ترقية
-                </button>
-              </form>
-            {% endif %}
           </div>
-        </article>
-      {% endfor %}
-      <div class="cp-svc-empty" id="cp-svc-noresult" style="display:none">
-        {{ hub.empty("لا توجد خدمة مطابقة لبحثك.", icon="magnifying-glass") }}
+        {% endif %}
+
+        <div class="cp-empty" id="cp-svc-noresult" style="display:none">
+          <div class="cp-empty-ic"><i class="fa-solid fa-magnifying-glass"></i></div>
+          <div class="cp-empty-msg">لا توجد خدمة مطابقة لبحثك.</div>
+        </div>
       </div>
     </div>
-  {% endcall %}
+  </section>
   {% endif %}
 
-  {# ════ Requests ════ #}
-  {% if 'payments' not in _hidden or 'requests' not in _hidden %}
-  <div class="hub-grid-2">
-    {% if 'payments' not in _hidden %}
-    {% call hub.section("طلبات الدفع", icon="credit-card") %}
-      <div class="hub-table-wrap">
-        <table class="hub-table">
-          <thead><tr><th>المرجع</th><th class="num">المبلغ</th><th>الحالة</th><th></th></tr></thead>
-          <tbody>
-          {% for req in payment_requests %}
-            <tr>
-              <td class="mono">{{ req.reference_code }}</td>
-              <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
-              <td><span class="badge {{ req.status|badge_class }}">{{ req.status|status_label }}</span></td>
-              <td>
-                <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('public.payment_portal', request_id=req.id, token=req.access_token) }}">
-                  <i class="fa-solid fa-receipt"></i> الدفع/الإثبات
-                </a>
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="4">{{ hub.empty("لا توجد طلبات دفع.", icon="credit-card") }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
+  {# ════ Bottom requests: service requests + payment requests ════ #}
+  {% if 'requests' not in _hidden or 'payments' not in _hidden %}
+  <div class="cp-grid-2" id="cp-requests">
+    {% if 'requests' not in _hidden %}
+    <section class="cp-card cp-anchor">
+      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-list-check"></i></span><h2>طلبات الخدمات الأخيرة</h2></div>
+      <div class="cp-card-body">
+        {% if service_requests %}
+          <div class="cp-table-wrap">
+            <table class="cp-table">
+              <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+              <tbody>
+              {% for req in service_requests %}
+                {% set rs = req.status %}
+                {% if rs in ['active','approved','completed'] %}{% set bcls = 'is-green' %}
+                {% elif rs in ['pending','payment_pending'] %}{% set bcls = 'is-amber' %}
+                {% elif rs in ['under_review','trial_active'] %}{% set bcls = 'is-blue' %}
+                {% elif rs in ['rejected','cancelled'] %}{% set bcls = 'is-grey' %}
+                {% else %}{% set bcls = 'is-grey' %}{% endif %}
+                <tr>
+                  <td>{{ req.service_key|service_key_label }}</td>
+                  <td>{{ req.request_type|request_type_label }}</td>
+                  <td><span class="cp-badge {{ bcls }}">{{ rs|status_label }}</span></td>
+                  <td class="mono">{{ req.created_at|dt }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="cp-empty">
+            <div class="cp-empty-ic"><i class="fa-solid fa-list-check"></i></div>
+            <div class="cp-empty-msg">لا توجد طلبات خدمات.</div>
+            <div class="cp-empty-sub">اطلب تفعيل أي خدمة من قسم الخدمات بالأعلى.</div>
+          </div>
+        {% endif %}
       </div>
-    {% endcall %}
+    </section>
     {% endif %}
 
-    {% if 'requests' not in _hidden %}
-    {% call hub.section("طلبات الخدمات", icon="list-check") %}
-      <div class="hub-table-wrap">
-        <table class="hub-table">
-          <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th></tr></thead>
-          <tbody>
-          {% for req in service_requests %}
-            <tr>
-              <td>{{ req.service_key|service_key_label }}</td>
-              <td>{{ req.request_type|request_type_label }}</td>
-              <td><span class="badge {{ req.status|badge_class }}">{{ req.status|status_label }}</span></td>
-            </tr>
-          {% else %}
-            <tr><td colspan="3">{{ hub.empty("لا توجد طلبات حالية.", icon="list-check") }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
+    {% if 'payments' not in _hidden %}
+    <section class="cp-card cp-anchor" id="cp-payments">
+      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-credit-card"></i></span><h2>طلبات الدفع الأخيرة</h2></div>
+      <div class="cp-card-body">
+        {% if payment_requests %}
+          <div class="cp-table-wrap">
+            <table class="cp-table">
+              <thead><tr><th>المرجع</th><th>المبلغ</th><th>الحالة</th><th></th></tr></thead>
+              <tbody>
+              {% for req in payment_requests %}
+                {% set ps = req.status %}
+                {% if ps in ['paid','approved','completed'] %}{% set pcls = 'is-green' %}
+                {% elif ps in ['pending','payment_pending','awaiting_proof'] %}{% set pcls = 'is-amber' %}
+                {% elif ps in ['under_review'] %}{% set pcls = 'is-blue' %}
+                {% else %}{% set pcls = 'is-grey' %}{% endif %}
+                <tr>
+                  <td class="mono">{{ req.reference_code }}</td>
+                  <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
+                  <td><span class="cp-badge {{ pcls }}">{{ ps|status_label }}</span></td>
+                  <td><a class="cp-btn cp-btn--ghost cp-btn--sm" href="{{ url_for('public.payment_portal', request_id=req.id, token=req.access_token) }}"><i class="fa-solid fa-receipt"></i> الدفع/الإثبات</a></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="cp-empty">
+            <div class="cp-empty-ic"><i class="fa-solid fa-credit-card"></i></div>
+            <div class="cp-empty-msg">لا توجد طلبات دفع</div>
+            <div class="cp-empty-sub">ستظهر هنا أي طلبات دفع أو ترقية سعة.</div>
+          </div>
+        {% endif %}
       </div>
-    {% endcall %}
+    </section>
     {% endif %}
   </div>
   {% endif %}
 
-  {# ════ Tech setup (collapsed) ════ #}
-  {% if 'tech_setup' not in _hidden %}
-  {% call hub.section("إعداد ربط الريدياس", icon="plug", meta='<span class="hub-pill hub-pill--violet"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span>') %}
-    {% if runtime_setup.available %}
-      <p class="hub-field-hint">هذه القيم خاصة بربط الريدياس بلوحة التراخيص. لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
-      <details style="margin-top:12px">
-        <summary class="hub-btn hub-btn--secondary hub-btn--sm" style="display:inline-flex;cursor:pointer;list-style:none">
-          <i class="fa-solid fa-screwdriver-wrench"></i> عرض إعداد الربط التقني
-        </summary>
-        <div class="hub-form-grid" style="margin-top:14px">
-          <div class="hub-field">
-            <label>مفتاح الترخيص</label>
-            <input class="hub-input mono ltr" readonly value="{{ runtime_setup.license_key }}">
-          </div>
-          <div class="hub-field full">
-            <label>سر التوقيع الخاص بهذا الترخيص</label>
-            <input class="hub-input mono ltr" readonly value="{{ runtime_setup.integration_secret }}">
-          </div>
-          <div class="hub-field full">
-            <div class="hub-field-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص، ولا يرسل كلمة مرور خام.</div>
-          </div>
+  {# ════ Tech setup (collapsible, for technical admin) ════ #}
+  {% if 'tech_setup' not in _hidden and runtime_setup.available %}
+  <section class="cp-card cp-anchor" id="cp-tech">
+    <div class="cp-card-head">
+      <span class="ic"><i class="fa-solid fa-plug"></i></span>
+      <h2>إعداد ربط الريدياس</h2>
+      <span class="meta"><span class="cp-pill is-blue"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span></span>
+    </div>
+    <div class="cp-card-body">
+      <p class="cp-hint" style="margin:0 0 12px">هذه القيم خاصة بربط الريدياس بلوحة التراخيص. لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
+      <details>
+        <summary class="cp-btn cp-btn--ghost cp-btn--sm" style="display:inline-flex;cursor:pointer;list-style:none"><i class="fa-solid fa-screwdriver-wrench"></i> عرض إعداد الربط التقني</summary>
+        <div class="cp-rows" style="margin-top:14px">
+          <div class="cp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ runtime_setup.license_key }}</strong></div>
+          <div class="cp-row"><span>سر التوقيع</span><strong class="mono ltr">{{ runtime_setup.integration_secret }}</strong></div>
         </div>
+        <p class="cp-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص ولا يرسل كلمة مرور خام.</p>
       </details>
-    {% else %}
-      {{ hub.empty("لا يوجد ترخيص متاح لشركتك حتى الآن.", sub="تواصل مع الدعم لتفعيل أول ترخيص.", icon="key") }}
-    {% endif %}
-  {% endcall %}
+    </div>
+  </section>
   {% endif %}
+
+  {# ════ Account settings strip ════ #}
+  <section class="cp-settings cp-anchor" id="cp-account-settings">
+    <span class="cp-settings-ic"><i class="fa-solid fa-gear"></i></span>
+    <div>
+      <h3>إعدادات حسابي</h3>
+      <p>إدارة بيانات حسابك الشخصية، تغيير كلمة المرور، ومراجعة بياناتك الأساسية.</p>
+    </div>
+    <a class="cp-btn cp-btn--ghost" href="#cp-account" data-cp-navlink><i class="fa-solid fa-sliders"></i> عرض إعدادات الحساب</a>
+  </section>
 
 </div>
 
-{# ════ Service-details floating modal ════ #}
-<div class="cp-modal" id="cp-modal" role="dialog" aria-modal="true" aria-labelledby="cp-modal-title">
+{# ════ Service-details modal ════ #}
+<div class="cp-modal" id="cp-modal" role="dialog" aria-modal="true">
   <div class="cp-dialog">
     <div class="cp-dlg-head">
       <span class="cp-dlg-ico"><i class="fa-solid fa-circle-info" id="cp-modal-ico"></i></span>
       <div>
         <div class="cp-dlg-title" id="cp-modal-title">—</div>
-        <div style="margin-top:5px"><span class="cp-svc-status cp-st-off" id="cp-modal-status"><span class="dot"></span> —</span></div>
+        <div style="margin-top:5px"><span class="cp-svc-status is-off" id="cp-modal-status"><span class="dot"></span> —</span></div>
       </div>
       <button type="button" class="cp-dlg-x" data-cp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
     </div>
@@ -546,94 +458,104 @@
       </div>
       <div id="cp-modal-limits-block">
         <p class="cp-dlg-block-t">الحدود والصلاحيات</p>
-        <div class="cp-dlg-limits" id="cp-modal-limits"></div>
+        <div class="cp-svc-limit" id="cp-modal-limits"></div>
       </div>
     </div>
     <div class="cp-dlg-foot">
-      <button type="button" class="hub-btn hub-btn--secondary hub-btn--sm" data-cp-close>إغلاق</button>
+      <button type="button" class="cp-btn cp-btn--ghost cp-btn--sm" data-cp-close>إغلاق</button>
     </div>
   </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
-{{ super() }}
 <script>
 (function(){
-  // ── filter + search ──
-  var grid = document.getElementById('cp-svc-grid');
+  // ── mobile nav toggle ──
+  var nav = document.getElementById('cp-nav');
+  var toggle = document.getElementById('cp-nav-toggle');
+  if(toggle) toggle.addEventListener('click', function(){ nav.classList.toggle('is-open'); });
+
+  // ── smooth scroll + active nav ──
+  document.querySelectorAll('[data-cp-navlink]').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var id = a.getAttribute('href') || '';
+      if(id.charAt(0) !== '#') return;
+      var el = document.querySelector(id);
+      if(!el) return;
+      e.preventDefault();
+      el.scrollIntoView({behavior:'smooth', block:'start'});
+      nav.classList.remove('is-open');
+      document.querySelectorAll('.cp-nav-link').forEach(function(x){ x.classList.remove('is-active'); });
+      if(a.classList.contains('cp-nav-link')) a.classList.add('is-active');
+    });
+  });
+
+  // ── services filter + search ──
+  var root = document.getElementById('cp-svc-root');
   var search = document.getElementById('cp-svc-search');
   var filters = document.getElementById('cp-svc-filters');
   var noRes = document.getElementById('cp-svc-noresult');
   var mode = 'all';
   function apply(){
-    if(!grid) return;
+    if(!root) return;
     var q = (search && search.value || '').trim().toLowerCase();
-    var cards = grid.querySelectorAll('.cp-svc');
     var shown = 0;
-    cards.forEach(function(c){
-      var okState = (mode === 'all') || (c.getAttribute('data-state') === mode);
-      var okText = !q || (c.getAttribute('data-name') || '').indexOf(q) !== -1;
-      var vis = okState && okText;
-      c.style.display = vis ? '' : 'none';
-      if(vis) shown++;
+    root.querySelectorAll('[data-cp-cat]').forEach(function(cat){
+      var visInCat = 0;
+      cat.querySelectorAll('.cp-svc').forEach(function(c){
+        var okState = (mode === 'all') || (c.getAttribute('data-state') === mode);
+        var okText = !q || (c.getAttribute('data-name') || '').indexOf(q) !== -1;
+        var vis = okState && okText;
+        c.style.display = vis ? '' : 'none';
+        if(vis){ visInCat++; shown++; }
+      });
+      cat.style.display = visInCat ? '' : 'none';
     });
     if(noRes) noRes.style.display = shown ? 'none' : '';
   }
-  if(filters){
-    filters.addEventListener('click', function(e){
-      var b = e.target.closest('.cp-filter'); if(!b) return;
-      filters.querySelectorAll('.cp-filter').forEach(function(x){ x.classList.remove('is-active'); });
-      b.classList.add('is-active');
-      mode = b.getAttribute('data-filter');
-      apply();
-    });
-  }
+  if(filters) filters.addEventListener('click', function(e){
+    var b = e.target.closest('.cp-filter'); if(!b) return;
+    filters.querySelectorAll('.cp-filter').forEach(function(x){ x.classList.remove('is-active'); });
+    b.classList.add('is-active'); mode = b.getAttribute('data-filter'); apply();
+  });
   if(search) search.addEventListener('input', apply);
 
-  // ── details modal ──
-  var modal = document.getElementById('cp-modal');
-  var mTitle = document.getElementById('cp-modal-title');
-  var mIco = document.getElementById('cp-modal-ico');
-  var mStatus = document.getElementById('cp-modal-status');
-  var mDesc = document.getElementById('cp-modal-desc');
-  var mLimits = document.getElementById('cp-modal-limits');
-  var mLimitsBlock = document.getElementById('cp-modal-limits-block');
+  // ── password reveal (in case hub.js selector differs) ──
+  document.querySelectorAll('[data-pwd-toggle]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var inp = document.querySelector(btn.getAttribute('data-pwd-toggle'));
+      if(!inp) return;
+      var on = inp.type === 'password';
+      inp.type = on ? 'text' : 'password';
+      var ic = btn.querySelector('i');
+      if(ic){ ic.classList.toggle('fa-eye', !on); ic.classList.toggle('fa-eye-slash', on); }
+    });
+  });
 
+  // ── service details modal ──
+  var modal = document.getElementById('cp-modal');
+  var mT = document.getElementById('cp-modal-title'), mI = document.getElementById('cp-modal-ico');
+  var mS = document.getElementById('cp-modal-status'), mD = document.getElementById('cp-modal-desc');
+  var mL = document.getElementById('cp-modal-limits'), mLB = document.getElementById('cp-modal-limits-block');
   function openModal(btn){
     if(!modal) return;
-    mTitle.textContent = btn.getAttribute('data-name') || '—';
-    if(mIco) mIco.className = 'fa-solid fa-' + (btn.getAttribute('data-icon') || 'circle-info');
-    mStatus.className = 'cp-svc-status ' + (btn.getAttribute('data-status-cls') || 'cp-st-off');
-    mStatus.innerHTML = '<span class="dot"></span> ' + (btn.getAttribute('data-status') || '—');
-    mDesc.textContent = btn.getAttribute('data-desc') || '—';
+    mT.textContent = btn.getAttribute('data-name') || '—';
+    if(mI) mI.className = 'fa-solid fa-' + (btn.getAttribute('data-icon') || 'circle-info');
+    mS.className = (btn.getAttribute('data-status-cls') || 'cp-svc-status is-off');
+    mS.innerHTML = '<span class="dot"></span> ' + (btn.getAttribute('data-status') || '—');
+    mD.textContent = btn.getAttribute('data-desc') || '—';
     var lim = (btn.getAttribute('data-limits') || '').trim();
-    if(lim){
-      mLimitsBlock.style.display = '';
-      mLimits.innerHTML = '';
-      lim.split('·').join('،').split('،').forEach(function(part){
-        part = part.trim(); if(!part) return;
-        var s = document.createElement('span');
-        s.className = 'cp-chip';
-        s.innerHTML = '<i class="fa-solid fa-gauge"></i> ' + part;
-        mLimits.appendChild(s);
-      });
-    } else {
-      mLimitsBlock.style.display = 'none';
-    }
+    if(lim){ mLB.style.display=''; mL.innerHTML = '<i class="fa-solid fa-gauge"></i> ' + lim; }
+    else { mLB.style.display='none'; }
     modal.classList.add('is-open');
   }
   function closeModal(){ if(modal) modal.classList.remove('is-open'); }
-
   document.addEventListener('click', function(e){
     var more = e.target.closest('[data-cp-more]');
     if(more){ openModal(more); return; }
     if(e.target.closest('[data-cp-close]')){ closeModal(); return; }
     if(e.target === modal){ closeModal(); }
   });
-  document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape') closeModal();
-  });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModal(); });
 })();
 </script>
 {% endblock %}
