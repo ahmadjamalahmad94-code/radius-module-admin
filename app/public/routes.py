@@ -311,9 +311,8 @@ def google_drive_connect():
     if not user:
         return redirect(url_for("public.customer_portal_login"))
     from ..services import google_drive as gd
-    if not _backups_service_active(user.customer):
-        flash("النسخ السحابي خدمة مدفوعة وغير مفعّلة بعد. أرسل طلب تفعيل الخدمة أولاً.", "error")
-        return redirect(url_for("public.customer_portal_dashboard"))
+    # Google Drive is the customer's OWN free account — it is NOT the paid
+    # service. (The paid service is uploading to the license-panel file.)
     if not gd.is_configured():
         flash("لم يتم إعداد تكامل Google من الإدارة بعد. تواصل مع الدعم.", "error")
         return redirect(url_for("public.customer_portal_dashboard"))
