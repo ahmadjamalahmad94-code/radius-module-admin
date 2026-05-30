@@ -261,6 +261,18 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "applied_action": "VARCHAR(60) NOT NULL DEFAULT ''",
             "applied_result_json": "TEXT NOT NULL DEFAULT '{}'",
         })
+    # Raise fingerprint floor on all existing licenses that still have the
+    # old default of 1.  Silently no-ops if the column doesn't exist yet
+    # or if there are no rows to update.
+    if "licenses" in tables:
+        try:
+            db.session.execute(
+                text("UPDATE licenses SET max_fingerprints = 3 WHERE max_fingerprints < 3")
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
     if "provisioning_orders" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("provisioning_orders", {

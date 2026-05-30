@@ -150,7 +150,14 @@ def check_license(
     if fingerprint:
         fingerprints = lic.fingerprints
         if fingerprint not in fingerprints:
-            if len(fingerprints) < max(1, lic.max_fingerprints):
+            # Commercial deployments use a minimum slot floor of 3 so that
+            # server reboots / container restarts / hardware changes don't
+            # immediately lock out the customer before they can pin a stable
+            # fingerprint.  Operators who truly want to hard-lock to one
+            # server can set max_fingerprints = 1 explicitly; the floor
+            # respects any value >= 3.
+            slot_limit = max(3, lic.max_fingerprints)
+            if len(fingerprints) < slot_limit:
                 fingerprints.append(fingerprint)
                 lic.fingerprints = fingerprints
             else:
@@ -158,7 +165,7 @@ def check_license(
                     False,
                     "fingerprint_denied",
                     "denied",
-                    "بصمة الخادم غير مسموحة لهذا الترخيص.",
+                    f"بصمة الخادم غير مسموحة لهذا الترخيص (الحد: {slot_limit} بصمات).",
                     "fingerprint_denied",
                     lic,
                 )
