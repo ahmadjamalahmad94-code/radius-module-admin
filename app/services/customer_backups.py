@@ -45,11 +45,24 @@ def _backups_root() -> Path:
 
 
 def verify_instance_secret(app: Flask, license_key: str, provided_secret: str) -> bool:
-    """Constant-time compare the provided header secret to the per-license one."""
-    expected = license_integration_secret(app, license_key)
-    if not expected or not provided_secret:
+    """Validate the X-HobeRadius-Admin-Secret header.
+
+    Accepts EITHER the per-license integration secret OR the root
+    LICENSE_CHECK_HMAC_SECRET — mirroring how verify_license_signature()
+    accepts both, so the backup upload works regardless of which secret the
+    operator configured as HOBERADIUS_ADMIN_SHARED_SECRET on the instance.
+    """
+    provided = str(provided_secret or "").strip()
+    if not provided:
         return False
-    return hmac.compare_digest(str(provided_secret), expected)
+    candidates = [
+        license_integration_secret(app, license_key),
+        str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "").strip(),
+    ]
+    for expected in candidates:
+        if expected and hmac.compare_digest(provided, expected):
+            return True
+    return False
 
 
 def _safe_reference(reference: str) -> str:
