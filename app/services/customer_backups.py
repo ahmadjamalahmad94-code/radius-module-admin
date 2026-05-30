@@ -173,6 +173,20 @@ def record_backup_upload(
     )
     db.session.commit()
 
+    # Best-effort: push to the customer's own Google Drive if they connected it.
+    drive_result = None
+    if stored:
+        try:
+            from . import google_drive as gd
+            conn = gd.get_connection(customer.id)
+            if conn and conn.connected:
+                fp = _backups_root() / str(customer.id) / stored_filename
+                drive_result = gd.upload_backup(
+                    customer.id, fp, f"{_safe_reference(backup_reference)}.sqlite3"
+                )
+        except Exception:  # noqa: BLE001 — Drive push must never fail the upload
+            drive_result = None
+
     prune_customer_backups(customer.id)
 
     return {
@@ -182,6 +196,7 @@ def record_backup_upload(
         "artifact_id": artifact.id,
         "backup_reference": backup_reference,
         "size": artifact.size,
+        "drive": drive_result,
     }
 
 

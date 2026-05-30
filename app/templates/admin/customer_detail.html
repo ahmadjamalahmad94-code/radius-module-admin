@@ -369,6 +369,20 @@
 
 {# ── Backups received from this customer's RADIUS instance ── #}
 {% call hub.section("النسخ الاحتياطية المستلمة", icon="database", meta='نسخ قاعدة بيانات الريدياس التي رفعها هذا العميل تلقائيًا') %}
+  <div class="hub-detail-list" style="margin-bottom:14px">
+    <div>
+      <span><i class="fa-brands fa-google-drive"></i> ربط Google Drive</span>
+      <strong>
+        {% if customer_gdrive and customer_gdrive.connected %}
+          <span class="badge badge-green">متصل</span>
+          <span class="ltr" style="font-size:12px">{{ customer_gdrive.email or '' }}</span>
+          {% if customer_gdrive.last_upload_at %}<span class="hub-muted" style="font-size:11.5px"> · آخر رفع {{ customer_gdrive.last_upload_at|dt }}</span>{% endif %}
+        {% else %}
+          <span class="badge badge-gray">غير متصل</span>
+        {% endif %}
+      </strong>
+    </div>
+  </div>
   {% if customer_backups %}
     <div class="hub-table-wrap">
       <table class="hub-table">

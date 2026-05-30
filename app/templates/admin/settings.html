@@ -72,6 +72,31 @@
       </div>
     {% endcall %}
 
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("تكامل Google Drive (النسخ السحابي)", icon="google-drive") %}
+      <div class="hub-form-grid">
+        <div class="hub-field full">
+          <label>OAuth Client ID</label>
+          <input class="hub-input mono ltr" name="google_oauth_client_id" autocomplete="off" value="{{ settings.get('google_oauth_client_id', '') }}">
+          <div class="hub-field-hint">من Google Cloud Console ← Credentials ← OAuth client ID (نوع Web application).</div>
+        </div>
+        <div class="hub-field full">
+          <label>OAuth Client Secret</label>
+          <input class="hub-input mono ltr" name="google_oauth_client_secret" type="password" autocomplete="new-password"
+                 placeholder="{{ 'محفوظ — اتركه فارغًا لإبقائه' if settings.get('google_oauth_client_secret') else 'الصق Client Secret' }}"
+                 value="{{ settings.get('google_oauth_client_secret', '') }}">
+          <div class="hub-field-hint">يُحفظ في الإعدادات ويُستخدم لتبادل رموز OAuth. لا يظهر للعملاء.</div>
+        </div>
+        <div class="hub-field full">
+          <label>Authorized redirect URI</label>
+          <input class="hub-input mono ltr" name="google_oauth_redirect_uri" value="{{ settings.get('google_oauth_redirect_uri', '') }}"
+                 placeholder="https://hoberadius.com/portal/google-drive/callback">
+          <div class="hub-field-hint">يجب أن يطابق تمامًا ما سجّلته في Google Console. اتركه فارغًا ليُحسب تلقائيًا من رابط اللوحة.</div>
+        </div>
+      </div>
+    {% endcall %}
+
     <div class="hub-form-foot" style="padding-top:16px">
       <button class="hub-btn hub-btn--primary" type="submit">
         <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات

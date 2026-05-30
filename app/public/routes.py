@@ -229,12 +229,16 @@ def customer_portal_dashboard():
         license_active=license_allows_vpn_services(lic),
         status=lic.status if lic else "not_found",
     )
+    from ..services import google_drive as gd
+    gdrive = gd.status(customer.id)
+    gdrive["backups_active"] = bool((contract.get("services") or {}).get("backups", {}).get("enabled"))
     return render_template(
         "public/customer_portal_dashboard.html",
         customer=customer,
         customer_user=user,
         current_license=lic,
         contract=contract,
+        gdrive=gdrive,
         runtime_setup=_runtime_setup_for_license(lic),
         service_catalog=service_catalog_items(),
         service_limit_summary=service_limit_summary,
@@ -285,6 +289,97 @@ def customer_portal_service_request(service_key: str):
     req_type = service_request.request_type or "activation"
     verb = "ترقية" if req_type == "upgrade" else "تفعيل"
     flash(f"تم تسجيل طلب {verb} خدمة «{svc_name}» بنجاح. ستتم مراجعته وإشعارك عند التفعيل.", "success")
+    return redirect(url_for("public.customer_portal_dashboard"))
+
+
+def _backups_service_active(customer) -> bool:
+    """Is the paid `backups` service active for this customer's contract?"""
+    try:
+        lic = find_best_customer_license(customer)
+        contract = build_runtime_contract_for_license(
+            lic, license_active=license_allows_vpn_services(lic),
+            status=lic.status if lic else "not_found",
+        )
+        return bool((contract.get("services") or {}).get("backups", {}).get("enabled"))
+    except Exception:
+        return False
+
+
+@bp.get("/portal/google-drive/connect")
+def google_drive_connect():
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    from ..services import google_drive as gd
+    if not _backups_service_active(user.customer):
+        flash("النسخ السحابي خدمة مدفوعة وغير مفعّلة بعد. أرسل طلب تفعيل الخدمة أولاً.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if not gd.is_configured():
+        flash("لم يتم إعداد تكامل Google من الإدارة بعد. تواصل مع الدعم.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if not gd.libs_available():
+        flash("مكتبات Google غير مثبّتة على الخادم بعد. تواصل مع الدعم.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    try:
+        auth_url = gd.authorization_url(user.customer_id)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"تعذّر بدء ربط Google Drive: {exc}", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    return redirect(auth_url)
+
+
+@bp.get("/portal/google-drive/callback")
+def google_drive_callback():
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    from ..services import google_drive as gd
+    if request.args.get("error"):
+        flash("تم إلغاء ربط Google Drive.", "warning")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    state_customer = gd.read_state(request.args.get("state") or "")
+    if state_customer != user.customer_id:
+        flash("جلسة الربط غير صالحة أو منتهية. أعد المحاولة.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    # Rebuild the authorization response on the canonical (https) redirect URI
+    # so the OAuth library never trips on a proxied http scheme.
+    qs = request.query_string.decode("utf-8")
+    auth_response = gd.redirect_uri() + (("?" + qs) if qs else "")
+    try:
+        refresh_token, email = gd.exchange_callback(auth_response)
+        gd.store_connection(user.customer_id, refresh_token=refresh_token, email=email)
+        audit_customer_control(
+            actor_admin_id=None,
+            action="customer_google_drive_connected",
+            entity_type="customer",
+            entity_id=str(user.customer_id),
+            summary=f"ربط العميل حساب Google Drive ({email})",
+            metadata={"customer_id": user.customer_id, "google_email": email},
+        )
+        db.session.commit()
+        flash("تم ربط Google Drive بنجاح. ستُرفع نسخك الاحتياطية إلى درايفك الخاص تلقائيًا.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"تعذّر إكمال ربط Google Drive: {exc}", "error")
+    return redirect(url_for("public.customer_portal_dashboard"))
+
+
+@bp.post("/portal/google-drive/disconnect")
+def google_drive_disconnect():
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    from ..services import google_drive as gd
+    gd.disconnect(user.customer_id)
+    audit_customer_control(
+        actor_admin_id=None,
+        action="customer_google_drive_disconnected",
+        entity_type="customer",
+        entity_id=str(user.customer_id),
+        summary="فصل العميل حساب Google Drive",
+        metadata={"customer_id": user.customer_id},
+    )
+    db.session.commit()
+    flash("تم فصل Google Drive. لن تُرفع نسخ جديدة إلى درايفك.", "info")
     return redirect(url_for("public.customer_portal_dashboard"))
 
 

@@ -235,6 +235,55 @@
   </div>
   {% endif %}
 
+  {# ════ Cloud backup — Google Drive (per-customer OAuth) ════ #}
+  <section class="cp-card cp-anchor" id="cp-gdrive">
+    <div class="cp-card-head">
+      <span class="ic"><i class="fa-brands fa-google-drive"></i></span>
+      <h2>النسخ الاحتياطي السحابي — Google Drive</h2>
+      <span class="meta">
+        {% if gdrive.connected %}<span class="cp-pill is-on"><span class="dot"></span> متصل</span>
+        {% elif gdrive.backups_active %}<span class="cp-pill is-amber"><span class="dot"></span> غير متصل</span>
+        {% else %}<span class="cp-pill is-off"><span class="dot"></span> خدمة مدفوعة</span>{% endif %}
+      </span>
+    </div>
+    <div class="cp-card-body">
+      {% if not gdrive.backups_active %}
+        <p class="cp-svc-desc" style="margin-bottom:12px">
+          ربط Google Drive لرفع نسخك الاحتياطية إلى حسابك الخاص ميزة ضمن خدمة <strong>النسخ الاحتياطي</strong> المدفوعة.
+          أرسل طلب تفعيل وستتولّى الإدارة تحديد الرسوم والتفعيل.
+        </p>
+        <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key='backups') }}">
+          {{ csrf_input() }}
+          <input type="hidden" name="request_type" value="activation">
+          <button type="submit" class="cp-btn cp-btn--primary" style="width:auto"><i class="fa-solid fa-paper-plane"></i> طلب تفعيل خدمة النسخ السحابي</button>
+        </form>
+      {% elif not gdrive.configured or not gdrive.libs %}
+        <p class="cp-svc-desc">تكامل Google Drive قيد التهيئة من الإدارة. سيتاح الربط قريبًا — تواصل مع الدعم لو استمر ظهور هذه الرسالة.</p>
+      {% elif gdrive.connected %}
+        <div class="cp-rows" style="margin-bottom:14px">
+          <div class="cp-row"><span>الحساب المربوط</span><strong class="ltr">{{ gdrive.email or '—' }}</strong></div>
+          <div class="cp-row"><span>مجلد النسخ</span><strong>{{ gdrive.folder_name }}</strong></div>
+          <div class="cp-row"><span>آخر رفع</span><strong>{{ gdrive.last_upload_at|dt if gdrive.last_upload_at else 'لم يتم بعد' }}</strong></div>
+          {% if gdrive.last_error %}<div class="cp-row"><span>آخر خطأ</span><strong style="color:var(--hub-red,#dc2626);font-size:11.5px">{{ gdrive.last_error[:120] }}</strong></div>{% endif %}
+        </div>
+        <p class="cp-hint" style="margin:0 0 12px">تُرفع نسخك الاحتياطية تلقائيًا إلى مجلد مخصّص داخل درايفك الخاص (صلاحية محدودة <span class="mono">drive.file</span> — لا نطّلع على بقية ملفاتك).</p>
+        <form method="post" action="{{ url_for('public.google_drive_disconnect') }}">
+          {{ csrf_input() }}
+          <button type="submit" class="cp-btn cp-btn--ghost" style="width:auto"><i class="fa-solid fa-link-slash"></i> فصل Google Drive</button>
+        </form>
+      {% else %}
+        <p class="cp-svc-desc" style="margin-bottom:12px">
+          اربط حساب Google Drive الخاص بك لرفع نسخك الاحتياطية تلقائيًا إلى درايفك. نطلب أقل صلاحية ممكنة
+          (<span class="mono">drive.file</span>) ولا نطّلع على ملفاتك الأخرى. راجع
+          <a href="/privacy" style="color:var(--hub-violet-d,#5b21b6);font-weight:800">سياسة الخصوصية</a>.
+        </p>
+        <a class="cp-btn cp-btn--primary" style="width:auto" href="{{ url_for('public.google_drive_connect') }}">
+          <i class="fa-brands fa-google"></i> ربط Google Drive
+        </a>
+      {% endif %}
+    </div>
+  </section>
+
   {# ════ Services — categorized ════ #}
   {% if 'services' not in _hidden %}
   <section class="cp-card cp-anchor" id="cp-services">

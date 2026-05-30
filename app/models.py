@@ -511,6 +511,30 @@ class CustomerBackupArtifact(TimestampMixin, db.Model):
         return bool(self.content_included and self.stored_filename)
 
 
+class CustomerGoogleDrive(TimestampMixin, db.Model):
+    """Per-customer Google Drive OAuth connection for cloud backups.
+
+    The refresh token is stored ENCRYPTED (Fernet) and is never exposed to
+    admins. Each customer connects their own Drive; backups upload only to
+    that customer's own Drive folder (scope drive.file).
+    """
+    __tablename__ = "customer_google_drive"
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), unique=True, nullable=False, index=True)
+    connected = db.Column(db.Boolean, default=False, nullable=False)
+    google_email = db.Column(db.String(255), default="", nullable=False)
+    refresh_token_enc = db.Column(db.Text, default="", nullable=False)
+    folder_id = db.Column(db.String(120), default="", nullable=False)
+    folder_name = db.Column(db.String(180), default="HobeRadius Backups", nullable=False)
+    scopes = db.Column(db.String(500), default="", nullable=False)
+    connected_at = db.Column(db.DateTime, nullable=True)
+    last_upload_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.String(500), default="", nullable=False)
+
+    customer = db.relationship("Customer")
+
+
 class License(TimestampMixin, db.Model):
     __tablename__ = "licenses"
     __table_args__ = (

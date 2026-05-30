@@ -465,7 +465,17 @@ def customer_detail(customer_id: int):
         service_limit_fields=service_limit_fields,
         service_limit_summary=service_limit_summary,
         customer_backups=list_customer_backups(customer.id),
+        customer_gdrive=_customer_gdrive_status(customer.id),
     )
+
+
+def _customer_gdrive_status(customer_id: int) -> dict:
+    """Read-only Google Drive connection status for the admin (never the token)."""
+    try:
+        from ..services import google_drive as gd
+        return gd.status(customer_id)
+    except Exception:  # noqa: BLE001
+        return {"connected": False, "email": "", "last_upload_at": None}
 
 
 @bp.get("/service-requests")
@@ -1581,6 +1591,9 @@ def settings_update():
         "support_phone",
         "check_interval_recommendation",
         "environment_label",
+        "google_oauth_client_id",
+        "google_oauth_client_secret",
+        "google_oauth_redirect_uri",
     ):
         _set_setting(key, (request.form.get(key) or "").strip())
     audit("settings_updated", "settings", "global", "Updated system settings")
