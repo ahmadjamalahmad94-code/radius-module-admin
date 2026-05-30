@@ -246,7 +246,9 @@ def hoberadius_backup_upload():
         return jsonify({"ok": False, "status": "https_required", "message": "رفع النسخ الاحتياطية يتطلب HTTPS."}), 426
     from ..services.customer_backups import BackupUploadError, record_backup_upload
 
-    provided_secret = request.headers.get("X-HobeRadius-Admin-Secret", "")
+    # Accept the secret from the header OR the JSON body — reverse proxies
+    # often strip custom request headers, so the instance also sends it in body.
+    provided_secret = request.headers.get("X-HobeRadius-Admin-Secret", "") or str(body.get("admin_secret") or "")
     try:
         result = record_backup_upload(
             license_key=body.get("license_key") or "",
