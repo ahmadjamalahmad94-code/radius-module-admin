@@ -44,6 +44,17 @@ class LicenseResult:
             self.license,
             license_allows_services=self.active,
         )
+        if self.license:
+            from .customer_control import build_runtime_contract_for_license
+
+            runtime_contract = build_runtime_contract_for_license(
+                self.license,
+                license_active=self.active,
+                status=self.status,
+            )
+            data["services"] = runtime_contract["services"]
+            data["limits"] = runtime_contract["limits"]
+            data["customer_users_version"] = runtime_contract["customer_users_version"]
         return data
 
 
@@ -108,7 +119,7 @@ def check_license(
     lic = License.query.filter_by(license_key=key).first() if key else None
 
     if not lic:
-        result = LicenseResult(False, "not_found", "denied", "License key was not found.", "not_found")
+        result = LicenseResult(False, "not_found", "denied", "لم يتم العثور على مفتاح الترخيص.", "not_found")
         _log_check(None, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
         db.session.commit()
         return result
@@ -116,7 +127,7 @@ def check_license(
     lic.last_check_at = now
 
     if lic.status in {"suspended", "revoked"}:
-        result = LicenseResult(False, lic.status, "denied", f"License is {lic.status}. Contact support.", lic.status, lic)
+        result = LicenseResult(False, lic.status, "denied", f"الترخيص في حالة {lic.status}. الرجاء التواصل مع الدعم.", lic.status, lic)
         _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
         db.session.commit()
         return result
@@ -128,7 +139,7 @@ def check_license(
             False,
             "expired",
             "limited",
-            "License expired. Admin access is allowed, but new users/cards/sync actions are disabled.",
+            "انتهى الترخيص. الدخول الإداري مسموح، لكن إنشاء المستخدمين والكروت وعمليات المزامنة الجديدة معطّلة.",
             "expired",
             lic,
         )
@@ -147,7 +158,7 @@ def check_license(
                     False,
                     "fingerprint_denied",
                     "denied",
-                    "Server fingerprint is not allowed for this license.",
+                    "بصمة الخادم غير مسموحة لهذا الترخيص.",
                     "fingerprint_denied",
                     lic,
                 )
@@ -156,12 +167,12 @@ def check_license(
                 return result
 
     if in_grace:
-        result = LicenseResult(True, "grace", "active", "License is in grace period. Please renew soon.", "grace", lic)
+        result = LicenseResult(True, "grace", "active", "الترخيص في فترة السماح. الرجاء التجديد قريبًا.", "grace", lic)
         _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
         db.session.commit()
         return result
 
-    result = LicenseResult(True, lic.status, "active", "License active", "active", lic)
+    result = LicenseResult(True, lic.status, "active", "الترخيص نشط", "active", lic)
     _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
     db.session.commit()
     return result

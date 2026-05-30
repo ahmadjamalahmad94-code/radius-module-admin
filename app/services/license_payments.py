@@ -47,8 +47,33 @@ PROVISIONING_STATUSES = {
 }
 
 
+_PAYMENT_ERROR_MESSAGES_AR: dict[str, str] = {
+    "amount": "المبلغ غير صحيح أو أقل من أو يساوي صفرًا.",
+    "currency": "العملة غير مدعومة.",
+    "purpose": "غرض الدفع غير مسموح به.",
+    "customer_id": "معرّف العميل غير صحيح.",
+    "plan_id": "الخطة المختارة غير صحيحة.",
+    "license_id": "الترخيص المرتبط غير صحيح.",
+    "payment_request_ttl_minutes": "مدة صلاحية طلب الدفع غير صحيحة.",
+    "payments_disabled": "المدفوعات معطّلة حاليًا في إعدادات اللوحة.",
+    "provider_not_supported": "مزوّد الدفع المختار غير مدعوم.",
+    "request_not_open_for_proof": "هذا الطلب غير مفتوح لإرسال إثبات جديد.",
+    "request_expired": "انتهت صلاحية طلب الدفع.",
+    "request_already_paid": "تمت معالجة هذا الطلب وقبوله مسبقًا.",
+    "request_not_reviewable": "هذا الطلب ليس قابلًا للمراجعة في حالته الحالية.",
+    "request_not_paid": "الطلب لم يُقبل كمدفوع بعد.",
+    "proof_missing": "لا يوجد إثبات دفع لمراجعته.",
+    "purpose_not_supported": "نوع الدفع غير مدعوم في التطبيق التلقائي.",
+    "provisioning_not_ready": "أمر التجهيز غير جاهز للتفعيل.",
+}
+
+
 class LicensePaymentValidationError(ValueError):
-    pass
+    """رسائل الدفع تستخدم رموزًا قصيرة. ‎__str__‎ يحوّلها إلى نص عربي للمستخدم."""
+
+    def __str__(self) -> str:  # noqa: D401
+        code = super().__str__()
+        return _PAYMENT_ERROR_MESSAGES_AR.get(code, code)
 
 
 def _choice(value: str, allowed: set[str], field: str) -> str:
@@ -353,7 +378,7 @@ def instructions_for_request(payment_request: LicensePaymentRequest) -> dict[str
         "reference_code": payment_request.reference_code,
         "expires_at": payment_request.expires_at.isoformat() if payment_request.expires_at else None,
         "status": payment_request.status,
-        "instructions": "Use the wallet number only for routing the payment. Payment is not confirmed until an admin reviews the submitted proof.",
+        "instructions": "استخدم رقم المحفظة لتوجيه الدفع فقط. الدفع لا يُعتبر مؤكّدًا حتى يراجع المدير الإثبات المرسل.",
     }
 
 
@@ -549,13 +574,13 @@ class LicensePaymentApplyService:
         elif purpose == "capacity_increase":
             result = {
                 "status": "manual_follow_up",
-                "message": "Capacity increase requires an entitlement override workflow before automatic apply.",
+                "message": "زيادة السعة تتطلب تجاوزًا يدويًا للاستحقاق قبل التنفيذ التلقائي.",
             }
             self._audit(actor_admin_id, "payment_capacity_followup", payment_request, result)
         elif purpose == "setup_fee":
             result = {
                 "status": "setup_fee_recorded",
-                "message": "Setup fee payment recorded; no license mutation is attached to setup_fee.",
+                "message": "تم تسجيل دفع رسم الإعداد. لا يوجد تغيير على الترخيص مرتبط بـ setup_fee.",
             }
             self._audit(actor_admin_id, "payment_setup_fee_recorded", payment_request, result)
         else:
@@ -677,7 +702,7 @@ class LicensePaymentApplyService:
             action=action,
             entity_type="license_payment_request",
             entity_id=str(payment_request.id),
-            summary=f"Applied payment {payment_request.reference_code}: {result.get('status')}",
+            summary=f"تم تطبيق الدفع {payment_request.reference_code}: {result.get('status')}",
         )
         row.meta = {
             "payment_request_id": payment_request.id,

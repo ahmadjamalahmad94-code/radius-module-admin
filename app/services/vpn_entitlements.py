@@ -33,7 +33,7 @@ class EffectiveVpnEntitlement:
 def clean_vpn_plan_code(value: str) -> str:
     code = (value or "").strip().lower()
     if not PLAN_CODE_RE.match(code):
-        raise VpnEntitlementValidationError("VPN plan code must use lowercase letters, numbers, underscores, or dashes.")
+        raise VpnEntitlementValidationError("كود خطة VPN يجب أن يكون أحرفًا إنجليزية صغيرة وأرقامًا وشرطات سفلية فقط.")
     return code
 
 
@@ -48,7 +48,7 @@ def validate_positive_limit(value: Any, field_name: str) -> int:
 def validate_entitlement_status(value: str) -> str:
     status = (value or "disabled").strip().lower()
     if status not in VALID_ENTITLEMENT_STATUSES:
-        raise VpnEntitlementValidationError("VPN status is not allowed.")
+        raise VpnEntitlementValidationError("حالة VPN غير مسموحة.")
     return status
 
 
@@ -66,15 +66,15 @@ def parse_optional_decimal(value: Any, field_name: str) -> Decimal | None:
     try:
         amount = Decimal(raw)
     except (InvalidOperation, TypeError) as exc:
-        raise VpnEntitlementValidationError(f"{field_name} must be a valid number.") from exc
+        raise VpnEntitlementValidationError(f"الحقل {field_name} يجب أن يكون رقمًا صحيحًا.") from exc
     if amount < 0:
-        raise VpnEntitlementValidationError(f"{field_name} cannot be negative.")
+        raise VpnEntitlementValidationError(f"الحقل {field_name} لا يمكن أن يكون سالبًا.")
     return amount
 
 
 def validate_vpn_plan(plan: VpnServicePlan) -> None:
     if not (plan.name or "").strip():
-        raise VpnEntitlementValidationError("VPN plan name is required.")
+        raise VpnEntitlementValidationError("اسم خطة VPN مطلوب.")
     plan.code = clean_vpn_plan_code(plan.code)
     plan.download_mbps = validate_vpn_speed(plan.download_mbps, "download_mbps")
     plan.upload_mbps = validate_vpn_speed(plan.upload_mbps, "upload_mbps")

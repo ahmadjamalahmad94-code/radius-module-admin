@@ -10,6 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, abort, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
+from sqlalchemy import inspect, text
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -17,6 +18,7 @@ from .bootstrap import BootstrapError, bootstrap_admin_from_config
 from .config import Config, TestingConfig
 from .extensions import db
 from .models import Plan, Setting, VpnServicePlan, utcnow
+from .services.customer_control import seed_service_catalog
 from .security import client_ip
 
 
@@ -146,7 +148,7 @@ def _install_rate_limits(app: Flask) -> None:
                 "active": False,
                 "status": "rate_limited",
                 "mode": "denied",
-                "message": "Too many requests. Please retry later.",
+                "message": "محاولات كثيرة خلال وقت قصير. الرجاء إعادة المحاولة لاحقًا.",
             })
         else:
             flash("محاولات كثيرة خلال وقت قصير. حاول مرة أخرى لاحقًا.", "error")
@@ -226,18 +228,33 @@ def _install_error_handlers(app: Flask) -> None:
         if request.path.startswith("/api/"):
             return jsonify({
                 "error": "internal_server_error",
-                "message": "Internal server error.",
+                "message": "حدث خطأ داخلي في الخادم.",
             }), 500
-        return "Internal server error.", 500
+        return "حدث خطأ داخلي في الخادم.", 500
 
 
 def init_database(app: Flask) -> None:
     db.create_all()
+    ensure_schema_compatibility(app)
     seed_defaults(app)
+
+
+def ensure_schema_compatibility(app: Flask) -> None:
+    if db.engine.dialect.name != "sqlite":
+        return
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+    if "customers" not in tables:
+        return
+    customer_columns = {column["name"] for column in inspector.get_columns("customers")}
+    if "runtime_url" not in customer_columns:
+        db.session.execute(text("ALTER TABLE customers ADD COLUMN runtime_url VARCHAR(255) NOT NULL DEFAULT ''"))
+        db.session.commit()
 
 
 def seed_defaults(app: Flask) -> None:
     bootstrap_admin_from_config(app, fail_if_exists=False)
+    seed_service_catalog()
 
     sample_plans = [
         ("Starter", "starter", Decimal("29.00"), 300, 2, 1, 1, {
