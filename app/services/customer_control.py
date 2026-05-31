@@ -926,6 +926,7 @@ def service_limit_summary(limits: dict[str, Any] | None) -> str:
         return "لا توجد حدود خاصة"
     labels = {
         "max_total": "الحد الأقصى",
+        "max_count": "أقصى عدد النسخ",
         "generate_per_batch": "الكروت في الدفعة",
         "monthly_generated": "الكروت شهريًا",
         "max_active": "العناصر الفعالة",
@@ -936,6 +937,11 @@ def service_limit_summary(limits: dict[str, Any] | None) -> str:
     for key, value in data.items():
         if value in (None, ""):
             continue
+        # value may itself be a dict (e.g. nested limit); flatten to its number
+        if isinstance(value, dict):
+            value = value.get("max_count") or value.get("max_total") or next(iter(value.values()), "")
+            if value in (None, ""):
+                continue
         parts.append(f"{labels.get(str(key), str(key))}: {value}")
     return "، ".join(parts) if parts else "لا توجد حدود خاصة"
 
