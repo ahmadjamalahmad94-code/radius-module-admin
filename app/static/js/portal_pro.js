@@ -181,8 +181,12 @@
       var id = btn.getAttribute("data-pp-summary");
       var box = document.getElementById("pp-sum-" + id);
       if (!box) return;
-      var open = box.classList.toggle("is-open");
-      if (!open) return;
+      // Drive visibility with an inline style so it works even if a stale
+      // cached stylesheet lacks the .is-open rule.
+      var isOpen = box.style.display === "block";
+      box.style.display = isOpen ? "none" : "block";
+      box.classList.toggle("is-open", !isOpen);
+      if (isOpen) return;           // was open → just collapsed it
       if (box.getAttribute("data-loaded") === "1") return;
       var body = box.querySelector(".pp-sum-body");
       if (body) body.innerHTML = '<span class="pp-sum-msg">…جارٍ قراءة محتوى النسخة</span>';
