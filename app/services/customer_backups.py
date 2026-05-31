@@ -199,6 +199,7 @@ def record_backup_upload(
             drive_queued = False
 
     prune_customer_backups(customer.id)
+    prune_customer_backups_by_count(customer.id, customer_backup_cap(customer))
 
     return {
         "ok": True,
@@ -227,6 +228,54 @@ def _spawn_drive_upload(app: Flask, customer_id: int, file_path: Path, name: str
         threading.Thread(target=_worker, name="gdrive-upload", daemon=True).start()
     except Exception:  # noqa: BLE001
         pass
+
+
+def customer_backup_cap(customer) -> int:
+    """Max stored backups for a customer, as set on the panel per edition/fees
+    (the backups service limit `max_count`). Defaults to 60 when unset."""
+    try:
+        from .customer_control import customer_service_map
+        ent = customer_service_map(customer).get("backups")
+        if ent and ent.limits:
+            n = int(ent.limits.get("max_count") or 0)
+            if n > 0:
+                return min(1000, n)
+    except Exception:  # noqa: BLE001
+        pass
+    return 60
+
+
+def prune_customer_backups_by_count(customer_id: int, max_count: int) -> int:
+    """Keep only the newest `max_count` backup artifacts for a customer; delete
+    the oldest beyond that (rows + stored files). Returns the count removed."""
+    cap = int(max_count)
+    if cap <= 0:
+        return 0
+    try:
+        arts = (
+            CustomerBackupArtifact.query.filter_by(customer_id=int(customer_id))
+            .order_by(CustomerBackupArtifact.received_at.desc(), CustomerBackupArtifact.id.desc())
+            .all()
+        )
+        if len(arts) <= cap:
+            return 0
+        base = (_backups_root() / str(customer_id)).resolve()
+        removed = 0
+        for art in arts[cap:]:
+            if art.stored_filename:
+                try:
+                    fp = (base / art.stored_filename).resolve()
+                    if base in fp.parents and fp.exists():
+                        fp.unlink()
+                except OSError:
+                    pass
+            db.session.delete(art)
+            removed += 1
+        db.session.commit()
+        return removed
+    except Exception:  # noqa: BLE001 — retention must never break an upload
+        db.session.rollback()
+        return 0
 
 
 BACKUP_RETENTION_DAYS = 30
