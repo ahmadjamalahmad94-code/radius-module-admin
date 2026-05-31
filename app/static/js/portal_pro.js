@@ -130,15 +130,14 @@
     box.classList.toggle("is-open", !isOpen);
     if (!isOpen) loadSummary(box, id);
   }
-  // Show every backup's content summary automatically (no click required).
+  // Pre-fetch each backup's content summary but keep the box COLLAPSED by
+  // default — the «المحتوى» button reveals it (already loaded → instant).
   function autoloadSummaries() {
     document.querySelectorAll("[data-pp-summary]").forEach(function (btn) {
       var id = btn.getAttribute("data-pp-summary");
       var box = $("pp-sum-" + id);
       if (!box) return;
-      box.style.display = "block";
-      box.classList.add("is-open");
-      loadSummary(box, id);
+      loadSummary(box, id);   // fetch + render into the hidden box
     });
   }
   // Direct (non-delegated) click binding so the show/hide toggle is reliable.
