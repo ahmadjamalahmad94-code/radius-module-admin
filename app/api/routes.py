@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, url_for
 
 from ..extensions import db
 from ..license_signing import LicenseSignatureError, verify_license_signature
