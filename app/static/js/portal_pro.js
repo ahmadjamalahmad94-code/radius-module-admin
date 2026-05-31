@@ -30,6 +30,7 @@
       try { history.replaceState(null, "", "#" + view); } catch (e) {}
     }
     closeDrawer();
+    if (view === "backups") { try { autoloadSummaries(); } catch (e) {} }
     try { root.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { window.scrollTo(0, 0); }
   }
 
@@ -96,21 +97,14 @@
     if (tpl && /\/0\/summary$/.test(tpl)) return tpl.replace(/\/0\/summary$/, "/" + id + "/summary");
     return "/portal/backups/" + id + "/summary";
   }
-  function toggleSummary(btn) {
-    var id = btn.getAttribute("data-pp-summary");
-    var box = $("pp-sum-" + id);
-    if (!box) return;
-    var isOpen = box.style.display === "block";
-    box.style.display = isOpen ? "none" : "block";   // inline style → independent of CSS cache
-    box.classList.toggle("is-open", !isOpen);
-    if (isOpen) return;
-    if (box.getAttribute("data-loaded") === "1") return;
+  function loadSummary(box, id) {
+    if (!box || box.getAttribute("data-loaded") === "1") return;
+    box.setAttribute("data-loaded", "1");
     var body = box.querySelector(".pp-sum-body");
     if (body) body.innerHTML = '<span class="pp-sum-msg">…جارٍ قراءة محتوى النسخة</span>';
     fetch(summaryUrl(id), { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        box.setAttribute("data-loaded", "1");
         if (!body) return;
         if (!d || !d.ok || !d.items || !d.items.length) {
           body.innerHTML = '<span class="pp-sum-msg">تعذّر قراءة محتوى هذه النسخة أو لا تحتوي جداول معروفة.</span>';
@@ -122,7 +116,30 @@
         });
         body.innerHTML = html + "</div>";
       })
-      .catch(function () { if (body) body.innerHTML = '<span class="pp-sum-msg">تعذّر الاتصال لقراءة المحتوى.</span>'; });
+      .catch(function () {
+        box.setAttribute("data-loaded", "0");
+        if (body) body.innerHTML = '<span class="pp-sum-msg">تعذّر الاتصال لقراءة المحتوى.</span>';
+      });
+  }
+  function toggleSummary(btn) {
+    var id = btn.getAttribute("data-pp-summary");
+    var box = $("pp-sum-" + id);
+    if (!box) return;
+    var isOpen = box.style.display === "block";
+    box.style.display = isOpen ? "none" : "block";   // inline style → independent of CSS cache
+    box.classList.toggle("is-open", !isOpen);
+    if (!isOpen) loadSummary(box, id);
+  }
+  // Show every backup's content summary automatically (no click required).
+  function autoloadSummaries() {
+    document.querySelectorAll("[data-pp-summary]").forEach(function (btn) {
+      var id = btn.getAttribute("data-pp-summary");
+      var box = $("pp-sum-" + id);
+      if (!box) return;
+      box.style.display = "block";
+      box.classList.add("is-open");
+      loadSummary(box, id);
+    });
   }
 
   // ───────────────────────── service category tabs + search ─────────────────────────
@@ -205,6 +222,8 @@
   function boot() {
     var h = (location.hash || "").replace("#", "");
     if (h) showView(h, false);
+    // Pre-load all backup summaries so the content is ready/visible without a click.
+    try { autoloadSummaries(); } catch (e) {}
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
