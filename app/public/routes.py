@@ -343,10 +343,11 @@ def google_drive_connect():
         flash("مكتبات Google غير مثبّتة على الخادم بعد. تواصل مع الدعم.", "error")
         return redirect(url_for("public.customer_portal_dashboard"))
     try:
-        auth_url = gd.authorization_url(user.customer_id)
+        auth_url, code_verifier = gd.authorization_url(user.customer_id)
     except Exception as exc:  # noqa: BLE001
         flash(f"تعذّر بدء ربط Google Drive: {exc}", "error")
         return redirect(url_for("public.customer_portal_dashboard"))
+    session["gdrive_code_verifier"] = code_verifier
     return redirect(auth_url)
 
 
@@ -367,8 +368,9 @@ def google_drive_callback():
     # so the OAuth library never trips on a proxied http scheme.
     qs = request.query_string.decode("utf-8")
     auth_response = gd.redirect_uri() + (("?" + qs) if qs else "")
+    code_verifier = session.pop("gdrive_code_verifier", "") or ""
     try:
-        refresh_token, email = gd.exchange_callback(auth_response)
+        refresh_token, email = gd.exchange_callback(auth_response, code_verifier=code_verifier)
         gd.store_connection(user.customer_id, refresh_token=refresh_token, email=email)
         audit_customer_control(
             actor_admin_id=None,

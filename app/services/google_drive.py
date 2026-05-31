@@ -138,17 +138,22 @@ def _flow(state: str | None = None):
     return flow
 
 
-def authorization_url(customer_id: int) -> str:
+def authorization_url(customer_id: int) -> tuple[str, str]:
+    """Return (auth_url, code_verifier). The verifier MUST be kept (session)
+    and passed to exchange_callback, or Google rejects with 'Missing code
+    verifier' (PKCE)."""
     flow = _flow(state=make_state(customer_id))
     url, _ = flow.authorization_url(
         access_type="offline", prompt="consent", include_granted_scopes="true"
     )
-    return url
+    return url, getattr(flow, "code_verifier", None) or ""
 
 
-def exchange_callback(authorization_response_url: str) -> tuple[str, str]:
+def exchange_callback(authorization_response_url: str, code_verifier: str = "") -> tuple[str, str]:
     """Exchange the OAuth callback for (refresh_token, google_email)."""
     flow = _flow()
+    if code_verifier:
+        flow.code_verifier = code_verifier
     flow.fetch_token(authorization_response=authorization_response_url)
     creds = flow.credentials
     refresh_token = getattr(creds, "refresh_token", "") or ""
