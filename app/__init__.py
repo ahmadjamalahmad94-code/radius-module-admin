@@ -449,6 +449,26 @@ def _install_template_helpers(app: Flask) -> None:
             return value
         return value.strftime("%Y-%m-%d %H:%M")
 
+    @app.template_filter("dt_local")
+    def dt_local_filter(value):
+        """Format a (UTC) datetime in the portal's local timezone.
+
+        received_at is stored as naive UTC; this shifts it by
+        PORTAL_TZ_OFFSET_HOURS (default +3) so customer-facing times line up
+        with the radius's local timestamps. Strings are passed through.
+        """
+        if not value:
+            return "-"
+        if isinstance(value, str):
+            return value
+        import os
+        from datetime import timedelta
+        try:
+            offset = float(os.environ.get("PORTAL_TZ_OFFSET_HOURS", "3"))
+        except (TypeError, ValueError):
+            offset = 3.0
+        return (value + timedelta(hours=offset)).strftime("%Y-%m-%d %H:%M")
+
     @app.template_filter("date")
     def date_filter(value):
         if not value:

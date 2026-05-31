@@ -313,6 +313,7 @@
           </div>
           <div class="pp-card-body">
             <div class="pp-notice info" style="margin-bottom:14px"><i class="fa-solid fa-clock-rotate-left"></i><div>تُحفظ النسخ على ملفك لمدة <b>30 يومًا</b> ثم تُحذف تلقائيًا. الرفع إلى لوحة التراخيص خدمة مدفوعة تُفعّل من قسم الخدمات.</div></div>
+            <div class="pp-notice warn" style="margin-bottom:14px"><i class="fa-solid fa-circle-info"></i><div>تظهر كل نسخة <b>مرة واحدة حسب محتواها</b>: إعادة رفع نفس النسخة المحلية تُحدّث السجل نفسه (وتاريخ رفعه) ولا تُنشئ سجلًا جديدًا. لإضافة نسخة جديدة هنا: أنشئ <b>نسخة محلية جديدة</b> على الريدياس أولًا، ثم اضغط «رفع إلى لوحة التراخيص».</div></div>
             {% if customer_backups %}
               <div class="pp-bk">
                 {% for bk in customer_backups %}
@@ -322,8 +323,7 @@
                     <div class="pp-bk-main">
                       <div class="pp-bk-ref">{{ bk.backup_reference }}</div>
                       <div class="pp-bk-meta">
-                        <span><i class="fa-solid fa-clock" style="font-size:10px;opacity:.6"></i> استُلمت: <b>{{ bk.received_at|dt }}</b></span>
-                        {% if bk.remote_created_at %}<span><i class="fa-solid fa-circle-plus" style="font-size:10px;opacity:.6"></i> أُنشئت: <b class="ltr">{{ fmt_iso(bk.remote_created_at) }}</b></span>{% endif %}
+                        <span title="وقت رفع/تحديث النسخة على ملفك بلوحة التراخيص (بالتوقيت المحلي)"><i class="fa-solid fa-clock" style="font-size:10px;opacity:.6"></i> تاريخ الرفع: <b>{{ bk.received_at|dt_local }}</b></span>
                         <span>الحجم: <b>{{ human_size(bk.size) }}</b></span>
                         {% if bk.has_content %}<span class="pp-pill is-on" style="padding:1px 8px">بالمحتوى الكامل</span>{% else %}<span class="pp-pill is-amber" style="padding:1px 8px">بيانات وصفية فقط</span>{% endif %}
                       </div>
