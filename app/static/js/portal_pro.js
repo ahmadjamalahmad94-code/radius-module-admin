@@ -169,23 +169,29 @@
     if (rConfirm) rConfirm.addEventListener("input", rValidate);
 
     // ── backup content summary (on-demand) ──
+    // Direct listeners (not delegated) so a single misbehaving handler can't
+    // swallow the click; each is wrapped so it never silently no-ops.
     var sumTpl = app.getAttribute("data-summary-url") || "";
     function labelEsc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
-    document.addEventListener("click", function (e) {
-      var b = e.target.closest("[data-pp-summary]");
-      if (!b) return;
-      var id = b.getAttribute("data-pp-summary");
+    function buildSummaryUrl(id) {
+      if (sumTpl && /\/0\/summary$/.test(sumTpl)) return sumTpl.replace(/\/0\/summary$/, "/" + id + "/summary");
+      return "/portal/backups/" + id + "/summary"; // hard fallback
+    }
+    function handleSummary(btn) {
+      var id = btn.getAttribute("data-pp-summary");
       var box = document.getElementById("pp-sum-" + id);
       if (!box) return;
       var open = box.classList.toggle("is-open");
-      if (!open || box.getAttribute("data-loaded") === "1") return;
+      if (!open) return;
+      if (box.getAttribute("data-loaded") === "1") return;
       var body = box.querySelector(".pp-sum-body");
-      body.innerHTML = '<span class="pp-sum-msg">…جارٍ قراءة محتوى النسخة</span>';
-      fetch(sumTpl.replace(/\/0\/summary$/, "/" + id + "/summary"), { headers: { "X-Requested-With": "fetch" } })
+      if (body) body.innerHTML = '<span class="pp-sum-msg">…جارٍ قراءة محتوى النسخة</span>';
+      fetch(buildSummaryUrl(id), { headers: { "X-Requested-With": "fetch" }, credentials: "same-origin" })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           box.setAttribute("data-loaded", "1");
-          if (!d.ok || !d.items || !d.items.length) {
+          if (!body) return;
+          if (!d || !d.ok || !d.items || !d.items.length) {
             body.innerHTML = '<span class="pp-sum-msg">تعذّر قراءة محتوى هذه النسخة أو لا تحتوي جداول معروفة.</span>';
             return;
           }
@@ -193,10 +199,14 @@
           d.items.forEach(function (it) {
             html += '<div class="pp-sum-cell"><div class="v">' + it.count + '</div><div class="l">' + labelEsc(it.label) + "</div></div>";
           });
-          html += "</div>";
-          body.innerHTML = html;
+          body.innerHTML = html + "</div>";
         })
-        .catch(function () { body.innerHTML = '<span class="pp-sum-msg">تعذّر الاتصال لقراءة المحتوى.</span>'; });
+        .catch(function () {
+          if (body) body.innerHTML = '<span class="pp-sum-msg">تعذّر الاتصال لقراءة المحتوى.</span>';
+        });
+    }
+    document.querySelectorAll("[data-pp-summary]").forEach(function (btn) {
+      btn.addEventListener("click", function () { try { handleSummary(btn); } catch (e) {} });
     });
   }
 
