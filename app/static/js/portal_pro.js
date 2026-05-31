@@ -141,6 +141,17 @@
       loadSummary(box, id);
     });
   }
+  // Direct (non-delegated) click binding so the show/hide toggle is reliable.
+  function bindSummaryButtons() {
+    document.querySelectorAll("[data-pp-summary]").forEach(function (btn) {
+      if (btn.__ppBound) return;
+      btn.__ppBound = true;
+      btn.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        try { toggleSummary(btn); } catch (x) {}
+      });
+    });
+  }
 
   // ───────────────────────── service category tabs + search ─────────────────────────
   function activeCatKey() {
@@ -192,7 +203,6 @@
   // ───────────────────────── single delegated click router ─────────────────────────
   document.addEventListener("click", function (e) {
     var t;
-    if ((t = e.target.closest("[data-pp-summary]"))) { try { toggleSummary(t); } catch (x) {} return; }
     if ((t = e.target.closest("[data-pp-restore]"))) { e.preventDefault(); try { openRestore(t); } catch (x) {} return; }
     if ((t = e.target.closest("[data-pp-more]")))    { try { openDetails(t); } catch (x) {} return; }
     if (e.target.closest("[data-pp-close]"))         { closeModals(); return; }
@@ -222,8 +232,10 @@
   function boot() {
     var h = (location.hash || "").replace("#", "");
     if (h) showView(h, false);
-    // Pre-load all backup summaries so the content is ready/visible without a click.
+    // Pre-load all backup summaries so the content is ready/visible without a click,
+    // and bind reliable direct toggle listeners on the content buttons.
     try { autoloadSummaries(); } catch (e) {}
+    try { bindSummaryButtons(); } catch (e) {}
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
