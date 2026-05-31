@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from ..extensions import db
 from ..license_signing import license_integration_secret
-from ..models import Customer, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting
+from ..models import Customer, CustomerBackupArtifact, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting
 from ..services.customer_control import (
     CustomerControlValidationError,
     add_service_request_message,
@@ -28,6 +28,11 @@ from ..services.license_payments import (
     LicensePaymentValidationError,
     instructions_for_request,
     payment_error_message,
+)
+from ..services.customer_backups import (
+    get_artifact_file,
+    list_customer_backups,
+    summarize_backup_content,
 )
 from ..services.vpn_entitlements import find_best_customer_license, license_allows_vpn_services
 
@@ -268,7 +273,87 @@ def customer_portal_dashboard():
         licenses=customer.licenses.order_by(License.created_at.desc()).all(),
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
+        customer_backups=list_customer_backups(customer.id),
     )
+
+
+@bp.get("/portal/backups/<int:artifact_id>/download")
+def customer_portal_backup_download(artifact_id: int):
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    resolved = get_artifact_file(user.customer_id, artifact_id)
+    if not resolved:
+        flash("ملف النسخة غير متاح للتنزيل (ربما لم تُرفع بمحتواها).", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    path, download_name = resolved
+    return send_file(str(path), as_attachment=True, download_name=download_name)
+
+
+@bp.get("/portal/backups/<int:artifact_id>/summary")
+def customer_portal_backup_summary(artifact_id: int):
+    """JSON content summary (row counts) for one stored backup — loaded on demand."""
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized", "items": []}), 401
+    return jsonify(summarize_backup_content(user.customer_id, artifact_id))
+
+
+@bp.post("/portal/backups/<int:artifact_id>/restore")
+def customer_portal_backup_restore(artifact_id: int):
+    """Record a strongly-confirmed restore request for a panel-stored backup.
+
+    Restoring a backup overwrites the live RADIUS database, so the actual swap
+    is executed on the customer's own instance. From the portal we register an
+    audited restore request (and notify support) after a hard confirmation.
+    """
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    artifact = CustomerBackupArtifact.query.filter_by(id=artifact_id, customer_id=user.customer_id).first()
+    if not artifact:
+        flash("النسخة المطلوبة غير موجودة.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if (request.form.get("ack") or "").strip() != "1":
+        flash("يجب الإقرار بأن الاستعادة ستستبدل قاعدة البيانات الحالية.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if (request.form.get("confirm") or "").strip().upper() != "RESTORE":
+        flash("لإتمام طلب الاستعادة يجب كتابة كلمة التأكيد RESTORE بشكل صحيح.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    try:
+        service_request = create_customer_service_request(
+            customer=user.customer,
+            customer_user_id=user.id,
+            service_key="backups",
+            request_type="restore",
+            notes=(
+                f"طلب استعادة النسخة الاحتياطية «{artifact.backup_reference}» "
+                f"(بتاريخ {artifact.remote_created_at or artifact.received_at}). "
+                "سيتم تنفيذ الاستعادة على ريدياس العميل بعد المراجعة."
+            ),
+        )
+        audit_customer_control(
+            actor_admin_id=None,
+            action="customer_backup_restore_requested",
+            entity_type="customer_backup",
+            entity_id=str(artifact.id),
+            summary=f"طلب العميل استعادة النسخة {artifact.backup_reference}",
+            metadata={
+                "customer_id": user.customer_id,
+                "backup_reference": artifact.backup_reference,
+                "artifact_id": artifact.id,
+            },
+        )
+    except (CustomerControlValidationError, ValueError) as exc:
+        flash(payment_error_message(exc), "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    db.session.commit()
+    flash(
+        f"تم تسجيل طلب استعادة النسخة «{artifact.backup_reference}» (طلب {service_request.public_reference}). "
+        "ستتم مراجعته وتنفيذ الاستعادة على الريدياس بأمان، ويمكنك أيضًا تنزيل النسخة لاستعادتها يدويًا.",
+        "success",
+    )
+    return redirect(url_for("public.customer_portal_dashboard"))
 
 
 @bp.post("/portal/services/<service_key>/request")

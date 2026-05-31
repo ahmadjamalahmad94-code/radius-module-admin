@@ -254,6 +254,55 @@ def list_customer_backups(customer_id: int, *, limit: int = 50) -> list[Customer
     )
 
 
+# Tables we surface in the per-backup content summary, with Arabic labels.
+# The stored file is the customer's RADIUS instance SQLite database; we only
+# read row counts (never the data) and skip tables that don't exist.
+_SUMMARY_TABLES: list[tuple[str, str]] = [
+    ("subscribers", "المشتركون"),
+    ("cards", "الكروت"),
+    ("access_plans", "الباقات"),
+    ("card_batches", "دفعات الكروت"),
+    ("vouchers", "القسائم"),
+    ("subscriber_recharges", "عمليات التعبئة"),
+]
+
+
+def summarize_backup_content(customer_id: int, artifact_id: int) -> dict[str, Any]:
+    """Open a stored backup (read-only) and count rows in known tables.
+
+    Returns {"ok": bool, "items": [{key,label,count}], "error"?}. Never writes
+    to the file and never raises — a corrupt/locked file yields ok=False.
+    """
+    import sqlite3
+
+    resolved = get_artifact_file(int(customer_id), int(artifact_id))
+    if not resolved:
+        return {"ok": False, "error": "no_content", "items": []}
+    path, _ = resolved
+    items: list[dict[str, Any]] = []
+    try:
+        uri = f"file:{path.as_posix()}?mode=ro&immutable=1"
+        con = sqlite3.connect(uri, uri=True, timeout=3)
+        try:
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            present = {str(r[0]) for r in cur.fetchall()}
+            for table, label in _SUMMARY_TABLES:
+                if table not in present:
+                    continue
+                try:
+                    cur.execute(f'SELECT COUNT(*) FROM "{table}"')  # noqa: S608 — name from fixed allow-list
+                    count = int(cur.fetchone()[0])
+                except sqlite3.Error:
+                    continue
+                items.append({"key": table, "label": label, "count": count})
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {"ok": False, "error": "unreadable", "items": []}
+    return {"ok": True, "items": items}
+
+
 def get_artifact_file(customer_id: int, artifact_id: int) -> tuple[Path, str] | None:
     """Resolve a stored backup file path for download, or None if unavailable."""
     artifact = CustomerBackupArtifact.query.filter_by(
