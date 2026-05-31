@@ -45,6 +45,9 @@
 
 {% macro human_size(n) %}{% if not n %}—{% elif n >= 1048576 %}{{ '%.1f'|format(n/1048576) }} م.ب{% elif n >= 1024 %}{{ '%.0f'|format(n/1024) }} ك.ب{% else %}{{ n }} بايت{% endif %}{% endmacro %}
 
+{# turn a raw ISO timestamp (e.g. 2026-05-30T17:25:03.088Z) into "2026-05-30 · 17:25" #}
+{% macro fmt_iso(s) %}{% if s and s|length >= 16 %}{{ s[:10] }} · {{ s[11:16] }}{% elif s %}{{ s }}{% else %}—{% endif %}{% endmacro %}
+
 {# ── reusable service card macro ── #}
 {% macro svc_card(item, svc, icon, limit_text) %}
   {% set is_on = svc.enabled %}
@@ -319,8 +322,8 @@
                     <div class="pp-bk-main">
                       <div class="pp-bk-ref">{{ bk.backup_reference }}</div>
                       <div class="pp-bk-meta">
-                        <span>استُلمت: <b>{{ bk.received_at|dt }}</b></span>
-                        {% if bk.remote_created_at %}<span>أُنشئت: <b class="ltr">{{ bk.remote_created_at }}</b></span>{% endif %}
+                        <span><i class="fa-solid fa-clock" style="font-size:10px;opacity:.6"></i> استُلمت: <b>{{ bk.received_at|dt }}</b></span>
+                        {% if bk.remote_created_at %}<span><i class="fa-solid fa-circle-plus" style="font-size:10px;opacity:.6"></i> أُنشئت: <b class="ltr">{{ fmt_iso(bk.remote_created_at) }}</b></span>{% endif %}
                         <span>الحجم: <b>{{ human_size(bk.size) }}</b></span>
                         {% if bk.has_content %}<span class="pp-pill is-on" style="padding:1px 8px">بالمحتوى الكامل</span>{% else %}<span class="pp-pill is-amber" style="padding:1px 8px">بيانات وصفية فقط</span>{% endif %}
                       </div>

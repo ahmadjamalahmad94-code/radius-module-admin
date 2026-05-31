@@ -267,38 +267,59 @@ _SUMMARY_TABLES: list[tuple[str, str]] = [
 ]
 
 
+def _count_known_tables(path: Path) -> list[dict[str, Any]]:
+    """Read-only row counts for the known tables present in a SQLite file.
+
+    Tries a read-only URI first, then a plain open as a fallback (some SQLite
+    builds reject the `mode=ro` URI for certain files). Raises on a genuinely
+    unreadable file so the caller can report it.
+    """
+    import sqlite3
+
+    last_exc: Exception | None = None
+    for connect_args in (
+        {"database": f"file:{path.as_posix()}?mode=ro", "uri": True, "timeout": 3},
+        {"database": str(path), "timeout": 3},
+    ):
+        try:
+            con = sqlite3.connect(**connect_args)
+        except sqlite3.Error as exc:  # try the next strategy
+            last_exc = exc
+            continue
+        try:
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            present = {str(r[0]) for r in cur.fetchall()}
+            items: list[dict[str, Any]] = []
+            for table, label in _SUMMARY_TABLES:
+                if table not in present:
+                    continue
+                try:
+                    cur.execute('SELECT COUNT(*) FROM "%s"' % table)  # noqa: S608 — name from fixed allow-list
+                    items.append({"key": table, "label": label, "count": int(cur.fetchone()[0])})
+                except sqlite3.Error:
+                    continue
+            return items
+        finally:
+            con.close()
+    if last_exc:
+        raise last_exc
+    return []
+
+
 def summarize_backup_content(customer_id: int, artifact_id: int) -> dict[str, Any]:
     """Open a stored backup (read-only) and count rows in known tables.
 
     Returns {"ok": bool, "items": [{key,label,count}], "error"?}. Never writes
     to the file and never raises — a corrupt/locked file yields ok=False.
     """
-    import sqlite3
-
     resolved = get_artifact_file(int(customer_id), int(artifact_id))
     if not resolved:
         return {"ok": False, "error": "no_content", "items": []}
     path, _ = resolved
-    items: list[dict[str, Any]] = []
     try:
-        uri = f"file:{path.as_posix()}?mode=ro&immutable=1"
-        con = sqlite3.connect(uri, uri=True, timeout=3)
-        try:
-            cur = con.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            present = {str(r[0]) for r in cur.fetchall()}
-            for table, label in _SUMMARY_TABLES:
-                if table not in present:
-                    continue
-                try:
-                    cur.execute(f'SELECT COUNT(*) FROM "{table}"')  # noqa: S608 — name from fixed allow-list
-                    count = int(cur.fetchone()[0])
-                except sqlite3.Error:
-                    continue
-                items.append({"key": table, "label": label, "count": count})
-        finally:
-            con.close()
-    except sqlite3.Error:
+        items = _count_known_tables(path)
+    except Exception:  # noqa: BLE001 — never raise to the request
         return {"ok": False, "error": "unreadable", "items": []}
     return {"ok": True, "items": items}
 
