@@ -180,19 +180,23 @@ def record_backup_upload(
     )
     db.session.commit()
 
-    # Best-effort: push to the customer's own Google Drive if they connected it.
-    drive_result = None
+    # Best-effort: push to the customer's own Google Drive in a BACKGROUND
+    # thread so the HTTP response returns immediately after storing the file.
+    # (A synchronous Drive upload made the instance's request time out.)
+    drive_queued = False
     if stored:
         try:
             from . import google_drive as gd
             conn = gd.get_connection(customer.id)
             if conn and conn.connected:
                 fp = _backups_root() / str(customer.id) / stored_filename
-                drive_result = gd.upload_backup(
-                    customer.id, fp, f"{_safe_reference(backup_reference)}.sqlite3"
+                _spawn_drive_upload(
+                    current_app._get_current_object(),
+                    customer.id, fp, f"{_safe_reference(backup_reference)}.sqlite3",
                 )
+                drive_queued = True
         except Exception:  # noqa: BLE001 — Drive push must never fail the upload
-            drive_result = None
+            drive_queued = False
 
     prune_customer_backups(customer.id)
 
@@ -203,8 +207,26 @@ def record_backup_upload(
         "artifact_id": artifact.id,
         "backup_reference": backup_reference,
         "size": artifact.size,
-        "drive": drive_result,
+        "drive": "queued" if drive_queued else None,
     }
+
+
+def _spawn_drive_upload(app: Flask, customer_id: int, file_path: Path, name: str) -> None:
+    """Upload a stored backup to the customer's Google Drive off the request thread."""
+    import threading
+
+    def _worker() -> None:
+        with app.app_context():
+            try:
+                from . import google_drive as gd
+                gd.upload_backup(int(customer_id), file_path, name)
+            except Exception:  # noqa: BLE001 — background, best-effort
+                pass
+
+    try:
+        threading.Thread(target=_worker, name="gdrive-upload", daemon=True).start()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 BACKUP_RETENTION_DAYS = 30
