@@ -2,7 +2,8 @@
    HobeRadius — Customer Portal Pro  (sidebar + per-section app shell)
    Scoped under .pp-app · violet/slate hub identity · RTL · Cairo
    ════════════════════════════════════════════════════════════════════ */
-.pp-app{
+/* tokens on :root so elements OUTSIDE .pp-app (the topbar) get them too */
+:root{
   --pp-violet:#7c3aed; --pp-violet-d:#5b21b6; --pp-violet-50:#f5f3ff;
   --pp-violet-100:#ede9fe; --pp-violet-300:#c4b5fd;
   --pp-ink:#0f172a; --pp-ink-2:#475569; --pp-ink-3:#94a3b8;
@@ -12,11 +13,15 @@
   --pp-ring:rgba(124,58,237,.28);
   --pp-elev:0 1px 0 rgba(255,255,255,.8) inset,0 1px 3px rgba(15,23,42,.06),0 8px 20px rgba(15,23,42,.06);
   --pp-radius:16px;
-  font-family:'Cairo',system-ui,sans-serif;
-  color:var(--pp-ink);
 }
+.pp-app{ font-family:'Cairo',system-ui,sans-serif; color:var(--pp-ink); }
+.pp-top{ font-family:'Cairo',system-ui,sans-serif; color:var(--pp-ink); }
 
-/* override the constrained portal_base main → use full width for the shell */
+/* paint the whole portal canvas (the base <main> sits on plain white otherwise) */
+body.hub-body{ background:
+  radial-gradient(60% 50% at 90% -5%, rgba(124,58,237,.10), transparent 60%),
+  radial-gradient(50% 45% at -5% 0%, rgba(124,58,237,.07), transparent 55%),
+  var(--pp-canvas); }
 body.hub-body > main:has(.pp-app){ max-width:1320px; }
 
 *,.pp-app *{ box-sizing:border-box; }
@@ -103,14 +108,25 @@ body.hub-body > main:has(.pp-app){ max-width:1320px; }
 .pp-view.is-active{ display:flex; animation:pp-fade .22s ease both; }
 @keyframes pp-fade{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
 
-/* view header */
-.pp-vhead{ display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
-.pp-vhead .pp-vh-ic{
-  width:46px; height:46px; border-radius:13px; flex:none; display:grid; place-items:center;
-  background:var(--pp-violet-100); color:var(--pp-violet-d); font-size:19px;
+/* view header — a compact violet hero band so each section has a backdrop */
+.pp-vhead{
+  position:relative; overflow:hidden;
+  display:flex; align-items:center; gap:15px; flex-wrap:wrap;
+  background:linear-gradient(135deg,var(--pp-violet),var(--pp-violet-d));
+  color:#fff; border-radius:var(--pp-radius); padding:20px 22px;
+  box-shadow:0 14px 32px rgba(91,33,182,.24);
 }
-.pp-vhead h1{ margin:0; font-size:21px; font-weight:800; }
-.pp-vhead p{ margin:3px 0 0; font-size:12.5px; color:var(--pp-ink-2); }
+.pp-vhead::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(120% 130% at 88% 0,rgba(255,255,255,.20),transparent 55%); }
+.pp-vhead .pp-vh-ic{
+  position:relative; z-index:1;
+  width:50px; height:50px; border-radius:14px; flex:none; display:grid; place-items:center;
+  background:rgba(255,255,255,.16); color:#fff; font-size:21px;
+  border:1px solid rgba(255,255,255,.28); backdrop-filter:blur(8px);
+}
+.pp-vhead > div{ position:relative; z-index:1; }
+.pp-vhead h1{ margin:0; font-size:21px; font-weight:800; color:#fff; }
+.pp-vhead p{ margin:4px 0 0; font-size:12.5px; color:rgba(255,255,255,.9); max-width:62ch; }
 
 /* ── Hero (overview) ── */
 .pp-hero{
