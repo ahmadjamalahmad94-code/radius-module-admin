@@ -222,6 +222,33 @@ def hoberadius_portal_sso():
     return jsonify({"ok": True, "status": "ok", "sso_url": sso_url, "expires_in": 90})
 
 
+@bp.post("/integration/hoberadius/google-drive/status")
+def hoberadius_google_drive_status():
+    """Report the customer's Google Drive connection status to the radius."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required"}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license or not result.license.customer:
+        return jsonify({"ok": False, "status": "not_found"}), 404
+    from ..services.google_drive import status as gd_status
+
+    st = gd_status(result.license.customer.id)
+    last = st.get("last_upload_at")
+    return jsonify({
+        "ok": True,
+        "connected": bool(st.get("connected")),
+        "email": st.get("email") or "",
+        "folder_name": st.get("folder_name") or "",
+        "last_upload_at": (last.strftime("%Y-%m-%d %H:%M") if hasattr(last, "strftime") else (str(last) if last else "")),
+    })
+
+
 @bp.post("/integration/hoberadius/customer-users/password-change")
 def hoberadius_customer_user_password_change():
     body = request.get_json(silent=True) or {}
