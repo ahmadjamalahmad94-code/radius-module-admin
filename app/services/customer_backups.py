@@ -361,6 +361,30 @@ def get_artifact_file(customer_id: int, artifact_id: int) -> tuple[Path, str] | 
     return path, download_name
 
 
+def delete_customer_backup(customer_id: int, artifact_id: int) -> dict[str, Any]:
+    """Delete one stored backup artifact (row + file) for a customer.
+
+    Commits the session. Returns {"ok": bool, "backup_reference"?}.
+    """
+    artifact = CustomerBackupArtifact.query.filter_by(
+        id=int(artifact_id), customer_id=int(customer_id)
+    ).first()
+    if not artifact:
+        return {"ok": False, "error": "not_found"}
+    reference = artifact.backup_reference
+    if artifact.stored_filename:
+        try:
+            base = (_backups_root() / str(customer_id)).resolve()
+            fp = (base / artifact.stored_filename).resolve()
+            if base in fp.parents and fp.exists():
+                fp.unlink()
+        except OSError:
+            pass
+    db.session.delete(artifact)
+    db.session.commit()
+    return {"ok": True, "backup_reference": reference}
+
+
 def _safe_int(value: Any, default: int) -> int:
     try:
         return max(0, int(value))

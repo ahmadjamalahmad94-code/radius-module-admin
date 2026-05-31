@@ -89,6 +89,29 @@
     openModal(modal);
   }
 
+  // ───────────────────────── delete modal ─────────────────────────
+  function deleteValidate() {
+    var ack = $("pp-delete-ack"), conf = $("pp-delete-confirm"), sub = $("pp-delete-submit");
+    if (!sub) return;
+    sub.disabled = !(ack && ack.checked && conf && (conf.value || "").trim().toUpperCase() === "DELETE");
+  }
+  function openDelete(btn) {
+    var modal = $("pp-delete-modal"), form = $("pp-delete-form"),
+        ref = $("pp-delete-ref"), ack = $("pp-delete-ack"), conf = $("pp-delete-confirm");
+    var id = btn.getAttribute("data-pp-delete");
+    if (form) {
+      var tpl = form.getAttribute("data-action-tpl") || "";
+      form.setAttribute("action", /\/0\/delete$/.test(tpl)
+        ? tpl.replace(/\/0\/delete$/, "/" + id + "/delete")
+        : "/portal/backups/" + id + "/delete");
+    }
+    if (ref) ref.textContent = btn.getAttribute("data-ref") || "#" + id;
+    if (ack) ack.checked = false;
+    if (conf) conf.value = "";
+    deleteValidate();
+    openModal(modal);
+  }
+
   // ───────────────────────── backup content summary ─────────────────────────
   function labelEsc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
   function summaryUrl(id) {
@@ -203,6 +226,7 @@
   document.addEventListener("click", function (e) {
     var t;
     if ((t = e.target.closest("[data-pp-restore]"))) { e.preventDefault(); try { openRestore(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-delete]")))  { e.preventDefault(); try { openDelete(t); } catch (x) {} return; }
     if ((t = e.target.closest("[data-pp-more]")))    { try { openDetails(t); } catch (x) {} return; }
     if (e.target.closest("[data-pp-close]"))         { closeModals(); return; }
     if (e.target.classList && e.target.classList.contains("pp-modal")) { closeModals(); return; }
@@ -221,9 +245,11 @@
   document.addEventListener("input", function (e) {
     if (e.target.id === "pp-svc-search") applySearch();
     if (e.target.id === "pp-restore-confirm") restoreValidate();
+    if (e.target.id === "pp-delete-confirm") deleteValidate();
   });
   document.addEventListener("change", function (e) {
     if (e.target.id === "pp-restore-ack") restoreValidate();
+    if (e.target.id === "pp-delete-ack") deleteValidate();
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModals(); });
 

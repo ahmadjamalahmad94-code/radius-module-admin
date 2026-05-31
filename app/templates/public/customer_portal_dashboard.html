@@ -336,6 +336,7 @@
                       {% else %}
                         <span class="pp-hint" style="margin:0">رُفعت البيانات الوصفية فقط — لا يمكن التنزيل أو الاستعادة.</span>
                       {% endif %}
+                      <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-delete="{{ bk.id }}" data-ref="{{ bk.backup_reference }}" style="color:var(--pp-red)"><i class="fa-solid fa-trash-can"></i> حذف</button>
                     </div>
                   </div>
                   {% if bk.has_content %}
@@ -560,8 +561,39 @@
   </div>
 </div>
 
+{# ════ Delete confirm modal ════ #}
+<div class="pp-modal" id="pp-delete-modal" role="dialog" aria-modal="true" aria-labelledby="pp-delete-title">
+  <div class="pp-dialog">
+    <div class="pp-dlg-head">
+      <span class="pp-dlg-ico danger"><i class="fa-solid fa-trash-can"></i></span>
+      <div><div class="pp-dlg-title" id="pp-delete-title">حذف نسخة احتياطية</div></div>
+      <button type="button" class="pp-dlg-x" data-pp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form method="post" id="pp-delete-form" data-action-tpl="{{ url_for('public.customer_portal_backup_delete', artifact_id=0) }}">
+      {{ csrf_input() }}
+      <div class="pp-dlg-body">
+        <div class="pp-notice warn" style="margin-bottom:13px"><i class="fa-solid fa-triangle-exclamation"></i>
+          <div>سيتم حذف النسخة <b id="pp-delete-ref">—</b> نهائيًا من ملفك على لوحة التراخيص. لا يمكن التراجع.</div></div>
+        <label class="pp-check">
+          <input type="checkbox" id="pp-delete-ack" name="ack" value="1">
+          <span>أُقرّ بأنني أريد حذف هذه النسخة نهائيًا من ملفي.</span>
+        </label>
+        <div class="pp-field" style="margin-bottom:0">
+          <label for="pp-delete-confirm">اكتب كلمة <b class="mono">DELETE</b> للتأكيد</label>
+          <div class="pp-input-wrap"><i class="fa-solid fa-keyboard"></i>
+            <input id="pp-delete-confirm" name="confirm" type="text" autocomplete="off" placeholder="DELETE" class="ltr"></div>
+        </div>
+      </div>
+      <div class="pp-dlg-foot">
+        <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-close>إلغاء</button>
+        <button type="submit" class="pp-btn pp-btn--solid-danger pp-btn--sm" id="pp-delete-submit" disabled><i class="fa-solid fa-trash-can"></i> حذف نهائي</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% block scripts %}
 {{ super() }}
-<script src="{{ url_for('static', filename='js/portal_pro.js') }}?v=20260531h"></script>
+<script src="{{ url_for('static', filename='js/portal_pro.js') }}?v=20260531i"></script>
 {% endblock %}
 {% endblock %}

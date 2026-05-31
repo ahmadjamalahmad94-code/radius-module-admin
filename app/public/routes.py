@@ -30,6 +30,7 @@ from ..services.license_payments import (
     payment_error_message,
 )
 from ..services.customer_backups import (
+    delete_customer_backup,
     get_artifact_file,
     list_customer_backups,
     summarize_backup_content,
@@ -288,6 +289,36 @@ def customer_portal_backup_download(artifact_id: int):
         return redirect(url_for("public.customer_portal_dashboard"))
     path, download_name = resolved
     return send_file(str(path), as_attachment=True, download_name=download_name)
+
+
+@bp.post("/portal/backups/<int:artifact_id>/delete")
+def customer_portal_backup_delete(artifact_id: int):
+    """Delete a panel-stored backup from the customer's file — strong-confirmed."""
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    artifact = CustomerBackupArtifact.query.filter_by(id=artifact_id, customer_id=user.customer_id).first()
+    if not artifact:
+        flash("النسخة المطلوبة غير موجودة.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if (request.form.get("ack") or "").strip() != "1":
+        flash("يجب الإقرار بحذف النسخة نهائيًا من ملفك.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    if (request.form.get("confirm") or "").strip().upper() != "DELETE":
+        flash("لإتمام الحذف يجب كتابة كلمة التأكيد DELETE بشكل صحيح.", "error")
+        return redirect(url_for("public.customer_portal_dashboard"))
+    reference = artifact.backup_reference
+    audit_customer_control(
+        actor_admin_id=None,
+        action="customer_backup_deleted",
+        entity_type="customer_backup",
+        entity_id=str(artifact.id),
+        summary=f"حذف العميل النسخة الاحتياطية {reference} من ملفه",
+        metadata={"customer_id": user.customer_id, "backup_reference": reference, "artifact_id": artifact.id},
+    )
+    delete_customer_backup(user.customer_id, artifact_id)  # commits row + audit
+    flash(f"تم حذف النسخة «{reference}» من ملفك نهائيًا.", "success")
+    return redirect(url_for("public.customer_portal_dashboard"))
 
 
 @bp.get("/portal/backups/<int:artifact_id>/summary")
