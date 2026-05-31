@@ -541,6 +541,7 @@ DEFAULT_SERVICE_CATALOG = [
 
 SERVICE_LIMIT_FIELDS = {
     "subscribers": [("max_total", "أقصى عدد مشتركين", "عدد المشتركين المسموح إنشاؤهم.")],
+    "backups": [("max_count", "أقصى عدد نسخ احتياطية محفوظة", "عند تجاوز العدد يُحذف الأقدم تلقائيًا (نسخ الريدياس وملف العميل). يُحدَّد حسب الإصدار والرسوم.")],
     "cards": [
         ("generate_per_batch", "أقصى كروت في الدفعة", "الحد الأعلى عند توليد دفعة كروت واحدة."),
         ("monthly_generated", "أقصى كروت شهريًا", "إجمالي الكروت المسموح توليدها خلال الشهر."),
@@ -1199,6 +1200,17 @@ def _limits_contract(lic: License | None, customer: Customer | None = None) -> d
             for key, value in service_limits.items()
             if _is_non_negative_int(value)
         })
+    # Backup retention cap always travels in the contract (local backups exist
+    # regardless of the paid panel-upload service). Admin-set per customer via
+    # the backups service limits; defaults to 60 when unset.
+    bk_ent = entitlement_map.get("backups")
+    bk_max = 0
+    if bk_ent and bk_ent.limits:
+        try:
+            bk_max = int(bk_ent.limits.get("max_count") or 0)
+        except (TypeError, ValueError):
+            bk_max = 0
+    limits.setdefault("backups", {})["max_count"] = bk_max if bk_max > 0 else 60
     return limits
 
 
