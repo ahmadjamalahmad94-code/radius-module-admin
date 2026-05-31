@@ -3,7 +3,7 @@
 
 {% block head_extra %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/customer_portal.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/portal_pro.css') }}">
 {% endblock %}
 
 {# ════════════════════════════════════════════════════════════════════
@@ -43,84 +43,66 @@
     ['risk_events','communications','integration_bridge','integration_tokens','webhooks'])
 ] %}
 
+{% macro human_size(n) %}{% if not n %}—{% elif n >= 1048576 %}{{ '%.1f'|format(n/1048576) }} م.ب{% elif n >= 1024 %}{{ '%.0f'|format(n/1024) }} ك.ب{% else %}{{ n }} بايت{% endif %}{% endmacro %}
+
 {# ── reusable service card macro ── #}
 {% macro svc_card(item, svc, icon, limit_text) %}
   {% set is_on = svc.enabled %}
   {% set st = svc.status|default('disabled') %}
-  {% if is_on %}
-    {% set state = 'on' %}{% set cls = 'cp-svc-status is-on' %}{% set card = 'is-on' %}{% set txt = 'مفعّلة' %}
-  {% elif st == 'pending' %}
-    {% set state = 'trial' %}{% set cls = 'cp-svc-status is-blue' %}{% set card = 'is-trial' %}{% set txt = 'تجريبية' %}
-  {% elif st == 'expired' %}
-    {% set state = 'off' %}{% set cls = 'cp-svc-status is-amber' %}{% set card = 'is-expired' %}{% set txt = 'منتهية' %}
-  {% elif st == 'suspended' %}
-    {% set state = 'off' %}{% set cls = 'cp-svc-status is-red' %}{% set card = 'is-suspended' %}{% set txt = 'موقوفة' %}
-  {% else %}
-    {% set state = 'off' %}{% set cls = 'cp-svc-status is-off' %}{% set card = '' %}{% set txt = 'غير مفعّلة' %}
-  {% endif %}
-  <article class="cp-svc {{ card }}" data-state="{{ state }}"
+  {% if is_on %}{% set state='on' %}{% set cls='pp-svc-status is-on' %}{% set card='is-on' %}{% set txt='مفعّلة' %}
+  {% elif st == 'pending' %}{% set state='trial' %}{% set cls='pp-svc-status is-blue' %}{% set card='' %}{% set txt='تجريبية' %}
+  {% elif st == 'expired' %}{% set state='off' %}{% set cls='pp-svc-status is-amber' %}{% set card='' %}{% set txt='منتهية' %}
+  {% elif st == 'suspended' %}{% set state='off' %}{% set cls='pp-svc-status is-red' %}{% set card='' %}{% set txt='موقوفة' %}
+  {% else %}{% set state='off' %}{% set cls='pp-svc-status is-off' %}{% set card='' %}{% set txt='غير مفعّلة' %}{% endif %}
+  <article class="pp-svc {{ card }}" data-state="{{ state }}"
            data-name="{{ (item.name_ar or item.name or item.service_key)|lower }} {{ item.service_key }}">
-    <div class="cp-svc-top">
-      <span class="cp-svc-ico"><i class="fa-solid fa-{{ icon }}"></i></span>
-      <span class="cp-svc-name">{{ item.name_ar or item.name or item.service_key }}</span>
+    <div class="pp-svc-top">
+      <span class="pp-svc-ico"><i class="fa-solid fa-{{ icon }}"></i></span>
+      <span class="pp-svc-name">{{ item.name_ar or item.name or item.service_key }}</span>
       <span class="{{ cls }}"><span class="dot"></span>{{ txt }}</span>
     </div>
-    {% if item.description %}<p class="cp-svc-desc">{{ item.description }}</p>{% endif %}
-    {% if limit_text %}<div class="cp-svc-limit"><i class="fa-solid fa-gauge"></i> {{ limit_text }}</div>{% endif %}
-    <div class="cp-svc-foot">
-      <button type="button" class="cp-more" data-cp-more
+    {% if item.description %}<p class="pp-svc-desc">{{ item.description }}</p>{% endif %}
+    {% if limit_text %}<div class="pp-svc-limit"><i class="fa-solid fa-gauge"></i> {{ limit_text }}</div>{% endif %}
+    <div class="pp-svc-foot">
+      <button type="button" class="pp-more" data-pp-more
               data-name="{{ item.name_ar or item.name or item.service_key }}"
               data-icon="{{ icon }}" data-status="{{ txt }}" data-status-cls="{{ cls }}"
               data-desc="{{ item.description or 'صلاحية ضمن عقد ترخيصك. تظهر تفاصيلها وحدودها عند تفعيلها من لوحة التراخيص.' }}"
               data-limits="{{ limit_text }}">
         <i class="fa-solid fa-circle-info"></i> المزيد
       </button>
-      {% if is_on %}
-        <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
-          {{ csrf_input() }}
-          <input type="hidden" name="request_type" value="upgrade">
-          <button type="submit" class="cp-req-btn is-upgrade"><i class="fa-solid fa-arrow-up"></i> طلب ترقية</button>
-        </form>
-      {% else %}
-        <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}">
-          {{ csrf_input() }}
-          <input type="hidden" name="request_type" value="activation">
-          <button type="submit" class="cp-req-btn"><i class="fa-solid fa-paper-plane"></i> طلب تفعيل</button>
-        </form>
-      {% endif %}
+      <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}" class="pp-req-btn">
+        {{ csrf_input() }}
+        <input type="hidden" name="request_type" value="{{ 'upgrade' if is_on else 'activation' }}">
+        {% if is_on %}
+          <button type="submit" class="pp-btn pp-btn--soft pp-btn--sm"><i class="fa-solid fa-arrow-up"></i> ترقية</button>
+        {% else %}
+          <button type="submit" class="pp-btn pp-btn--primary pp-btn--sm"><i class="fa-solid fa-paper-plane"></i> تفعيل</button>
+        {% endif %}
+      </form>
     </div>
   </article>
 {% endmacro %}
 
 {% block portal_topbar %}
-<nav class="cp-nav" id="cp-nav">
-  <div class="cp-nav-brand">
-    <div class="cp-nav-mark">HBR</div>
-    <div>
-      <b>{{ customer.company_name }}</b>
-      <span>لوحة العميل المركزية</span>
-    </div>
+<header class="pp-top">
+  <button type="button" class="pp-burger" id="pp-burger" aria-label="القائمة"><i class="fa-solid fa-bars"></i></button>
+  <div class="pp-top-brand">
+    <div class="pp-top-mark">HBR</div>
+    <div><b>{{ customer.company_name }}</b><span>بوابة العميل المركزية</span></div>
   </div>
-  <div class="cp-nav-links">
-    <a class="cp-nav-link is-active" href="#cp-top" data-cp-navlink><i class="fa-solid fa-house"></i> الرئيسية</a>
-    <a class="cp-nav-link" href="#cp-services" data-cp-navlink><i class="fa-solid fa-shapes"></i> الخدمات</a>
-    <a class="cp-nav-link" href="#cp-payments" data-cp-navlink><i class="fa-solid fa-credit-card"></i> الفواتير</a>
-    <a class="cp-nav-link" href="#cp-requests" data-cp-navlink><i class="fa-solid fa-headset"></i> الطلبات والدعم</a>
-    <a class="cp-nav-link" href="#cp-account-settings" data-cp-navlink><i class="fa-solid fa-gear"></i> الإعدادات</a>
-  </div>
-  <div class="cp-nav-user">
-    <span class="cp-nav-avatar"><i class="fa-solid fa-user"></i></span>
+  <div class="pp-top-spacer"></div>
+  <div class="pp-top-user">
+    <span class="pp-top-avatar"><i class="fa-solid fa-user"></i></span>
     <form method="post" action="{{ url_for('public.customer_portal_logout') }}">
       {{ csrf_input() }}
-      <button class="cp-btn cp-btn--ghost cp-btn--sm" type="submit"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
+      <button class="pp-btn pp-btn--ghost pp-btn--sm" type="submit"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
     </form>
-    <button type="button" class="cp-nav-toggle" id="cp-nav-toggle" aria-label="القائمة"><i class="fa-solid fa-bars"></i></button>
   </div>
-</nav>
+</header>
 {% endblock %}
 
 {% block content %}
-{# portal visibility config #}
 {% set _pc = contract.customer.get('portal_config', {}) if contract.customer is mapping else {} %}
 {% set _hidden = _pc.get('hidden_sections', []) %}
 
@@ -131,469 +113,598 @@
 {% endfor %}
 {% set license_status = contract.license.status %}
 
-<div class="cp-shell" id="cp-top">
+{# count backups with content #}
+{% set bk_stored = customer_backups|selectattr('has_content')|list|length if customer_backups else 0 %}
 
-  {# ════ Hero ════ #}
-  <section class="cp-hero cp-anchor">
-    <div class="cp-hero-row">
-      <div class="cp-hero-id">
-        <div class="cp-hero-logo"><b>H</b></div>
-        <div>
-          <h1 class="cp-hero-title">أهلاً، {{ customer.company_name }}</h1>
-          <div class="cp-hero-sub">إدارة جميع خدماتك وترخيصك ومدفوعاتك وطلبات الترقية من مكان واحد.</div>
+<div class="pp-app" id="pp-app">
+  <div class="pp-grid">
+
+    {# ════════ SIDEBAR ════════ #}
+    <aside class="pp-side" id="pp-side">
+      <div class="pp-side-lic">
+        <div class="l">حالة الترخيص</div>
+        <div class="v">
+          {% if license_status == 'active' %}<span style="color:#15803d">● نشط</span>
+          {% elif license_status == 'not_found' %}<span style="color:#64748b">● لا يوجد</span>
+          {% else %}<span style="color:#b45309">● {{ license_status|status_label }}</span>{% endif %}
         </div>
       </div>
-      <div class="cp-hero-side">
-        {% if license_status == 'active' %}
-          <span class="cp-pill is-on"><span class="dot"></span> ترخيص نشط</span>
-        {% elif license_status == 'not_found' %}
-          <span class="cp-pill is-off"><span class="dot"></span> لا يوجد ترخيص</span>
-        {% else %}
-          <span class="cp-pill is-amber"><span class="dot"></span> {{ license_status|status_label }}</span>
-        {% endif %}
-        <span class="cp-hero-avatar"><i class="fa-solid fa-user"></i></span>
-      </div>
-    </div>
-
-    <div class="cp-kpis">
-      <div class="cp-kpi">
-        <span class="cp-kpi-ico is-green"><i class="fa-solid fa-shapes"></i></span>
-        <div><div class="cp-kpi-l">خدمات مفعّلة</div><div class="cp-kpi-v">{{ ns.on }} <small>/ {{ service_catalog|length }}</small></div></div>
-      </div>
-      <div class="cp-kpi">
-        <span class="cp-kpi-ico is-violet"><i class="fa-solid fa-calendar-day"></i></span>
-        <div><div class="cp-kpi-l">تاريخ الانتهاء</div><div class="cp-kpi-v" style="font-size:14px">{{ current_license.expires_at|date if current_license else '—' }}</div></div>
-      </div>
-      <div class="cp-kpi">
-        <span class="cp-kpi-ico is-blue"><i class="fa-solid fa-users"></i></span>
-        <div><div class="cp-kpi-l">المشتركون</div><div class="cp-kpi-v">{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</div></div>
-      </div>
-      <div class="cp-kpi">
-        <span class="cp-kpi-ico is-blue"><i class="fa-solid fa-server"></i></span>
-        <div><div class="cp-kpi-l">أجهزة الشبكة</div><div class="cp-kpi-v">{{ contract.limits.nas.max_total if contract.limits.nas is defined else '—' }}</div></div>
-      </div>
-      <div class="cp-kpi">
-        <span class="cp-kpi-ico is-amber"><i class="fa-solid fa-user-shield"></i></span>
-        <div><div class="cp-kpi-l">المدراء</div><div class="cp-kpi-v">{{ contract.limits.admins.max_total if contract.limits.admins is defined else '—' }}</div></div>
-      </div>
-    </div>
-  </section>
-
-  {# ════ Account + Password ════ #}
-  {% if 'account' not in _hidden or 'password' not in _hidden %}
-  <div class="cp-grid-2">
-    {% if 'account' not in _hidden %}
-    <section class="cp-card cp-anchor" id="cp-account">
-      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-key"></i></span><h2>الترخيص والحساب</h2></div>
-      <div class="cp-card-body">
-        <div class="cp-rows">
-          <div class="cp-row"><span>مفتاح الترخيص</span><strong class="mono">{{ current_license.license_key if current_license else '—' }}</strong></div>
-          <div class="cp-row"><span>حالة الترخيص</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
-          <div class="cp-row"><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
-          <div class="cp-row"><span>رابط الوصول / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
-        </div>
-      </div>
-    </section>
-    {% endif %}
-
-    {% if 'password' not in _hidden %}
-    <section class="cp-card">
-      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-lock"></i></span><h2>تغيير كلمة المرور</h2></div>
-      <div class="cp-card-body">
-        <form method="post" action="{{ url_for('public.customer_portal_password_update') }}">
+      <nav class="pp-nav" id="pp-nav" aria-label="أقسام البوابة">
+        <button type="button" class="pp-nav-link is-active" data-pp-view="overview"><i class="fa-solid fa-gauge-high"></i> نظرة عامة</button>
+        {% if 'services' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="services"><i class="fa-solid fa-shapes"></i> الخدمات <span class="pp-nav-badge">{{ ns.on }}</span></button>{% endif %}
+        <button type="button" class="pp-nav-link" data-pp-view="backups"><i class="fa-solid fa-database"></i> النسخ الاحتياطي{% if bk_stored %} <span class="pp-nav-badge">{{ bk_stored }}</span>{% endif %}</button>
+        {% if 'payments' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="billing"><i class="fa-solid fa-credit-card"></i> الفواتير والمدفوعات</button>{% endif %}
+        {% if 'requests' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="requests"><i class="fa-solid fa-headset"></i> الطلبات والدعم{% if service_requests %} <span class="pp-nav-badge">{{ service_requests|length }}</span>{% endif %}</button>{% endif %}
+        <button type="button" class="pp-nav-link" data-pp-view="account"><i class="fa-solid fa-gear"></i> الحساب والإعدادات</button>
+      </nav>
+      <div class="pp-side-out">
+        <form method="post" action="{{ url_for('public.customer_portal_logout') }}">
           {{ csrf_input() }}
-          <div class="cp-field">
-            <label>كلمة المرور الحالية</label>
-            <div class="cp-input-wrap">
-              <i class="fa-solid fa-key"></i>
-              <input id="cpw-cur" name="current_password" type="password" autocomplete="current-password" required>
-              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-cur"><i class="fa-solid fa-eye"></i></button>
-            </div>
-          </div>
-          <div class="cp-field">
-            <label>كلمة المرور الجديدة</label>
-            <div class="cp-input-wrap">
-              <i class="fa-solid fa-key"></i>
-              <input id="cpw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
-              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-new"><i class="fa-solid fa-eye"></i></button>
-            </div>
-          </div>
-          <div class="cp-field">
-            <label>تأكيد كلمة المرور الجديدة</label>
-            <div class="cp-input-wrap">
-              <i class="fa-solid fa-key"></i>
-              <input id="cpw-cfm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
-              <button type="button" class="cp-pwd-toggle" data-pwd-toggle="#cpw-cfm"><i class="fa-solid fa-eye"></i></button>
-            </div>
-          </div>
-          <button class="cp-btn cp-btn--primary" type="submit"><i class="fa-solid fa-rotate"></i> تحديث كلمة المرور</button>
-          <p class="cp-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفرة الجديدة بعد المزامنة.</p>
+          <button type="submit" class="pp-nav-link"><i class="fa-solid fa-right-from-bracket"></i> تسجيل الخروج</button>
         </form>
       </div>
-    </section>
-    {% endif %}
-  </div>
-  {% endif %}
+    </aside>
 
-  {# ════ Cloud backup — Google Drive (per-customer OAuth) ════ #}
-  <section class="cp-card cp-anchor" id="cp-gdrive">
-    <div class="cp-card-head">
-      <span class="ic"><i class="fa-brands fa-google-drive"></i></span>
-      <h2>النسخ الاحتياطي السحابي — Google Drive</h2>
-      <span class="meta">
-        {% if gdrive.connected %}<span class="cp-pill is-on"><span class="dot"></span> متصل</span>
-        {% else %}<span class="cp-pill is-off"><span class="dot"></span> اختياري · مجاني</span>{% endif %}
-      </span>
-    </div>
-    <div class="cp-card-body">
-      {% if not gdrive.configured or not gdrive.libs %}
-        <p class="cp-svc-desc">تكامل Google Drive قيد التهيئة من الإدارة. سيتاح الربط قريبًا — تواصل مع الدعم لو استمر ظهور هذه الرسالة.</p>
-      {% elif gdrive.connected %}
-        <div class="cp-rows" style="margin-bottom:14px">
-          <div class="cp-row"><span>الحساب المربوط</span><strong class="ltr">{{ gdrive.email or '—' }}</strong></div>
-          <div class="cp-row"><span>مجلد النسخ</span><strong>{{ gdrive.folder_name }}</strong></div>
-          <div class="cp-row"><span>آخر رفع</span><strong>{{ gdrive.last_upload_at|dt if gdrive.last_upload_at else 'لم يتم بعد' }}</strong></div>
-          {% if gdrive.last_error %}<div class="cp-row"><span>آخر خطأ</span><strong style="color:var(--hub-red,#dc2626);font-size:11.5px">{{ gdrive.last_error[:120] }}</strong></div>{% endif %}
-        </div>
-        <p class="cp-hint" style="margin:0 0 12px">تُرفع نسخك الاحتياطية تلقائيًا إلى مجلد مخصّص داخل درايفك الخاص (صلاحية محدودة <span class="mono">drive.file</span> — لا نطّلع على بقية ملفاتك).</p>
-        <form method="post" action="{{ url_for('public.google_drive_disconnect') }}">
-          {{ csrf_input() }}
-          <button type="submit" class="cp-btn cp-btn--ghost" style="width:auto"><i class="fa-solid fa-link-slash"></i> فصل Google Drive</button>
-        </form>
-      {% else %}
-        <p class="cp-svc-desc" style="margin-bottom:12px">
-          اربط حساب Google Drive الخاص بك لرفع نسخك الاحتياطية تلقائيًا إلى درايفك. نطلب أقل صلاحية ممكنة
-          (<span class="mono">drive.file</span>) ولا نطّلع على ملفاتك الأخرى. راجع
-          <a href="/privacy" style="color:var(--hub-violet-d,#5b21b6);font-weight:800">سياسة الخصوصية</a>.
-        </p>
-        <a class="cp-btn cp-btn--primary" style="width:auto" href="{{ url_for('public.google_drive_connect') }}">
-          <i class="fa-brands fa-google"></i> ربط Google Drive
-        </a>
-      {% endif %}
-    </div>
-  </section>
+    {# ════════ MAIN ════════ #}
+    <div class="pp-main">
 
-  {# ════ Services — categorized ════ #}
-  {% if 'services' not in _hidden %}
-  <section class="cp-card cp-anchor" id="cp-services">
-    <div class="cp-card-head">
-      <span class="ic"><i class="fa-solid fa-shapes"></i></span>
-      <h2>الخدمات ومنتجاتها</h2>
-    </div>
-    <div class="cp-card-body">
-      <div class="cp-svc-bar">
-        <div class="cp-counts">
-          <span class="cp-count is-on"><i class="fa-solid fa-circle-check"></i> {{ ns.on }} مفعّلة</span>
-          <span class="cp-count is-all"><i class="fa-solid fa-shapes"></i> {{ service_catalog|length }} خدمة</span>
-        </div>
-        <div class="cp-svc-tools">
-          <div class="cp-search">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="cp-svc-search" placeholder="ابحث عن خدمة…" autocomplete="off">
-          </div>
-          <div class="cp-filters" id="cp-svc-filters">
-            <button type="button" class="cp-filter is-active" data-filter="all">الكل</button>
-            <button type="button" class="cp-filter" data-filter="on">مفعّلة</button>
-            <button type="button" class="cp-filter" data-filter="trial">تجريبية</button>
-            <button type="button" class="cp-filter" data-filter="off">غير مفعّلة</button>
+      {# ───── OVERVIEW ───── #}
+      <section class="pp-view is-active" data-pp-pane="overview">
+        <div class="pp-hero">
+          <div class="pp-hero-c">
+            <div class="pp-hero-logo">H</div>
+            <div>
+              <h2>أهلاً، {{ customer.company_name }}</h2>
+              <div class="sub">أدِر خدماتك وترخيصك ومدفوعاتك ونسخك الاحتياطية وطلبات الترقية من مكان واحد.</div>
+            </div>
+            {% if license_status == 'active' %}<span class="pp-hero-pill"><span class="dot"></span> ترخيص نشط</span>
+            {% elif license_status == 'not_found' %}<span class="pp-hero-pill"><span class="dot" style="background:#cbd5e1"></span> لا يوجد ترخيص</span>
+            {% else %}<span class="pp-hero-pill"><span class="dot" style="background:#fcd34d"></span> {{ license_status|status_label }}</span>{% endif %}
           </div>
         </div>
-      </div>
 
-      <div id="cp-svc-root">
-        {# precompute which keys are rendered in categories #}
-        {% set ns2 = namespace(seen=[]) %}
-        {% for cat_key, cat_label, cat_icon, cat_keys in service_categories %}
-          {# gather items present in catalog for this category, preserving catalog order #}
-          {% set present = [] %}
-          {% for item in service_catalog if item.service_key in cat_keys %}
-            {% if present.append(item) %}{% endif %}
-            {% if ns2.seen.append(item.service_key) %}{% endif %}
-          {% endfor %}
-          {% if present %}
-            {% set con = namespace(on=0) %}
-            {% for item in present %}{% if contract.services.get(item.service_key, {}).enabled %}{% set con.on = con.on + 1 %}{% endif %}{% endfor %}
-            <div class="cp-cat" data-cp-cat>
-              <div class="cp-cat-head">
-                <span class="cp-cat-ic"><i class="fa-solid fa-{{ cat_icon }}"></i></span>
-                <span class="cp-cat-title">{{ cat_label }}</span>
-                <span class="cp-cat-count {{ 'has-on' if con.on else 'no-on' }}">{{ con.on }} / {{ present|length }} مفعّلة</span>
+        <div class="pp-kpis">
+          <div class="pp-kpi"><span class="pp-kpi-ic is-green"><i class="fa-solid fa-shapes"></i></span>
+            <div><div class="pp-kpi-l">خدمات مفعّلة</div><div class="pp-kpi-v">{{ ns.on }} <small>/ {{ service_catalog|length }}</small></div></div></div>
+          <div class="pp-kpi"><span class="pp-kpi-ic is-violet"><i class="fa-solid fa-calendar-day"></i></span>
+            <div><div class="pp-kpi-l">تاريخ الانتهاء</div><div class="pp-kpi-v" style="font-size:15px">{{ current_license.expires_at|date if current_license else '—' }}</div></div></div>
+          <div class="pp-kpi"><span class="pp-kpi-ic is-blue"><i class="fa-solid fa-users"></i></span>
+            <div><div class="pp-kpi-l">حد المشتركين</div><div class="pp-kpi-v">{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</div></div></div>
+          <div class="pp-kpi"><span class="pp-kpi-ic is-amber"><i class="fa-solid fa-database"></i></span>
+            <div><div class="pp-kpi-l">نسخ محفوظة</div><div class="pp-kpi-v">{{ bk_stored }}</div></div></div>
+        </div>
+
+        <div class="pp-grid-2">
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-key"></i></span><h2>ملخص الترخيص</h2></div>
+            <div class="pp-card-body">
+              <div class="pp-rows">
+                <div class="pp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ current_license.license_key if current_license else '—' }}</strong></div>
+                <div class="pp-row"><span>الحالة</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
+                <div class="pp-row"><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
+                <div class="pp-row"><span>الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
               </div>
-              <div class="cp-svc-grid">
-                {% for item in present %}
-                  {% set svc = contract.services.get(item.service_key, {}) %}
-                  {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
-                    {% set limit_text = 'تحميل ' ~ svc.download_mbps ~ ' · رفع ' ~ svc.upload_mbps ~ ' Mbps · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
-                  {% elif svc.limits %}
-                    {% set limit_text = service_limit_summary(svc.limits) %}
-                  {% else %}
-                    {% set limit_text = '' %}
+              <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-go="account" style="margin-top:13px"><i class="fa-solid fa-sliders"></i> إدارة الحساب</button>
+            </div>
+          </div>
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-bolt"></i></span><h2>إجراءات سريعة</h2></div>
+            <div class="pp-card-body" style="display:flex;flex-direction:column;gap:9px">
+              {% if 'services' not in _hidden %}<button type="button" class="pp-btn pp-btn--soft" data-pp-go="services"><i class="fa-solid fa-shapes"></i> تصفّح الخدمات وطلب التفعيل</button>{% endif %}
+              <button type="button" class="pp-btn pp-btn--soft" data-pp-go="backups"><i class="fa-solid fa-database"></i> النسخ الاحتياطي والاستعادة</button>
+              {% if 'payments' not in _hidden %}<button type="button" class="pp-btn pp-btn--soft" data-pp-go="billing"><i class="fa-solid fa-credit-card"></i> الفواتير والمدفوعات</button>{% endif %}
+              {% if 'requests' not in _hidden %}<button type="button" class="pp-btn pp-btn--soft" data-pp-go="requests"><i class="fa-solid fa-headset"></i> طلباتي والدعم</button>{% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ───── SERVICES ───── #}
+      {% if 'services' not in _hidden %}
+      <section class="pp-view" data-pp-pane="services">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-shapes"></i></span>
+          <div><h1>الخدمات</h1><p>اختر القسم لعرض خدماته — الفعّالة أولاً ثم غير المفعّلة. اطلب التفعيل أو الترقية بضغطة.</p></div>
+        </div>
+
+        {# build a unified pane list: (key,label,icon,items) for categories that
+           have catalog items, plus an "extras" pane for anything unmapped. #}
+        {% set seen = [] %}
+        {% for cat_key,label,icon,keys in service_categories %}{% for item in service_catalog if item.service_key in keys %}{% if seen.append(item.service_key) %}{% endif %}{% endfor %}{% endfor %}
+        {% set extras = [] %}
+        {% for item in service_catalog if item.service_key not in seen %}{% if extras.append(item) %}{% endif %}{% endfor %}
+        {% set panes = [] %}
+        {% for cat_key,label,icon,keys in service_categories %}
+          {% set present = [] %}{% for item in service_catalog if item.service_key in keys %}{% if present.append(item) %}{% endif %}{% endfor %}
+          {% if present %}{% if panes.append((cat_key, label, icon, present)) %}{% endif %}{% endif %}
+        {% endfor %}
+        {% if extras %}{% if panes.append(('extras', 'خدمات أخرى', 'cube', extras)) %}{% endif %}{% endif %}
+
+        {# category chips (titles only) #}
+        <div class="pp-cats" id="pp-cats">
+          {% for pkey, plabel, picon, pitems in panes %}
+            {% set con = namespace(on=0) %}{% for item in pitems %}{% if contract.services.get(item.service_key, {}).enabled %}{% set con.on = con.on + 1 %}{% endif %}{% endfor %}
+            <button type="button" class="pp-cat-chip {{ 'is-active' if loop.first else '' }}" data-pp-cat="{{ pkey }}">
+              <i class="fa-solid fa-{{ picon }}"></i> {{ plabel }} <span class="n">{{ con.on }}/{{ pitems|length }}</span>
+            </button>
+          {% endfor %}
+        </div>
+
+        <div class="pp-svc-search">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="pp-svc-search" placeholder="ابحث داخل القسم الحالي…" autocomplete="off">
+        </div>
+
+        {# category panes — active services grouped first, inactive after #}
+        <div id="pp-cat-root">
+          {% for pkey, plabel, picon, pitems in panes %}
+            {% set act = [] %}{% set ina = [] %}
+            {% for item in pitems %}{% if contract.services.get(item.service_key, {}).enabled %}{% if act.append(item) %}{% endif %}{% else %}{% if ina.append(item) %}{% endif %}{% endif %}{% endfor %}
+            <div class="pp-cat-pane {{ 'is-active' if loop.first else '' }}" data-pp-catpane="{{ pkey }}">
+              {% for grp, glabel, gcls in [(act,'الخدمات الفعّالة','on'),(ina,'خدمات غير مفعّلة','off')] %}
+                {% if grp %}
+                  <div class="pp-group-h {{ gcls }}"><span class="gl">{{ glabel }}</span><span class="gc">{{ grp|length }}</span><span class="line"></span></div>
+                  <div class="pp-svc-grid">
+                    {% for item in grp %}
+                      {% set svc = contract.services.get(item.service_key, {}) %}
+                      {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
+                        {% set lt = 'تحميل ' ~ svc.download_mbps ~ ' · رفع ' ~ svc.upload_mbps ~ ' Mbps · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
+                      {% elif svc.limits %}{% set lt = service_limit_summary(svc.limits) %}{% else %}{% set lt = '' %}{% endif %}
+                      {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), lt) }}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endfor %}
+          <div class="pp-empty" id="pp-svc-noresult" style="display:none">
+            <div class="pp-empty-ic"><i class="fa-solid fa-magnifying-glass"></i></div>
+            <div class="pp-empty-msg">لا توجد خدمة مطابقة لبحثك في هذا القسم.</div>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {# ───── BACKUPS ───── #}
+      <section class="pp-view" data-pp-pane="backups">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-database"></i></span>
+          <div><h1>النسخ الاحتياطي والاستعادة</h1><p>اربط Google Drive، واطّلع على نسخك المرفوعة على ملفك في لوحة التراخيص، واستعد أيًّا منها بأمان.</p></div>
+        </div>
+
+        {# Google Drive #}
+        <div class="pp-card">
+          <div class="pp-card-head">
+            <span class="ic"><i class="fa-brands fa-google-drive"></i></span>
+            <h2>النسخ السحابي — Google Drive</h2>
+            <span class="meta">{% if gdrive.connected %}<span class="pp-pill is-on"><span class="dot"></span> متصل</span>{% else %}<span class="pp-pill is-off"><span class="dot"></span> اختياري · مجاني</span>{% endif %}</span>
+          </div>
+          <div class="pp-card-body">
+            {% if not gdrive.configured or not gdrive.libs %}
+              <div class="pp-notice info"><i class="fa-solid fa-circle-info"></i><div>تكامل Google Drive قيد التهيئة من الإدارة. سيتاح الربط قريبًا — تواصل مع الدعم لو استمر ظهور هذه الرسالة.</div></div>
+            {% elif gdrive.connected %}
+              <div class="pp-rows" style="margin-bottom:13px">
+                <div class="pp-row"><span>الحساب المربوط</span><strong class="ltr">{{ gdrive.email or '—' }}</strong></div>
+                <div class="pp-row"><span>مجلد النسخ</span><strong>{{ gdrive.folder_name }}</strong></div>
+                <div class="pp-row"><span>آخر رفع</span><strong>{{ gdrive.last_upload_at|dt if gdrive.last_upload_at else 'لم يتم بعد' }}</strong></div>
+                {% if gdrive.last_error %}<div class="pp-row"><span>آخر خطأ</span><strong style="color:var(--pp-red);font-size:11.5px">{{ gdrive.last_error[:120] }}</strong></div>{% endif %}
+              </div>
+              <p class="pp-hint" style="margin:0 0 12px">تُرفع نسخك تلقائيًا إلى مجلد مخصّص داخل درايفك (صلاحية محدودة <span class="mono">drive.file</span> — لا نطّلع على بقية ملفاتك).</p>
+              <form method="post" action="{{ url_for('public.google_drive_disconnect') }}">
+                {{ csrf_input() }}
+                <button type="submit" class="pp-btn pp-btn--ghost"><i class="fa-solid fa-link-slash"></i> فصل Google Drive</button>
+              </form>
+            {% else %}
+              <p class="pp-svc-desc" style="margin-bottom:13px">اربط حساب Google Drive الخاص بك لرفع نسخك تلقائيًا إلى درايفك. نطلب أقل صلاحية ممكنة (<span class="mono">drive.file</span>) ولا نطّلع على ملفاتك الأخرى. راجع <a href="/privacy" style="color:var(--pp-violet-d);font-weight:800">سياسة الخصوصية</a>.</p>
+              <a class="pp-btn pp-btn--primary" href="{{ url_for('public.google_drive_connect') }}"><i class="fa-brands fa-google"></i> ربط Google Drive</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Panel-stored backups #}
+        <div class="pp-card">
+          <div class="pp-card-head">
+            <span class="ic"><i class="fa-solid fa-box-archive"></i></span>
+            <h2>النسخ المرفوعة على ملفك في لوحة التراخيص</h2>
+            <span class="meta"><span class="pp-pill {{ 'is-on' if gdrive.backups_active else 'is-off' }}"><span class="dot"></span>{{ 'الخدمة مفعّلة' if gdrive.backups_active else 'خدمة مدفوعة' }}</span></span>
+          </div>
+          <div class="pp-card-body">
+            <div class="pp-notice info" style="margin-bottom:14px"><i class="fa-solid fa-clock-rotate-left"></i><div>تُحفظ النسخ على ملفك لمدة <b>30 يومًا</b> ثم تُحذف تلقائيًا. الرفع إلى لوحة التراخيص خدمة مدفوعة تُفعّل من قسم الخدمات.</div></div>
+            {% if customer_backups %}
+              <div class="pp-bk">
+                {% for bk in customer_backups %}
+                <div class="pp-bk-item">
+                  <div class="pp-bk-row">
+                    <span class="pp-bk-ic"><i class="fa-solid fa-{{ 'file-zipper' if bk.has_content else 'file-circle-info' }}"></i></span>
+                    <div class="pp-bk-main">
+                      <div class="pp-bk-ref">{{ bk.backup_reference }}</div>
+                      <div class="pp-bk-meta">
+                        <span>استُلمت: <b>{{ bk.received_at|dt }}</b></span>
+                        {% if bk.remote_created_at %}<span>أُنشئت: <b class="ltr">{{ bk.remote_created_at }}</b></span>{% endif %}
+                        <span>الحجم: <b>{{ human_size(bk.size) }}</b></span>
+                        {% if bk.has_content %}<span class="pp-pill is-on" style="padding:1px 8px">بالمحتوى الكامل</span>{% else %}<span class="pp-pill is-amber" style="padding:1px 8px">بيانات وصفية فقط</span>{% endif %}
+                      </div>
+                    </div>
+                    <div class="pp-bk-actions">
+                      {% if bk.has_content %}
+                        <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-summary="{{ bk.id }}"><i class="fa-solid fa-list-ul"></i> المحتوى</button>
+                        <a class="pp-btn pp-btn--ghost pp-btn--sm" href="{{ url_for('public.customer_portal_backup_download', artifact_id=bk.id) }}"><i class="fa-solid fa-download"></i> تنزيل</a>
+                        <button type="button" class="pp-btn pp-btn--danger pp-btn--sm" data-pp-restore="{{ bk.id }}" data-ref="{{ bk.backup_reference }}"><i class="fa-solid fa-rotate-left"></i> استعادة</button>
+                      {% else %}
+                        <span class="pp-hint" style="margin:0">رُفعت البيانات الوصفية فقط — لا يمكن التنزيل أو الاستعادة.</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  {% if bk.has_content %}
+                  <div class="pp-bk-summary" id="pp-sum-{{ bk.id }}" data-loaded="0">
+                    <p class="pp-dlg-block-t">محتوى هذه النسخة</p>
+                    <div class="pp-sum-body"><span class="pp-sum-msg">…</span></div>
+                  </div>
                   {% endif %}
-                  {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), limit_text) }}
+                </div>
                 {% endfor %}
               </div>
+            {% else %}
+              <div class="pp-empty">
+                <div class="pp-empty-ic"><i class="fa-solid fa-box-open"></i></div>
+                <div class="pp-empty-msg">لا توجد نسخ مرفوعة بعد</div>
+                <div class="pp-empty-sub">عند تفعيل خدمة النسخ ورفع نسخة من الريدياس ستظهر هنا للتنزيل أو الاستعادة.</div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      {# ───── BILLING ───── #}
+      {% if 'payments' not in _hidden %}
+      <section class="pp-view" data-pp-pane="billing">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-credit-card"></i></span>
+          <div><h1>الفواتير والمدفوعات</h1><p>طلبات الدفع وترقيات السعة وإثباتات الدفع الخاصة بحسابك.</p></div>
+        </div>
+        <div class="pp-card">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-receipt"></i></span><h2>طلبات الدفع</h2></div>
+          <div class="pp-card-body">
+            {% if payment_requests %}
+              <div class="pp-table-wrap"><table class="pp-table">
+                <thead><tr><th>المرجع</th><th>المبلغ</th><th>الحالة</th><th></th></tr></thead>
+                <tbody>
+                {% for req in payment_requests %}
+                  {% set ps = req.status %}
+                  {% if ps in ['paid','approved','completed'] %}{% set pcls='is-green' %}
+                  {% elif ps in ['pending','payment_pending','awaiting_proof'] %}{% set pcls='is-amber' %}
+                  {% elif ps in ['under_review'] %}{% set pcls='is-blue' %}{% else %}{% set pcls='is-grey' %}{% endif %}
+                  <tr>
+                    <td class="mono">{{ req.reference_code }}</td>
+                    <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
+                    <td><span class="pp-badge {{ pcls }}">{{ ps|status_label }}</span></td>
+                    <td><a class="pp-btn pp-btn--ghost pp-btn--sm" href="{{ url_for('public.payment_portal', request_id=req.id, token=req.access_token) }}"><i class="fa-solid fa-receipt"></i> الدفع/الإثبات</a></td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table></div>
+            {% else %}
+              <div class="pp-empty"><div class="pp-empty-ic"><i class="fa-solid fa-credit-card"></i></div>
+                <div class="pp-empty-msg">لا توجد طلبات دفع</div>
+                <div class="pp-empty-sub">ستظهر هنا أي طلبات دفع أو ترقية سعة.</div></div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {# ───── REQUESTS ───── #}
+      {% if 'requests' not in _hidden %}
+      <section class="pp-view" data-pp-pane="requests">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-headset"></i></span>
+          <div><h1>الطلبات والدعم</h1><p>طلبات تفعيل/ترقية الخدمات وطلبات الاستعادة وحالتها.</p></div>
+        </div>
+        <div class="pp-card">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-list-check"></i></span><h2>طلبات الخدمات الأخيرة</h2></div>
+          <div class="pp-card-body">
+            {% if service_requests %}
+              <div class="pp-table-wrap"><table class="pp-table">
+                <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th><th>التاريخ</th><th></th></tr></thead>
+                <tbody>
+                {% for req in service_requests %}
+                  {% set rs = req.status %}
+                  {% if rs in ['active','approved','completed'] %}{% set bcls='is-green' %}
+                  {% elif rs in ['pending','payment_pending'] %}{% set bcls='is-amber' %}
+                  {% elif rs in ['under_review','trial_active'] %}{% set bcls='is-blue' %}
+                  {% else %}{% set bcls='is-grey' %}{% endif %}
+                  <tr>
+                    <td>{{ req.service_key|service_key_label }}</td>
+                    <td>{{ req.request_type|request_type_label }}</td>
+                    <td><span class="pp-badge {{ bcls }}">{{ rs|status_label }}</span></td>
+                    <td class="mono">{{ req.created_at|dt }}</td>
+                    <td><a class="pp-btn pp-btn--ghost pp-btn--sm" href="{{ url_for('public.customer_portal_service_request_detail', request_id=req.id) }}"><i class="fa-solid fa-eye"></i> عرض</a></td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table></div>
+            {% else %}
+              <div class="pp-empty"><div class="pp-empty-ic"><i class="fa-solid fa-list-check"></i></div>
+                <div class="pp-empty-msg">لا توجد طلبات</div>
+                <div class="pp-empty-sub">اطلب تفعيل أي خدمة من قسم الخدمات.</div></div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+      {# ───── ACCOUNT & SETTINGS ───── #}
+      <section class="pp-view" data-pp-pane="account">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-gear"></i></span>
+          <div><h1>الحساب والإعدادات</h1><p>بيانات ترخيصك وحسابك، تغيير كلمة المرور، وإعداد ربط الريدياس التقني.</p></div>
+        </div>
+        <div class="pp-grid-2">
+          {% if 'account' not in _hidden %}
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-key"></i></span><h2>الترخيص والحساب</h2></div>
+            <div class="pp-card-body">
+              <div class="pp-rows">
+                <div class="pp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ current_license.license_key if current_license else '—' }}</strong></div>
+                <div class="pp-row"><span>حالة الترخيص</span><strong>{{ 'غير موجود' if license_status == 'not_found' else license_status|status_label }}</strong></div>
+                <div class="pp-row"><span>المستخدم</span><strong>{{ customer_user.username }}</strong></div>
+                <div class="pp-row"><span>رابط الوصول / الخادم</span><strong class="mono ltr">{{ customer.runtime_url or '—' }}</strong></div>
+              </div>
             </div>
+          </div>
           {% endif %}
-        {% endfor %}
 
-        {# catch-all: any service not mapped to a category #}
-        {% set extras = [] %}
-        {% for item in service_catalog if item.service_key not in ns2.seen %}
-          {% if extras.append(item) %}{% endif %}
-        {% endfor %}
-        {% if extras %}
-          <div class="cp-cat" data-cp-cat>
-            <div class="cp-cat-head">
-              <span class="cp-cat-ic"><i class="fa-solid fa-cube"></i></span>
-              <span class="cp-cat-title">خدمات أخرى</span>
+          {% if 'password' not in _hidden %}
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-lock"></i></span><h2>تغيير كلمة المرور</h2></div>
+            <div class="pp-card-body">
+              <form method="post" action="{{ url_for('public.customer_portal_password_update') }}">
+                {{ csrf_input() }}
+                <div class="pp-field"><label for="cpw-cur">كلمة المرور الحالية</label>
+                  <div class="pp-input-wrap"><i class="fa-solid fa-key"></i>
+                    <input id="cpw-cur" name="current_password" type="password" autocomplete="current-password" required>
+                    <button type="button" class="pp-pwd-toggle" data-pwd-toggle="#cpw-cur"><i class="fa-solid fa-eye"></i></button></div></div>
+                <div class="pp-field"><label for="cpw-new">كلمة المرور الجديدة</label>
+                  <div class="pp-input-wrap"><i class="fa-solid fa-key"></i>
+                    <input id="cpw-new" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+                    <button type="button" class="pp-pwd-toggle" data-pwd-toggle="#cpw-new"><i class="fa-solid fa-eye"></i></button></div></div>
+                <div class="pp-field"><label for="cpw-cfm">تأكيد كلمة المرور الجديدة</label>
+                  <div class="pp-input-wrap"><i class="fa-solid fa-key"></i>
+                    <input id="cpw-cfm" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+                    <button type="button" class="pp-pwd-toggle" data-pwd-toggle="#cpw-cfm"><i class="fa-solid fa-eye"></i></button></div></div>
+                <button class="pp-btn pp-btn--primary" type="submit"><i class="fa-solid fa-rotate"></i> تحديث كلمة المرور</button>
+                <p class="pp-hint">لوحة التراخيص تبقى المرجع. الريدياس يستلم النسخة المشفّرة الجديدة بعد المزامنة.</p>
+              </form>
             </div>
-            <div class="cp-svc-grid">
-              {% for item in extras %}
-                {% set svc = contract.services.get(item.service_key, {}) %}
-                {% set limit_text = service_limit_summary(svc.limits) if svc.limits else '' %}
-                {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), limit_text) }}
-              {% endfor %}
-            </div>
           </div>
-        {% endif %}
-
-        <div class="cp-empty" id="cp-svc-noresult" style="display:none">
-          <div class="cp-empty-ic"><i class="fa-solid fa-magnifying-glass"></i></div>
-          <div class="cp-empty-msg">لا توجد خدمة مطابقة لبحثك.</div>
+          {% endif %}
         </div>
-      </div>
-    </div>
-  </section>
-  {% endif %}
 
-  {# ════ Bottom requests: service requests + payment requests ════ #}
-  {% if 'requests' not in _hidden or 'payments' not in _hidden %}
-  <div class="cp-grid-2" id="cp-requests">
-    {% if 'requests' not in _hidden %}
-    <section class="cp-card cp-anchor">
-      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-list-check"></i></span><h2>طلبات الخدمات الأخيرة</h2></div>
-      <div class="cp-card-body">
-        {% if service_requests %}
-          <div class="cp-table-wrap">
-            <table class="cp-table">
-              <thead><tr><th>الخدمة</th><th>النوع</th><th>الحالة</th><th>التاريخ</th></tr></thead>
-              <tbody>
-              {% for req in service_requests %}
-                {% set rs = req.status %}
-                {% if rs in ['active','approved','completed'] %}{% set bcls = 'is-green' %}
-                {% elif rs in ['pending','payment_pending'] %}{% set bcls = 'is-amber' %}
-                {% elif rs in ['under_review','trial_active'] %}{% set bcls = 'is-blue' %}
-                {% elif rs in ['rejected','cancelled'] %}{% set bcls = 'is-grey' %}
-                {% else %}{% set bcls = 'is-grey' %}{% endif %}
-                <tr>
-                  <td>{{ req.service_key|service_key_label }}</td>
-                  <td>{{ req.request_type|request_type_label }}</td>
-                  <td><span class="cp-badge {{ bcls }}">{{ rs|status_label }}</span></td>
-                  <td class="mono">{{ req.created_at|dt }}</td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
+        {% if 'tech_setup' not in _hidden and runtime_setup.available %}
+        <div class="pp-card">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-plug"></i></span><h2>إعداد ربط الريدياس</h2>
+            <span class="meta"><span class="pp-pill is-blue"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span></span></div>
+          <div class="pp-card-body">
+            <p class="pp-hint" style="margin:0 0 12px">قيم خاصة بربط الريدياس بلوحة التراخيص — لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
+            <details>
+              <summary class="pp-btn pp-btn--ghost pp-btn--sm" style="display:inline-flex;cursor:pointer;list-style:none"><i class="fa-solid fa-screwdriver-wrench"></i> عرض إعداد الربط التقني</summary>
+              <div class="pp-rows" style="margin-top:13px">
+                <div class="pp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ runtime_setup.license_key }}</strong></div>
+                <div class="pp-row"><span>سر التوقيع</span><strong class="mono ltr">{{ runtime_setup.integration_secret }}</strong></div>
+              </div>
+              <p class="pp-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص ولا يرسل كلمة مرور خام.</p>
+            </details>
           </div>
-        {% else %}
-          <div class="cp-empty">
-            <div class="cp-empty-ic"><i class="fa-solid fa-list-check"></i></div>
-            <div class="cp-empty-msg">لا توجد طلبات خدمات.</div>
-            <div class="cp-empty-sub">اطلب تفعيل أي خدمة من قسم الخدمات بالأعلى.</div>
-          </div>
-        {% endif %}
-      </div>
-    </section>
-    {% endif %}
-
-    {% if 'payments' not in _hidden %}
-    <section class="cp-card cp-anchor" id="cp-payments">
-      <div class="cp-card-head"><span class="ic"><i class="fa-solid fa-credit-card"></i></span><h2>طلبات الدفع الأخيرة</h2></div>
-      <div class="cp-card-body">
-        {% if payment_requests %}
-          <div class="cp-table-wrap">
-            <table class="cp-table">
-              <thead><tr><th>المرجع</th><th>المبلغ</th><th>الحالة</th><th></th></tr></thead>
-              <tbody>
-              {% for req in payment_requests %}
-                {% set ps = req.status %}
-                {% if ps in ['paid','approved','completed'] %}{% set pcls = 'is-green' %}
-                {% elif ps in ['pending','payment_pending','awaiting_proof'] %}{% set pcls = 'is-amber' %}
-                {% elif ps in ['under_review'] %}{% set pcls = 'is-blue' %}
-                {% else %}{% set pcls = 'is-grey' %}{% endif %}
-                <tr>
-                  <td class="mono">{{ req.reference_code }}</td>
-                  <td class="num">{{ req.amount|money }} {{ req.currency }}</td>
-                  <td><span class="cp-badge {{ pcls }}">{{ ps|status_label }}</span></td>
-                  <td><a class="cp-btn cp-btn--ghost cp-btn--sm" href="{{ url_for('public.payment_portal', request_id=req.id, token=req.access_token) }}"><i class="fa-solid fa-receipt"></i> الدفع/الإثبات</a></td>
-                </tr>
-              {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="cp-empty">
-            <div class="cp-empty-ic"><i class="fa-solid fa-credit-card"></i></div>
-            <div class="cp-empty-msg">لا توجد طلبات دفع</div>
-            <div class="cp-empty-sub">ستظهر هنا أي طلبات دفع أو ترقية سعة.</div>
-          </div>
-        {% endif %}
-      </div>
-    </section>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {# ════ Tech setup (collapsible, for technical admin) ════ #}
-  {% if 'tech_setup' not in _hidden and runtime_setup.available %}
-  <section class="cp-card cp-anchor" id="cp-tech">
-    <div class="cp-card-head">
-      <span class="ic"><i class="fa-solid fa-plug"></i></span>
-      <h2>إعداد ربط الريدياس</h2>
-      <span class="meta"><span class="cp-pill is-blue"><i class="fa-solid fa-circle-info"></i> للمسؤول التقني</span></span>
-    </div>
-    <div class="cp-card-body">
-      <p class="cp-hint" style="margin:0 0 12px">هذه القيم خاصة بربط الريدياس بلوحة التراخيص. لا تحتاجها إلا عند إعداد السيرفر أو إعادة ربطه.</p>
-      <details>
-        <summary class="cp-btn cp-btn--ghost cp-btn--sm" style="display:inline-flex;cursor:pointer;list-style:none"><i class="fa-solid fa-screwdriver-wrench"></i> عرض إعداد الربط التقني</summary>
-        <div class="cp-rows" style="margin-top:14px">
-          <div class="cp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ runtime_setup.license_key }}</strong></div>
-          <div class="cp-row"><span>سر التوقيع</span><strong class="mono ltr">{{ runtime_setup.integration_secret }}</strong></div>
         </div>
-        <p class="cp-hint">احتفظ بسر التوقيع داخل سيرفر الريدياس فقط. هذا السر خاص بهذا الترخيص ولا يرسل كلمة مرور خام.</p>
-      </details>
-    </div>
-  </section>
-  {% endif %}
+        {% endif %}
+      </section>
 
-  {# ════ Account settings strip ════ #}
-  <section class="cp-settings cp-anchor" id="cp-account-settings">
-    <span class="cp-settings-ic"><i class="fa-solid fa-gear"></i></span>
-    <div>
-      <h3>إعدادات حسابي</h3>
-      <p>إدارة بيانات حسابك الشخصية، تغيير كلمة المرور، ومراجعة بياناتك الأساسية.</p>
-    </div>
-    <a class="cp-btn cp-btn--ghost" href="#cp-account" data-cp-navlink><i class="fa-solid fa-sliders"></i> عرض إعدادات الحساب</a>
-  </section>
-
+    </div>{# /pp-main #}
+  </div>{# /pp-grid #}
+  <div class="pp-scrim" id="pp-scrim"></div>
 </div>
 
 {# ════ Service-details modal ════ #}
-<div class="cp-modal" id="cp-modal" role="dialog" aria-modal="true">
-  <div class="cp-dialog">
-    <div class="cp-dlg-head">
-      <span class="cp-dlg-ico"><i class="fa-solid fa-circle-info" id="cp-modal-ico"></i></span>
-      <div>
-        <div class="cp-dlg-title" id="cp-modal-title">—</div>
-        <div style="margin-top:5px"><span class="cp-svc-status is-off" id="cp-modal-status"><span class="dot"></span> —</span></div>
-      </div>
-      <button type="button" class="cp-dlg-x" data-cp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
+<div class="pp-modal" id="pp-modal" role="dialog" aria-modal="true" aria-labelledby="pp-modal-title">
+  <div class="pp-dialog">
+    <div class="pp-dlg-head">
+      <span class="pp-dlg-ico"><i class="fa-solid fa-circle-info" id="pp-modal-ico"></i></span>
+      <div><div class="pp-dlg-title" id="pp-modal-title">—</div>
+        <div style="margin-top:5px"><span class="pp-svc-status is-off" id="pp-modal-status"><span class="dot"></span> —</span></div></div>
+      <button type="button" class="pp-dlg-x" data-pp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
     </div>
-    <div class="cp-dlg-body">
-      <div>
-        <p class="cp-dlg-block-t">ما هي هذه الخدمة؟</p>
-        <p class="cp-dlg-desc" id="cp-modal-desc">—</p>
-      </div>
-      <div id="cp-modal-limits-block">
-        <p class="cp-dlg-block-t">الحدود والصلاحيات</p>
-        <div class="cp-svc-limit" id="cp-modal-limits"></div>
+    <div class="pp-dlg-body">
+      <p class="pp-dlg-block-t">ما هي هذه الخدمة؟</p>
+      <p id="pp-modal-desc" style="margin:0 0 14px">—</p>
+      <div id="pp-modal-limits-block">
+        <p class="pp-dlg-block-t">الحدود والصلاحيات</p>
+        <div class="pp-svc-limit" id="pp-modal-limits"></div>
       </div>
     </div>
-    <div class="cp-dlg-foot">
-      <button type="button" class="cp-btn cp-btn--ghost cp-btn--sm" data-cp-close>إغلاق</button>
+    <div class="pp-dlg-foot"><button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-close>إغلاق</button></div>
+  </div>
+</div>
+
+{# ════ Restore confirm modal ════ #}
+<div class="pp-modal" id="pp-restore-modal" role="dialog" aria-modal="true" aria-labelledby="pp-restore-title">
+  <div class="pp-dialog">
+    <div class="pp-dlg-head">
+      <span class="pp-dlg-ico danger"><i class="fa-solid fa-triangle-exclamation"></i></span>
+      <div><div class="pp-dlg-title" id="pp-restore-title">استعادة نسخة احتياطية</div></div>
+      <button type="button" class="pp-dlg-x" data-pp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
     </div>
+    <form method="post" id="pp-restore-form" data-action-tpl="{{ url_for('public.customer_portal_backup_restore', artifact_id=0) }}">
+      {{ csrf_input() }}
+      <div class="pp-dlg-body">
+        <div class="pp-notice warn" style="margin-bottom:13px"><i class="fa-solid fa-triangle-exclamation"></i>
+          <div>استعادة النسخة <b id="pp-restore-ref">—</b> ستستبدل قاعدة بيانات الريدياس الحالية بالكامل. لا يمكن التراجع بعد التنفيذ.</div></div>
+        <p style="margin:0 0 4px">سيُسجَّل طلب استعادة موثّق ويُنفَّذ على ريدياسك بأمان بعد المراجعة. يمكنك أيضًا <b>تنزيل</b> النسخة لاستعادتها يدويًا.</p>
+        <label class="pp-check">
+          <input type="checkbox" id="pp-restore-ack" name="ack" value="1">
+          <span>أُقرّ بأن الاستعادة ستستبدل البيانات الحالية، وأرغب في المتابعة.</span>
+        </label>
+        <div class="pp-field" style="margin-bottom:0">
+          <label for="pp-restore-confirm">اكتب كلمة <b class="mono">RESTORE</b> للتأكيد</label>
+          <div class="pp-input-wrap"><i class="fa-solid fa-keyboard"></i>
+            <input id="pp-restore-confirm" name="confirm" type="text" autocomplete="off" placeholder="RESTORE" class="ltr"></div>
+        </div>
+      </div>
+      <div class="pp-dlg-foot">
+        <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-close>إلغاء</button>
+        <button type="submit" class="pp-btn pp-btn--solid-danger pp-btn--sm" id="pp-restore-submit" disabled><i class="fa-solid fa-rotate-left"></i> تأكيد طلب الاستعادة</button>
+      </div>
+    </form>
   </div>
 </div>
 
 <script>
 (function(){
-  // ── mobile nav toggle ──
-  var nav = document.getElementById('cp-nav');
-  var toggle = document.getElementById('cp-nav-toggle');
-  if(toggle) toggle.addEventListener('click', function(){ nav.classList.toggle('is-open'); });
+  var app = document.getElementById('pp-app');
+  if(!app) return;
+  var side = document.getElementById('pp-side');
+  var scrim = document.getElementById('pp-scrim');
+  var burger = document.getElementById('pp-burger');
 
-  // ── smooth scroll + active nav ──
-  document.querySelectorAll('[data-cp-navlink]').forEach(function(a){
-    a.addEventListener('click', function(e){
-      var id = a.getAttribute('href') || '';
-      if(id.charAt(0) !== '#') return;
-      var el = document.querySelector(id);
-      if(!el) return;
-      e.preventDefault();
-      el.scrollIntoView({behavior:'smooth', block:'start'});
-      nav.classList.remove('is-open');
-      document.querySelectorAll('.cp-nav-link').forEach(function(x){ x.classList.remove('is-active'); });
-      if(a.classList.contains('cp-nav-link')) a.classList.add('is-active');
-    });
-  });
+  // ── view router ──
+  var views = app.querySelectorAll('[data-pp-pane]');
+  var links = app.querySelectorAll('[data-pp-view]');
+  function closeDrawer(){ if(side) side.classList.remove('is-open'); if(scrim) scrim.classList.remove('is-open'); }
+  function show(view, push){
+    var found = false;
+    views.forEach(function(v){ var on = v.getAttribute('data-pp-pane') === view; v.classList.toggle('is-active', on); if(on) found = true; });
+    if(!found){ show('overview', push); return; }
+    links.forEach(function(l){ l.classList.toggle('is-active', l.getAttribute('data-pp-view') === view); });
+    if(push && location.hash !== '#'+view){ history.replaceState(null,'','#'+view); }
+    closeDrawer();
+    try{ app.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){ window.scrollTo(0,0); }
+  }
+  links.forEach(function(l){ l.addEventListener('click', function(){ show(l.getAttribute('data-pp-view'), true); }); });
+  app.querySelectorAll('[data-pp-go]').forEach(function(b){ b.addEventListener('click', function(){ show(b.getAttribute('data-pp-go'), true); }); });
+  var initial = (location.hash || '').replace('#','');
+  if(initial) show(initial, false);
 
-  // ── services filter + search ──
-  var root = document.getElementById('cp-svc-root');
-  var search = document.getElementById('cp-svc-search');
-  var filters = document.getElementById('cp-svc-filters');
-  var noRes = document.getElementById('cp-svc-noresult');
-  var mode = 'all';
-  function apply(){
-    if(!root) return;
-    var q = (search && search.value || '').trim().toLowerCase();
+  // ── mobile drawer ──
+  if(burger) burger.addEventListener('click', function(){ side.classList.toggle('is-open'); scrim.classList.toggle('is-open'); });
+  if(scrim) scrim.addEventListener('click', closeDrawer);
+
+  // ── service category tabs + search ──
+  var cats = document.getElementById('pp-cats');
+  var catRoot = document.getElementById('pp-cat-root');
+  var svcSearch = document.getElementById('pp-svc-search');
+  var noRes = document.getElementById('pp-svc-noresult');
+  var activeCat = null;
+  function paneFor(key){ return catRoot ? catRoot.querySelector('[data-pp-catpane="'+key+'"]') : null; }
+  function selectCat(key){
+    if(!cats) return;
+    cats.querySelectorAll('.pp-cat-chip').forEach(function(c){ c.classList.toggle('is-active', c.getAttribute('data-pp-cat')===key); });
+    catRoot.querySelectorAll('.pp-cat-pane').forEach(function(p){ p.classList.toggle('is-active', p.getAttribute('data-pp-catpane')===key); });
+    activeCat = key;
+    if(svcSearch) svcSearch.value = '';
+    applySearch();
+  }
+  function applySearch(){
+    if(!catRoot) return;
+    var pane = paneFor(activeCat); if(!pane) return;
+    var q = (svcSearch && svcSearch.value || '').trim().toLowerCase();
     var shown = 0;
-    root.querySelectorAll('[data-cp-cat]').forEach(function(cat){
-      var visInCat = 0;
-      cat.querySelectorAll('.cp-svc').forEach(function(c){
-        var okState = (mode === 'all') || (c.getAttribute('data-state') === mode);
-        var okText = !q || (c.getAttribute('data-name') || '').indexOf(q) !== -1;
-        var vis = okState && okText;
-        c.style.display = vis ? '' : 'none';
-        if(vis){ visInCat++; shown++; }
-      });
-      cat.style.display = visInCat ? '' : 'none';
+    pane.querySelectorAll('.pp-svc').forEach(function(c){
+      var ok = !q || (c.getAttribute('data-name')||'').indexOf(q) !== -1;
+      c.style.display = ok ? '' : 'none'; if(ok) shown++;
+    });
+    pane.querySelectorAll('.pp-group-h, .pp-svc-grid').forEach(function(g){
+      var grid = g.classList.contains('pp-svc-grid') ? g : g.nextElementSibling;
+      if(!grid) return;
+      var any = Array.prototype.some.call(grid.querySelectorAll('.pp-svc'), function(c){ return c.style.display !== 'none'; });
+      if(g.classList.contains('pp-svc-grid')) g.style.display = any ? '' : 'none';
+      else g.style.display = any ? '' : 'none';
     });
     if(noRes) noRes.style.display = shown ? 'none' : '';
   }
-  if(filters) filters.addEventListener('click', function(e){
-    var b = e.target.closest('.cp-filter'); if(!b) return;
-    filters.querySelectorAll('.cp-filter').forEach(function(x){ x.classList.remove('is-active'); });
-    b.classList.add('is-active'); mode = b.getAttribute('data-filter'); apply();
-  });
-  if(search) search.addEventListener('input', apply);
+  if(cats) cats.addEventListener('click', function(e){ var c = e.target.closest('.pp-cat-chip'); if(c) selectCat(c.getAttribute('data-pp-cat')); });
+  if(svcSearch) svcSearch.addEventListener('input', applySearch);
+  var firstChip = cats ? cats.querySelector('.pp-cat-chip.is-active') : null;
+  if(firstChip) activeCat = firstChip.getAttribute('data-pp-cat');
 
-  // ── password reveal (in case hub.js selector differs) ──
+  // ── password reveal ──
   document.querySelectorAll('[data-pwd-toggle]').forEach(function(btn){
     btn.addEventListener('click', function(){
-      var inp = document.querySelector(btn.getAttribute('data-pwd-toggle'));
-      if(!inp) return;
-      var on = inp.type === 'password';
-      inp.type = on ? 'text' : 'password';
-      var ic = btn.querySelector('i');
-      if(ic){ ic.classList.toggle('fa-eye', !on); ic.classList.toggle('fa-eye-slash', on); }
+      var inp = document.querySelector(btn.getAttribute('data-pwd-toggle')); if(!inp) return;
+      var on = inp.type === 'password'; inp.type = on ? 'text' : 'password';
+      var ic = btn.querySelector('i'); if(ic){ ic.classList.toggle('fa-eye', !on); ic.classList.toggle('fa-eye-slash', on); }
     });
   });
 
-  // ── service details modal ──
-  var modal = document.getElementById('cp-modal');
-  var mT = document.getElementById('cp-modal-title'), mI = document.getElementById('cp-modal-ico');
-  var mS = document.getElementById('cp-modal-status'), mD = document.getElementById('cp-modal-desc');
-  var mL = document.getElementById('cp-modal-limits'), mLB = document.getElementById('cp-modal-limits-block');
-  function openModal(btn){
-    if(!modal) return;
-    mT.textContent = btn.getAttribute('data-name') || '—';
-    if(mI) mI.className = 'fa-solid fa-' + (btn.getAttribute('data-icon') || 'circle-info');
-    mS.className = (btn.getAttribute('data-status-cls') || 'cp-svc-status is-off');
-    mS.innerHTML = '<span class="dot"></span> ' + (btn.getAttribute('data-status') || '—');
-    mD.textContent = btn.getAttribute('data-desc') || '—';
-    var lim = (btn.getAttribute('data-limits') || '').trim();
-    if(lim){ mLB.style.display=''; mL.innerHTML = '<i class="fa-solid fa-gauge"></i> ' + lim; }
-    else { mLB.style.display='none'; }
-    modal.classList.add('is-open');
-  }
-  function closeModal(){ if(modal) modal.classList.remove('is-open'); }
+  // ── modals (shared open/close) ──
+  function openModal(m){ if(m) m.classList.add('is-open'); }
+  function closeModals(){ document.querySelectorAll('.pp-modal.is-open').forEach(function(m){ m.classList.remove('is-open'); }); }
   document.addEventListener('click', function(e){
-    var more = e.target.closest('[data-cp-more]');
-    if(more){ openModal(more); return; }
-    if(e.target.closest('[data-cp-close]')){ closeModal(); return; }
-    if(e.target === modal){ closeModal(); }
+    if(e.target.closest('[data-pp-close]')){ closeModals(); return; }
+    if(e.target.classList && e.target.classList.contains('pp-modal')){ closeModals(); }
   });
-  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModals(); });
+
+  // ── service details modal ──
+  var modal = document.getElementById('pp-modal');
+  var mT=document.getElementById('pp-modal-title'), mI=document.getElementById('pp-modal-ico');
+  var mS=document.getElementById('pp-modal-status'), mD=document.getElementById('pp-modal-desc');
+  var mL=document.getElementById('pp-modal-limits'), mLB=document.getElementById('pp-modal-limits-block');
+  document.addEventListener('click', function(e){
+    var more = e.target.closest('[data-pp-more]'); if(!more) return;
+    mT.textContent = more.getAttribute('data-name') || '—';
+    if(mI) mI.className = 'fa-solid fa-' + (more.getAttribute('data-icon') || 'circle-info');
+    mS.className = (more.getAttribute('data-status-cls') || 'pp-svc-status is-off');
+    mS.innerHTML = '<span class="dot"></span> ' + (more.getAttribute('data-status') || '—');
+    mD.textContent = more.getAttribute('data-desc') || '—';
+    var lim = (more.getAttribute('data-limits') || '').trim();
+    if(lim){ mLB.style.display=''; mL.innerHTML = '<i class="fa-solid fa-gauge"></i> ' + lim; } else { mLB.style.display='none'; }
+    openModal(modal);
+  });
+
+  // ── restore modal ──
+  var rModal = document.getElementById('pp-restore-modal');
+  var rForm = document.getElementById('pp-restore-form');
+  var rRef = document.getElementById('pp-restore-ref');
+  var rAck = document.getElementById('pp-restore-ack');
+  var rConfirm = document.getElementById('pp-restore-confirm');
+  var rSubmit = document.getElementById('pp-restore-submit');
+  var rTpl = rForm ? rForm.getAttribute('data-action-tpl') : '';
+  function rValidate(){ if(!rSubmit) return; rSubmit.disabled = !(rAck.checked && (rConfirm.value||'').trim().toUpperCase() === 'RESTORE'); }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('[data-pp-restore]'); if(!b) return;
+    var id = b.getAttribute('data-pp-restore');
+    if(rForm && rTpl) rForm.setAttribute('action', rTpl.replace(/\/0\/restore$/, '/'+id+'/restore'));
+    if(rRef) rRef.textContent = b.getAttribute('data-ref') || ('#'+id);
+    if(rAck) rAck.checked = false; if(rConfirm) rConfirm.value = '';
+    rValidate(); openModal(rModal);
+  });
+  if(rAck) rAck.addEventListener('change', rValidate);
+  if(rConfirm) rConfirm.addEventListener('input', rValidate);
+
+  // ── backup content summary (on-demand) ──
+  var sumTpl = "{{ url_for('public.customer_portal_backup_summary', artifact_id=0) }}";
+  function labelEsc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('[data-pp-summary]'); if(!b) return;
+    var id = b.getAttribute('data-pp-summary');
+    var box = document.getElementById('pp-sum-'+id); if(!box) return;
+    var open = box.classList.toggle('is-open');
+    if(!open || box.getAttribute('data-loaded') === '1') return;
+    var body = box.querySelector('.pp-sum-body');
+    body.innerHTML = '<span class="pp-sum-msg">…جارٍ قراءة محتوى النسخة</span>';
+    fetch(sumTpl.replace(/\/0\/summary$/, '/'+id+'/summary'), {headers:{'X-Requested-With':'fetch'}})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        box.setAttribute('data-loaded','1');
+        if(!d.ok || !d.items || !d.items.length){
+          body.innerHTML = '<span class="pp-sum-msg">تعذّر قراءة محتوى هذه النسخة أو لا تحتوي جداول معروفة.</span>'; return;
+        }
+        var html = '<div class="pp-sum-grid">';
+        d.items.forEach(function(it){ html += '<div class="pp-sum-cell"><div class="v">'+ (it.count) +'</div><div class="l">'+ labelEsc(it.label) +'</div></div>'; });
+        html += '</div>';
+        body.innerHTML = html;
+      })
+      .catch(function(){ body.innerHTML = '<span class="pp-sum-msg">تعذّر الاتصال لقراءة المحتوى.</span>'; });
+  });
 })();
 </script>
 {% endblock %}
