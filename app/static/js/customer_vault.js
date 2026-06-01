@@ -4,7 +4,17 @@
    never written into the page before reveal, and cleared on modal close. */
 (function () {
   "use strict";
-  var CSRF = window.VAULT_CSRF || "";
+  // CSRF token: prefer a hidden _csrf_token field already rendered in a working
+  // form on the page (most reliable), fall back to the injected global, then the
+  // meta tag. This avoids reveal failing with an empty token.
+  function readCsrf() {
+    var inp = document.querySelector('input[name="_csrf_token"]');
+    if (inp && inp.value) return inp.value;
+    if (window.VAULT_CSRF) return window.VAULT_CSRF;
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return (meta && meta.content) || "";
+  }
+  var CSRF = readCsrf();
 
   // ── Tabs ──
   var tabs = document.querySelectorAll(".vault-tab");
