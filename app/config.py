@@ -88,6 +88,11 @@ class Config:
     WHATSAPP_DEFAULT_TIMEZONE = os.environ.get("WHATSAPP_DEFAULT_TIMEZONE", "Asia/Hebron")
     WHATSAPP_DEFAULT_COUNTRY = os.environ.get("WHATSAPP_DEFAULT_COUNTRY", "PS")
 
+    # Customer Secure Vault — Fernet key for encrypting per-customer secrets at rest.
+    # Comes from the environment ONLY; never stored in the DB, never committed.
+    # If empty, the vault UI works but creating/revealing secrets is blocked.
+    CUSTOMER_VAULT_ENCRYPTION_KEY = os.environ.get("CUSTOMER_VAULT_ENCRYPTION_KEY", "")
+
 
 class TestingConfig(Config):
     TESTING = True
@@ -95,6 +100,7 @@ class TestingConfig(Config):
     RATE_LIMITS_ENABLED = False
     AUTO_INIT_DB = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    # Fixed valid 32-byte urlsafe-base64 Fernet key so WhatsApp crypto works
+    # Fixed valid 32-byte urlsafe-base64 Fernet keys so crypto works
     # deterministically under tests. Test-only; never used in deployment.
     WHATSAPP_FERNET_KEY = "t7Hk9w0Qd2cQ3pYy5sFv8nJzZbR1mLxWtUe4aGhKpD0="
+    CUSTOMER_VAULT_ENCRYPTION_KEY = "e1R4rJoOuYz751w-g5Xd1HzPIUPuIWwXdI8bD8Zty_8="

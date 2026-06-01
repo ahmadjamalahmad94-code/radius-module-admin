@@ -39,6 +39,8 @@ class Admin(TimestampMixin, db.Model):
     full_name = db.Column(db.String(160), default="", nullable=False)
     email = db.Column(db.String(160), default="", nullable=False)
     active = db.Column(db.Boolean, default=True, nullable=False)
+    # Elevated admin: required to create/rotate/reveal Customer Secure Vault secrets.
+    is_super_admin = db.Column(db.Boolean, default=False, nullable=False)
     last_login_at = db.Column(db.DateTime)
 
     def set_password(self, password: str) -> None:
@@ -1050,3 +1052,94 @@ class Setting(db.Model):
     key = db.Column(db.String(120), primary_key=True)
     value = db.Column(db.Text, default="", nullable=False)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Customer Secure Vault — ADMIN-ONLY. NEVER exposed to customers, the customer
+# portal, or any public/integration API. Two data classes:
+#   • customer_private_records : admin-only operational notes/links (not secrets)
+#   • customer_secret_vault    : per-customer secrets, ENCRYPTED at rest
+#   • customer_vault_audit_logs: dedicated audit trail for vault actions
+# Plaintext secrets are never stored here; only Fernet ciphertext in
+# encrypted_secret. See app/services/customer_vault_crypto.py.
+# ─────────────────────────────────────────────────────────────────────────
+
+class CustomerPrivateRecord(TimestampMixin, db.Model):
+    __tablename__ = "customer_private_records"
+    __table_args__ = (
+        db.Index("ix_cpr_customer", "customer_id"),
+        db.Index("ix_cpr_type", "record_type"),
+        db.Index("ix_cpr_flags", "is_archived", "is_pinned"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    record_type = db.Column(db.String(40), nullable=False, default="other")
+    title = db.Column(db.String(160), nullable=False)
+    value = db.Column(db.Text, default="", nullable=False)
+    url = db.Column(db.String(500), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    is_archived = db.Column(db.Boolean, default=False, nullable=False)
+    created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    updated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+
+class CustomerSecret(TimestampMixin, db.Model):
+    __tablename__ = "customer_secret_vault"
+    __table_args__ = (
+        db.Index("ix_csv_customer", "customer_id"),
+        db.Index("ix_csv_type", "secret_type"),
+        db.Index("ix_csv_status", "status"),
+        db.Index("ix_csv_revealed", "last_revealed_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    secret_type = db.Column(db.String(40), nullable=False, default="other")
+    label = db.Column(db.String(160), nullable=False)
+    host = db.Column(db.String(255), default="", nullable=False)
+    url = db.Column(db.String(500), default="", nullable=False)
+    username = db.Column(db.String(160), default="", nullable=False)
+    # Fernet ciphertext ONLY — never plaintext.
+    encrypted_secret = db.Column(db.Text, nullable=False)
+    secret_hint = db.Column(db.String(160), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+    status = db.Column(db.String(20), default="active", nullable=False)  # active|rotated|revoked|archived
+    last_revealed_at = db.Column(db.DateTime, nullable=True)
+    last_revealed_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    last_rotated_at = db.Column(db.DateTime, nullable=True)
+    created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    updated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+
+class CustomerVaultAuditLog(db.Model):
+    __tablename__ = "customer_vault_audit_logs"
+    __table_args__ = (
+        db.Index("ix_cval_customer_created", "customer_id", "created_at"),
+        db.Index("ix_cval_actor", "actor_admin_id"),
+        db.Index("ix_cval_action", "action"),
+        db.Index("ix_cval_target", "target_type", "target_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    actor_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    action = db.Column(db.String(60), nullable=False)
+    target_type = db.Column(db.String(40), nullable=False)  # private_record | secret
+    target_id = db.Column(db.Integer, nullable=True)
+    ip_address = db.Column(db.String(64), default="", nullable=False)
+    user_agent = db.Column(db.String(255), default="", nullable=False)
+    reason = db.Column(db.String(255), default="", nullable=False)
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    actor = db.relationship("Admin")
+
+    @property
+    def meta(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @meta.setter
+    def meta(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})

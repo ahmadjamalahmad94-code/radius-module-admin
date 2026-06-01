@@ -41,11 +41,13 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
+    from .admin.vault_routes import bp as admin_vault_bp
     from .api.routes import bp as api_bp
     from .public.routes import bp as public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_vault_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(public_bp)
 
@@ -255,6 +257,14 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
             "currency": "VARCHAR(12) NOT NULL DEFAULT 'USD'",
         })
+    # Customer Secure Vault: elevated-admin flag on existing admins tables.
+    # The 3 vault tables themselves are created fresh by db.create_all().
+    if "admins" in tables:
+        _add_columns_if_missing("admins", {
+            "is_super_admin": "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {
@@ -322,6 +332,20 @@ def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
 def seed_defaults(app: Flask) -> None:
     bootstrap_admin_from_config(app, fail_if_exists=False)
     seed_service_catalog()
+
+    # Customer Secure Vault: the primary/bootstrap admin is elevated to super_admin
+    # so the owner can manage & reveal secrets out of the box. Other admins stay
+    # non-super (can view metadata/records but not reveal) until promoted.
+    try:
+        from .models import Admin as _Admin
+        _primary = _Admin.query.filter_by(username=app.config.get("ADMIN_USERNAME", "admin")).first()
+        if _primary is None:
+            _primary = _Admin.query.order_by(_Admin.id.asc()).first()
+        if _primary is not None and not _primary.is_super_admin:
+            _primary.is_super_admin = True
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     sample_plans = [
         ("Starter", "starter", Decimal("29.00"), 300, 2, 1, 1, {
