@@ -1,0 +1,56 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}روابط التواصل{% endblock %}
+{% block page_title %}روابط التواصل الاجتماعي{% endblock %}
+{% block page_subtitle %}تظهر في فوتر الصفحة العامة. الروابط الفارغة أو المخفية لا تظهر.{% endblock %}
+
+{% block content %}
+{% call hub.section("إضافة / تعديل رابط", icon="plus") %}
+  <form method="post" action="{{ url_for('admin_landing.social_save') }}">
+    {{ csrf_input() }}<input type="hidden" name="id" value="">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+      <label>المنصة
+        <select class="hub-input" name="platform">
+          {% for p in ['facebook','instagram','whatsapp','telegram','youtube','tiktok','linkedin','x','website','email','phone'] %}
+          <option value="{{ p }}">{{ p }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>الاسم<input class="hub-input" name="label" placeholder="اختياري"></label>
+      <label>الأيقونة<input class="hub-input" name="icon_name" placeholder="نفس اسم المنصة افتراضيًا"></label>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:22px"><input type="checkbox" name="is_visible" checked> ظاهر</label>
+      <label style="grid-column:1/-1">الرابط<input class="hub-input" name="url" placeholder="https://… أو https://wa.me/9627…"></label>
+    </div>
+    <p style="font-size:12.5px;color:#94a3b8;margin-top:8px">لا تُعرض الروابط الفارغة. استخدم https://wa.me/الرقم لواتساب.</p>
+    <div style="margin-top:8px"><button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-plus"></i> حفظ الرابط</button></div>
+  </form>
+{% endcall %}
+
+{% call hub.section("الروابط الحالية", icon="share-nodes", meta=links|length|string ~ " رابط") %}
+  {% if links %}
+  <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+    <thead><tr><th>المنصة</th><th>الرابط</th><th>الظهور</th><th>إجراءات</th></tr></thead>
+    <tbody>
+      {% for l in links %}
+      <tr style="{{ 'opacity:.55' if not l.is_visible }}">
+        <td colspan="4" style="padding:8px 6px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <form method="post" action="{{ url_for('admin_landing.social_save') }}" style="display:flex;gap:10px;align-items:center;flex:1;flex-wrap:wrap">
+              {{ csrf_input() }}<input type="hidden" name="id" value="{{ l.id }}">
+              <input type="hidden" name="label" value="{{ l.label }}"><input type="hidden" name="icon_name" value="{{ l.icon_name }}">
+              <i class="fa-brands fa-{{ l.icon_name or l.platform }}" style="width:18px;text-align:center"></i>
+              <input class="hub-input" name="platform" value="{{ l.platform }}" style="width:130px">
+              <input class="hub-input" name="url" value="{{ l.url }}" style="flex:1;min-width:200px">
+              <label style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" name="is_visible" {{ 'checked' if l.is_visible }}> ظاهر</label>
+              <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">حفظ</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_landing.social_delete', lid=l.id) }}" onsubmit="return confirm('حذف الرابط؟');">{{ csrf_input() }}<button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626"><i class="fa-solid fa-trash"></i></button></form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{{ hub.empty("لا روابط بعد", sub="أضف روابط التواصل لتظهر في الفوتر.", icon="share-nodes") }}{% endif %}
+  <div style="margin-top:12px"><a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin_landing.overview') }}">رجوع</a></div>
+{% endcall %}
+{% endblock %}

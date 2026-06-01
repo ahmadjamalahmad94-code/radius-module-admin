@@ -1,0 +1,33 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}تعديل قسم{% endblock %}
+{% block page_title %}تعديل القسم: {{ sec.title or sec.section_key }}{% endblock %}
+{% block page_subtitle %}النوع: {{ sec.section_type }} · المفتاح: {{ sec.section_key }}{% endblock %}
+
+{% block content %}
+{% call hub.section("محتوى القسم", icon="pen") %}
+  <form method="post" action="{{ url_for('admin_landing.section_update', sid=sec.id) }}">
+    {{ csrf_input() }}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <label>النص العلوي (Eyebrow)<input class="hub-input" name="eyebrow_text" value="{{ sec.eyebrow_text }}"></label>
+      <label>الأيقونة (FontAwesome)<input class="hub-input" name="icon_name" value="{{ sec.icon_name }}" placeholder="مثال: shield-halved"></label>
+      <label style="grid-column:1/-1">العنوان<input class="hub-input" name="title" value="{{ sec.title }}"></label>
+      <label style="grid-column:1/-1">العنوان الفرعي<input class="hub-input" name="subtitle" value="{{ sec.subtitle }}"></label>
+      <label style="grid-column:1/-1">النص التفصيلي<textarea class="hub-input" name="description" rows="3">{{ sec.description }}</textarea></label>
+      <label>شارة (Badge)<input class="hub-input" name="badge_text" value="{{ sec.badge_text }}"></label>
+      <label>ملاحظة إضافية<input class="hub-input" name="note" value="{{ sec.settings.get('note','') }}"></label>
+      <label>نص الزر الأساسي<input class="hub-input" name="primary_button_text" value="{{ sec.primary_button_text }}"></label>
+      <label>رابط الزر الأساسي<input class="hub-input" name="primary_button_url" value="{{ sec.primary_button_url }}" placeholder="#contact أو https://…"></label>
+      <label>نص الزر الثانوي<input class="hub-input" name="secondary_button_text" value="{{ sec.secondary_button_text }}"></label>
+      <label>رابط الزر الثانوي<input class="hub-input" name="secondary_button_url" value="{{ sec.secondary_button_url }}"></label>
+      <label style="grid-column:1/-1">رابط الصورة<input class="hub-input" name="image_url" value="{{ sec.image_url }}" placeholder="https://…"></label>
+    </div>
+    <p style="font-size:12.5px;color:#94a3b8;margin-top:10px">اترك الرابط فارغًا لإخفاء الزر. العناصر داخل القسم (البطاقات/الأسئلة) تُدار من زر «العناصر».</p>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin_landing.overview') }}">رجوع</a>
+      <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin_landing.items', sid=sec.id) }}"><i class="fa-solid fa-list"></i> إدارة العناصر</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}

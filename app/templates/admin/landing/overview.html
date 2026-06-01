@@ -1,0 +1,82 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}إدارة الصفحة الرئيسية{% endblock %}
+{% block page_title %}إدارة الصفحة الرئيسية{% endblock %}
+{% block page_subtitle %}عدّل محتوى صفحة الهبوط العامة: الأقسام، العناصر، روابط التواصل، وطرق الاتصال. أي تعديل يظهر مباشرة.{% endblock %}
+
+{% block content %}
+{{ hub.hero("إدارة الصفحة الرئيسية",
+   subtitle="كل المحتوى الظاهر في الصفحة العامة يُدار من هنا — بدون تعديل الكود.",
+   icon="window-maximize",
+   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin_landing.preview') ~ '" target="_blank"><i class="fa-solid fa-up-right-from-square"></i> معاينة الصفحة</a>') }}
+
+{% call hub.section("حالة الصفحة", icon="circle-info") %}
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;font-size:14px">
+    <div>الحالة:
+      <strong style="color:{{ '#16a34a' if page.status=='published' else '#d97706' }}">
+        {{ {'published':'منشورة','draft':'مسودة','archived':'مؤرشفة'}.get(page.status, page.status) }}
+      </strong>
+    </div>
+    <div>أقسام ظاهرة: <strong>{{ visible_count }}</strong></div>
+    <div>أقسام مخفية: <strong>{{ hidden_count }}</strong></div>
+    <div>روابط تواصل: <strong>{{ social_count }}</strong></div>
+    <div>طرق اتصال: <strong>{{ contact_count }}</strong></div>
+    <div style="margin-inline-start:auto;display:flex;gap:8px">
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.social_list') }}"><i class="fa-solid fa-share-nodes"></i> روابط التواصل</a>
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.contact_list') }}"><i class="fa-solid fa-address-book"></i> طرق الاتصال</a>
+    </div>
+  </div>
+{% endcall %}
+
+{% call hub.section("إعدادات الصفحة و SEO", icon="gear") %}
+  <form method="post" action="{{ url_for('admin_landing.page_update') }}">
+    {{ csrf_input() }}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <label>عنوان الصفحة<input class="hub-input" name="title" value="{{ page.title }}"></label>
+      <label>الحالة
+        <select class="hub-input" name="status">
+          <option value="published" {{ 'selected' if page.status=='published' }}>منشورة</option>
+          <option value="draft" {{ 'selected' if page.status=='draft' }}>مسودة</option>
+          <option value="archived" {{ 'selected' if page.status=='archived' }}>مؤرشفة</option>
+        </select>
+      </label>
+      <label>عنوان SEO<input class="hub-input" name="seo_title" value="{{ page.seo_title }}"></label>
+      <label>كلمات مفتاحية<input class="hub-input" name="seo_keywords" value="{{ page.seo_keywords }}"></label>
+      <label style="grid-column:1/-1">وصف SEO<input class="hub-input" name="seo_description" value="{{ page.seo_description }}"></label>
+      <label style="grid-column:1/-1">رابط صورة المشاركة (OG)<input class="hub-input" name="og_image_url" value="{{ page.og_image_url }}" placeholder="https://…"></label>
+    </div>
+    <div style="margin-top:14px"><button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button></div>
+  </form>
+{% endcall %}
+
+{% call hub.section("الأقسام", icon="layer-group", meta=sections|length|string ~ " قسم") %}
+  <div style="overflow-x:auto">
+    <table class="hub-table" style="width:100%">
+      <thead><tr><th>الترتيب</th><th>القسم</th><th>النوع</th><th>الظهور</th><th>إجراءات</th></tr></thead>
+      <tbody>
+        {% for s in sections %}
+        <tr style="{{ 'opacity:.55' if not s.is_visible }}">
+          <td style="white-space:nowrap">
+            <form method="post" action="{{ url_for('admin_landing.section_move', sid=s.id) }}" style="display:inline">{{ csrf_input() }}<input type="hidden" name="dir" value="up"><button class="hub-btn hub-btn--ghost hub-btn--sm" title="أعلى">▲</button></form>
+            <form method="post" action="{{ url_for('admin_landing.section_move', sid=s.id) }}" style="display:inline">{{ csrf_input() }}<input type="hidden" name="dir" value="down"><button class="hub-btn hub-btn--ghost hub-btn--sm" title="أسفل">▼</button></form>
+          </td>
+          <td><strong>{{ s.title or s.section_key }}</strong><br><small style="color:#94a3b8">{{ s.section_key }}</small></td>
+          <td><small>{{ s.section_type }}</small></td>
+          <td>
+            <form method="post" action="{{ url_for('admin_landing.section_toggle', sid=s.id) }}">{{ csrf_input() }}
+              <button class="hub-btn hub-btn--sm" style="background:{{ '#ecfdf5' if s.is_visible else '#f1f5f9' }};color:{{ '#047857' if s.is_visible else '#64748b' }}">
+                {{ 'ظاهر' if s.is_visible else 'مخفي' }}
+              </button>
+            </form>
+          </td>
+          <td style="white-space:nowrap">
+            <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.section_edit', sid=s.id) }}"><i class="fa-solid fa-pen"></i> تعديل</a>
+            <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin_landing.items', sid=s.id) }}"><i class="fa-solid fa-list"></i> العناصر ({{ s.items.count() }})</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

@@ -41,22 +41,28 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
+    from .admin.landing_routes import bp as admin_landing_bp
     from .api.routes import bp as api_bp
     from .public.routes import bp as public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_landing_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(public_bp)
 
     @app.get("/")
     def root():
-        from flask import session as flask_session
-        if flask_session.get("admin_id"):
-            return redirect(url_for("admin.dashboard"))
-        if flask_session.get("customer_user_id"):
-            return redirect(url_for("public.customer_portal_dashboard"))
-        return render_template("public/landing.html")
+        # The landing page is shown to EVERYONE (including logged-in users).
+        # Navigation into the dashboard/portal is via the context-aware "دخول"
+        # button in the landing navbar, not an automatic redirect.
+        from .services.landing_cms import get_published_homepage, build_public_context
+        page = get_published_homepage()
+        ctx = build_public_context(page) if page else {
+            "page": None, "sections": [], "social_links": [],
+            "contact_methods": [], "status_badge_class": {},
+        }
+        return render_template("public/landing.html", **ctx)
 
     _register_cli_commands(app)
 
@@ -404,6 +410,14 @@ def seed_defaults(app: Flask) -> None:
             db.session.add(Setting(key=key, value=value))
 
     db.session.commit()
+
+    # Landing Page CMS — seed default editable homepage content (idempotent).
+    try:
+        from .services.landing_cms import seed_landing_defaults
+        seed_landing_defaults()
+    except Exception:  # pragma: no cover - seeding must never block startup
+        app.logger.exception("landing CMS seed failed")
+        db.session.rollback()
 
 
 def _register_cli_commands(app: Flask) -> None:

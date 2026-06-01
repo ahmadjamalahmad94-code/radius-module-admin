@@ -1,157 +1,242 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+{#
+  Public landing page — rendered ENTIRELY from the Landing CMS (DB).
+  Context: page, sections (list of {section, items}), social_links,
+  contact_methods, status_badge_class. Nothing marketing is hardcoded here
+  except a safe fallback hero when no published page exists.
+#}
+<html lang="{{ (page.language if page else 'ar') }}" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#5b21b6">
-  <title>HobeRadius — منصّة التراخيص وإدارة الريدياس</title>
+  <meta name="theme-color" content="#0d9488">
+  <title>{{ (page.seo_title if page and page.seo_title else (page.title if page else 'HobeRadius')) }}</title>
+  {% if page and page.seo_description %}<meta name="description" content="{{ page.seo_description }}">{% endif %}
+  {% if page and page.seo_keywords %}<meta name="keywords" content="{{ page.seo_keywords }}">{% endif %}
+  {% if page and page.og_image_url %}<meta property="og:image" content="{{ page.og_image_url }}">{% endif %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-  <style>
-    .lp-body{
-      min-height:100dvh; margin:0;
-      font-family:'Cairo',system-ui,-apple-system,'Segoe UI',sans-serif;
-      color:var(--hub-ink,#0f172a);
-      background:
-        radial-gradient(820px 520px at 88% -8%, rgba(124,58,237,.12) 0%, transparent 55%),
-        radial-gradient(720px 520px at -8% 108%, rgba(99,102,241,.10) 0%, transparent 55%),
-        var(--hub-bg,#f1f5f9);
-      display:flex; flex-direction:column;
-    }
-    .lp-wrap{ width:100%; max-width:1080px; margin:auto; padding:32px 24px; display:grid; gap:26px; }
-
-    /* top bar */
-    .lp-top{ display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
-    .lp-brand{ display:flex; align-items:center; gap:12px; }
-    .lp-mark{
-      width:48px; height:48px; border-radius:14px;
-      background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff;
-      display:grid; place-items:center; font-weight:900; letter-spacing:.5px; font-size:16px;
-      box-shadow:0 8px 20px rgba(124,58,237,.30);
-    }
-    .lp-brand b{ display:block; font-size:17px; font-weight:900; }
-    .lp-brand span{ font-size:12px; color:var(--hub-ink-mute,#94a3b8); }
-    .lp-top-link{
-      display:inline-flex; align-items:center; gap:8px; text-decoration:none;
-      padding:9px 15px; border-radius:11px; font-size:13.5px; font-weight:800;
-      color:var(--hub-ink-3,#475569); border:1px solid var(--hub-line,#cbd5e1); background:#fff;
-      transition:.15s;
-    }
-    .lp-top-link:hover{ border-color:var(--hub-violet-300,#c4b5fd); color:var(--hub-violet-d,#5b21b6); background:var(--hub-violet-50,#f5f3ff); }
-
-    /* hero */
-    .lp-hero{
-      position:relative; overflow:hidden; color:#fff;
-      border-radius:24px; padding:46px 40px;
-      background:
-        radial-gradient(460px 260px at 100% 0%, rgba(255,255,255,.18) 0%, transparent 60%),
-        radial-gradient(380px 220px at 0% 100%, rgba(255,255,255,.10) 0%, transparent 60%),
-        linear-gradient(135deg,#7c3aed 0%, #5b21b6 100%);
-      box-shadow:0 24px 60px rgba(91,33,182,.28);
-    }
-    .lp-hero::before, .lp-hero::after{ content:""; position:absolute; border-radius:50%; background:rgba(255,255,255,.08); filter:blur(8px); pointer-events:none; }
-    .lp-hero::before{ width:300px; height:300px; top:-110px; inset-inline-end:-70px; }
-    .lp-hero::after{ width:220px; height:220px; bottom:-90px; inset-inline-start:-50px; }
-    .lp-hero h1{ position:relative; z-index:1; margin:0; font-size:30px; font-weight:900; line-height:1.45; }
-    .lp-hero p{ position:relative; z-index:1; margin:14px 0 0; max-width:640px; font-size:15px; line-height:1.95; color:rgba(255,255,255,.9); }
-    .lp-chips{ position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }
-    .lp-chip{ display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border-radius:11px; font-size:13px; font-weight:700; background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.2); }
-    .lp-chip i{ font-size:12px; }
-
-    /* entry cards */
-    .lp-cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:16px; }
-    .lp-card{
-      display:flex; flex-direction:column; gap:13px;
-      background:#fff; border:1px solid var(--hub-line-2,#e2e8f0); border-radius:18px;
-      padding:24px 22px; text-decoration:none; color:inherit;
-      box-shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 4px 14px rgba(15,23,42,.05);
-      transition:transform .14s, border-color .14s, box-shadow .14s;
-    }
-    .lp-card:hover{ transform:translateY(-3px); border-color:var(--hub-violet-100,#ede9fe); box-shadow:0 14px 30px rgba(124,58,237,.14); }
-    .lp-card-ico{ width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-size:21px; flex:0 0 auto; }
-    .lp-card-ico.is-primary{ background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff; box-shadow:0 8px 20px rgba(124,58,237,.30); }
-    .lp-card-ico.is-soft{ background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6); }
-    .lp-card-ico.is-slate{ background:var(--hub-grey-50,#f8fafc); color:var(--hub-ink-3,#475569); border:1px solid var(--hub-line-2,#e2e8f0); }
-    .lp-card h3{ margin:0; font-size:17px; font-weight:900; }
-    .lp-card p{ margin:0; font-size:13.5px; line-height:1.85; color:var(--hub-ink-3,#475569); }
-    .lp-card-go{ margin-top:auto; display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:800; color:var(--hub-violet-d,#5b21b6); }
-    .lp-card:hover .lp-card-go i{ transform:translateX(-4px); }
-    .lp-card-go i{ transition:transform .14s; }
-    .lp-card-tag{ align-self:flex-start; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; background:var(--hub-violet-50,#f5f3ff); color:var(--hub-violet-d,#5b21b6); border:1px solid var(--hub-violet-100,#ede9fe); }
-
-    /* footer */
-    .lp-foot{ text-align:center; font-size:12.5px; color:var(--hub-ink-mute,#94a3b8); padding:4px 0 8px; }
-    .lp-foot i{ color:var(--hub-violet,#7c3aed); }
-
-    @media (max-width:640px){
-      .lp-hero{ padding:34px 24px; }
-      .lp-hero h1{ font-size:24px; }
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/public_landing.css') }}">
 </head>
-<body class="lp-body">
+<body class="lp-root" id="top">
+
+{# ───────── NAVBAR ───────── #}
+<nav class="lp-nav">
+  <div class="lp-wrap lp-nav-inner">
+    <a class="lp-brand" href="#top">
+      <span class="lp-brand-mark"><i class="fa-solid fa-wifi"></i></span>
+      <span>Hobe<b>Radius</b></span>
+    </a>
+    <div class="lp-nav-links" id="lpNav">
+      <a href="#top">الرئيسية</a>
+      <a href="#features">المزايا</a>
+      <a href="#modules">الوحدات</a>
+      <a href="#integrations">التكاملات</a>
+      <a href="#how_it_works">طريقة العمل</a>
+      <a href="#faq">الأسئلة الشائعة</a>
+      <a href="#contact_cta">تواصل معنا</a>
+    </div>
+    <div class="lp-nav-cta">
+      <a class="lp-btn lp-btn--ghost" href="#features">شاهد المزايا</a>
+      {% if session.get('admin_id') %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('admin.dashboard') }}"><i class="fa-solid fa-gauge-high"></i> لوحة التحكم</a>
+      {% elif session.get('customer_user_id') %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('public.customer_portal_dashboard') }}"><i class="fa-solid fa-user"></i> حسابي</a>
+      {% else %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('public.customer_portal_login') }}"><i class="fa-solid fa-right-to-bracket"></i> دخول</a>
+      {% endif %}
+      <button class="lp-burger" id="lpBurger" aria-label="القائمة"><i class="fa-solid fa-bars"></i></button>
+    </div>
+  </div>
+</nav>
+
+{% if not sections %}
+{# ───────── Safe fallback (no published CMS page) ───────── #}
+<header class="lp-hero"><div class="lp-wrap"><div style="text-align:center">
+  <span class="lp-eyebrow">HobeRadius</span>
+  <h1>منصة إدارة شبكات الإنترنت و RADIUS</h1>
+  <p style="margin-inline:auto">أدر المشتركين والكروت والباقات والراوترات من لوحة واحدة.</p>
+  <div class="lp-hero-actions" style="justify-content:center">
+    <a class="lp-btn lp-btn--primary lp-btn--lg" href="/portal/login">بوابة العميل</a>
+  </div>
+</div></div></header>
+{% endif %}
+
+{% for blk in sections %}
+{% set s = blk['section'] %}{% set items = blk['items'] %}
+{% if s.section_type != 'footer' %}
+<section id="{{ s.section_key }}" class="lp-section{% if s.section_type == 'hero' %} lp-hero{% else %} lp-reveal{% endif %}{% if s.section_key in ['modules', 'whatsapp_service', 'why_hoberadius'] %} alt{% endif %}">
   <div class="lp-wrap">
 
-    <header class="lp-top">
-      <div class="lp-brand">
-        <div class="lp-mark">HBR</div>
-        <div>
-          <b>HobeRadius</b>
-          <span>منصّة التراخيص وإدارة الريدياس</span>
+  {# ========== HERO ========== #}
+  {% if s.section_type == 'hero' %}
+  <div class="lp-hero-grid">
+    <div>
+      {% if s.eyebrow_text %}<span class="lp-eyebrow"><i class="fa-solid fa-bolt"></i>{{ s.eyebrow_text }}</span>{% endif %}
+      <h1><span class="g">{{ s.title }}</span></h1>
+      {% if s.subtitle %}<p>{{ s.subtitle }}</p>{% endif %}
+      <div class="lp-hero-actions">
+        {% if s.primary_button_text %}<a class="lp-btn lp-btn--primary lp-btn--lg" href="{{ s.primary_button_url or '#' }}">{{ s.primary_button_text }}</a>{% endif %}
+        {% if s.secondary_button_text %}<a class="lp-btn lp-btn--ghost lp-btn--lg" href="{{ s.secondary_button_url or '#' }}">{{ s.secondary_button_text }}</a>{% endif %}
+      </div>
+    </div>
+    <div class="lp-hero-mock">
+      <div class="lp-mock">
+        <span class="lp-mock-live"><span class="dot"></span> معاينة مباشرة</span>
+        <div class="lp-mock-top"><span class="lp-mock-dot"></span><span class="lp-mock-dot"></span><span class="lp-mock-dot"></span><span class="lp-mock-title">لوحة تشغيل الشبكة</span></div>
+        <div class="lp-mock-grid">
+          <div class="lp-mock-tile"><i class="fa-solid fa-users"></i><div class="v" data-count="5040">0</div><div class="l">المشتركون</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-wifi"></i><div class="v" data-count="318">0</div><div class="l">المتصلون الآن</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-ticket"></i><div class="v" data-count="126">0</div><div class="l">كروت اليوم</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-tower-broadcast"></i><div class="v" style="font-size:13px;color:var(--lp-teal-600)">متصل</div><div class="l">حالة MikroTik</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-bell"></i><div class="v" data-count="3">0</div><div class="l">تنبيهات الشبكة</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-database"></i><div class="v" style="font-size:13px;color:var(--lp-teal-600)">محدّث</div><div class="l">نسخ احتياطي</div></div>
+          <div class="lp-mock-tile wide"><i class="fa-solid fa-chart-line"></i><div><div class="l">آخر العمليات</div></div>
+            <div class="lp-mock-bars"><span style="height:40%"></span><span style="height:65%"></span><span style="height:50%"></span><span style="height:80%"></span><span style="height:60%"></span><span style="height:90%"></span><span style="height:70%"></span></div>
+          </div>
         </div>
       </div>
-      <a class="lp-top-link" href="{{ url_for('auth.login') }}">
-        <i class="fa-solid fa-user-shield"></i> دخول الإدارة
-      </a>
-    </header>
+    </div>
+  </div>
 
-    <section class="lp-hero">
-      <h1>أهلاً بك في منصّة HobeRadius</h1>
-      <p>نقطة الانطلاق لإدارة تراخيص الريدياس والعقود والخدمات والمدفوعات. سواء كنت عميلاً تتابع اشتراكك أو مشغّلاً يدير المنصّة — ابدأ من هنا.</p>
-      <div class="lp-chips">
-        <span class="lp-chip"><i class="fa-solid fa-key"></i> تراخيص وعقود</span>
-        <span class="lp-chip"><i class="fa-solid fa-shapes"></i> خدمات وحدود واضحة</span>
-        <span class="lp-chip"><i class="fa-solid fa-credit-card"></i> مدفوعات وإثباتات</span>
-        <span class="lp-chip"><i class="fa-solid fa-database"></i> نسخ احتياطية في ملف العميل</span>
+  {# ========== TRUST CHIPS ========== #}
+  {% elif s.section_type == 'trust_chips' %}
+  <div class="lp-chips">
+    {% for it in items %}<span class="lp-chip"><i class="fa-solid fa-{{ it.icon_name or 'circle-check' }}"></i>{{ it.title }}</span>{% endfor %}
+  </div>
+
+  {# ========== METRICS / STATS ========== #}
+  {% elif s.section_type == 'stats' %}
+  {% if s.title %}<div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2></div>{% endif %}
+  <div class="lp-metrics">
+    {% for it in items %}
+    <div class="lp-metric"><i class="fa-solid fa-{{ it.icon_name or 'circle-check' }}"></i><div class="v">{{ it.value_text or it.title }}</div><div class="l">{{ it.label_text or it.title }}</div></div>
+    {% endfor %}
+  </div>
+
+  {# ========== CARD GRID (features / why) ========== #}
+  {% elif s.section_type == 'cards_grid' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
+  <div class="lp-grid{% if s.section_key == 'features' %} bento{% endif %}">
+    {% for it in items %}
+    <div class="lp-card">
+      <div class="lp-card-ico"><i class="fa-solid fa-{{ it.icon_name or 'star' }}"></i></div>
+      <h3>{{ it.title }}</h3>{% if it.description %}<p>{{ it.description }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ========== MODULES (grouped by category) ========== #}
+  {% elif s.section_type == 'modules' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
+  {% set cats = [] %}
+  {% for it in items %}{% set c = it.settings.get('category', 'أخرى') %}{% if c not in cats %}{% set _ = cats.append(c) %}{% endif %}{% endfor %}
+  {% for cat in cats %}
+  <div class="lp-modcat">
+    <div class="lp-modcat-title">{{ cat }}</div>
+    <div class="lp-modgrid">
+      {% for it in items if it.settings.get('category', 'أخرى') == cat %}
+      <div class="lp-mod"><i class="fa-solid fa-{{ it.icon_name or 'cube' }}"></i><span>{{ it.title }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {# ========== INTEGRATIONS ========== #}
+  {% elif s.section_type == 'integrations' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
+  <div class="lp-grid">
+    {% for it in items %}
+    <div class="lp-int">
+      <div class="lp-int-ico"><i class="fa-{{ 'brands' if it.icon_name in ['whatsapp','telegram'] else 'solid' }} fa-{{ it.icon_name or 'plug' }}"></i></div>
+      <div>
+        <h4>{{ it.title }}</h4>{% if it.description %}<p>{{ it.description }}</p>{% endif %}
+        {% if it.status_badge %}<span class="lp-badge {{ status_badge_class.get(it.status_badge, 'plan') }}">{{ it.status_badge }}</span>{% endif %}
       </div>
-    </section>
+    </div>
+    {% endfor %}
+  </div>
 
-    <section class="lp-cards">
-      <a class="lp-card" href="{{ url_for('public.customer_portal_login') }}">
-        <span class="lp-card-ico is-primary"><i class="fa-solid fa-right-to-bracket"></i></span>
-        <span class="lp-card-tag">للعملاء</span>
-        <h3>بوابة العميل</h3>
-        <p>تابع حالة ترخيصك وخدماتك المفعّلة، أرسل طلبات الترقية، وراجع المدفوعات وإثباتها من مكان واحد.</p>
-        <span class="lp-card-go">دخول البوابة <i class="fa-solid fa-arrow-left"></i></span>
+  {# ========== STEPS (how it works) ========== #}
+  {% elif s.section_type == 'steps' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
+  <div class="lp-steps timeline">
+    {% for it in items %}
+    <div class="lp-step"><div class="lp-step-n">{{ it.value_text or loop.index }}</div><h4>{{ it.title }}</h4>{% if it.description %}<p>{{ it.description }}</p>{% endif %}</div>
+    {% endfor %}
+  </div>
+
+  {# ========== CTA / WHATSAPP band ========== #}
+  {% elif s.section_type == 'cta' %}
+  <div class="lp-band">
+    {% if s.badge_text %}<span class="lp-badge">{{ s.badge_text }}</span>{% endif %}
+    <h2>{{ s.title }}</h2>
+    {% if s.description %}<p>{{ s.description }}</p>{% endif %}
+    {% if s.settings.get('note') %}<div class="lp-note">{{ s.settings.get('note') }}</div>{% endif %}
+    <div class="lp-band-actions">
+      {% if s.primary_button_text %}<a class="lp-btn lp-btn--primary lp-btn--lg" href="{{ s.primary_button_url or '#' }}">{{ s.primary_button_text }}</a>{% endif %}
+      {% if s.secondary_button_text %}<a class="lp-btn lp-btn--ghost lp-btn--lg" href="{{ s.secondary_button_url or '#' }}">{{ s.secondary_button_text }}</a>{% endif %}
+    </div>
+    {% if s.section_key == 'contact_cta' and contact_methods %}
+    <div class="lp-contact-grid">
+      {% for c in contact_methods %}
+      <a class="lp-contact" {% if c.url %}href="{{ c.url }}"{% elif c.method_type == 'email' %}href="mailto:{{ c.value }}"{% elif c.method_type == 'whatsapp' %}href="https://wa.me/{{ c.value }}"{% elif c.method_type == 'phone' %}href="tel:{{ c.value }}"{% endif %}>
+        <i class="fa-{{ 'brands' if c.method_type=='whatsapp' else 'solid' }} fa-{{ c.icon_name or 'circle-info' }}"></i>{{ c.label or c.value }}
       </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
 
-      <a class="lp-card" href="{{ url_for('public.customer_portal_signup') }}">
-        <span class="lp-card-ico is-soft"><i class="fa-solid fa-user-plus"></i></span>
-        <span class="lp-card-tag">حساب جديد</span>
-        <h3>تسجيل عميل جديد</h3>
-        <p>أنشئ طلب حساب لشركتك. يبقى الطلب بانتظار موافقة الإدارة قبل تفعيله وإصدار الترخيص.</p>
-        <span class="lp-card-go">إنشاء طلب <i class="fa-solid fa-arrow-left"></i></span>
-      </a>
-
-      <a class="lp-card" href="{{ url_for('auth.login') }}">
-        <span class="lp-card-ico is-slate"><i class="fa-solid fa-user-shield"></i></span>
-        <span class="lp-card-tag">للمشغّل</span>
-        <h3>لوحة الإدارة</h3>
-        <p>إدارة العملاء والتراخيص والخطط والخدمات ومراجعة المدفوعات والنسخ الاحتياطية المستلمة.</p>
-        <span class="lp-card-go">دخول الإدارة <i class="fa-solid fa-arrow-left"></i></span>
-      </a>
-    </section>
-
-    <footer class="lp-foot">
-      <i class="fa-solid fa-shield-halved"></i> اتصال آمن ·
-      <a href="/privacy" style="color:inherit;font-weight:700">سياسة الخصوصية</a> ·
-      <a href="/terms" style="color:inherit;font-weight:700">شروط الاستخدام</a> ·
-      HobeRadius © 2026
-    </footer>
+  {# ========== FAQ ========== #}
+  {% elif s.section_type == 'faq' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2></div>
+  <div class="lp-faq">
+    {% for it in items %}
+    <div class="lp-faq-item">
+      <button class="lp-faq-q" type="button">{{ it.title }}<i class="fa-solid fa-chevron-down"></i></button>
+      <div class="lp-faq-a"><p>{{ it.description }}</p></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   </div>
+</section>
+{% endif %}
+{% endfor %}
+
+{# ───────── FOOTER ───────── #}
+{% for blk in sections %}{% if blk['section'].section_type == 'footer' %}
+{% set s = blk['section'] %}{% set items = blk['items'] %}
+<footer class="lp-footer">
+  <div class="lp-wrap">
+    <div class="lp-footer-grid">
+      <div class="lp-footer-brand">
+        <div class="lp-brand"><span class="lp-brand-mark"><i class="fa-solid fa-wifi"></i></span><span>Hobe<b style="color:var(--lp-teal)">Radius</b></span></div>
+        {% if s.description %}<p>{{ s.description }}</p>{% endif %}
+        {% if social_links %}
+        <div class="lp-social">
+          {% for sl in social_links %}<a href="{{ sl.url }}" target="_blank" rel="noopener" aria-label="{{ sl.label or sl.platform }}"><i class="fa-{{ 'brands' if sl.platform not in ['website','email','phone'] else 'solid' }} fa-{{ sl.icon_name or sl.platform }}"></i></a>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% set cols = [] %}
+      {% for it in items %}{% set c = it.settings.get('column', 'روابط') %}{% if c not in cols %}{% set _ = cols.append(c) %}{% endif %}{% endfor %}
+      {% for col in cols %}
+      <div class="lp-footer-col">
+        <h5>{{ col }}</h5>
+        {% for it in items if it.settings.get('column', 'روابط') == col %}<a href="{{ it.button_url or '#' }}">{{ it.title }}</a>{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="lp-footer-bottom">© {{ page.title if page else 'HobeRadius' }} — جميع الحقوق محفوظة.</div>
+  </div>
+</footer>
+{% endif %}{% endfor %}
+
+<script src="{{ url_for('static', filename='js/public_landing.js') }}"></script>
 </body>
 </html>
