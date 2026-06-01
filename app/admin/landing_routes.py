@@ -103,6 +103,18 @@ def overview():
     )
 
 
+@bp.get("/preview")
+@login_required
+def preview():
+    """Render the public landing page for admins WITHOUT the dashboard redirect.
+    Shows the home page even if it is still a draft, so admins can preview edits."""
+    from ..services.landing_cms import build_public_context
+    page = _home()
+    ctx = build_public_context(page)
+    ctx["is_preview"] = True
+    return render_template("public/landing.html", **ctx)
+
+
 @bp.post("/page")
 @login_required
 def page_update():

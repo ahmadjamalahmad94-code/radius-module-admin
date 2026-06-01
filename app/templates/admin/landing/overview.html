@@ -8,7 +8,7 @@
 {{ hub.hero("إدارة الصفحة الرئيسية",
    subtitle="كل المحتوى الظاهر في الصفحة العامة يُدار من هنا — بدون تعديل الكود.",
    icon="window-maximize",
-   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="/" target="_blank"><i class="fa-solid fa-up-right-from-square"></i> معاينة الصفحة</a>') }}
+   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin_landing.preview') ~ '" target="_blank"><i class="fa-solid fa-up-right-from-square"></i> معاينة الصفحة</a>') }}
 
 {% call hub.section("حالة الصفحة", icon="circle-info") %}
   <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;font-size:14px">
