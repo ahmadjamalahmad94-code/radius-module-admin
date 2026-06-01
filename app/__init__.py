@@ -53,11 +53,9 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     @app.get("/")
     def root():
-        from flask import session as flask_session
-        if flask_session.get("admin_id"):
-            return redirect(url_for("admin.dashboard"))
-        if flask_session.get("customer_user_id"):
-            return redirect(url_for("public.customer_portal_dashboard"))
+        # The landing page is shown to EVERYONE (including logged-in users).
+        # Navigation into the dashboard/portal is via the context-aware "دخول"
+        # button in the landing navbar, not an automatic redirect.
         from .services.landing_cms import get_published_homepage, build_public_context
         page = get_published_homepage()
         ctx = build_public_context(page) if page else {

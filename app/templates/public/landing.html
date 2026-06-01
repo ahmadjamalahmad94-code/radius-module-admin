@@ -40,7 +40,13 @@
     </div>
     <div class="lp-nav-cta">
       <a class="lp-btn lp-btn--ghost" href="#features">شاهد المزايا</a>
-      <a class="lp-btn lp-btn--primary" href="#contact_cta">اطلب تجربة</a>
+      {% if session.get('admin_id') %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('admin.dashboard') }}"><i class="fa-solid fa-gauge-high"></i> لوحة التحكم</a>
+      {% elif session.get('customer_user_id') %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('public.customer_portal_dashboard') }}"><i class="fa-solid fa-user"></i> حسابي</a>
+      {% else %}
+        <a class="lp-btn lp-btn--primary" href="{{ url_for('public.customer_portal_login') }}"><i class="fa-solid fa-right-to-bracket"></i> دخول</a>
+      {% endif %}
       <button class="lp-burger" id="lpBurger" aria-label="القائمة"><i class="fa-solid fa-bars"></i></button>
     </div>
   </div>
