@@ -253,6 +253,7 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("customers", {
             "runtime_url": "VARCHAR(255) NOT NULL DEFAULT ''",
             "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
+            "currency": "VARCHAR(12) NOT NULL DEFAULT 'USD'",
         })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"

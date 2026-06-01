@@ -62,6 +62,7 @@ class Customer(TimestampMixin, db.Model):
     country = db.Column(db.String(100), default="", nullable=False)
     city = db.Column(db.String(100), default="", nullable=False)
     runtime_url = db.Column(db.String(255), default="", nullable=False)
+    currency = db.Column(db.String(12), default="USD", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
     portal_config_json = db.Column(db.Text, default="{}", nullable=False)

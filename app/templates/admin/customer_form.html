@@ -68,6 +68,16 @@
           </select>
           <div class="hub-field-hint">pending تعني أن العميل بانتظار موافقة الإدارة. active فقط يسمح بدخول بوابة العميل ومزامنة الهوية إلى الريدياس.</div>
         </div>
+        <div class="hub-field">
+          <label>عملة الفوترة</label>
+          {% set _curs = [('USD','دولار $'),('ILS','شيكل ₪'),('JOD','دينار أردني'),('EUR','يورو €'),('SAR','ريال سعودي'),('IQD','دينار عراقي'),('AED','درهم إماراتي'),('EGP','جنيه مصري'),('TRY','ليرة تركية')] %}
+          <select class="hub-select" name="currency">
+            {% for code, label in _curs %}
+              <option value="{{ code }}" {{ 'selected' if (customer.currency or 'USD') == code else '' }}>{{ label }} — {{ code }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">عملة خاصة بهذا العميل — تظهر بها فواتيره وطلبات الدفع. لكل عميل عملته المستقلة، ويمكن تغييرها لاحقًا.</div>
+        </div>
         <div class="hub-field full">
           <label>ملاحظات داخلية</label>
           <textarea class="hub-textarea" name="notes" rows="4">{{ customer.notes or '' }}</textarea>

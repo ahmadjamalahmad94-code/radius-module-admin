@@ -1148,6 +1148,11 @@ def _fill_customer(customer: Customer) -> None:
     if status not in {"pending", "active", "inactive", "blocked"}:
         raise CustomerControlValidationError("حالة العميل غير مسموحة.")
     customer.status = status
+    from ..services.license_payments import CURRENCIES
+    currency = (request.form.get("currency") or "USD").strip().upper()[:12]
+    if currency not in CURRENCIES:
+        raise CustomerControlValidationError("عملة الفوترة غير مدعومة.")
+    customer.currency = currency
 
 
 def _clean_runtime_url(value: str) -> str:

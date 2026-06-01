@@ -6,6 +6,7 @@ from app.extensions import db
 from app.models import Customer, LicensePaymentRequest, Plan, ProvisioningOrder
 from app.services.license_payments import (
     LicensePaymentRequestRepository,
+    LicensePaymentRequestService,
     LicensePaymentValidationError,
     LicensePaymentWebhookEventRepository,
     PlatformPaymentSettingsRepository,
@@ -74,7 +75,7 @@ def test_license_payment_request_creation_and_unique_reference(app):
         ("amount", {"amount": "0"}),
         ("provider", {"provider": "fake_provider"}),
         ("purpose", {"purpose": "card_purchase"}),
-        ("currency", {"currency": "EUR"}),
+        ("currency", {"currency": "GBP"}),
     ],
 )
 def test_license_payment_request_rejects_invalid_values(app, field, payload):
@@ -89,6 +90,37 @@ def test_license_payment_request_rejects_invalid_values(app, field, payload):
     data.update(payload)
     with pytest.raises(LicensePaymentValidationError, match=field):
         LicensePaymentRequestRepository().create(**data)
+
+
+def test_payment_request_defaults_to_customer_currency(app):
+    """Per-customer currency: an invoice inherits the customer's own currency
+    when none is given, but an explicit per-request choice still wins."""
+    PlatformPaymentSettingsRepository().upsert(
+        provider="manual_wallet",
+        enabled=True,
+        wallet_number="0599000000",
+        wallet_owner_name="Hobe Wallet",
+        currency="USD",
+        confirmation_mode="manual",
+    )
+    customer = Customer(company_name="ILS Customer", currency="ILS")
+    db.session.add(customer)
+    db.session.commit()
+
+    inherited = LicensePaymentRequestService().create_request({
+        "customer_id": customer.id,
+        "purpose": "new_subscription",
+        "amount": "120.00",
+    })
+    assert inherited.currency == "ILS"  # customer currency beats system default (USD)
+
+    explicit = LicensePaymentRequestService().create_request({
+        "customer_id": customer.id,
+        "purpose": "renewal",
+        "amount": "120.00",
+        "currency": "JOD",
+    })
+    assert explicit.currency == "JOD"  # explicit per-request choice still wins
 
 
 def test_provisioning_order_creation_and_status_validation(app):

@@ -44,6 +44,7 @@
     </div>
     <div class="hub-hero-actions">
       <span class="hub-hero-chip"><i class="fa-solid fa-circle"></i> {{ customer.status|status_label }}</span>
+      <span class="hub-hero-chip" title="عملة فوترة هذا العميل — تُحدَّد من «تعديل»"><i class="fa-solid fa-coins"></i> {{ customer.currency or 'USD' }}</span>
       {% if current_license %}
         <span class="hub-hero-chip"><i class="fa-solid fa-key"></i> {{ current_license.license_key[:16] }}…</span>
       {% endif %}

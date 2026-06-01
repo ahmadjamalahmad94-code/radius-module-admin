@@ -31,7 +31,7 @@ from .license_service import add_months, default_grace_days, generate_license_ke
 
 PAYMENT_PROVIDERS = {"manual_wallet", "jawwal_pay"}
 CONFIRMATION_MODES = {"manual", "api"}
-CURRENCIES = {"USD", "ILS", "JOD"}
+CURRENCIES = {"USD", "ILS", "JOD", "EUR", "SAR", "IQD", "AED", "EGP", "TRY"}
 PAYMENT_PURPOSES = {"new_subscription", "renewal", "upgrade", "capacity_increase", "setup_fee"}
 PAYMENT_STATUSES = {"pending", "proof_submitted", "under_review", "paid", "rejected", "expired", "cancelled", "failed"}
 PROVISIONING_STATUSES = {
@@ -407,7 +407,8 @@ class LicensePaymentRequestService:
         if settings.provider != "manual_wallet":
             raise LicensePaymentValidationError("provider_not_supported")
         customer_id = int(payload.get("customer_id") or 0)
-        if not db.session.get(Customer, customer_id):
+        customer = db.session.get(Customer, customer_id)
+        if not customer:
             raise LicensePaymentValidationError("customer_id")
         plan_id = payload.get("plan_id")
         if plan_id not in (None, "") and not db.session.get(Plan, int(plan_id)):
@@ -418,7 +419,7 @@ class LicensePaymentRequestService:
             license_id=int(payload["license_id"]) if payload.get("license_id") else None,
             purpose=payload.get("purpose", ""),
             amount=payload.get("amount", ""),
-            currency=payload.get("currency") or settings.currency,
+            currency=payload.get("currency") or getattr(customer, "currency", "") or settings.currency,
             provider=settings.provider,
             receiver_wallet=settings.wallet_number,
             ttl_minutes=settings.payment_request_ttl_minutes,
