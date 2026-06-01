@@ -276,6 +276,8 @@ def customer_portal_dashboard():
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
         customer_backups=list_customer_backups(customer.id),
+        # Integrated WhatsApp pane (sidebar) — locked/account/settings/templates/usage/step.
+        **whatsapp_pane_context(user),
     )
 
 
@@ -624,26 +626,42 @@ def _whatsapp_current_step(account, settings, templates) -> int:
     return 6
 
 
-def _render_customer_portal_whatsapp(user: CustomerUser):
+#: Deep-link to the integrated WhatsApp pane inside the customer dashboard
+#: (the standalone page was retired — this lands the user on the pane with the
+#: post-redirect flash, and the SPA router activates it from ``?view=``).
+WHATSAPP_DASHBOARD_VIEW = "whatsapp"
+
+
+def _whatsapp_pane_url() -> str:
+    """URL of the dashboard with the WhatsApp pane pre-selected (PRG target)."""
+    return url_for("public.customer_portal_dashboard") + "?view=" + WHATSAPP_DASHBOARD_VIEW
+
+
+def whatsapp_pane_context(user: CustomerUser) -> dict:
+    """Build the template context the integrated WhatsApp pane needs.
+
+    Returned keys are merged into the dashboard render context. Reuses the same
+    helpers as the (now retired) standalone page so the experience is identical:
+    ``wa_locked`` / ``wa_account`` / ``wa_account_public`` / ``wa_settings`` /
+    ``wa_templates`` / ``wa_usage`` / ``wa_recent_messages`` / ``wa_current_step``.
+    A ``wa_`` prefix avoids clashing with the dashboard's own ``settings`` etc.
+    """
     from ..services.whatsapp import settings as wa_settings
     from ..models import WhatsAppMessageQueue, utcnow
 
     customer = user.customer
     locked = not _whatsapp_gateway_granted(customer)
     if locked:
-        return render_template(
-            "public/customer_portal_whatsapp.html",
-            customer=customer,
-            customer_user=user,
-            locked=True,
-            account=None,
-            account_public={},
-            settings=None,
-            templates=[],
-            usage={"daily": {}, "monthly": {}},
-            recent_messages=[],
-            current_step=1,
-        )
+        return {
+            "wa_locked": True,
+            "wa_account": None,
+            "wa_account_public": {},
+            "wa_settings": None,
+            "wa_templates": [],
+            "wa_usage": {"daily": {}, "monthly": {}},
+            "wa_recent_messages": [],
+            "wa_current_step": 1,
+        }
 
     now = utcnow()
     account = wa_settings.get_account(customer.id)
@@ -656,27 +674,30 @@ def _render_customer_portal_whatsapp(user: CustomerUser):
         .limit(10)
         .all()
     )
-    return render_template(
-        "public/customer_portal_whatsapp.html",
-        customer=customer,
-        customer_user=user,
-        locked=False,
-        account=account,
-        account_public=wa_settings.account_public_dict(account),
-        settings=settings_row,
-        templates=templates,
-        usage=usage,
-        recent_messages=recent_messages,
-        current_step=_whatsapp_current_step(account, settings_row, templates),
-    )
+    return {
+        "wa_locked": False,
+        "wa_account": account,
+        "wa_account_public": wa_settings.account_public_dict(account),
+        "wa_settings": settings_row,
+        "wa_templates": templates,
+        "wa_usage": usage,
+        "wa_recent_messages": recent_messages,
+        "wa_current_step": _whatsapp_current_step(account, settings_row, templates),
+    }
 
 
 @bp.get("/portal/whatsapp")
 def customer_portal_whatsapp():
+    """Legacy standalone URL — now deep-links into the integrated dashboard pane.
+
+    The WhatsApp experience lives inside the customer dashboard sidebar; this
+    route is kept so old links/bookmarks keep working by redirecting to the
+    dashboard with ``?view=whatsapp`` (the SPA then activates the pane).
+    """
     user = _current_customer_user()
     if not user:
         return redirect(url_for("public.customer_portal_login"))
-    return _render_customer_portal_whatsapp(user)
+    return redirect(_whatsapp_pane_url())
 
 
 @bp.post("/portal/whatsapp")
@@ -690,7 +711,7 @@ def customer_portal_whatsapp_post():
     # The service must be granted to mutate anything.
     if not _whatsapp_gateway_granted(customer):
         flash("هذه الخدمة غير مفعلة في خطتك الحالية. يمكنك طلب تفعيلها من الإدارة.", "error")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     from ..services.whatsapp import settings as wa_settings
 
@@ -709,7 +730,7 @@ def customer_portal_whatsapp_post():
             access_token=access_token or None,
         )
         flash("تم حفظ بيانات الربط. لا يظهر الـ Token بعد حفظه — يمكنك استبداله فقط.", "success")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     if action == "validate":
         from ..services.whatsapp.providers import (
@@ -721,7 +742,7 @@ def customer_portal_whatsapp_post():
         account = wa_settings.get_account(customer.id)
         if account is None:
             flash("أدخل بيانات الربط ثم اضغط فحص الربط.", "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
         try:
             result = MetaCloudWhatsAppProvider().validate_credentials(account)
         except WhatsAppProviderError as exc:
@@ -729,7 +750,7 @@ def customer_portal_whatsapp_post():
                 customer.id, "error", error_code=exc.code, error_message=exc.message
             )
             flash("يوجد خطأ في الربط. راجع البيانات أو Token. " + (exc.message or ""), "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
         # Success: refresh display fields then mark connected.
         account.display_phone_number = result.get("display_phone_number") or account.display_phone_number
         account.business_display_name = result.get("business_display_name") or account.business_display_name
@@ -739,13 +760,13 @@ def customer_portal_whatsapp_post():
         db.session.commit()
         wa_settings.set_connection_status(customer.id, "connected")
         flash("تم التحقق من الربط بنجاح.", "success")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     if action == "save_template":
         local_key = (request.form.get("local_key") or "").strip()
         if not local_key:
             flash("المفتاح المحلي للقالب مطلوب.", "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
         language = (request.form.get("language") or "ar").strip() or "ar"
         category = (request.form.get("category") or "UTILITY").strip().upper()
         if category not in ("UTILITY", "MARKETING", "AUTHENTICATION"):
@@ -763,7 +784,7 @@ def customer_portal_whatsapp_post():
         if approve:
             wa_settings.set_template_status(customer.id, local_key, language, "approved")
         flash("تم حفظ القالب." + (" وتم اعتماده." if approve else ""), "success")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     if action == "send_test":
         from ..services.whatsapp import policy as wa_policy
@@ -775,12 +796,12 @@ def customer_portal_whatsapp_post():
         recipient = (request.form.get("recipient") or "").strip()
         if not recipient:
             flash("أدخل رقم المستلم للتجربة.", "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
         try:
             normalized = normalize_phone_for_whatsapp(recipient)
         except WhatsAppPhoneError as exc:
             flash(str(exc), "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
 
         idem = f"portal-test:{customer.id}:{normalized}:{int(utcnow().timestamp())}"
         decision = wa_policy.can_send(
@@ -791,7 +812,7 @@ def customer_portal_whatsapp_post():
         )
         if not decision.allowed:
             flash(decision.message_ar or "تعذّر إرسال رسالة التجربة.", "error")
-            return redirect(url_for("public.customer_portal_whatsapp"))
+            return redirect(_whatsapp_pane_url())
 
         template_key = (request.form.get("template_key") or "").strip()
         template = wa_settings.get_template(customer.id, template_key, "ar") if template_key else None
@@ -811,7 +832,7 @@ def customer_portal_whatsapp_post():
         except Exception:  # noqa: BLE001 — drain is best-effort.
             db.session.rollback()
         flash("تمت جدولة رسالة التجربة. تابع حالتها في سجل الرسائل.", "success")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     if action in ("enable_events", "save_settings"):
         fields: dict = {
@@ -829,15 +850,15 @@ def customer_portal_whatsapp_post():
             fields[toggle] = bool(request.form.get(toggle))
         wa_settings.update_settings(customer.id, **fields)
         flash("تم حفظ الإعدادات.", "success")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     if action == "disable_service":
         wa_settings.update_settings(customer.id, enabled=False)
         flash("تم إيقاف الخدمة.", "warning")
-        return redirect(url_for("public.customer_portal_whatsapp"))
+        return redirect(_whatsapp_pane_url())
 
     flash("إجراء غير معروف.", "error")
-    return redirect(url_for("public.customer_portal_whatsapp"))
+    return redirect(_whatsapp_pane_url())
 
 
 def _runtime_setup_for_license(lic: License | None) -> dict:

@@ -1,0 +1,271 @@
+{# ════════════════════════════════════════════════════════════════════
+   Illustrated Arabic guide: how to obtain Meta WhatsApp credentials +
+   subscription. Rendered inside the dashboard WhatsApp pane.
+
+   CSP-safe: no <script>, no inline event handlers. Collapsible is a pure
+   <details>/<summary>. All illustrations are hand-drawn inline SVG (no real
+   screenshots, no external images) and are aria-hidden (decorative — the
+   exact Meta field names live in the visible Arabic text).
+   Styling comes from the scoped .wa-guide* rules in the dashboard <head>.
+   ════════════════════════════════════════════════════════════════════ #}
+{# Reusable fake-browser chrome for an SVG mockup. `url` is shown in the bar. #}
+{% macro browser_bar(url) %}
+  <rect x="0" y="0" width="420" height="26" rx="0" fill="#f1f5f9"/>
+  <circle cx="14" cy="13" r="4" fill="#f87171"/><circle cx="28" cy="13" r="4" fill="#fbbf24"/><circle cx="42" cy="13" r="4" fill="#34d399"/>
+  <rect x="58" y="6" width="354" height="15" rx="7" fill="#fff" stroke="#e2e8f0"/>
+  <text x="68" y="17" font-family="monospace" font-size="10" fill="#64748b" direction="ltr">{{ url }}</text>
+{% endmacro %}
+
+<details class="wa-guide" open>
+  <summary>
+    <span class="g-ic"><i class="fa-brands fa-meta"></i></span>
+    <div>
+      <h2>كيف أحصل على البيانات والاشتراك من Meta؟</h2>
+      <div class="g-sub">دليل مصوّر خطوة بخطوة للمبتدئين — من إنشاء التطبيق حتى لصق البيانات هنا</div>
+    </div>
+    <i class="fa-solid fa-chevron-down g-caret"></i>
+  </summary>
+
+  <div class="wa-guide-body">
+    <div class="wa-guide-note">
+      <i class="fa-solid fa-circle-info"></i>
+      <div>تحتاج رقم واتساب تجاري خاص بك، وتدفع لـ Meta مباشرة. نحن نوفّر الربط والأتمتة والسجلات. الرسوم التي تظهر في حسابك على Meta هي تكلفة المحادثات لدى Meta — HobeRadius لا يتقاضى مقابل الرسائل.</div>
+    </div>
+
+    <div class="wa-gsteps">
+
+      {# ─────────────── STEP 1 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">1</div>
+        <div class="wa-gbody">
+          <h3>أنشئ حساب وتطبيق على Meta</h3>
+          <p>افتح <span class="wa-tag">developers.facebook.com</span> وسجّل الدخول بحساب فيسبوك. من الأعلى اختر <span class="wa-path">My Apps</span> ← <span class="wa-path">Create App</span>، ثم اختر نوع التطبيق <span class="wa-tag">Business</span> واكمل الإنشاء.</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              {{ browser_bar('developers.facebook.com/apps') }}
+              <rect x="0" y="26" width="420" height="124" fill="#fff"/>
+              {# top bar with My Apps #}
+              <rect x="0" y="26" width="420" height="24" fill="#0866ff"/>
+              <text x="14" y="42" font-family="sans-serif" font-size="11" fill="#fff" font-weight="bold">Meta for Developers</text>
+              <rect x="320" y="31" width="86" height="15" rx="4" fill="rgba(255,255,255,.22)"/>
+              <text x="363" y="42" font-family="sans-serif" font-size="9" fill="#fff" text-anchor="middle">My Apps</text>
+              {# Create App button (highlighted) #}
+              <rect x="250" y="70" width="156" height="34" rx="9" fill="#0866ff"/>
+              <text x="328" y="91" font-family="sans-serif" font-size="13" fill="#fff" text-anchor="middle" font-weight="bold">+ Create App</text>
+              {# app-type choices #}
+              <rect x="14" y="70" width="96" height="64" rx="9" fill="#ecfdf5" stroke="#128c5e" stroke-width="2"/>
+              <text x="62" y="98" font-family="sans-serif" font-size="11" fill="#0b3d2e" text-anchor="middle" font-weight="bold">Business</text>
+              <circle cx="62" cy="114" r="6" fill="#128c5e"/><path d="M59 114l2.2 2.2 4-4.4" stroke="#fff" stroke-width="1.6" fill="none"/>
+              <rect x="120" y="70" width="96" height="64" rx="9" fill="#f8fafc" stroke="#e2e8f0"/>
+              <text x="168" y="98" font-family="sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">Other</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 2 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">2</div>
+        <div class="wa-gbody">
+          <h3>أضف منتج WhatsApp</h3>
+          <p>داخل التطبيق، انزل إلى قسم <span class="wa-path">Add Product</span>، ابحث عن بطاقة <span class="wa-tag">WhatsApp</span> واضغط <span class="wa-path">Set up</span> لإضافتها إلى تطبيقك.</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="150" fill="#fff"/>
+              <text x="14" y="24" font-family="sans-serif" font-size="12" fill="#0f172a" font-weight="bold">Add products to your app</text>
+              {# WhatsApp product card (highlighted) #}
+              <rect x="14" y="38" width="190" height="92" rx="11" fill="#ecfdf5" stroke="#128c5e" stroke-width="2"/>
+              <circle cx="44" cy="68" r="16" fill="#25d366"/>
+              <text x="44" y="73" font-family="sans-serif" font-size="16" fill="#fff" text-anchor="middle" font-weight="bold">✆</text>
+              <text x="70" y="64" font-family="sans-serif" font-size="13" fill="#0b3d2e" font-weight="bold">WhatsApp</text>
+              <text x="70" y="80" font-family="sans-serif" font-size="9" fill="#3f6b58">Send messages &amp; notifications</text>
+              <rect x="70" y="96" width="68" height="24" rx="7" fill="#128c5e"/>
+              <text x="104" y="112" font-family="sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">Set up</text>
+              {# other dimmed product cards #}
+              <rect x="216" y="38" width="90" height="92" rx="11" fill="#f8fafc" stroke="#e2e8f0"/>
+              <rect x="232" y="56" width="20" height="20" rx="5" fill="#e2e8f0"/>
+              <rect x="232" y="86" width="58" height="8" rx="4" fill="#e2e8f0"/>
+              <rect x="316" y="38" width="90" height="92" rx="11" fill="#f8fafc" stroke="#e2e8f0"/>
+              <rect x="332" y="56" width="20" height="20" rx="5" fill="#e2e8f0"/>
+              <rect x="332" y="86" width="58" height="8" rx="4" fill="#e2e8f0"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 3 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">3</div>
+        <div class="wa-gbody">
+          <h3>اربط حساب واتساب التجاري ورقمك</h3>
+          <p>يُنشئ Meta لك تلقائيًا <span class="wa-tag">WhatsApp Business Account (WABA)</span> ورقمًا تجريبيًا للاختبار. لإرسال الرسائل لعملائك الحقيقيين، اضغط <span class="wa-path">Add phone number</span> وأضف رقمك التجاري، ثم أثبت ملكيته عبر <span class="wa-path">رمز التحقق</span> الذي يصلك (SMS أو مكالمة).</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="150" fill="#fff"/>
+              <text x="14" y="22" font-family="sans-serif" font-size="11" fill="#0f172a" font-weight="bold">WhatsApp Business Account</text>
+              <rect x="14" y="30" width="392" height="22" rx="6" fill="#f1f5f9"/>
+              <text x="22" y="45" font-family="monospace" font-size="10" fill="#64748b" direction="ltr">WABA ID: 1029384756 · Test number: +1 555 0100</text>
+              {# Add phone number button #}
+              <rect x="14" y="62" width="150" height="30" rx="8" fill="#0866ff"/>
+              <text x="89" y="81" font-family="sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">+ Add phone number</text>
+              {# verification code boxes #}
+              <text x="14" y="116" font-family="sans-serif" font-size="10" fill="#475569">Verify code:</text>
+              {% for x in [86, 116, 146, 176, 206, 236] %}
+              <rect x="{{ x }}" y="104" width="24" height="28" rx="6" fill="#fff" stroke="#128c5e" stroke-width="1.5"/>
+              {% endfor %}
+              <text x="98" y="124" font-family="monospace" font-size="13" fill="#0b3d2e" text-anchor="middle">3</text>
+              <text x="128" y="124" font-family="monospace" font-size="13" fill="#0b3d2e" text-anchor="middle">9</text>
+              <text x="158" y="124" font-family="monospace" font-size="13" fill="#0b3d2e" text-anchor="middle">1</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 4 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">4</div>
+        <div class="wa-gbody">
+          <h3>انسخ البيانات من «API Setup»</h3>
+          <p>من القائمة الجانبية: <span class="wa-path">WhatsApp ← API Setup</span>. ستجد هناك القيم التي نحتاجها:</p>
+          <ul class="lbl-list">
+            <li><i class="fa-solid fa-circle"></i> <b>Phone number ID</b> — معرّف الرقم.</li>
+            <li><i class="fa-solid fa-circle"></i> <b>WhatsApp Business Account ID</b> (WABA ID).</li>
+            <li><i class="fa-solid fa-circle"></i> <b>Temporary access token</b> — توكن مؤقّت صالح ~24 ساعة (للتجربة السريعة).</li>
+          </ul>
+          <p style="margin-top:10px">للإنتاج أنشئ <b>توكنًا دائمًا</b>: <span class="wa-path">Business Settings ← Users ← System Users ← Generate token</span> بصلاحيات <span class="wa-tag">whatsapp_business_messaging</span> + <span class="wa-tag">whatsapp_business_management</span>. ومعرّف <b>Meta Business</b> تجده في <span class="wa-path">Business Settings ← Business Info</span>.</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 168" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="168" fill="#fff"/>
+              {# side menu #}
+              <rect x="0" y="0" width="108" height="168" fill="#f8fafc"/>
+              <text x="12" y="22" font-family="sans-serif" font-size="10" fill="#64748b">WhatsApp</text>
+              <rect x="6" y="30" width="96" height="22" rx="6" fill="#ecfdf5"/>
+              <text x="14" y="45" font-family="sans-serif" font-size="10" fill="#0b3d2e" font-weight="bold">API Setup</text>
+              <text x="14" y="70" font-family="sans-serif" font-size="9" fill="#94a3b8">Templates</text>
+              <text x="14" y="90" font-family="sans-serif" font-size="9" fill="#94a3b8">Configuration</text>
+              {# panel with the three highlighted fields #}
+              <text x="120" y="20" font-family="sans-serif" font-size="11" fill="#0f172a" font-weight="bold">API Setup</text>
+              {# field 1 #}
+              <text x="120" y="42" font-family="sans-serif" font-size="9" fill="#475569">Phone number ID</text>
+              <rect x="120" y="46" width="180" height="20" rx="5" fill="#fff7ed" stroke="#fb923c"/>
+              <text x="128" y="60" font-family="monospace" font-size="10" fill="#7c2d12" direction="ltr">109876543210</text>
+              <rect x="306" y="46" width="42" height="20" rx="5" fill="#0866ff"/><text x="327" y="60" font-family="sans-serif" font-size="8" fill="#fff" text-anchor="middle">Copy</text>
+              {# field 2 #}
+              <text x="120" y="84" font-family="sans-serif" font-size="9" fill="#475569">WhatsApp Business Account ID</text>
+              <rect x="120" y="88" width="180" height="20" rx="5" fill="#fff7ed" stroke="#fb923c"/>
+              <text x="128" y="102" font-family="monospace" font-size="10" fill="#7c2d12" direction="ltr">1029384756</text>
+              <rect x="306" y="88" width="42" height="20" rx="5" fill="#0866ff"/><text x="327" y="102" font-family="sans-serif" font-size="8" fill="#fff" text-anchor="middle">Copy</text>
+              {# field 3 (token) #}
+              <text x="120" y="126" font-family="sans-serif" font-size="9" fill="#475569">Temporary access token (~24h)</text>
+              <rect x="120" y="130" width="180" height="20" rx="5" fill="#fff7ed" stroke="#fb923c"/>
+              <text x="128" y="144" font-family="monospace" font-size="10" fill="#7c2d12" direction="ltr">EAAB••••••••••••</text>
+              <rect x="306" y="130" width="42" height="20" rx="5" fill="#0866ff"/><text x="327" y="144" font-family="sans-serif" font-size="8" fill="#fff" text-anchor="middle">Copy</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 5 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">5</div>
+        <div class="wa-gbody">
+          <h3>الاشتراك والدفع لـ Meta</h3>
+          <p>من <span class="wa-path">Business Settings ← WhatsApp Accounts ← (حسابك) ← Payment settings</span> أضف طريقة دفع (بطاقة). <b>أنت تدفع تكلفة الرسائل مباشرة إلى Meta</b> وفق تسعير Meta للمحادثات. HobeRadius لا يتقاضى مقابل الرسائل — نحن نوفّر إدارة الإرسال والأتمتة والسجلات والقوالب فقط.</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="150" fill="#fff"/>
+              <text x="14" y="22" font-family="sans-serif" font-size="11" fill="#0f172a" font-weight="bold">Payment settings</text>
+              {# fake credit card #}
+              <rect x="14" y="34" width="180" height="100" rx="12" fill="#0b3d2e"/>
+              <rect x="30" y="58" width="34" height="24" rx="4" fill="#fcd34d"/>
+              <text x="30" y="106" font-family="monospace" font-size="12" fill="#fff" direction="ltr">•••• •••• •••• 4242</text>
+              <text x="30" y="124" font-family="sans-serif" font-size="8" fill="#86efac">VALID THRU 12/29</text>
+              {# add payment method button #}
+              <rect x="210" y="56" width="196" height="30" rx="8" fill="#0866ff"/>
+              <text x="308" y="75" font-family="sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">+ Add payment method</text>
+              <text x="210" y="106" font-family="sans-serif" font-size="9" fill="#64748b">You are billed by Meta for</text>
+              <text x="210" y="120" font-family="sans-serif" font-size="9" fill="#64748b">conversations (Meta pricing).</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 6 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">6</div>
+        <div class="wa-gbody">
+          <h3>القوالب المعتمدة (Message Templates)</h3>
+          <p>الرسائل التجارية (خارج نافذة المحادثة) تحتاج <span class="wa-tag">قوالب معتمدة من Meta</span>. أنشئها من <span class="wa-path">WhatsApp Manager ← Message Templates</span>، انتظر اعتمادها (Approved)، ثم اربط اسمها هنا في الخطوة «اربط القوالب».</p>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="150" fill="#fff"/>
+              <text x="14" y="22" font-family="sans-serif" font-size="11" fill="#0f172a" font-weight="bold">Message Templates</text>
+              <rect x="290" y="10" width="116" height="26" rx="8" fill="#128c5e"/>
+              <text x="348" y="27" font-family="sans-serif" font-size="10" fill="#fff" text-anchor="middle" font-weight="bold">+ Create template</text>
+              {# table header #}
+              <line x1="14" y1="44" x2="406" y2="44" stroke="#e2e8f0"/>
+              {# row 1 approved #}
+              <text x="16" y="64" font-family="monospace" font-size="10" fill="#0f172a" direction="ltr">otp_ar</text>
+              <text x="140" y="64" font-family="sans-serif" font-size="9" fill="#64748b">AUTHENTICATION</text>
+              <rect x="320" y="52" width="78" height="18" rx="9" fill="#dcfce7"/>
+              <text x="359" y="65" font-family="sans-serif" font-size="9" fill="#166534" text-anchor="middle" font-weight="bold">Approved</text>
+              <line x1="14" y1="78" x2="406" y2="78" stroke="#eef2f7"/>
+              {# row 2 approved #}
+              <text x="16" y="98" font-family="monospace" font-size="10" fill="#0f172a" direction="ltr">expiry_notice_ar</text>
+              <text x="140" y="98" font-family="sans-serif" font-size="9" fill="#64748b">UTILITY</text>
+              <rect x="320" y="86" width="78" height="18" rx="9" fill="#dcfce7"/>
+              <text x="359" y="99" font-family="sans-serif" font-size="9" fill="#166534" text-anchor="middle" font-weight="bold">Approved</text>
+              <line x1="14" y1="112" x2="406" y2="112" stroke="#eef2f7"/>
+              {# row 3 pending #}
+              <text x="16" y="132" font-family="monospace" font-size="10" fill="#0f172a" direction="ltr">promo_ar</text>
+              <text x="140" y="132" font-family="sans-serif" font-size="9" fill="#64748b">MARKETING</text>
+              <rect x="324" y="120" width="74" height="18" rx="9" fill="#fef3c7"/>
+              <text x="361" y="133" font-family="sans-serif" font-size="9" fill="#92400e" text-anchor="middle" font-weight="bold">In review</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {# ─────────────── STEP 7 ─────────────── #}
+      <div class="wa-gstep">
+        <div class="wa-gnum">7</div>
+        <div class="wa-gbody">
+          <h3>الصق البيانات هنا واضغط «فحص الربط»</h3>
+          <p>عُد إلى الخطوة <b>«1. أدخل بيانات Meta»</b> بالأسفل، والصق القيم في حقولها، ثم احفظ واضغط <b>«فحص الربط»</b>:</p>
+          <ul class="lbl-list">
+            <li><i class="fa-solid fa-circle"></i> Meta Business ID</li>
+            <li><i class="fa-solid fa-circle"></i> WhatsApp Business Account ID (WABA ID)</li>
+            <li><i class="fa-solid fa-circle"></i> Phone Number ID</li>
+            <li><i class="fa-solid fa-circle"></i> رقم الهاتف الظاهر (Display number)</li>
+            <li><i class="fa-solid fa-circle"></i> Access Token</li>
+          </ul>
+          <div class="wa-shot">
+            <svg viewBox="0 0 420 150" role="img" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="150" rx="10" fill="#fff" stroke="#d1fae5"/>
+              <circle cx="28" cy="26" r="11" fill="#25d366"/><text x="28" y="31" font-family="sans-serif" font-size="12" fill="#fff" text-anchor="middle" font-weight="bold">✆</text>
+              <text x="46" y="30" font-family="sans-serif" font-size="11" fill="#0b3d2e" font-weight="bold">HobeRadius · بيانات Meta</text>
+              {# two input rows #}
+              <rect x="16" y="48" width="184" height="22" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+              <text x="24" y="62" font-family="monospace" font-size="9" fill="#475569" direction="ltr">Phone number ID</text>
+              <rect x="216" y="48" width="188" height="22" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+              <text x="224" y="62" font-family="monospace" font-size="9" fill="#475569" direction="ltr">WABA ID</text>
+              <rect x="16" y="76" width="184" height="22" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+              <text x="24" y="90" font-family="monospace" font-size="9" fill="#475569" direction="ltr">Access Token</text>
+              <rect x="216" y="76" width="188" height="22" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+              <text x="224" y="90" font-family="monospace" font-size="9" fill="#475569" direction="ltr">Display number</text>
+              {# check connection button #}
+              <rect x="252" y="110" width="152" height="28" rx="8" fill="#128c5e"/>
+              <text x="328" y="129" font-family="sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">فحص الربط ✓</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /wa-gsteps #}
+
+    <div class="wa-guide-note">
+      <i class="fa-solid fa-shield-halved"></i>
+      <div>يُخزَّن الـ Access Token مشفّرًا داخل النظام ولا يُعرض أبدًا بعد حفظه — يظهر مقنّعًا فقط. أدخل قيمة جديدة فقط عند الحاجة لاستبداله.</div>
+    </div>
+  </div>
+</details>
