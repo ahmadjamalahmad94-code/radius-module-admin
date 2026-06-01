@@ -19,6 +19,12 @@
   'google_drive_secret':'سر Google Drive','whatsapp_token':'توكن واتساب','api_token':'توكن API',
   'backup_secret':'سر النسخ الاحتياطي','other':'أخرى'
 } %}
+{% set record_type_labels = {
+  'vps_url':'رابط VPS','radius_url':'رابط RADIUS','server_ip':'عنوان الخادم (IP)',
+  'deployment_note':'ملاحظة نشر','support_note':'ملاحظة دعم','backup_note':'ملاحظة نسخ احتياطي','other':'أخرى'
+} %}
+{% set status_labels = {'active':'نشط','rotated':'مُدوّر','revoked':'ملغى','archived':'مؤرشف'} %}
+{% set target_labels = {'private_record':'بيان تشغيلي','secret':'سر'} %}
 
 {% block content %}
 {{ hub.hero("الخزنة الخاصة بالعميل — " ~ customer.company_name,
@@ -44,7 +50,7 @@
     <form method="post" action="{{ url_for('admin_vault.record_create', customer_id=customer.id) }}">
       {{ csrf_input() }}
       <div class="vault-grid">
-        <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></label>
+        <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}">{{ record_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
         <label>العنوان<input class="hub-input" name="title" required maxlength="160"></label>
         <label>القيمة<input class="hub-input" name="value" maxlength="5000"></label>
         <label>الرابط<input class="hub-input" name="url" placeholder="https://…" maxlength="500"></label>
@@ -62,7 +68,7 @@
       <tbody>
         {% for r in records %}
         <tr>
-          <td><small>{{ r.record_type }}</small>{% if r.is_pinned %} <span class="vault-pill">مثبّت</span>{% endif %}</td>
+          <td><small>{{ record_type_labels.get(r.record_type, r.record_type) }}</small>{% if r.is_pinned %} <span class="vault-pill">مثبّت</span>{% endif %}</td>
           <td><strong>{{ r.title }}</strong>{% if r.notes %}<br><small style="color:#94a3b8">{{ r.notes[:80] }}</small>{% endif %}</td>
           <td class="vault-mono small">{{ r.value or '—' }}{% if r.url %}<br><a href="{{ r.url }}" target="_blank" rel="noopener">فتح الرابط <i class="fa-solid fa-up-right-from-square"></i></a>{% endif %}</td>
           <td class="vault-mono small">{{ r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else '—' }}</td>
@@ -74,7 +80,7 @@
         <tr class="vault-edit" id="rec-{{ r.id }}" hidden><td colspan="5">
           <form method="post" action="{{ url_for('admin_vault.record_update', customer_id=customer.id, record_id=r.id) }}" class="vault-grid">
             {{ csrf_input() }}
-            <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}" {{ 'selected' if r.record_type==t }}>{{ t }}</option>{% endfor %}</select></label>
+            <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}" {{ 'selected' if r.record_type==t }}>{{ record_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
             <label>العنوان<input class="hub-input" name="title" value="{{ r.title }}" required></label>
             <label>القيمة<input class="hub-input" name="value" value="{{ r.value }}"></label>
             <label>الرابط<input class="hub-input" name="url" value="{{ r.url }}"></label>
@@ -124,7 +130,7 @@
       <div class="vault-secret-card" data-secret-id="{{ s.id }}">
         <div class="vault-secret-head">
           <div><strong>{{ s.label }}</strong> <span class="vault-pill">{{ secret_type_labels.get(s.secret_type, s.secret_type) }}</span>
-            <span class="vault-pill vault-status-{{ s.status }}">{{ s.status }}</span></div>
+            <span class="vault-pill vault-status-{{ s.status }}">{{ status_labels.get(s.status, s.status) }}</span></div>
         </div>
         <div class="vault-secret-meta">
           {% if s.username %}<span><i class="fa-solid fa-user"></i> {{ s.username }}</span>{% endif %}
@@ -189,7 +195,7 @@
           <td class="vault-mono small">{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
           <td>{{ a.actor.username if a.actor else '—' }}</td>
           <td>{{ action_labels.get(a.action, a.action) }}</td>
-          <td><small>{{ a.target_type }}{% if a.target_id %} #{{ a.target_id }}{% endif %}</small></td>
+          <td><small>{{ target_labels.get(a.target_type, a.target_type) }}{% if a.target_id %} #{{ a.target_id }}{% endif %}</small></td>
           <td class="small">{{ a.reason or '—' }}</td>
           <td class="vault-mono small" title="{{ a.user_agent }}">{{ a.ip_address or '—' }}</td>
         </tr>
