@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the HobeRadius WhatsApp queue drain every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Persistent=true
+Unit=hoberadius-license-panel-whatsapp-drain.service
+
+[Install]
+WantedBy=timers.target

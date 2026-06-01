@@ -429,6 +429,26 @@ def _register_cli_commands(app: Flask) -> None:
             db.session.commit()
         click.echo(f"Admin '{username}' created.")
 
+    @app.cli.command("whatsapp-drain")
+    @click.option("--batch-size", type=int, default=None, help="Max messages to process this run.")
+    def whatsapp_drain_command(batch_size):
+        """Drain one batch of queued WhatsApp messages.
+
+        The panel has no resident worker; this is invoked by a systemd timer
+        (see deploy/systemd) every couple of minutes. Sends due ``queued``
+        messages through the provider and prints a one-line summary.
+        """
+        from .services.whatsapp.worker import drain_once
+
+        with app.app_context():
+            summary = drain_once(batch_size)
+        click.echo(
+            "whatsapp-drain: "
+            f"claimed={summary['claimed']} sent={summary['sent']} "
+            f"retried={summary['retried']} failed={summary['failed']} "
+            f"skipped={summary['skipped']}"
+        )
+
 
 def _install_csrf(app: Flask) -> None:
     def csrf_token() -> str:
