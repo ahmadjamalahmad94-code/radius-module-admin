@@ -12,6 +12,7 @@ from ..services.customer_control import (
     build_runtime_contract_for_license,
     clean_username,
     create_customer_service_request,
+    customer_service_map,
     normalize_contact_email,
     normalize_contact_phone,
     service_catalog_items,
@@ -578,6 +579,265 @@ def _current_customer_user() -> CustomerUser | None:
         return db.session.get(CustomerUser, int(user_id))
     except (TypeError, ValueError):
         return None
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Customer-portal WhatsApp wizard (the customer's OWN WhatsApp Business number)
+#
+# Locked unless the `whatsapp_gateway` service entitlement is granted for this
+# customer. Everything is scoped to the SESSION customer — a customer_id in the
+# form is never trusted. The only thing that talks to Meta is
+# MetaCloudWhatsAppProvider().validate_credentials (a real call, wrapped).
+# ───────────────────────────────────────────────────────────────────────────
+WHATSAPP_GATEWAY_SERVICE_KEY = "whatsapp_gateway"
+
+
+def _whatsapp_gateway_granted(customer: Customer) -> bool:
+    """True iff the `whatsapp_gateway` service entitlement is granted (active).
+
+    Mirrors the admin grant (entitlement.enabled True + status "active"); any
+    other state (missing / disabled / suspended / expired) is LOCKED.
+    """
+    entitlement = customer_service_map(customer).get(WHATSAPP_GATEWAY_SERVICE_KEY)
+    return bool(entitlement and entitlement.enabled and entitlement.status == "active")
+
+
+def _whatsapp_current_step(account, settings, templates) -> int:
+    """Resolve the wizard step (1..6) from the account/settings/templates state.
+
+    1: no account credentials saved yet.
+    2: creds saved but the connection is not yet `connected`.
+    3: connected but no approved template mapped.
+    4: an approved template exists but the service is not enabled (offer test).
+    5: service enabled (configure event toggles).
+    6: done — connected + approved template + service enabled.
+    """
+    if account is None or not (account.phone_number_id or "").strip():
+        return 1
+    if account.connection_status != "connected":
+        return 2
+    has_approved = any(t.status == "approved" and (t.provider_template_name or "").strip() for t in templates)
+    if not has_approved:
+        return 3
+    if not settings.enabled:
+        return 4
+    return 6
+
+
+def _render_customer_portal_whatsapp(user: CustomerUser):
+    from ..services.whatsapp import settings as wa_settings
+    from ..models import WhatsAppMessageQueue, utcnow
+
+    customer = user.customer
+    locked = not _whatsapp_gateway_granted(customer)
+    if locked:
+        return render_template(
+            "public/customer_portal_whatsapp.html",
+            customer=customer,
+            customer_user=user,
+            locked=True,
+            account=None,
+            account_public={},
+            settings=None,
+            templates=[],
+            usage={"daily": {}, "monthly": {}},
+            recent_messages=[],
+            current_step=1,
+        )
+
+    now = utcnow()
+    account = wa_settings.get_account(customer.id)
+    settings_row = wa_settings.get_settings(customer.id)
+    templates = wa_settings.list_templates(customer.id)
+    usage = wa_settings.get_usage(customer.id, now)
+    recent_messages = (
+        WhatsAppMessageQueue.query.filter_by(customer_id=customer.id)
+        .order_by(WhatsAppMessageQueue.created_at.desc(), WhatsAppMessageQueue.id.desc())
+        .limit(10)
+        .all()
+    )
+    return render_template(
+        "public/customer_portal_whatsapp.html",
+        customer=customer,
+        customer_user=user,
+        locked=False,
+        account=account,
+        account_public=wa_settings.account_public_dict(account),
+        settings=settings_row,
+        templates=templates,
+        usage=usage,
+        recent_messages=recent_messages,
+        current_step=_whatsapp_current_step(account, settings_row, templates),
+    )
+
+
+@bp.get("/portal/whatsapp")
+def customer_portal_whatsapp():
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    return _render_customer_portal_whatsapp(user)
+
+
+@bp.post("/portal/whatsapp")
+def customer_portal_whatsapp_post():
+    """Single PRG endpoint dispatched by an `action` field. Always scoped to the
+    session customer — a customer_id in the form is intentionally ignored."""
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    customer = user.customer
+    # The service must be granted to mutate anything.
+    if not _whatsapp_gateway_granted(customer):
+        flash("هذه الخدمة غير مفعلة في خطتك الحالية. يمكنك طلب تفعيلها من الإدارة.", "error")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    from ..services.whatsapp import settings as wa_settings
+
+    action = (request.form.get("action") or "").strip()
+
+    if action == "save_credentials":
+        access_token = (request.form.get("access_token") or "").strip()
+        wa_settings.upsert_account(
+            customer.id,
+            meta_business_id=(request.form.get("meta_business_id") or "").strip(),
+            whatsapp_business_account_id=(request.form.get("whatsapp_business_account_id") or "").strip(),
+            phone_number_id=(request.form.get("phone_number_id") or "").strip(),
+            display_phone_number=(request.form.get("display_phone_number") or "").strip(),
+            business_display_name=(request.form.get("business_display_name") or "").strip(),
+            # Only overwrite the token when a new value is supplied (write-only).
+            access_token=access_token or None,
+        )
+        flash("تم حفظ بيانات الربط. لا يظهر الـ Token بعد حفظه — يمكنك استبداله فقط.", "success")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    if action == "validate":
+        from ..services.whatsapp.providers import (
+            MetaCloudWhatsAppProvider,
+            WhatsAppProviderError,
+        )
+        from ..models import utcnow
+
+        account = wa_settings.get_account(customer.id)
+        if account is None:
+            flash("أدخل بيانات الربط ثم اضغط فحص الربط.", "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+        try:
+            result = MetaCloudWhatsAppProvider().validate_credentials(account)
+        except WhatsAppProviderError as exc:
+            wa_settings.set_connection_status(
+                customer.id, "error", error_code=exc.code, error_message=exc.message
+            )
+            flash("يوجد خطأ في الربط. راجع البيانات أو Token. " + (exc.message or ""), "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+        # Success: refresh display fields then mark connected.
+        account.display_phone_number = result.get("display_phone_number") or account.display_phone_number
+        account.business_display_name = result.get("business_display_name") or account.business_display_name
+        account.quality_rating = result.get("quality_rating") or account.quality_rating
+        account.messaging_limit_tier = result.get("messaging_limit_tier") or account.messaging_limit_tier
+        account.last_health_check_at = utcnow()
+        db.session.commit()
+        wa_settings.set_connection_status(customer.id, "connected")
+        flash("تم التحقق من الربط بنجاح.", "success")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    if action == "save_template":
+        local_key = (request.form.get("local_key") or "").strip()
+        if not local_key:
+            flash("المفتاح المحلي للقالب مطلوب.", "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+        language = (request.form.get("language") or "ar").strip() or "ar"
+        category = (request.form.get("category") or "UTILITY").strip().upper()
+        if category not in ("UTILITY", "MARKETING", "AUTHENTICATION"):
+            category = "UTILITY"
+        approve = (request.form.get("approve") or "").strip() == "1"
+        wa_settings.upsert_template(
+            customer.id,
+            local_key=local_key,
+            provider_template_name=(request.form.get("provider_template_name") or "").strip(),
+            language=language,
+            category=category,
+            body_preview=(request.form.get("body_preview") or "").strip(),
+            status="approved" if approve else None,
+        )
+        if approve:
+            wa_settings.set_template_status(customer.id, local_key, language, "approved")
+        flash("تم حفظ القالب." + (" وتم اعتماده." if approve else ""), "success")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    if action == "send_test":
+        from ..services.whatsapp import policy as wa_policy
+        from ..services.whatsapp import queue as wa_queue
+        from ..services.whatsapp import worker as wa_worker
+        from ..services.whatsapp.phone import WhatsAppPhoneError, normalize_phone_for_whatsapp
+        from ..models import utcnow
+
+        recipient = (request.form.get("recipient") or "").strip()
+        if not recipient:
+            flash("أدخل رقم المستلم للتجربة.", "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+        try:
+            normalized = normalize_phone_for_whatsapp(recipient)
+        except WhatsAppPhoneError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+
+        idem = f"portal-test:{customer.id}:{normalized}:{int(utcnow().timestamp())}"
+        decision = wa_policy.can_send(
+            customer.id,
+            event_type="test_message",
+            recipient_phone=recipient,
+            idempotency_key=idem,
+        )
+        if not decision.allowed:
+            flash(decision.message_ar or "تعذّر إرسال رسالة التجربة.", "error")
+            return redirect(url_for("public.customer_portal_whatsapp"))
+
+        template_key = (request.form.get("template_key") or "").strip()
+        template = wa_settings.get_template(customer.id, template_key, "ar") if template_key else None
+        wa_queue.enqueue(
+            customer.id,
+            source_system="customer_portal",
+            source_event_type="test_message",
+            recipient_phone=recipient,
+            normalized_recipient_phone=decision.normalized_phone or normalized,
+            idempotency_key=idem,
+            template_key=template_key or None,
+            template_name=(template.provider_template_name if template else None),
+            language=(template.language if template else "ar"),
+        )
+        try:
+            wa_worker.drain_once()
+        except Exception:  # noqa: BLE001 — drain is best-effort.
+            db.session.rollback()
+        flash("تمت جدولة رسالة التجربة. تابع حالتها في سجل الرسائل.", "success")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    if action in ("enable_events", "save_settings"):
+        fields: dict = {
+            "enabled": bool(request.form.get("enabled")),
+            "require_subscriber_opt_in": bool(request.form.get("require_subscriber_opt_in")),
+        }
+        for toggle in (
+            "allow_otp",
+            "allow_expiry_notice",
+            "allow_quota_notice",
+            "allow_maintenance_notice",
+            "allow_password_reset",
+            "allow_marketing",
+        ):
+            fields[toggle] = bool(request.form.get(toggle))
+        wa_settings.update_settings(customer.id, **fields)
+        flash("تم حفظ الإعدادات.", "success")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    if action == "disable_service":
+        wa_settings.update_settings(customer.id, enabled=False)
+        flash("تم إيقاف الخدمة.", "warning")
+        return redirect(url_for("public.customer_portal_whatsapp"))
+
+    flash("إجراء غير معروف.", "error")
+    return redirect(url_for("public.customer_portal_whatsapp"))
 
 
 def _runtime_setup_for_license(lic: License | None) -> dict:
