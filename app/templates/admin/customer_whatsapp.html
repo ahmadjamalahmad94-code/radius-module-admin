@@ -1,0 +1,409 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}واتساب — {{ customer.company_name }}{% endblock %}
+{% block page_title %}واتساب — {{ customer.company_name }}{% endblock %}
+{% block page_subtitle %}ربط واتساب Business وإعداداته وقوالبه ورسائله لهذا العميل{% endblock %}
+
+{% macro wa_status(status) -%}
+  {%- set m = {
+    'connected':      ('badge-green',  'متصل'),
+    'disconnected':   ('badge-gray',   'غير متصل'),
+    'pending':        ('badge-amber',  'بانتظار الإعداد'),
+    'not_configured': ('badge-gray',   'غير مهيأ'),
+    'suspended':      ('badge-red',    'موقوف'),
+    'error':          ('badge-red',    'خطأ'),
+  } -%}
+  {%- set cls, label = m.get(status, ('badge-gray', status)) -%}
+  <span class="badge {{ cls }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro wa_msg_status(status) -%}
+  {%- set m = {
+    'queued':('badge-amber','بانتظار'),'sending':('badge-blue','جارٍ'),'sent':('badge-blue','أُرسلت'),
+    'delivered':('badge-green','تم التسليم'),'read':('badge-green','قُرئت'),
+    'failed':('badge-red','فشل'),'canceled':('badge-gray','ملغاة')
+  } -%}
+  {%- set cls, label = m.get(status, ('badge-gray', status)) -%}
+  <span class="badge {{ cls }}">{{ label }}</span>
+{%- endmacro %}
+
+{% set status = account.connection_status if account else 'not_configured' %}
+
+{% block content %}
+{# ── Hero ── #}
+<div class="hub-hero">
+  <div class="hub-hero-row">
+    <span class="hub-hero-icon"><i class="fa-brands fa-whatsapp"></i></span>
+    <div class="hub-hero-text">
+      <h1 class="hub-hero-title">واتساب — {{ customer.company_name }}</h1>
+      <div class="hub-hero-sub">{{ account_public.display_phone_number or 'لا يوجد رقم مهيأ بعد' }}</div>
+    </div>
+    <div class="hub-hero-actions">
+      <span class="hub-hero-chip"><i class="fa-solid fa-circle"></i> {{ ({'connected':'متصل','suspended':'موقوف','error':'خطأ','pending':'بانتظار الإعداد','disconnected':'غير متصل'}).get(status, 'غير مهيأ') }}</span>
+      {% if settings.enabled %}
+        <span class="hub-hero-chip"><i class="fa-solid fa-toggle-on"></i> الخدمة مفعّلة</span>
+      {% else %}
+        <span class="hub-hero-chip"><i class="fa-solid fa-toggle-off"></i> الخدمة موقوفة</span>
+      {% endif %}
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">
+        <i class="fa-solid fa-arrow-right-long"></i> ملف العميل
+      </a>
+    </div>
+  </div>
+</div>
+
+{# ── KPI strip (usage) ── #}
+<div class="hub-kpi-grid">
+  {{ hub.kpi("قائمة الانتظار اليوم", usage.daily.queued, icon="paper-plane", variant="violet") }}
+  {{ hub.kpi("أُرسلت اليوم", usage.daily.sent, icon="circle-check", variant="blue") }}
+  {{ hub.kpi("سُلّمت اليوم", usage.daily.delivered, icon="check-double", variant="green") }}
+  {{ hub.kpi("استهلاك الشهر", usage.monthly.queued, icon="chart-column", variant="grey", sub="الحد: " ~ (settings.monthly_message_limit or '—')) }}
+</div>
+
+<div class="hub-grid-2">
+  {# ── (A) Connection state ── #}
+  {% call hub.section("حالة الربط", icon="plug") %}
+    <div class="hub-detail-list">
+      <div><span>الحالة</span><strong>{{ wa_status(status) }}</strong></div>
+      <div><span>رقم الهاتف</span><strong class="ltr mono">{{ account_public.display_phone_number or '—' }}</strong></div>
+      <div><span>الاسم التجاري</span><strong>{{ account_public.business_display_name or '—' }}</strong></div>
+      <div><span>WABA ID</span><strong class="ltr mono">{{ account_public.whatsapp_business_account_id or '—' }}</strong></div>
+      <div><span>Phone Number ID</span><strong class="ltr mono">{{ account_public.phone_number_id or '—' }}</strong></div>
+      <div><span>تقييم الجودة</span><strong>{{ account_public.quality_rating or '—' }}</strong></div>
+      <div><span>آخر فحص صحة</span><strong>{{ account.last_health_check_at|dt if account else '—' }}</strong></div>
+      <div><span>آخر خطأ</span><strong>
+        {% if account_public.last_error and account_public.last_error.message %}
+          <span class="hub-pill hub-pill--red"><span class="dot"></span>{{ account_public.last_error.code }}: {{ account_public.last_error.message }}</span>
+        {% else %}—{% endif %}
+      </strong></div>
+    </div>
+    <div class="hub-flex-row" style="gap:8px; margin-top:14px">
+      {% if status == 'suspended' %}
+        <form method="post" action="{{ url_for('admin.customer_whatsapp_account_status', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <input type="hidden" name="action" value="reactivate">
+          <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> إعادة تفعيل الحساب</button>
+        </form>
+      {% elif account %}
+        <form method="post" action="{{ url_for('admin.customer_whatsapp_account_status', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <input type="hidden" name="action" value="suspend">
+          <button class="hub-btn hub-btn--danger hub-btn--sm" type="submit"><i class="fa-solid fa-pause"></i> إيقاف الحساب</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endcall %}
+
+  {# ── (B) Service settings ── #}
+  {% call hub.section("إعدادات الخدمة", icon="sliders") %}
+    <form method="post" action="{{ url_for('admin.customer_whatsapp_settings', customer_id=customer.id) }}" class="hub-form">
+      {{ csrf_input() }}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الباقة</label>
+          <select class="hub-select" name="plan_code">
+            {% for code in plan_codes %}
+              <option value="{{ code }}" {{ 'selected' if settings.plan_code == code else '' }}>{{ code }}</option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">تغيير الباقة يطبّق حدودها تلقائيًا.</div>
+        </div>
+        <div class="hub-field">
+          <label>الحد الشهري</label>
+          <input class="hub-input" type="number" min="0" name="monthly_message_limit" value="{{ settings.monthly_message_limit or 0 }}">
+        </div>
+        <div class="hub-field">
+          <label>الحد اليومي</label>
+          <input class="hub-input" type="number" min="0" name="daily_message_limit" value="{{ settings.daily_message_limit or 0 }}">
+        </div>
+        <div class="hub-field">
+          <label>الحد في الدقيقة</label>
+          <input class="hub-input" type="number" min="0" name="per_minute_limit" value="{{ settings.per_minute_limit or 0 }}">
+        </div>
+      </div>
+
+      <div class="hub-fieldset" style="margin-top:8px">
+        <div class="hub-fieldset-title"><i class="fa-solid fa-list-check"></i> أنواع الرسائل المسموح بها</div>
+        {% set toggle_labels = {
+          'allow_otp':'رموز التحقق (OTP)',
+          'allow_expiry_notice':'تنبيه الانتهاء',
+          'allow_quota_notice':'تنبيه الاستهلاك',
+          'allow_maintenance_notice':'تنبيه الصيانة',
+          'allow_password_reset':'استعادة كلمة المرور',
+          'allow_bulk_utility':'رسائل مجمّعة (خدمية)',
+          'allow_marketing':'تسويق'
+        } %}
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px">
+          {% for key in settings_toggles %}
+            <label class="hub-check-item">
+              <input type="checkbox" name="{{ key }}" value="1" {{ 'checked' if settings[key] else '' }}>
+              <span>{{ toggle_labels.get(key, key) }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <label class="hub-check-item" style="margin-top:8px">
+        <input type="checkbox" name="require_subscriber_opt_in" value="1" {{ 'checked' if settings.require_subscriber_opt_in else '' }}>
+        <span>اشتراط موافقة المشترك (opt-in) قبل الإرسال</span>
+      </label>
+
+      <div class="hub-fieldset" style="margin-top:8px">
+        <div class="hub-fieldset-title"><i class="fa-solid fa-moon"></i> ساعات الهدوء</div>
+        <label class="hub-check-item">
+          <input type="checkbox" name="quiet_hours_enabled" value="1" {{ 'checked' if settings.quiet_hours_enabled else '' }}>
+          <span>تفعيل ساعات الهدوء</span>
+        </label>
+        <div class="hub-form-grid" style="margin-top:8px">
+          <div class="hub-field">
+            <label>من</label>
+            <input class="hub-input ltr" type="time" name="quiet_hours_start" value="{{ settings.quiet_hours_start or '' }}">
+          </div>
+          <div class="hub-field">
+            <label>إلى</label>
+            <input class="hub-input ltr" type="time" name="quiet_hours_end" value="{{ settings.quiet_hours_end or '' }}">
+          </div>
+        </div>
+      </div>
+
+      <div class="hub-flex-row" style="gap:8px; margin-top:14px">
+        <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات</button>
+      </div>
+    </form>
+
+    <div class="hub-flex-row" style="gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid var(--hub-line-2)">
+      {% if settings.enabled %}
+        <form method="post" action="{{ url_for('admin.customer_whatsapp_service_toggle', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <input type="hidden" name="action" value="disable">
+          <button class="hub-btn hub-btn--danger hub-btn--sm" type="submit"><i class="fa-solid fa-toggle-off"></i> إيقاف الخدمة</button>
+        </form>
+        <span class="hub-pill hub-pill--green"><span class="dot"></span>الخدمة مفعّلة</span>
+      {% else %}
+        <form method="post" action="{{ url_for('admin.customer_whatsapp_service_toggle', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <input type="hidden" name="action" value="enable">
+          <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-toggle-on"></i> تفعيل الخدمة</button>
+        </form>
+        <span class="hub-pill hub-pill--grey"><span class="dot"></span>الخدمة موقوفة</span>
+      {% endif %}
+    </div>
+  {% endcall %}
+</div>
+
+{# ── (C) Credentials ── #}
+{% call hub.section("بيانات الربط", icon="key", meta='<span class="hub-pill hub-pill--amber">حسّاسة</span>') %}
+  <div class="hub-flash hub-flash--warning" style="margin-bottom:14px">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    لا يظهر Token بعد حفظه — يمكنك استبداله فقط. النسخة المخزّنة معروضة كمعاينة مقنّعة.
+  </div>
+  <form method="post" action="{{ url_for('admin.customer_whatsapp_credentials', customer_id=customer.id) }}" class="hub-form">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>Meta Business ID</label>
+        <input class="hub-input ltr" name="meta_business_id" value="{{ account_public.meta_business_id or '' }}">
+      </div>
+      <div class="hub-field">
+        <label>WABA ID</label>
+        <input class="hub-input ltr" name="whatsapp_business_account_id" value="{{ account_public.whatsapp_business_account_id or '' }}">
+      </div>
+      <div class="hub-field">
+        <label>Phone Number ID</label>
+        <input class="hub-input ltr" name="phone_number_id" value="{{ account_public.phone_number_id or '' }}">
+      </div>
+      <div class="hub-field">
+        <label>Display phone number</label>
+        <input class="hub-input ltr" name="display_phone_number" value="{{ account_public.display_phone_number or '' }}">
+      </div>
+      <div class="hub-field">
+        <label>Business display name</label>
+        <input class="hub-input" name="business_display_name" value="{{ account_public.business_display_name or '' }}">
+      </div>
+      <div class="hub-field">
+        <label>انتهاء صلاحية Token</label>
+        <input class="hub-input" type="date" name="token_expires_at"
+               value="{{ account.token_expires_at.strftime('%Y-%m-%d') if account and account.token_expires_at else '' }}">
+      </div>
+    </div>
+
+    <div class="hub-field">
+      <label>Access Token <span class="hub-muted" style="font-weight:600">(للكتابة فقط)</span></label>
+      <input class="hub-input ltr" type="password" name="access_token" autocomplete="new-password"
+             placeholder="أدخل توكن جديد فقط إذا أردت استبداله">
+      <div class="hub-field-hint">
+        المخزّن حاليًا: <span class="mono">{{ account_public.access_token_masked or '—' }}</span>
+        — اتركه فارغًا للإبقاء على التوكن الحالي.
+      </div>
+    </div>
+
+    <div class="hub-flex-row" style="gap:8px; margin-top:12px">
+      <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('admin.customer_whatsapp_validate', customer_id=customer.id) }}" style="margin-top:10px">
+    {{ csrf_input() }}
+    <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-plug-circle-check"></i> فحص الربط</button>
+    <span class="hub-field-hint" style="display:inline-block; margin-inline-start:8px">يتصل بـ Meta للتحقق من التوكن ورقم الهاتف ويحدّث الحالة.</span>
+  </form>
+{% endcall %}
+
+{# ── (D) Templates ── #}
+{% call hub.section("القوالب", icon="file-lines", meta=templates|length ~ ' قالب') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>المفتاح المحلي</th>
+          <th>اسم المزوّد</th>
+          <th>اللغة</th>
+          <th>الفئة</th>
+          <th>الحالة</th>
+          <th>معاينة النص</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for tpl in templates %}
+        <tr>
+          <td class="mono">{{ tpl.local_key }}</td>
+          <td class="mono">{{ tpl.provider_template_name or '—' }}</td>
+          <td class="ltr">{{ tpl.language }}</td>
+          <td>{{ tpl.category }}</td>
+          <td>
+            {% if tpl.status == 'approved' %}<span class="badge badge-green">معتمد</span>
+            {% elif tpl.status == 'rejected' %}<span class="badge badge-red">مرفوض</span>
+            {% elif tpl.status in ['paused','disabled'] %}<span class="badge badge-gray">{{ tpl.status }}</span>
+            {% else %}<span class="badge badge-amber">{{ tpl.status }}</span>{% endif %}
+          </td>
+          <td style="max-width:260px">{{ tpl.body_preview or '—' }}</td>
+          <td>
+            <details class="control-details" style="display:inline-block; min-width:260px">
+              <summary class="hub-btn hub-btn--ghost hub-btn--sm" style="list-style:none; cursor:pointer"><i class="fa-solid fa-pen"></i> تعديل</summary>
+              <form method="post" action="{{ url_for('admin.customer_whatsapp_template_save', customer_id=customer.id) }}" class="hub-form" style="margin-top:8px; padding:10px; border:1px solid var(--hub-line-2); border-radius:10px; background:#fff; min-width:280px">
+                {{ csrf_input() }}
+                <input type="hidden" name="local_key" value="{{ tpl.local_key }}">
+                <input type="hidden" name="language" value="{{ tpl.language }}">
+                <div class="hub-field"><label>اسم المزوّد</label><input class="hub-input ltr" name="provider_template_name" value="{{ tpl.provider_template_name or '' }}"></div>
+                <div class="hub-field">
+                  <label>الفئة</label>
+                  <select class="hub-select" name="category">
+                    {% for cat in template_categories %}<option value="{{ cat }}" {{ 'selected' if tpl.category == cat else '' }}>{{ cat }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="hub-field"><label>معاينة النص</label><textarea class="hub-textarea" name="body_preview" rows="2">{{ tpl.body_preview or '' }}</textarea></div>
+                <div class="hub-flex-row" style="gap:6px">
+                  <button class="hub-btn hub-btn--primary hub-btn--sm" name="action" value="save" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" name="action" value="approve" type="submit"><i class="fa-solid fa-circle-check"></i> اعتماد يدوي</button>
+                </div>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">{{ hub.empty("لا توجد قوالب بعد.", sub="أضف قالبًا جديدًا أدناه ثم اعتمده يدويًا أو زامنه مع Meta.", icon="file-lines") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details class="control-details" style="margin-top:12px">
+    <summary class="hub-btn hub-btn--secondary hub-btn--sm" style="list-style:none; cursor:pointer"><i class="fa-solid fa-plus"></i> إضافة قالب</summary>
+    <form method="post" action="{{ url_for('admin.customer_whatsapp_template_save', customer_id=customer.id) }}" class="hub-form" style="margin-top:10px; padding:12px; border:1px solid var(--hub-line-2); border-radius:10px; background:#fff">
+      {{ csrf_input() }}
+      <div class="hub-form-grid">
+        <div class="hub-field"><label>المفتاح المحلي *</label><input class="hub-input mono" name="local_key" required placeholder="otp"></div>
+        <div class="hub-field"><label>اسم المزوّد</label><input class="hub-input ltr" name="provider_template_name" placeholder="otp_ar"></div>
+        <div class="hub-field"><label>اللغة</label><input class="hub-input ltr" name="language" value="ar"></div>
+        <div class="hub-field">
+          <label>الفئة</label>
+          <select class="hub-select" name="category">
+            {% for cat in template_categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="hub-field"><label>معاينة النص</label><textarea class="hub-textarea" name="body_preview" rows="2"></textarea></div>
+      <div class="hub-flex-row" style="gap:6px; margin-top:8px">
+        <button class="hub-btn hub-btn--primary hub-btn--sm" name="action" value="save" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ القالب</button>
+        <button class="hub-btn hub-btn--secondary hub-btn--sm" name="action" value="approve" type="submit"><i class="fa-solid fa-circle-check"></i> حفظ + اعتماد يدوي</button>
+      </div>
+    </form>
+  </details>
+{% endcall %}
+
+{# ── (E) Test message ── #}
+{% call hub.section("رسالة تجربة", icon="vial") %}
+  <form method="post" action="{{ url_for('admin.customer_whatsapp_test', customer_id=customer.id) }}" class="hub-form">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>رقم المستلم</label>
+        <input class="hub-input ltr" name="recipient" placeholder="+9705xxxxxxxx" required>
+        <div class="hub-field-hint">يُطبَّع الرقم تلقائيًا إلى صيغة E.164.</div>
+      </div>
+      <div class="hub-field">
+        <label>القالب</label>
+        <select class="hub-select" name="template_key" required>
+          <option value="">— اختر قالبًا —</option>
+          {% for tpl in templates %}
+            <option value="{{ tpl.local_key }}">{{ tpl.local_key }}{% if tpl.status != 'approved' %} (غير معتمد){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="hub-flex-row" style="gap:8px; margin-top:12px">
+      <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"
+              {{ 'disabled' if not settings.enabled else '' }}>
+        <i class="fa-solid fa-paper-plane"></i> إرسال
+      </button>
+      {% if not settings.enabled %}
+        <span class="hub-field-hint" style="display:inline-block">فعّل الخدمة أولًا لإرسال رسالة تجربة.</span>
+      {% endif %}
+    </div>
+  </form>
+{% endcall %}
+
+<div class="hub-grid-2">
+  {# ── (F) Recent messages ── #}
+  {% call hub.section("آخر الرسائل", icon="paper-plane", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.whatsapp_messages', customer_id=customer.id) ~ '"><i class="fa-solid fa-list"></i> كل الرسائل</a>') %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th class="date">الوقت</th><th>المستلم</th><th>الحدث</th><th>الحالة</th></tr></thead>
+        <tbody>
+        {% for msg in recent_messages %}
+          <tr>
+            <td class="date">{{ msg.created_at|dt }}</td>
+            <td class="ltr-cell mono" style="text-align:start">{{ msg.recipient_phone }}</td>
+            <td>{{ msg.source_event_type }}</td>
+            <td>{{ wa_msg_status(msg.status) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">{{ hub.empty("لا توجد رسائل بعد.", icon="paper-plane") }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+
+  {# ── (G) Webhook events ── #}
+  {% call hub.section("أحداث الـ Webhook", icon="bolt", meta='<a class="hub-btn hub-btn--ghost hub-btn--sm" href="' ~ url_for('admin.whatsapp_webhooks') ~ '"><i class="fa-solid fa-bolt"></i> الكل</a>') %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead><tr><th class="date">الوقت</th><th>النوع</th><th>المعالجة</th></tr></thead>
+        <tbody>
+        {% for ev in webhook_events %}
+          <tr>
+            <td class="date">{{ ev.received_at|dt }}</td>
+            <td><span class="hub-pill hub-pill--violet">{{ ev.event_type }}</span></td>
+            <td>{% if ev.processed %}<span class="badge badge-green">تمت</span>{% else %}<span class="badge badge-amber">قيد الانتظار</span>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">{{ hub.empty("لا توجد أحداث بعد.", icon="bolt") }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}

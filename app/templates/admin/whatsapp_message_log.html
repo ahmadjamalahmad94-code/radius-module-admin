@@ -1,0 +1,134 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% from "_partials/_pager.html" import pager %}
+{% block title %}سجل رسائل واتساب{% endblock %}
+{% block page_title %}سجل رسائل واتساب{% endblock %}
+{% block page_subtitle %}كل الرسائل الصادرة عبر بوابة واتساب مع حالتها ومحاولاتها وأخطائها{% endblock %}
+
+{% macro wa_msg_status(status) -%}
+  {%- set m = {
+    'queued':    ('badge-amber', 'بانتظار الإرسال'),
+    'sending':   ('badge-blue',  'جارٍ الإرسال'),
+    'sent':      ('badge-blue',  'أُرسلت'),
+    'delivered': ('badge-green', 'تم التسليم'),
+    'read':      ('badge-green', 'تمت القراءة'),
+    'failed':    ('badge-red',   'فشل'),
+    'canceled':  ('badge-gray',  'ملغاة'),
+  } -%}
+  {%- set cls, label = m.get(status, ('badge-gray', status)) -%}
+  <span class="badge {{ cls }}">{{ label }}</span>
+{%- endmacro %}
+
+{% block content %}
+{{ hub.hero(
+  "سجل الرسائل",
+  subtitle="هذا سجل قائمة الإرسال داخل اللوحة، وليس سجل واتساب على هواتف العملاء.",
+  icon="paper-plane"
+) }}
+
+{% call hub.section("تصفية", icon="filter") %}
+  <form class="hub-filter-form" method="get" style="flex-wrap:wrap; gap:10px">
+    <select class="hub-select" name="customer_id">
+      <option value="">كل العملاء</option>
+      {% for c in customers %}
+        <option value="{{ c.id }}" {{ 'selected' if filters.customer_id == c.id|string else '' }}>{{ c.company_name }}</option>
+      {% endfor %}
+    </select>
+    <select class="hub-select" name="status">
+      <option value="">كل الحالات</option>
+      {% for s in ['queued','sending','sent','delivered','read','failed','canceled'] %}
+        <option value="{{ s }}" {{ 'selected' if filters.status == s else '' }}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <div class="hub-input-icon">
+      <i class="fa-solid fa-bolt"></i>
+      <input class="hub-input" name="event" placeholder="الحدث (otp / expiry…)" value="{{ filters.event }}">
+    </div>
+    <div class="hub-input-icon">
+      <i class="fa-solid fa-phone"></i>
+      <input class="hub-input ltr" name="phone" placeholder="رقم المستلم" value="{{ filters.phone }}">
+    </div>
+    <div class="hub-input-icon">
+      <i class="fa-solid fa-hashtag"></i>
+      <input class="hub-input ltr" name="provider_message_id" placeholder="معرّف المزوّد" value="{{ filters.provider_message_id }}">
+    </div>
+    <label class="hub-field" style="margin:0">
+      <span class="hub-field-label">من تاريخ</span>
+      <input class="hub-input" type="date" name="date_from" value="{{ filters.date_from }}">
+    </label>
+    <label class="hub-field" style="margin:0">
+      <span class="hub-field-label">إلى تاريخ</span>
+      <input class="hub-input" type="date" name="date_to" value="{{ filters.date_to }}">
+    </label>
+    <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
+      <i class="fa-solid fa-filter"></i> تصفية
+    </button>
+    <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.whatsapp_messages') }}">
+      <i class="fa-solid fa-rotate-left"></i> مسح
+    </a>
+  </form>
+{% endcall %}
+
+{% call hub.section("الرسائل", icon="list", meta=total ~ ' رسالة') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th class="date">الوقت</th>
+          <th>العميل</th>
+          <th>المستلم</th>
+          <th>الحدث</th>
+          <th>القالب</th>
+          <th>الحالة</th>
+          <th class="num">المحاولات</th>
+          <th>معرّف المزوّد</th>
+          <th>الخطأ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for msg in messages %}
+        <tr>
+          <td class="date">{{ msg.created_at|dt }}</td>
+          <td>{{ msg.customer.company_name if msg.customer else ('#' ~ msg.customer_id) }}</td>
+          <td class="ltr-cell mono" style="text-align:start">{{ msg.recipient_phone }}</td>
+          <td>{{ msg.source_event_type }}</td>
+          <td class="mono">{{ msg.template_key or msg.template_name or '—' }}</td>
+          <td>{{ wa_msg_status(msg.status) }}</td>
+          <td class="num">{{ msg.attempts }}/{{ msg.max_attempts }}</td>
+          <td class="ltr-cell mono" style="text-align:start; font-size:11px">
+            {% if msg.provider_message_id %}{{ msg.provider_message_id[:18] }}{% if msg.provider_message_id|length > 18 %}…{% endif %}{% else %}—{% endif %}
+          </td>
+          <td style="max-width:200px">
+            {% if msg.error_message %}
+              <span class="hub-pill hub-pill--red" title="{{ msg.error_code }}: {{ msg.error_message }}"><span class="dot"></span>{{ msg.error_message[:40] }}{% if msg.error_message|length > 40 %}…{% endif %}</span>
+            {% else %}
+              <span class="hub-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="hub-actions">
+              {% if msg.status == 'failed' and msg.attempts < msg.max_attempts %}
+                <form method="post" action="{{ url_for('admin.whatsapp_message_retry', message_id=msg.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-rotate"></i> إعادة المحاولة</button>
+                </form>
+              {% endif %}
+              {% if msg.status in ['queued', 'failed'] %}
+                <form method="post" action="{{ url_for('admin.whatsapp_message_cancel', message_id=msg.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <button class="hub-btn hub-btn--danger hub-btn--sm" type="submit"><i class="fa-solid fa-ban"></i> إلغاء</button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10">{{ hub.empty("لا توجد رسائل مطابقة.", sub="جرّب توسيع نطاق التصفية أو إزالة الفلاتر.", icon="paper-plane") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ pager(messages, page=page, per_page=per_page, total=total, base_args=request.args) }}
+{% endcall %}
+{% endblock %}

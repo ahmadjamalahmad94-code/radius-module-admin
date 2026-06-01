@@ -51,6 +51,9 @@
         <a class="{{ 'active' if ep == 'admin.payment_reports' else '' }}" href="{{ url_for('admin.payment_reports') }}">
           <i class="fa-solid fa-chart-line"></i><span>تقارير الدفع</span>
         </a>
+        <a class="{{ 'active' if ep.startswith('admin.whatsapp') or ep.startswith('admin.customer_whatsapp') else '' }}" href="{{ url_for('admin.whatsapp_gateway') }}">
+          <i class="fa-brands fa-whatsapp"></i><span>بوابة واتساب</span>
+        </a>
         <a class="{{ 'active' if ep == 'admin.checks_list' else '' }}" href="{{ url_for('admin.checks_list') }}">
           <i class="fa-solid fa-shield-heart"></i><span>فحوصات الترخيص</span>
         </a>

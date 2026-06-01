@@ -28,6 +28,10 @@ from ..models import (
     ServiceCatalogItem,
     Setting,
     VpnServicePlan,
+    WhatsAppMessageQueue,
+    WhatsAppServiceSettings,
+    WhatsAppTenantAccount,
+    WhatsAppWebhookEvent,
     utcnow,
 )
 from ..services.customer_control import (
@@ -1784,3 +1788,585 @@ def payment_expire_pending():
     db.session.commit()
     flash(f"تم تعليم {count} طلب دفع معلّق كمنتهي.", "success")
     return redirect(url_for("admin.payment_reports"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WhatsApp Gateway — operator admin UI
+#
+# All business logic lives in app/services/whatsapp/*. The routes below only
+# read + aggregate via those services, render the templates, and on every
+# mutating POST: call the service, wrap REAL Meta calls in try/except
+# WhatsAppProviderError, write an AuditLog row via audit(...), flash, redirect.
+# A token is NEVER rendered — only account_public_dict's masked preview.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_WHATSAPP_PLAN_CODES = ("whatsapp_basic", "whatsapp_pro", "whatsapp_business")
+_WHATSAPP_TEMPLATE_CATEGORIES = ("UTILITY", "AUTHENTICATION", "MARKETING")
+_WHATSAPP_TEMPLATE_STATUSES = ("draft", "submitted", "approved", "rejected", "paused", "disabled")
+_WHATSAPP_SETTINGS_TOGGLES = (
+    "allow_otp",
+    "allow_expiry_notice",
+    "allow_quota_notice",
+    "allow_maintenance_notice",
+    "allow_password_reset",
+    "allow_bulk_utility",
+    "allow_marketing",
+)
+
+
+def _whatsapp_message_count_this_month(customer_id: int):
+    """Counted (non-canceled/failed) queue rows created this calendar month."""
+    from ..services.whatsapp import settings as wa_settings
+
+    return wa_settings.count_month(customer_id, utcnow())
+
+
+def _whatsapp_customer_row(customer: Customer) -> dict:
+    """One dashboard row: account state + monthly volume + settings.enabled."""
+    from ..services.whatsapp import settings as wa_settings
+
+    account = wa_settings.get_account(customer.id)
+    public = wa_settings.account_public_dict(account)
+    settings_row = wa_settings.get_settings(customer.id)
+    return {
+        "customer": customer,
+        "account": account,
+        "public": public,
+        "settings": settings_row,
+        "enabled": bool(settings_row.enabled),
+        "status": (account.connection_status if account else "not_configured"),
+        "phone": public.get("display_phone_number") or "",
+        "messages_month": _whatsapp_message_count_this_month(customer.id),
+        "last_error": (public.get("last_error") or {}).get("message") or "",
+        "last_health_check_at": account.last_health_check_at if account else None,
+    }
+
+
+@bp.get("/whatsapp-gateway")
+@login_required
+def whatsapp_gateway():
+    """Global WhatsApp gateway dashboard: KPI cards + per-customer table."""
+    from ..services.whatsapp import settings as wa_settings
+
+    now = utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Only customers that actually have an account or settings row appear.
+    account_customer_ids = {a.customer_id for a in WhatsAppTenantAccount.query.all()}
+    settings_customer_ids = {s.customer_id for s in WhatsAppServiceSettings.query.all()}
+    customer_ids = account_customer_ids | settings_customer_ids
+    customers = (
+        Customer.query.filter(Customer.id.in_(customer_ids))
+        .order_by(Customer.company_name.asc())
+        .all()
+        if customer_ids
+        else []
+    )
+
+    rows = [_whatsapp_customer_row(customer) for customer in customers]
+
+    connected = sum(1 for r in rows if r["status"] == "connected")
+    pending_setup = sum(1 for r in rows if r["status"] in ("disconnected", "not_configured", "pending"))
+    error_or_suspended = sum(1 for r in rows if r["status"] in ("error", "suspended"))
+
+    # Global message KPIs straight off the queue (counted statuses only).
+    counted = WhatsAppMessageQueue.status.notin_(("canceled", "failed"))
+    messages_today = WhatsAppMessageQueue.query.filter(
+        WhatsAppMessageQueue.created_at >= midnight, counted
+    ).count()
+    delivered_today = WhatsAppMessageQueue.query.filter(
+        WhatsAppMessageQueue.delivered_at.isnot(None),
+        WhatsAppMessageQueue.delivered_at >= midnight,
+    ).count()
+    failed_today = WhatsAppMessageQueue.query.filter(
+        WhatsAppMessageQueue.failed_at.isnot(None),
+        WhatsAppMessageQueue.failed_at >= midnight,
+    ).count()
+    messages_month = WhatsAppMessageQueue.query.filter(
+        WhatsAppMessageQueue.created_at >= month_start, counted
+    ).count()
+
+    kpis = {
+        "connected": connected,
+        "pending_setup": pending_setup,
+        "error_or_suspended": error_or_suspended,
+        "messages_today": messages_today,
+        "delivered_today": delivered_today,
+        "failed_today": failed_today,
+        "messages_month": messages_month,
+    }
+    return render_template("admin/whatsapp_gateway.html", rows=rows, kpis=kpis)
+
+
+def _whatsapp_message_query():
+    """Filtered WhatsAppMessageQueue query from request.args (newest first)."""
+    query = WhatsAppMessageQueue.query
+    customer_id = (request.args.get("customer_id") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    event = (request.args.get("event") or "").strip()
+    phone = (request.args.get("phone") or "").strip()
+    provider_message_id = (request.args.get("provider_message_id") or "").strip()
+    date_from = _parse_iso_date(request.args.get("date_from"))
+    date_to = _parse_iso_date(request.args.get("date_to"))
+
+    if customer_id:
+        try:
+            query = query.filter(WhatsAppMessageQueue.customer_id == int(customer_id))
+        except (TypeError, ValueError):
+            pass
+    if status:
+        query = query.filter(WhatsAppMessageQueue.status == status)
+    if event:
+        query = query.filter(WhatsAppMessageQueue.source_event_type == event)
+    if phone:
+        like = f"%{phone}%"
+        query = query.filter(
+            WhatsAppMessageQueue.recipient_phone.ilike(like)
+            | WhatsAppMessageQueue.normalized_recipient_phone.ilike(like)
+        )
+    if provider_message_id:
+        query = query.filter(WhatsAppMessageQueue.provider_message_id.ilike(f"%{provider_message_id}%"))
+    if date_from:
+        query = query.filter(WhatsAppMessageQueue.created_at >= date_from)
+    if date_to:
+        query = query.filter(WhatsAppMessageQueue.created_at < (date_to + timedelta(days=1)))
+    return query.order_by(WhatsAppMessageQueue.created_at.desc(), WhatsAppMessageQueue.id.desc())
+
+
+def _parse_iso_date(raw: str | None) -> datetime | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+@bp.get("/whatsapp-gateway/messages")
+@login_required
+def whatsapp_messages():
+    """Outbound message log: filters + pagination + per-row retry/cancel."""
+    page = max(1, _int_arg("page", 1))
+    per_page = _int_arg("per_page", 20)
+    if per_page not in (10, 20, 50, 100):
+        per_page = 20
+    query = _whatsapp_message_query()
+    total = query.count()
+    messages = query.limit(per_page).offset((page - 1) * per_page).all()
+    customers = Customer.query.order_by(Customer.company_name.asc()).all()
+    return render_template(
+        "admin/whatsapp_message_log.html",
+        messages=messages,
+        customers=customers,
+        page=page,
+        per_page=per_page,
+        total=total,
+        filters={
+            "customer_id": (request.args.get("customer_id") or "").strip(),
+            "status": (request.args.get("status") or "").strip(),
+            "event": (request.args.get("event") or "").strip(),
+            "phone": (request.args.get("phone") or "").strip(),
+            "provider_message_id": (request.args.get("provider_message_id") or "").strip(),
+            "date_from": (request.args.get("date_from") or "").strip(),
+            "date_to": (request.args.get("date_to") or "").strip(),
+        },
+    )
+
+
+def _int_arg(name: str, default: int) -> int:
+    try:
+        return int(request.args.get(name) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+@bp.post("/whatsapp-gateway/messages/<int:message_id>/retry")
+@login_required
+def whatsapp_message_retry(message_id: int):
+    """Re-queue a failed+retryable message, then best-effort drain it once."""
+    from ..services.whatsapp import queue as wa_queue
+    from ..services.whatsapp import worker as wa_worker
+
+    row = wa_queue.get_message(message_id)
+    if row is None:
+        abort(404)
+    if row.status != "failed" or int(row.attempts or 0) >= int(row.max_attempts or 0):
+        flash("لا يمكن إعادة المحاولة: الرسالة ليست في حالة فشل قابلة لإعادة الإرسال.", "error")
+        return redirect(url_for("admin.whatsapp_messages"))
+
+    wa_queue.schedule_retry(row, 0, utcnow())
+    audit(
+        "whatsapp_message_retry",
+        "whatsapp_message",
+        str(row.id),
+        f"إعادة محاولة إرسال رسالة واتساب رقم {row.id}",
+        {"customer_id": row.customer_id, "event": row.source_event_type},
+    )
+    db.session.commit()
+    try:
+        wa_worker.drain_once()
+    except Exception:  # noqa: BLE001 — drain is best-effort; row stays queued.
+        db.session.rollback()
+    flash("تمت إعادة جدولة الرسالة وتشغيل التصريف.", "success")
+    return redirect(url_for("admin.whatsapp_messages"))
+
+
+@bp.post("/whatsapp-gateway/messages/<int:message_id>/cancel")
+@login_required
+def whatsapp_message_cancel(message_id: int):
+    """Cancel a queued (or failed) message."""
+    from ..services.whatsapp import queue as wa_queue
+
+    row = wa_queue.get_message(message_id)
+    if row is None:
+        abort(404)
+    if not wa_queue.cancel_message(row):
+        flash("لا يمكن إلغاء هذه الرسالة في حالتها الحالية.", "error")
+        return redirect(url_for("admin.whatsapp_messages"))
+    audit(
+        "whatsapp_message_cancel",
+        "whatsapp_message",
+        str(row.id),
+        f"إلغاء رسالة واتساب رقم {row.id}",
+        {"customer_id": row.customer_id, "event": row.source_event_type},
+    )
+    db.session.commit()
+    flash("تم إلغاء الرسالة.", "warning")
+    return redirect(url_for("admin.whatsapp_messages"))
+
+
+@bp.get("/whatsapp-gateway/webhooks")
+@login_required
+def whatsapp_webhooks():
+    """Recent inbound webhook events (status callbacks + inbound messages)."""
+    events = (
+        WhatsAppWebhookEvent.query.order_by(
+            WhatsAppWebhookEvent.received_at.desc(), WhatsAppWebhookEvent.id.desc()
+        )
+        .limit(200)
+        .all()
+    )
+    return render_template("admin/whatsapp_webhook_events.html", events=events)
+
+
+# ── Per-customer WhatsApp control page ──────────────────────────────────────
+def _render_customer_whatsapp(customer: Customer):
+    from ..services.whatsapp import settings as wa_settings
+
+    now = utcnow()
+    account = wa_settings.get_account(customer.id)
+    settings_row = wa_settings.get_settings(customer.id)
+    templates = wa_settings.list_templates(customer.id)
+    usage = wa_settings.get_usage(customer.id, now)
+    recent_messages = (
+        WhatsAppMessageQueue.query.filter_by(customer_id=customer.id)
+        .order_by(WhatsAppMessageQueue.created_at.desc(), WhatsAppMessageQueue.id.desc())
+        .limit(15)
+        .all()
+    )
+    webhook_events = (
+        WhatsAppWebhookEvent.query.filter_by(customer_id=customer.id)
+        .order_by(WhatsAppWebhookEvent.received_at.desc(), WhatsAppWebhookEvent.id.desc())
+        .limit(15)
+        .all()
+    )
+    return render_template(
+        "admin/customer_whatsapp.html",
+        customer=customer,
+        account=account,
+        account_public=wa_settings.account_public_dict(account),
+        settings=settings_row,
+        templates=templates,
+        usage=usage,
+        recent_messages=recent_messages,
+        webhook_events=webhook_events,
+        plan_codes=_WHATSAPP_PLAN_CODES,
+        template_categories=_WHATSAPP_TEMPLATE_CATEGORIES,
+        template_statuses=_WHATSAPP_TEMPLATE_STATUSES,
+        settings_toggles=_WHATSAPP_SETTINGS_TOGGLES,
+    )
+
+
+@bp.get("/customers/<int:customer_id>/whatsapp")
+@login_required
+def customer_whatsapp(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    return _render_customer_whatsapp(customer)
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/credentials")
+@login_required
+def customer_whatsapp_credentials(customer_id: int):
+    """Save Meta connection fields + (write-only) access token."""
+    from ..services.whatsapp import settings as wa_settings
+
+    customer = db.get_or_404(Customer, customer_id)
+    access_token = (request.form.get("access_token") or "").strip()
+    account = wa_settings.upsert_account(
+        customer.id,
+        meta_business_id=(request.form.get("meta_business_id") or "").strip(),
+        whatsapp_business_account_id=(request.form.get("whatsapp_business_account_id") or "").strip(),
+        phone_number_id=(request.form.get("phone_number_id") or "").strip(),
+        display_phone_number=(request.form.get("display_phone_number") or "").strip(),
+        business_display_name=(request.form.get("business_display_name") or "").strip(),
+        access_token=access_token or None,
+    )
+    token_expiry = _dt("token_expires_at")
+    if token_expiry is not None:
+        account.token_expires_at = token_expiry
+        db.session.commit()
+    audit(
+        "whatsapp_credentials_saved",
+        "whatsapp_account",
+        str(account.id),
+        f"حفظ بيانات ربط واتساب للعميل {customer.company_name}",
+        {"customer_id": customer.id, "token_replaced": bool(access_token)},
+    )
+    db.session.commit()
+    flash("تم حفظ بيانات الربط. لا يظهر الـ Token بعد حفظه — يمكنك استبداله فقط.", "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/validate")
+@login_required
+def customer_whatsapp_validate(customer_id: int):
+    """Probe the stored credentials against Meta (REAL call) and record state."""
+    from ..services.whatsapp import settings as wa_settings
+    from ..services.whatsapp.providers import (
+        MetaCloudWhatsAppProvider,
+        WhatsAppProviderError,
+    )
+
+    customer = db.get_or_404(Customer, customer_id)
+    account = wa_settings.get_account(customer.id)
+    if account is None:
+        flash("احفظ بيانات الربط أولًا قبل الفحص.", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+    try:
+        result = MetaCloudWhatsAppProvider().validate_credentials(account)
+    except WhatsAppProviderError as exc:
+        wa_settings.set_connection_status(
+            customer.id, "error", error_code=exc.code, error_message=exc.message
+        )
+        account.last_health_check_at = utcnow()
+        audit(
+            "whatsapp_credentials_validated",
+            "whatsapp_account",
+            str(account.id),
+            f"فشل فحص ربط واتساب للعميل {customer.company_name}",
+            {"customer_id": customer.id, "ok": False, "code": exc.code},
+        )
+        db.session.commit()
+        flash(f"فشل الفحص: {exc.message}", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+    # Success: refresh display fields + mark connected.
+    account.display_phone_number = result.get("display_phone_number") or account.display_phone_number
+    account.business_display_name = result.get("business_display_name") or account.business_display_name
+    account.quality_rating = result.get("quality_rating") or account.quality_rating
+    account.messaging_limit_tier = result.get("messaging_limit_tier") or account.messaging_limit_tier
+    account.last_health_check_at = utcnow()
+    db.session.commit()
+    wa_settings.set_connection_status(customer.id, "connected")
+    audit(
+        "whatsapp_credentials_validated",
+        "whatsapp_account",
+        str(account.id),
+        f"نجح فحص ربط واتساب للعميل {customer.company_name}",
+        {"customer_id": customer.id, "ok": True},
+    )
+    db.session.commit()
+    flash("تم التحقق من بيانات الربط بنجاح والاتصال متصل الآن.", "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/settings")
+@login_required
+def customer_whatsapp_settings(customer_id: int):
+    """Save plan + limits + policy toggles (+ apply preset on plan change)."""
+    from ..services.whatsapp import settings as wa_settings
+
+    customer = db.get_or_404(Customer, customer_id)
+    current = wa_settings.get_settings(customer.id)
+    previous_plan = current.plan_code
+    plan_code = (request.form.get("plan_code") or previous_plan or "whatsapp_basic").strip()
+
+    fields = {
+        "plan_code": plan_code,
+        "monthly_message_limit": _int("monthly_message_limit", current.monthly_message_limit or 0),
+        "daily_message_limit": _int("daily_message_limit", current.daily_message_limit or 0),
+        "per_minute_limit": _int("per_minute_limit", current.per_minute_limit or 0),
+        "require_subscriber_opt_in": bool(request.form.get("require_subscriber_opt_in")),
+        "quiet_hours_enabled": bool(request.form.get("quiet_hours_enabled")),
+        "quiet_hours_start": (request.form.get("quiet_hours_start") or "").strip() or None,
+        "quiet_hours_end": (request.form.get("quiet_hours_end") or "").strip() or None,
+    }
+    for toggle in _WHATSAPP_SETTINGS_TOGGLES:
+        fields[toggle] = bool(request.form.get(toggle))
+
+    wa_settings.update_settings(customer.id, **fields)
+    if plan_code != previous_plan:
+        wa_settings.apply_plan_preset(customer.id, plan_code)
+    audit(
+        "whatsapp_settings_changed",
+        "whatsapp_settings",
+        str(current.id),
+        f"تحديث إعدادات خدمة واتساب للعميل {customer.company_name}",
+        {"customer_id": customer.id, "plan_code": plan_code, "plan_changed": plan_code != previous_plan},
+    )
+    db.session.commit()
+    flash("تم حفظ إعدادات الخدمة.", "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/service")
+@login_required
+def customer_whatsapp_service_toggle(customer_id: int):
+    """Enable / disable the WhatsApp service for this customer."""
+    from ..services.whatsapp import settings as wa_settings
+
+    customer = db.get_or_404(Customer, customer_id)
+    enable = (request.form.get("action") or "").strip() == "enable"
+    wa_settings.update_settings(customer.id, enabled=enable)
+    audit(
+        "whatsapp_service_enabled" if enable else "whatsapp_service_disabled",
+        "whatsapp_settings",
+        str(customer.id),
+        f"{'تفعيل' if enable else 'إيقاف'} خدمة واتساب للعميل {customer.company_name}",
+        {"customer_id": customer.id, "enabled": enable},
+    )
+    db.session.commit()
+    flash("تم تفعيل الخدمة." if enable else "تم إيقاف الخدمة.", "success" if enable else "warning")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/account-status")
+@login_required
+def customer_whatsapp_account_status(customer_id: int):
+    """Suspend or re-enable (mark disconnected) the connection."""
+    from ..services.whatsapp import settings as wa_settings
+
+    customer = db.get_or_404(Customer, customer_id)
+    account = wa_settings.get_account(customer.id)
+    if account is None:
+        flash("لا يوجد حساب واتساب لهذا العميل بعد.", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+    action = (request.form.get("action") or "").strip()
+    if action == "suspend":
+        wa_settings.set_connection_status(customer.id, "suspended")
+        audit(
+            "whatsapp_account_suspended",
+            "whatsapp_account",
+            str(account.id),
+            f"إيقاف حساب واتساب للعميل {customer.company_name}",
+            {"customer_id": customer.id},
+        )
+        db.session.commit()
+        flash("تم إيقاف الحساب.", "warning")
+    else:
+        wa_settings.set_connection_status(customer.id, "disconnected")
+        audit(
+            "whatsapp_account_reactivated",
+            "whatsapp_account",
+            str(account.id),
+            f"إعادة تفعيل حساب واتساب للعميل {customer.company_name}",
+            {"customer_id": customer.id},
+        )
+        db.session.commit()
+        flash("تم إعادة تفعيل الحساب. افحص الربط لإعادته إلى حالة متصل.", "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/templates")
+@login_required
+def customer_whatsapp_template_save(customer_id: int):
+    """Create/update a template; optionally mark it approved (manual)."""
+    from ..services.whatsapp import settings as wa_settings
+
+    customer = db.get_or_404(Customer, customer_id)
+    local_key = (request.form.get("local_key") or "").strip()
+    if not local_key:
+        flash("المفتاح المحلي للقالب مطلوب.", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+    language = (request.form.get("language") or "ar").strip() or "ar"
+    category = (request.form.get("category") or "UTILITY").strip().upper()
+    if category not in _WHATSAPP_TEMPLATE_CATEGORIES:
+        category = "UTILITY"
+    approve = (request.form.get("action") or "").strip() == "approve"
+
+    template = wa_settings.upsert_template(
+        customer.id,
+        local_key=local_key,
+        provider_template_name=(request.form.get("provider_template_name") or "").strip(),
+        language=language,
+        category=category,
+        body_preview=(request.form.get("body_preview") or "").strip(),
+        status="approved" if approve else (request.form.get("status") or None),
+    )
+    if approve:
+        wa_settings.set_template_status(customer.id, local_key, language, "approved")
+    audit(
+        "whatsapp_template_saved",
+        "whatsapp_template",
+        str(template.id),
+        f"حفظ قالب واتساب {local_key} للعميل {customer.company_name}",
+        {"customer_id": customer.id, "local_key": local_key, "approved": approve},
+    )
+    db.session.commit()
+    flash("تم حفظ القالب." + (" وتم اعتماده يدويًا." if approve else ""), "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/whatsapp/test")
+@login_required
+def customer_whatsapp_test(customer_id: int):
+    """Send a test message: enqueue via the queue, then best-effort drain once."""
+    from ..services.whatsapp import queue as wa_queue
+    from ..services.whatsapp import settings as wa_settings
+    from ..services.whatsapp import worker as wa_worker
+    from ..services.whatsapp.phone import WhatsAppPhoneError, normalize_phone_for_whatsapp
+
+    customer = db.get_or_404(Customer, customer_id)
+    recipient = (request.form.get("recipient") or "").strip()
+    template_key = (request.form.get("template_key") or "").strip()
+    if not recipient:
+        flash("أدخل رقم المستلم للتجربة.", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+    if not template_key:
+        flash("اختر قالبًا معتمدًا لإرسال التجربة.", "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+    try:
+        normalized = normalize_phone_for_whatsapp(recipient)
+    except WhatsAppPhoneError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+    template = wa_settings.get_template(customer.id, template_key, "ar")
+    row, created = wa_queue.enqueue(
+        customer.id,
+        source_system="admin_panel",
+        source_event_type="admin_test",
+        recipient_phone=recipient,
+        normalized_recipient_phone=normalized,
+        idempotency_key=f"admin-test:{customer.id}:{template_key}:{normalized}:{int(utcnow().timestamp())}",
+        template_key=template_key,
+        template_name=(template.provider_template_name if template else None),
+        language=(template.language if template else "ar"),
+    )
+    audit(
+        "whatsapp_test_message_enqueued",
+        "whatsapp_message",
+        str(row.id),
+        f"إرسال رسالة تجربة واتساب للعميل {customer.company_name}",
+        {"customer_id": customer.id, "template_key": template_key, "created": created},
+    )
+    db.session.commit()
+    try:
+        wa_worker.drain_once()
+    except Exception:  # noqa: BLE001 — drain is best-effort.
+        db.session.rollback()
+    flash("تمت جدولة رسالة التجربة وتشغيل التصريف. تابع حالتها في آخر الرسائل.", "success")
+    return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))

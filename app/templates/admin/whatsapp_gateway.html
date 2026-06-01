@@ -1,0 +1,93 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}بوابة واتساب{% endblock %}
+{% block page_title %}بوابة واتساب{% endblock %}
+{% block page_subtitle %}مراقبة وإدارة ربط واتساب لكل عميل: الحالة، الحدود، الرسائل، والأخطاء{% endblock %}
+
+{# WhatsApp connection-status badge (statuses beyond the global filters). #}
+{% macro wa_status(status) -%}
+  {%- set m = {
+    'connected':      ('badge-green',  'متصل'),
+    'disconnected':   ('badge-gray',   'غير متصل'),
+    'pending':        ('badge-amber',  'بانتظار الإعداد'),
+    'not_configured': ('badge-gray',   'غير مهيأ'),
+    'suspended':      ('badge-red',    'موقوف'),
+    'error':          ('badge-red',    'خطأ'),
+  } -%}
+  {%- set cls, label = m.get(status, ('badge-gray', status)) -%}
+  <span class="badge {{ cls }}">{{ label }}</span>
+{%- endmacro %}
+
+{% block content %}
+{{ hub.hero(
+  "بوابة واتساب",
+  subtitle="لوحة مركزية لمزوّد واتساب Business لكل عميل. الربط والقوالب والحدود تُدار من صفحة كل عميل.",
+  icon="brands fa-whatsapp",
+  actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin.whatsapp_messages') ~ '"><i class="fa-solid fa-list"></i> سجل الرسائل</a> <a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin.whatsapp_webhooks') ~ '"><i class="fa-solid fa-bolt"></i> أحداث الـ Webhook</a>'
+) }}
+
+{# ── KPI strip ── #}
+<div class="hub-kpi-grid">
+  {{ hub.kpi("العملاء المتصلون", kpis.connected, icon="plug-circle-check", variant="green") }}
+  {{ hub.kpi("بانتظار الإعداد", kpis.pending_setup, icon="hourglass-half", variant="amber") }}
+  {{ hub.kpi("موقوفة أو خطأ", kpis.error_or_suspended, icon="triangle-exclamation", variant="red") }}
+  {{ hub.kpi("رسائل اليوم", kpis.messages_today, icon="paper-plane", variant="violet") }}
+  {{ hub.kpi("تم التسليم اليوم", kpis.delivered_today, icon="circle-check", variant="blue") }}
+  {{ hub.kpi("فشل اليوم", kpis.failed_today, icon="circle-xmark", variant="red") }}
+  {{ hub.kpi("استهلاك الشهر", kpis.messages_month, icon="chart-column", variant="grey") }}
+</div>
+
+{% call hub.section("عملاء بوابة واتساب", icon="brands fa-whatsapp", meta=rows|length ~ ' عميل') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الشركة</th>
+          <th>رقم واتساب</th>
+          <th>الحالة</th>
+          <th>مفعّلة</th>
+          <th class="num">رسائل هذا الشهر</th>
+          <th>آخر خطأ</th>
+          <th class="date">آخر فحص</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>
+            <strong>{{ row.customer.company_name }}</strong>
+            <div class="hub-muted" style="font-size:12px">{{ row.customer.contact_name or '—' }}</div>
+          </td>
+          <td class="ltr-cell mono" style="text-align:start">{{ row.phone or '—' }}</td>
+          <td>{{ wa_status(row.status) }}</td>
+          <td>
+            {% if row.enabled %}
+              <span class="badge badge-green">مفعّلة</span>
+            {% else %}
+              <span class="badge badge-gray">موقوفة</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ row.messages_month }}</td>
+          <td style="max-width:220px">
+            {% if row.last_error %}
+              <span class="hub-pill hub-pill--red" title="{{ row.last_error }}"><span class="dot"></span>{{ row.last_error[:48] }}{% if row.last_error|length > 48 %}…{% endif %}</span>
+            {% else %}
+              <span class="hub-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="date">{{ row.last_health_check_at|dt }}</td>
+          <td>
+            <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.customer_whatsapp', customer_id=row.customer.id) }}">
+              <i class="fa-solid fa-eye"></i> عرض
+            </a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ hub.empty("لا يوجد عملاء مهيّئون لواتساب بعد.", sub="افتح ملف عميل ثم صفحة واتساب لحفظ بيانات الربط وتفعيل الخدمة.", icon="brands fa-whatsapp") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}

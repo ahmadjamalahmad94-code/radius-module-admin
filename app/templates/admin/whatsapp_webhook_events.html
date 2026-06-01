@@ -1,0 +1,78 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}أحداث Webhook واتساب{% endblock %}
+{% block page_title %}أحداث Webhook واتساب{% endblock %}
+{% block page_subtitle %}الأحداث الواردة من Meta: إيصالات التسليم والرسائل الواردة وحالة المعالجة{% endblock %}
+
+{% block head_extra %}
+<style>
+  details.wa-payload > summary {
+    cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px;
+  }
+  details.wa-payload > summary::-webkit-details-marker { display:none; }
+  details.wa-payload > pre {
+    margin-top:8px; padding:12px; max-width:520px; max-height:280px; overflow:auto;
+    background:var(--hub-surface-2); border:1px solid var(--hub-line-2);
+    border-radius:var(--hub-r-md); direction:ltr; text-align:start;
+    font-size:11.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "أحداث الـ Webhook",
+  subtitle="آخر 200 حدثًا واردًا من Meta. تُخزَّن كاملة لإعادة المعالجة بشكل آمن.",
+  icon="bolt"
+) }}
+
+{% call hub.section("الأحداث الأخيرة", icon="clock-rotate-left", meta=events|length ~ ' حدث') %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th class="date">وقت الاستلام</th>
+          <th>نوع الحدث</th>
+          <th>معرّف رقم الهاتف</th>
+          <th>العميل</th>
+          <th>المعالجة</th>
+          <th>خطأ المعالجة</th>
+          <th>الحمولة</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ev in events %}
+        <tr>
+          <td class="date">{{ ev.received_at|dt }}</td>
+          <td><span class="hub-pill hub-pill--violet">{{ ev.event_type }}</span></td>
+          <td class="ltr-cell mono" style="text-align:start; font-size:11px">{{ ev.phone_number_id or '—' }}</td>
+          <td>{{ ev.customer.company_name if ev.customer else '—' }}</td>
+          <td>
+            {% if ev.processed %}
+              <span class="badge badge-green">تمت</span>
+            {% else %}
+              <span class="badge badge-amber">قيد الانتظار</span>
+            {% endif %}
+          </td>
+          <td style="max-width:200px">
+            {% if ev.processing_error %}
+              <span class="hub-pill hub-pill--red" title="{{ ev.processing_error }}"><span class="dot"></span>{{ ev.processing_error[:40] }}{% if ev.processing_error|length > 40 %}…{% endif %}</span>
+            {% else %}
+              <span class="hub-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <details class="wa-payload">
+              <summary class="hub-btn hub-btn--ghost hub-btn--sm"><i class="fa-solid fa-code"></i> عرض الحمولة</summary>
+              <pre>{{ ev.payload|tojson(indent=2) }}</pre>
+            </details>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">{{ hub.empty("لم تصل أي أحداث Webhook بعد.", sub="ستظهر هنا فور بدء Meta بإرسال إيصالات التسليم والرسائل الواردة.", icon="bolt") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+{% endblock %}
