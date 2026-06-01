@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, request, url_for
 
 from ..extensions import db
 from ..license_signing import LicenseSignatureError, verify_license_signature
@@ -27,6 +27,7 @@ from ..services.customer_control import (
 from ..services.whatsapp import policy as wa_policy
 from ..services.whatsapp import queue as wa_queue
 from ..services.whatsapp import settings as wa_settings
+from ..services.whatsapp import webhook as wa_webhook
 from ..services.whatsapp import worker as wa_worker
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -576,6 +577,41 @@ def hoberadius_whatsapp_message_status():
         "error_message": row.error_message,
         "attempts": row.attempts,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# WhatsApp Meta Cloud webhook (called by Meta, NOT by the radius runtime)
+#
+# Unlike the integration endpoints above, Meta does NOT speak our HMAC triad
+# and sends NO CSRF token / login. This route therefore must be reachable
+# unauthenticated. It is CSRF-exempt automatically because ``_install_csrf``
+# (app/__init__.py) skips every ``request.path`` that starts with ``/api/``;
+# no per-route opt-out is required. Meta authenticates instead via the
+# GET verify-token handshake and the POST ``X-Hub-Signature-256`` app-secret
+# signature, both handled inside ``app/services/whatsapp/webhook.py``.
+#
+# The POST ALWAYS returns HTTP 200 after attempting to store events — a 5xx
+# would make Meta retry the same delivery repeatedly (a retry storm), so any
+# unexpected failure is logged and still answered 200.
+# ─────────────────────────────────────────────────────────────────────────
+@bp.route("/whatsapp/webhook", methods=["GET", "POST"])
+def whatsapp_webhook():
+    if request.method == "GET":
+        challenge = wa_webhook.verify_challenge(request.args)
+        if challenge is not None:
+            return Response(challenge, mimetype="text/plain")
+        abort(403)
+
+    raw = request.get_data()
+    payload = request.get_json(silent=True) or {}
+    signature = request.headers.get("X-Hub-Signature-256")
+    try:
+        summary = wa_webhook.ingest(payload, signature_header=signature, raw_body=raw)
+    except Exception:  # noqa: BLE001 — never 5xx to Meta; that triggers retries.
+        current_app.logger.exception("WhatsApp webhook ingest failed")
+        db.session.rollback()
+        return jsonify({"ok": True, "stored": 0, "processed": 0, "skipped_duplicates": 0})
+    return jsonify({"ok": True, **summary})
 
 
 def _customer_user_from_password_change_body(customer_id: int, body: dict) -> CustomerUser:
