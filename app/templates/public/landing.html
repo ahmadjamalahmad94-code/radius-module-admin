@@ -61,7 +61,7 @@
 {% for blk in sections %}
 {% set s = blk['section'] %}{% set items = blk['items'] %}
 {% if s.section_type != 'footer' %}
-<section id="{{ s.section_key }}" class="lp-section{% if s.section_type == 'hero' %} lp-hero{% endif %}">
+<section id="{{ s.section_key }}" class="lp-section{% if s.section_type == 'hero' %} lp-hero{% else %} lp-reveal{% endif %}{% if s.section_key in ['modules', 'whatsapp_service', 'why_hoberadius'] %} alt{% endif %}">
   <div class="lp-wrap">
 
   {# ========== HERO ========== #}
@@ -78,13 +78,14 @@
     </div>
     <div class="lp-hero-mock">
       <div class="lp-mock">
+        <span class="lp-mock-live"><span class="dot"></span> معاينة مباشرة</span>
         <div class="lp-mock-top"><span class="lp-mock-dot"></span><span class="lp-mock-dot"></span><span class="lp-mock-dot"></span><span class="lp-mock-title">لوحة تشغيل الشبكة</span></div>
         <div class="lp-mock-grid">
-          <div class="lp-mock-tile"><i class="fa-solid fa-users"></i><div class="v">—</div><div class="l">المشتركون</div></div>
-          <div class="lp-mock-tile"><i class="fa-solid fa-wifi"></i><div class="v">—</div><div class="l">المتصلون الآن</div></div>
-          <div class="lp-mock-tile"><i class="fa-solid fa-ticket"></i><div class="v">—</div><div class="l">كروت اليوم</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-users"></i><div class="v" data-count="5040">0</div><div class="l">المشتركون</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-wifi"></i><div class="v" data-count="318">0</div><div class="l">المتصلون الآن</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-ticket"></i><div class="v" data-count="126">0</div><div class="l">كروت اليوم</div></div>
           <div class="lp-mock-tile"><i class="fa-solid fa-tower-broadcast"></i><div class="v" style="font-size:13px;color:var(--lp-teal-600)">متصل</div><div class="l">حالة MikroTik</div></div>
-          <div class="lp-mock-tile"><i class="fa-solid fa-bell"></i><div class="v">—</div><div class="l">تنبيهات الشبكة</div></div>
+          <div class="lp-mock-tile"><i class="fa-solid fa-bell"></i><div class="v" data-count="3">0</div><div class="l">تنبيهات الشبكة</div></div>
           <div class="lp-mock-tile"><i class="fa-solid fa-database"></i><div class="v" style="font-size:13px;color:var(--lp-teal-600)">محدّث</div><div class="l">نسخ احتياطي</div></div>
           <div class="lp-mock-tile wide"><i class="fa-solid fa-chart-line"></i><div><div class="l">آخر العمليات</div></div>
             <div class="lp-mock-bars"><span style="height:40%"></span><span style="height:65%"></span><span style="height:50%"></span><span style="height:80%"></span><span style="height:60%"></span><span style="height:90%"></span><span style="height:70%"></span></div>
@@ -112,7 +113,7 @@
   {# ========== CARD GRID (features / why) ========== #}
   {% elif s.section_type == 'cards_grid' %}
   <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
-  <div class="lp-grid">
+  <div class="lp-grid{% if s.section_key == 'features' %} bento{% endif %}">
     {% for it in items %}
     <div class="lp-card">
       <div class="lp-card-ico"><i class="fa-solid fa-{{ it.icon_name or 'star' }}"></i></div>
@@ -155,7 +156,7 @@
   {# ========== STEPS (how it works) ========== #}
   {% elif s.section_type == 'steps' %}
   <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
-  <div class="lp-steps">
+  <div class="lp-steps timeline">
     {% for it in items %}
     <div class="lp-step"><div class="lp-step-n">{{ it.value_text or loop.index }}</div><h4>{{ it.title }}</h4>{% if it.description %}<p>{{ it.description }}</p>{% endif %}</div>
     {% endfor %}

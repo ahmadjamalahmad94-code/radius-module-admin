@@ -245,3 +245,61 @@
 }
 
 @media (prefers-reduced-motion: reduce) { .lp-root * { transition: none !important; } }
+
+/* ═══════════ MOTION / DISTINCT LAYOUT (v2) ═══════════ */
+
+/* scroll-reveal — progressive enhancement: only hides when JS is active */
+.lp-js .lp-reveal { opacity: 0; transform: translateY(20px); }
+.lp-js .lp-reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity .6s ease, transform .65s cubic-bezier(.2,.7,.2,1);
+}
+.lp-js .lp-reveal.in .lp-card,
+.lp-js .lp-reveal.in .lp-mod,
+.lp-js .lp-reveal.in .lp-int { animation: lpPop .5s both; }
+@keyframes lpPop { from { opacity:.0; transform:translateY(10px) } to { opacity:1; transform:none } }
+
+/* sticky nav gains a soft shadow once scrolled */
+.lp-nav.is-scrolled { box-shadow: 0 8px 28px -18px rgba(15,23,42,.45); background: rgba(255,255,255,.94); }
+
+/* alternating section band — breaks the flat white rhythm */
+.lp-section.alt { background: var(--lp-grad-soft); }
+.lp-section.alt + .lp-section.alt { background: transparent; }
+
+/* hero mock: live preview chip + animated counters */
+.lp-mock { position: relative; }
+.lp-mock-live {
+  position: absolute; top: -12px; inset-inline-start: 16px;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fff; border: 1px solid var(--lp-line); box-shadow: var(--lp-shadow);
+  padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--lp-teal-600);
+}
+.lp-mock-live .dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.18); animation: lpPulse 1.8s infinite; }
+@keyframes lpPulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+.lp-mock-tile .v { font-variant-numeric: tabular-nums; }
+.lp-mock-bars span { animation: lpBar 1s ease both; transform-origin: bottom; }
+@keyframes lpBar { from { transform: scaleY(.15) } to { transform: scaleY(1) } }
+
+/* BENTO features grid — varied sizes (distinct from a uniform 3-col copy) */
+.lp-grid.bento { grid-template-columns: repeat(6, 1fr); }
+.lp-grid.bento > .lp-card { grid-column: span 2; }
+.lp-grid.bento > .lp-card:nth-child(1),
+.lp-grid.bento > .lp-card:nth-child(2) { grid-column: span 3; }
+.lp-grid.bento > .lp-card:nth-child(1) { background: var(--lp-grad-soft); border-color: #cdeee6; }
+@media (max-width: 900px) {
+  .lp-grid.bento { grid-template-columns: 1fr 1fr; }
+  .lp-grid.bento > .lp-card,
+  .lp-grid.bento > .lp-card:nth-child(1),
+  .lp-grid.bento > .lp-card:nth-child(2) { grid-column: span 1; }
+}
+@media (max-width: 560px) { .lp-grid.bento { grid-template-columns: 1fr; } }
+
+/* STEPS as a connected horizontal timeline */
+.lp-steps.timeline { position: relative; }
+.lp-steps.timeline::before {
+  content: ""; position: absolute; top: 42px; inset-inline: 8%; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--lp-teal), var(--lp-indigo)); opacity: .30;
+}
+.lp-steps.timeline .lp-step { text-align: center; background: transparent; border: none; box-shadow: none; }
+.lp-steps.timeline .lp-step-n { margin: 0 auto 14px; box-shadow: 0 0 0 6px var(--lp-bg); }
+@media (max-width: 760px) { .lp-steps.timeline::before { display: none; } .lp-steps.timeline .lp-step { background: var(--lp-surface); border: 1px solid var(--lp-line); box-shadow: var(--lp-shadow); } }
