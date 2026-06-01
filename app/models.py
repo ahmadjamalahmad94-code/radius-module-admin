@@ -1143,3 +1143,173 @@ class CustomerVaultAuditLog(db.Model):
     @meta.setter
     def meta(self, value: dict) -> None:
         self.metadata_json = json_dumps(value or {})
+# Landing Page CMS — admin-editable public landing content
+# All visible marketing content is driven from these tables (not hardcoded).
+# JSON is stored as Text + property accessors (project convention). The name
+# "metadata" is reserved by SQLAlchemy, so JSON props are named settings/features.
+# ─────────────────────────────────────────────────────────────────────────
+
+class LandingPage(TimestampMixin, db.Model):
+    __tablename__ = "landing_pages"
+    __table_args__ = (
+        db.Index("ix_landing_pages_slug_status", "slug", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    title = db.Column(db.String(180), default="", nullable=False)
+    language = db.Column(db.String(8), default="ar", nullable=False)
+    status = db.Column(db.String(20), default="draft", nullable=False, index=True)  # draft|published|archived
+    seo_title = db.Column(db.String(200), default="", nullable=False)
+    seo_description = db.Column(db.String(400), default="", nullable=False)
+    seo_keywords = db.Column(db.String(400), default="", nullable=False)
+    og_image_url = db.Column(db.String(500), default="", nullable=False)
+    is_homepage = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    sections = db.relationship(
+        "LandingSection", back_populates="page",
+        cascade="all, delete-orphan", lazy="dynamic",
+    )
+    revisions = db.relationship(
+        "LandingRevision", back_populates="page",
+        cascade="all, delete-orphan", lazy="dynamic",
+    )
+
+
+class LandingSection(TimestampMixin, db.Model):
+    __tablename__ = "landing_sections"
+    __table_args__ = (
+        db.Index("ix_landing_sections_page_order", "page_id", "sort_order"),
+        db.UniqueConstraint("page_id", "section_key", name="uq_landing_section_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    page_id = db.Column(db.Integer, db.ForeignKey("landing_pages.id"), nullable=False, index=True)
+    section_key = db.Column(db.String(60), nullable=False)
+    section_type = db.Column(db.String(40), default="cards_grid", nullable=False)
+    eyebrow_text = db.Column(db.String(140), default="", nullable=False)
+    title = db.Column(db.String(220), default="", nullable=False)
+    subtitle = db.Column(db.String(320), default="", nullable=False)
+    description = db.Column(db.Text, default="", nullable=False)
+    badge_text = db.Column(db.String(80), default="", nullable=False)
+    primary_button_text = db.Column(db.String(80), default="", nullable=False)
+    primary_button_url = db.Column(db.String(300), default="", nullable=False)
+    secondary_button_text = db.Column(db.String(80), default="", nullable=False)
+    secondary_button_url = db.Column(db.String(300), default="", nullable=False)
+    image_url = db.Column(db.String(500), default="", nullable=False)
+    icon_name = db.Column(db.String(60), default="", nullable=False)
+    background_style = db.Column(db.String(40), default="", nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_visible = db.Column(db.Boolean, default=True, nullable=False)
+    settings_json = db.Column(db.Text, default="{}", nullable=False)
+
+    page = db.relationship("LandingPage", back_populates="sections")
+    items = db.relationship(
+        "LandingItem", back_populates="section",
+        cascade="all, delete-orphan", lazy="dynamic",
+    )
+
+    @property
+    def settings(self) -> dict:
+        return json_loads(self.settings_json, {})
+
+    @settings.setter
+    def settings(self, value: dict) -> None:
+        self.settings_json = json_dumps(value or {})
+
+
+class LandingItem(TimestampMixin, db.Model):
+    __tablename__ = "landing_items"
+    __table_args__ = (
+        db.Index("ix_landing_items_section_order", "section_id", "sort_order"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    section_id = db.Column(db.Integer, db.ForeignKey("landing_sections.id"), nullable=False, index=True)
+    item_type = db.Column(db.String(40), default="feature", nullable=False)
+    title = db.Column(db.String(220), default="", nullable=False)
+    subtitle = db.Column(db.String(320), default="", nullable=False)
+    description = db.Column(db.Text, default="", nullable=False)
+    value_text = db.Column(db.String(120), default="", nullable=False)
+    label_text = db.Column(db.String(120), default="", nullable=False)
+    icon_name = db.Column(db.String(60), default="", nullable=False)
+    image_url = db.Column(db.String(500), default="", nullable=False)
+    button_text = db.Column(db.String(80), default="", nullable=False)
+    button_url = db.Column(db.String(300), default="", nullable=False)
+    badge_text = db.Column(db.String(80), default="", nullable=False)
+    status_badge = db.Column(db.String(40), default="", nullable=False)  # متاح|قيد التجهيز|حسب الخطة|قريبًا
+    price_text = db.Column(db.String(80), default="", nullable=False)
+    old_price_text = db.Column(db.String(80), default="", nullable=False)
+    period_text = db.Column(db.String(80), default="", nullable=False)
+    features_json = db.Column(db.Text, default="[]", nullable=False)
+    settings_json = db.Column(db.Text, default="{}", nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_visible = db.Column(db.Boolean, default=True, nullable=False)
+
+    section = db.relationship("LandingSection", back_populates="items")
+
+    @property
+    def features(self) -> list:
+        return json_loads(self.features_json, [])
+
+    @features.setter
+    def features(self, value) -> None:
+        self.features_json = json_dumps(value or [])
+
+    @property
+    def settings(self) -> dict:
+        return json_loads(self.settings_json, {})
+
+    @settings.setter
+    def settings(self, value: dict) -> None:
+        self.settings_json = json_dumps(value or {})
+
+
+class LandingSocialLink(TimestampMixin, db.Model):
+    __tablename__ = "landing_social_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    platform = db.Column(db.String(40), nullable=False)  # facebook|instagram|whatsapp|telegram|...
+    label = db.Column(db.String(120), default="", nullable=False)
+    url = db.Column(db.String(500), default="", nullable=False)
+    icon_name = db.Column(db.String(60), default="", nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_visible = db.Column(db.Boolean, default=True, nullable=False)
+
+
+class LandingContactMethod(TimestampMixin, db.Model):
+    __tablename__ = "landing_contact_methods"
+
+    id = db.Column(db.Integer, primary_key=True)
+    method_type = db.Column(db.String(40), nullable=False)  # phone|whatsapp|email|address|support_url
+    label = db.Column(db.String(120), default="", nullable=False)
+    value = db.Column(db.String(300), default="", nullable=False)
+    url = db.Column(db.String(500), default="", nullable=False)
+    icon_name = db.Column(db.String(60), default="", nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_visible = db.Column(db.Boolean, default=True, nullable=False)
+
+
+class LandingRevision(db.Model):
+    __tablename__ = "landing_revisions"
+    __table_args__ = (
+        db.Index("ix_landing_revisions_page_created", "page_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    page_id = db.Column(db.Integer, db.ForeignKey("landing_pages.id"), nullable=True, index=True)
+    snapshot_json = db.Column(db.Text, default="{}", nullable=False)
+    created_by = db.Column(db.String(120), default="", nullable=False)
+    note = db.Column(db.String(255), default="", nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    page = db.relationship("LandingPage", back_populates="revisions")
+
+    @property
+    def snapshot(self) -> dict:
+        return json_loads(self.snapshot_json, {})
+
+    @snapshot.setter
+    def snapshot(self, value: dict) -> None:
+        self.snapshot_json = json_dumps(value or {})

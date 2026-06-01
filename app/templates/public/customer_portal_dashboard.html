@@ -4,6 +4,120 @@
 {% block head_extra %}
 {{ super() }}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/portal_pro.css') }}?v=20260531h">
+<style>
+  /* ════════════════════════════════════════════════════════════════════
+     WhatsApp pane — scoped under the pane only (no app-wide bleed).
+     Reuses portal-pro look (pp-card / pp-btn / pp-rows) for the chrome and
+     adds the WhatsApp-green wizard accents + the illustrated Meta guide.
+     No inline JS / no onclick — collapsibles are pure <details>/<summary>.
+     ════════════════════════════════════════════════════════════════════ */
+  [data-pp-pane="whatsapp"]{ --wa:#128c5e; --wa-d:#0b3d2e; --wa-50:#ecfdf5; --wa-100:#d1fae5; --wa-300:#86efac; }
+
+  /* connection-state banners */
+  .wa-state{ border-radius:12px; padding:12px 14px; font-size:13.5px; font-weight:700;
+             display:flex; align-items:center; gap:9px; }
+  .wa-state--ok{ background:#f0fdf4; color:#166534; border:1px solid var(--wa-300); }
+  .wa-state--pending{ background:#fefce8; color:#854d0e; border:1px solid #fde68a; }
+  .wa-state--error{ background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+  .wa-state--locked{ background:#f8fafc; color:#475569; border:1px solid var(--pp-line); }
+
+  /* WhatsApp hero header inside the pane */
+  .wa-pane-hero{ background:linear-gradient(135deg,var(--wa-d),var(--wa)); color:#fff;
+                 border-radius:16px; padding:18px 20px; box-shadow:0 10px 26px rgba(8,60,40,.22); }
+  .wa-pane-hero h2{ margin:0 0 5px; font-size:18px; font-weight:800; display:flex; align-items:center; gap:9px; }
+  .wa-pane-hero p{ margin:0; opacity:.93; line-height:1.7; font-size:13px; }
+
+  /* wizard stepper chips */
+  .wa-stepper{ display:flex; flex-wrap:wrap; gap:8px; }
+  .wa-step{ flex:1 1 150px; min-width:140px; border:1px solid var(--pp-line); border-radius:12px;
+            padding:9px 12px; background:#fff; display:flex; align-items:center; gap:9px;
+            font-size:12.5px; color:var(--pp-ink-2); }
+  .wa-step .num{ width:25px; height:25px; border-radius:50%; display:grid; place-items:center;
+                 background:var(--pp-line); color:var(--pp-ink-2); font-weight:800; font-size:12px; flex:none; }
+  .wa-step.is-done{ border-color:var(--wa-300); background:#f0fdf4; color:#166534; }
+  .wa-step.is-done .num{ background:#16a34a; color:#fff; }
+  .wa-step.is-active{ border-color:var(--wa); background:var(--wa-50); color:var(--wa-d); font-weight:800;
+                      box-shadow:0 0 0 2px rgba(18,140,94,.15); }
+  .wa-step.is-active .num{ background:var(--wa); color:#fff; }
+
+  /* green accent on the pane's primary buttons + hint lists */
+  .wa-card-accent .pp-card-head .ic{ background:var(--wa-50); color:var(--wa-d); }
+  .wa-btn--wa{ background:linear-gradient(135deg,var(--wa),var(--wa-d)); color:#fff; border-color:transparent; }
+  .wa-btn--wa:hover{ box-shadow:0 10px 24px rgba(18,140,94,.34); color:#fff; }
+  .wa-hints{ list-style:none; padding:0; margin:8px 0 0; display:grid; gap:5px; }
+  .wa-hints li{ font-size:12px; color:var(--pp-ink-2); display:flex; gap:8px; align-items:flex-start; line-height:1.6; }
+  .wa-hints li i{ color:var(--wa); margin-top:4px; font-size:8px; }
+
+  .wa-grid2{ display:grid; grid-template-columns:1fr 1fr; gap:13px; }
+  @media (max-width:640px){ .wa-grid2{ grid-template-columns:1fr; } }
+  .wa-field{ margin-bottom:0; }
+  .wa-field > label{ display:block; font-size:12.5px; font-weight:700; margin-bottom:6px; }
+  .wa-field input, .wa-field select{ width:100%; padding:10px 12px; border:1px solid var(--pp-line-2);
+    border-radius:10px; font:inherit; font-size:13.5px; min-height:42px; background:#fff; }
+  .wa-field input:focus, .wa-field select:focus{ outline:none; border-color:var(--wa);
+    box-shadow:0 0 0 3px rgba(18,140,94,.14); }
+  .wa-field .save-flag{ font-weight:400; color:var(--pp-ink-3); font-size:11px; }
+  .wa-mask{ font-family:'Fira Code',ui-monospace,Menlo,Consolas,monospace; background:var(--pp-canvas);
+            padding:2px 8px; border-radius:7px; color:var(--pp-ink); font-size:12px; }
+  .wa-toggle{ display:flex; align-items:center; gap:9px; padding:7px 0; font-size:13px; color:var(--pp-ink-2); }
+  .wa-toggle input{ width:18px; height:18px; accent-color:var(--wa); flex:none; }
+  .wa-actions{ display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  .wa-kv{ display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:13px; margin:0; }
+  .wa-kv dt{ color:var(--pp-ink-3); font-weight:600; } .wa-kv dd{ margin:0; color:var(--pp-ink); font-weight:700; word-break:break-all; }
+
+  .wa-kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .wa-kpi{ border:1px solid var(--pp-line); border-radius:12px; padding:12px 14px; background:var(--pp-canvas); }
+  .wa-kpi .lbl{ font-size:11.5px; color:var(--pp-ink-3); } .wa-kpi .val{ font-size:22px; font-weight:800; color:var(--pp-ink); }
+  .wa-pill{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:800; }
+  .wa-pill--queued{ background:var(--pp-blue-bg); color:#1d4ed8; }
+  .wa-pill--sent,.wa-pill--delivered,.wa-pill--read,.wa-pill--approved{ background:#f0fdf4; color:#166534; }
+  .wa-pill--failed{ background:#fef2f2; color:#b91c1c; } .wa-pill--draft{ background:var(--pp-canvas); color:var(--pp-ink-2); }
+
+  /* ── Illustrated Meta guide ───────────────────────────────────────── */
+  .wa-guide{ border:1px solid var(--wa-100); border-radius:16px; overflow:hidden; background:#fff; }
+  .wa-guide > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:12px;
+    padding:16px 18px; background:linear-gradient(135deg,#ecfdf5,#f0fdf4); }
+  .wa-guide > summary::-webkit-details-marker{ display:none; }
+  .wa-guide > summary .g-ic{ width:38px; height:38px; border-radius:11px; flex:none; display:grid; place-items:center;
+    background:var(--wa); color:#fff; font-size:17px; }
+  .wa-guide > summary h2{ margin:0; font-size:16px; font-weight:800; color:var(--wa-d); }
+  .wa-guide > summary .g-sub{ font-size:12px; color:#3f6b58; margin-top:2px; }
+  .wa-guide > summary .g-caret{ margin-inline-start:auto; color:var(--wa-d); transition:transform .2s ease; font-size:14px; }
+  .wa-guide[open] > summary .g-caret{ transform:rotate(180deg); }
+  .wa-guide-body{ padding:18px; display:flex; flex-direction:column; gap:14px; }
+
+  /* vertical stepper of guide cards */
+  .wa-gsteps{ display:flex; flex-direction:column; gap:0; }
+  .wa-gstep{ position:relative; display:grid; grid-template-columns:46px 1fr; gap:14px; padding:0 0 20px; }
+  .wa-gstep:last-child{ padding-bottom:0; }
+  .wa-gstep::before{ content:""; position:absolute; inset-inline-start:22px; top:42px; bottom:-4px; width:2px;
+    background:linear-gradient(var(--wa-300),var(--pp-line)); }
+  .wa-gstep:last-child::before{ display:none; }
+  .wa-gnum{ width:44px; height:44px; border-radius:50%; flex:none; display:grid; place-items:center;
+    background:linear-gradient(135deg,var(--wa),var(--wa-d)); color:#fff; font-weight:800; font-size:17px;
+    box-shadow:0 6px 14px rgba(18,140,94,.28); z-index:1; }
+  .wa-gbody{ min-width:0; }
+  .wa-gbody h3{ margin:6px 0 6px; font-size:14.5px; font-weight:800; color:var(--pp-ink); }
+  .wa-gbody p{ margin:0 0 8px; font-size:12.5px; color:var(--pp-ink-2); line-height:1.8; }
+  .wa-gbody .lbl-list{ list-style:none; padding:0; margin:8px 0 0; display:grid; gap:6px; }
+  .wa-gbody .lbl-list li{ font-size:12px; color:var(--pp-ink-2); display:flex; gap:8px; align-items:flex-start; line-height:1.6; }
+  .wa-gbody .lbl-list li i{ color:var(--wa); margin-top:4px; font-size:9px; }
+  .wa-tag{ display:inline-block; font-family:'Fira Code',ui-monospace,monospace; direction:ltr; unicode-bidi:isolate;
+    background:var(--wa-50); color:var(--wa-d); border:1px solid var(--wa-100); border-radius:6px;
+    padding:1px 7px; font-size:11.5px; font-weight:700; }
+  .wa-path{ direction:ltr; unicode-bidi:isolate; font-weight:700; color:var(--wa-d); }
+
+  /* the SVG mockup frame */
+  .wa-shot{ margin:10px 0 2px; border:1px solid var(--pp-line); border-radius:11px; overflow:hidden;
+    background:#fff; box-shadow:0 4px 14px rgba(15,23,42,.06); max-width:420px; }
+  .wa-shot svg{ display:block; width:100%; height:auto; }
+
+  .wa-guide-note{ display:flex; gap:11px; align-items:flex-start; border-radius:12px; padding:13px 15px;
+    background:#fff7ed; border:1px solid #fed7aa; color:#7c2d12; font-size:12.5px; line-height:1.8; }
+  .wa-guide-note i{ color:#ea580c; margin-top:3px; font-size:15px; }
+
+  @media (prefers-reduced-motion:reduce){ .wa-guide > summary .g-caret{ transition:none; } }
+</style>
 {% endblock %}
 
 {# ════════════════════════════════════════════════════════════════════
@@ -135,6 +249,7 @@
       <nav class="pp-nav" id="pp-nav" aria-label="أقسام البوابة">
         <button type="button" class="pp-nav-link is-active" data-pp-view="overview"><i class="fa-solid fa-gauge-high"></i> نظرة عامة</button>
         {% if 'services' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="services"><i class="fa-solid fa-shapes"></i> الخدمات <span class="pp-nav-badge">{{ ns.on }}</span></button>{% endif %}
+        <button type="button" class="pp-nav-link" data-pp-view="whatsapp"><i class="fa-brands fa-whatsapp"></i> رسائل واتساب للمشتركين</button>
         <button type="button" class="pp-nav-link" data-pp-view="backups"><i class="fa-solid fa-database"></i> النسخ الاحتياطي{% if bk_stored %} <span class="pp-nav-badge">{{ bk_stored }}</span>{% endif %}</button>
         {% if 'payments' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="billing"><i class="fa-solid fa-credit-card"></i> الفواتير والمدفوعات</button>{% endif %}
         {% if 'requests' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="requests"><i class="fa-solid fa-headset"></i> الطلبات والدعم{% if service_requests %} <span class="pp-nav-badge">{{ service_requests|length }}</span>{% endif %}</button>{% endif %}
@@ -267,6 +382,314 @@
         </div>
       </section>
       {% endif %}
+
+      {# ───── WHATSAPP ───── #}
+      <section class="pp-view" data-pp-pane="whatsapp">
+        <div class="wa-pane-hero">
+          <h2><i class="fa-brands fa-whatsapp"></i> رسائل واتساب للمشتركين</h2>
+          <p>اربط رقم واتساب التجاري الخاص بك، ودع HobeRadius يرسل التنبيهات المهمة للمشتركين تلقائيًا (رموز التحقق، قرب الانتهاء، استهلاك الباقة، والمزيد).</p>
+        </div>
+
+        {% if wa_locked %}
+        {# ── LOCKED STATE ── (no credentials form is rendered) #}
+        <div class="wa-state wa-state--locked">
+          <i class="fa-solid fa-lock"></i> هذه الخدمة غير مفعلة في خطتك الحالية. يمكنك طلب تفعيلها من الإدارة.
+        </div>
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-circle-info"></i></span><h2>ما هي خدمة رسائل واتساب؟</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0 0 14px">عند تفعيلها، تربط رقم واتساب التجاري الخاص بك ليرسل HobeRadius الإشعارات للمشتركين تلقائيًا — وأنت تدفع تكلفة الرسائل مباشرة إلى Meta بينما نوفّر نحن الربط والأتمتة والسجلات والقوالب.</p>
+            <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key='whatsapp_gateway') }}">
+              {{ csrf_input() }}
+              <input type="hidden" name="request_type" value="activation">
+              <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-paper-plane"></i> طلب تفعيل الخدمة</button>
+            </form>
+          </div>
+        </div>
+
+        {# the guide is helpful even when locked, so customers know what they're signing up for #}
+        {% include "public/_whatsapp_meta_guide.html" %}
+
+        {% else %}
+        {# ── IMPORTANT NOTE ── #}
+        <div class="pp-notice warn">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div>تحتاج رقم واتساب تجاري خاص بك، وتدفع لـ Meta مباشرة (تسعير Meta للمحادثات). نحن نوفّر الربط والأتمتة والسجلات والقوالب وإدارة الإشعارات داخل HobeRadius.</div>
+        </div>
+
+        {# ── STEPPER ── #}
+        {% set wa_steps = [
+            (1, 'أدخل بيانات Meta'),
+            (2, 'افحص الربط'),
+            (3, 'اربط القوالب'),
+            (4, 'أرسل رسالة تجربة'),
+            (5, 'فعّل الإشعارات'),
+            (6, 'تم التفعيل')
+        ] %}
+        <div class="wa-stepper">
+          {% for n, label in wa_steps %}
+            <div class="wa-step {% if wa_current_step == n %}is-active{% elif wa_current_step > n %}is-done{% endif %}">
+              <span class="num">{% if wa_current_step > n %}<i class="fa-solid fa-check"></i>{% else %}{{ n }}{% endif %}</span>
+              <span>{{ n }}. {{ label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+
+        {# ── THE ILLUSTRATED META GUIDE ── #}
+        {% include "public/_whatsapp_meta_guide.html" %}
+
+        {# ── CONNECTION STATE BANNER ── #}
+        {% set wa_conn = wa_account.connection_status if wa_account else 'disconnected' %}
+        {% if wa_conn == 'connected' %}
+          <div class="wa-state wa-state--ok"><i class="fa-solid fa-circle-check"></i> تم ربط رقم واتساب بنجاح.</div>
+        {% elif wa_conn == 'error' %}
+          <div class="wa-state wa-state--error"><i class="fa-solid fa-circle-xmark"></i> يوجد خطأ في الربط. راجع البيانات أو Token.</div>
+        {% else %}
+          <div class="wa-state wa-state--pending"><i class="fa-solid fa-hourglass-half"></i> أدخل بيانات الربط ثم اضغط فحص الربط.</div>
+        {% endif %}
+
+        {# ════ STEP 1 — credentials ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-id-card"></i></span><h2>1. أدخل بيانات Meta</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0">بيانات ربط واتساب Business عبر Meta Cloud API.</p>
+            <ul class="wa-hints">
+              <li><i class="fa-solid fa-circle"></i> هذه البيانات تحصل عليها من Meta for Developers (راجع الدليل المصوّر بالأعلى).</li>
+              <li><i class="fa-solid fa-circle"></i> يجب أن يكون الرقم WhatsApp Business.</li>
+              <li><i class="fa-solid fa-circle"></i> أنت تدفع تكلفة رسائل واتساب مباشرة إلى Meta.</li>
+              <li><i class="fa-solid fa-circle"></i> HobeRadius يدير الأتمتة والسجلات والإرسال من النظام.</li>
+            </ul>
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="margin-top:14px">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="save_credentials">
+              <div class="wa-grid2">
+                <div class="wa-field">
+                  <label for="wa_meta_business_id">Meta Business ID</label>
+                  <input type="text" id="wa_meta_business_id" name="meta_business_id" value="{{ wa_account.meta_business_id or '' }}" placeholder="1234567890">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_waba_id">WhatsApp Business Account ID (WABA)</label>
+                  <input type="text" id="wa_waba_id" name="whatsapp_business_account_id" value="{{ wa_account.whatsapp_business_account_id or '' }}" placeholder="WABA…">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_phone_number_id">Phone Number ID</label>
+                  <input type="text" id="wa_phone_number_id" name="phone_number_id" value="{{ wa_account.phone_number_id or '' }}" placeholder="PNID…">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_display_phone">رقم الهاتف الظاهر</label>
+                  <input type="text" id="wa_display_phone" name="display_phone_number" value="{{ wa_account.display_phone_number or '' }}" placeholder="+9705xxxxxxxx">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_business_name">اسم النشاط الظاهر</label>
+                  <input type="text" id="wa_business_name" name="business_display_name" value="{{ wa_account.business_display_name or '' }}" placeholder="اسم شركتك">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_access_token">Access Token {% if wa_account_public.access_token_masked and wa_account_public.access_token_masked != '—' %}<span class="save-flag">(محفوظ)</span>{% endif %}</label>
+                  {# WRITE-ONLY: never render the stored token; leave value empty. #}
+                  <input type="password" id="wa_access_token" name="access_token" value="" autocomplete="new-password" placeholder="{% if wa_account_public.access_token_masked and wa_account_public.access_token_masked != '—' %}اتركه فارغًا للإبقاء على المحفوظ{% else %}EAAB…{% endif %}">
+                  {% if wa_account_public.access_token_masked and wa_account_public.access_token_masked != '—' %}
+                  <p class="pp-hint">Token محفوظ ومشفّر: <span class="wa-mask">{{ wa_account_public.access_token_masked }}</span> — يظهر مقنّعًا فقط ولا يمكن عرضه. اتركه فارغًا للإبقاء عليه أو أدخل قيمة جديدة لاستبداله.</p>
+                  {% else %}
+                  <p class="pp-hint">يُخزَّن الـ Token مشفّرًا ولا يُعرض أبدًا بعد الحفظ.</p>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="wa-actions">
+                <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-floppy-disk"></i> حفظ بيانات الربط</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {# ════ STEP 2 — validate ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-plug-circle-check"></i></span><h2>2. افحص الربط</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0 0 12px">سنتحقق من بياناتك مباشرة مع Meta ونحدّث حالة الربط.</p>
+            {% if wa_account %}
+            <dl class="wa-kv">
+              <dt>الحالة</dt><dd>
+                {% if wa_conn == 'connected' %}متصل{% elif wa_conn == 'error' %}خطأ{% elif wa_conn == 'suspended' %}موقوف{% else %}بانتظار الفحص{% endif %}
+              </dd>
+              {% if wa_account.display_phone_number %}<dt>الرقم</dt><dd>{{ wa_account.display_phone_number }}</dd>{% endif %}
+              {% if wa_account.quality_rating %}<dt>التقييم</dt><dd>{{ wa_account.quality_rating }}</dd>{% endif %}
+              {% if wa_account.last_error_message %}<dt>آخر خطأ</dt><dd style="color:#b91c1c">{{ wa_account.last_error_message }}</dd>{% endif %}
+            </dl>
+            {% endif %}
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="margin-top:12px">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="validate">
+              <div class="wa-actions" style="margin-top:0">
+                <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-plug-circle-check"></i> فحص الربط</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {# ════ STEP 3 — templates ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-comment-dots"></i></span><h2>3. اربط القوالب</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0 0 12px">اربط مفتاحًا محليًا (مثل otp) باسم القالب المعتمد لدى Meta.</p>
+            {% if wa_templates %}
+            <div class="pp-table-wrap" style="margin-bottom:14px"><table class="pp-table">
+              <thead><tr><th>المفتاح</th><th>قالب Meta</th><th>اللغة</th><th>الحالة</th></tr></thead>
+              <tbody>
+                {% for t in wa_templates %}
+                <tr>
+                  <td>{{ t.local_key }}</td>
+                  <td>{{ t.provider_template_name or '—' }}</td>
+                  <td class="ltr">{{ t.language }}</td>
+                  <td><span class="wa-pill wa-pill--{{ 'approved' if t.status == 'approved' else 'draft' }}">{{ 'معتمد' if t.status == 'approved' else t.status }}</span></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table></div>
+            {% endif %}
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="save_template">
+              <div class="wa-grid2">
+                <div class="wa-field">
+                  <label for="wa_tpl_local_key">المفتاح المحلي</label>
+                  <input type="text" id="wa_tpl_local_key" name="local_key" placeholder="otp">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_tpl_provider_name">اسم القالب لدى Meta</label>
+                  <input type="text" id="wa_tpl_provider_name" name="provider_template_name" placeholder="otp_ar">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_tpl_language">اللغة</label>
+                  <input type="text" id="wa_tpl_language" name="language" value="ar">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_tpl_category">الفئة</label>
+                  <select id="wa_tpl_category" name="category">
+                    <option value="UTILITY">UTILITY</option>
+                    <option value="AUTHENTICATION">AUTHENTICATION</option>
+                    <option value="MARKETING">MARKETING</option>
+                  </select>
+                </div>
+              </div>
+              <label class="wa-toggle" style="margin-top:8px"><input type="checkbox" name="approve" value="1"> اعتماد القالب الآن (بعد موافقة Meta)</label>
+              <div class="wa-actions">
+                <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-link"></i> حفظ القالب</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {# ════ STEP 4 — send test ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span><h2>4. أرسل رسالة تجربة</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0 0 12px">جرّب الإرسال إلى رقمك للتأكد من اكتمال الربط.</p>
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="send_test">
+              <div class="wa-grid2">
+                <div class="wa-field">
+                  <label for="wa_test_recipient">رقم المستلم</label>
+                  <input type="text" id="wa_test_recipient" name="recipient" placeholder="0599xxxxxx">
+                </div>
+                <div class="wa-field">
+                  <label for="wa_test_template">القالب (اختياري)</label>
+                  <select id="wa_test_template" name="template_key">
+                    <option value="">— رسالة جلسة (بدون قالب) —</option>
+                    {% for t in wa_templates %}
+                      {% if t.status == 'approved' %}<option value="{{ t.local_key }}">{{ t.local_key }} → {{ t.provider_template_name }}</option>{% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div class="wa-actions">
+                <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-paper-plane"></i> إرسال رسالة تجربة</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {# ════ STEP 5 — enable + notification toggles ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-bell"></i></span><h2>5. فعّل الإشعارات</h2></div>
+          <div class="pp-card-body">
+            <p class="pp-svc-desc" style="margin:0 0 12px">اختر أنواع الإشعارات التي يرسلها HobeRadius للمشتركين، وفعّل الخدمة.</p>
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="enable_events">
+              {# Submitting this form enables the service (the explicit enable button below). #}
+              <input type="hidden" name="enabled" value="1">
+              <div class="wa-grid2">
+                <label class="wa-toggle"><input type="checkbox" name="allow_otp" value="1" {% if wa_settings and wa_settings.allow_otp %}checked{% endif %}> رموز التحقق (OTP)</label>
+                <label class="wa-toggle"><input type="checkbox" name="allow_expiry_notice" value="1" {% if wa_settings and wa_settings.allow_expiry_notice %}checked{% endif %}> تنبيه قرب انتهاء الاشتراك</label>
+                <label class="wa-toggle"><input type="checkbox" name="allow_quota_notice" value="1" {% if wa_settings and wa_settings.allow_quota_notice %}checked{% endif %}> تنبيه استهلاك الباقة</label>
+                <label class="wa-toggle"><input type="checkbox" name="allow_maintenance_notice" value="1" {% if wa_settings and wa_settings.allow_maintenance_notice %}checked{% endif %}> تنبيهات الصيانة</label>
+                <label class="wa-toggle"><input type="checkbox" name="allow_password_reset" value="1" {% if wa_settings and wa_settings.allow_password_reset %}checked{% endif %}> إعادة تعيين كلمة المرور</label>
+                <label class="wa-toggle"><input type="checkbox" name="allow_marketing" value="1" {% if wa_settings and wa_settings.allow_marketing %}checked{% endif %}> رسائل تسويقية</label>
+                <label class="wa-toggle"><input type="checkbox" name="require_subscriber_opt_in" value="1" {% if wa_settings and wa_settings.require_subscriber_opt_in %}checked{% endif %}> اشتراط موافقة المشترك المسبقة</label>
+              </div>
+              <div class="wa-actions">
+                <button type="submit" class="pp-btn wa-btn--wa"><i class="fa-solid fa-toggle-on"></i> تفعيل الخدمة</button>
+                <button type="submit" class="pp-btn pp-btn--soft"><i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات</button>
+              </div>
+            </form>
+            {% if wa_settings and wa_settings.enabled %}
+            <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="margin-top:10px">
+              {{ csrf_input() }}
+              <input type="hidden" name="action" value="disable_service">
+              <div class="wa-actions" style="margin-top:0">
+                <button type="submit" class="pp-btn pp-btn--danger"><i class="fa-solid fa-toggle-off"></i> إيقاف الخدمة</button>
+              </div>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+
+        {# ════ STEP 6 — done + usage + recent messages ════ #}
+        <div class="pp-card wa-card-accent">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-circle-check"></i></span><h2>6. تم التفعيل</h2></div>
+          <div class="pp-card-body">
+            {% if wa_current_step == 6 %}
+              <div class="wa-state wa-state--ok" style="margin-bottom:14px"><i class="fa-solid fa-circle-check"></i> الخدمة مفعّلة وجاهزة لإرسال الإشعارات.</div>
+            {% else %}
+              <p class="pp-svc-desc" style="margin:0 0 14px">أكمل الخطوات السابقة لتفعيل الخدمة بالكامل.</p>
+            {% endif %}
+
+            {% set d = wa_usage.daily or {} %}
+            {% set m = wa_usage.monthly or {} %}
+            {% set m_sent = m.get('sent', 0) %}
+            {% set m_delivered = m.get('delivered', 0) %}
+            {% set rate = ((m_delivered / m_sent * 100) | round(0, 'floor')) if m_sent else 0 %}
+            <div class="wa-kpis">
+              <div class="wa-kpi"><div class="lbl">رسائل اليوم</div><div class="val">{{ d.get('sent', 0) + d.get('queued', 0) }}</div></div>
+              <div class="wa-kpi"><div class="lbl">رسائل هذا الشهر</div><div class="val">{{ m.get('sent', 0) + m.get('queued', 0) }}</div></div>
+              <div class="wa-kpi"><div class="lbl">نسبة التسليم</div><div class="val">{{ rate }}%</div></div>
+            </div>
+
+            <h2 style="font-size:14px;display:flex;align-items:center;gap:8px;margin:4px 0 10px"><i class="fa-solid fa-clock-rotate-left"></i> آخر الرسائل</h2>
+            {% if wa_recent_messages %}
+            <div class="pp-table-wrap"><table class="pp-table">
+              <thead><tr><th>المستلم</th><th>النوع</th><th>الحالة</th><th>الوقت</th></tr></thead>
+              <tbody>
+                {% for msg in wa_recent_messages %}
+                <tr>
+                  <td class="ltr">{{ msg.normalized_recipient_phone or msg.recipient_phone }}</td>
+                  <td>{{ msg.source_event_type }}</td>
+                  <td><span class="wa-pill wa-pill--{{ msg.status }}">{{ msg.status }}</span></td>
+                  <td class="mono">{{ msg.created_at|dt }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table></div>
+            {% else %}
+              <div class="pp-empty"><div class="pp-empty-ic"><i class="fa-solid fa-inbox"></i></div>
+                <div class="pp-empty-msg">لا توجد رسائل بعد</div>
+                <div class="pp-empty-sub">ستظهر هنا رسائلك بعد أول إرسال.</div></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </section>
 
       {# ───── BACKUPS ───── #}
       <section class="pp-view" data-pp-pane="backups">

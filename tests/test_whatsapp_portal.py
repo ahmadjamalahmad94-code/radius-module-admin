@@ -1,4 +1,11 @@
-"""Customer-portal WhatsApp wizard tests.
+"""Customer-portal WhatsApp tests — now an INTEGRATED dashboard pane.
+
+The WhatsApp experience used to live on a standalone page (``/portal/whatsapp``);
+it now lives inside the customer dashboard sidebar as a ``data-pp-pane="whatsapp"``
+pane, reached via the ``رسائل واتساب للمشتركين`` nav button (``data-pp-view``).
+The old GET URL is kept but now 302-redirects into the dashboard with
+``?view=whatsapp`` so the SPA router activates the pane. POST actions still hit
+``/portal/whatsapp`` (the action handler) and PRG-redirect back to that pane.
 
 Mirrors the customer-portal login flow used by ``test_customer_control_layer.py``
 (create an ACTIVE ``CustomerUser`` under an active ``Customer``, then POST
@@ -20,7 +27,16 @@ from app.services.whatsapp.crypto import decrypt_secret
 from app.services.whatsapp.providers import MetaCloudWhatsAppProvider
 
 PLAINTEXT_TOKEN = "EAABsbCS1iHgBO_portal_secret_meta_token_value_987654"
-PORTAL_URL = "/portal/whatsapp"
+
+#: Where the WhatsApp UI now lives (the customer dashboard).
+DASH_URL = "/portal"
+#: The dashboard with the WhatsApp pane pre-selected (PRG target).
+DASH_WA_URL = "/portal?view=whatsapp"
+#: Legacy standalone URL — GET redirects to the dashboard pane; POST is the
+#: action handler that PRG-redirects back to the pane.
+LEGACY_URL = "/portal/whatsapp"
+#: The illustrated Meta guide heading (must be present in the pane).
+GUIDE_HEADING = "كيف أحصل على البيانات والاشتراك من Meta؟"
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +91,49 @@ def _csrf(client) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Locked vs granted GET
+# The dashboard now hosts the WhatsApp pane: nav button + pane + guide
+# ---------------------------------------------------------------------------
+def test_dashboard_has_whatsapp_nav_pane_and_guide(client, app):
+    with app.app_context():
+        _make_customer_with_user(
+            company="Pane ISP", username="pane-owner", email="pane@example.test",
+            grant_whatsapp=True,
+        )
+    _portal_login(client, "pane-owner")
+
+    resp = client.get(DASH_URL)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # Sidebar nav button switches to the WhatsApp pane…
+    assert 'data-pp-view="whatsapp"' in body
+    assert "رسائل واتساب للمشتركين" in body
+    # …the pane itself is present…
+    assert 'data-pp-pane="whatsapp"' in body
+    # …and the illustrated Meta guide heading is rendered in it.
+    assert GUIDE_HEADING in body
+
+
+# ---------------------------------------------------------------------------
+# Legacy GET /portal/whatsapp now 302-redirects into the dashboard pane
+# ---------------------------------------------------------------------------
+def test_legacy_whatsapp_get_redirects_to_dashboard_pane(client, app):
+    with app.app_context():
+        _make_customer_with_user(
+            company="Legacy ISP", username="legacy-owner", email="legacy@example.test",
+            grant_whatsapp=True,
+        )
+    _portal_login(client, "legacy-owner")
+
+    resp = client.get(LEGACY_URL, follow_redirects=False)
+    assert resp.status_code in (301, 302)
+    location = resp.headers.get("Location", "")
+    # Lands on the dashboard with the WhatsApp pane selected.
+    assert "/portal" in location
+    assert "view=whatsapp" in location
+
+
+# ---------------------------------------------------------------------------
+# Locked vs granted (rendered inside the dashboard pane)
 # ---------------------------------------------------------------------------
 def test_locked_customer_sees_locked_message_and_no_credentials_form(client, app):
     with app.app_context():
@@ -85,17 +143,19 @@ def test_locked_customer_sees_locked_message_and_no_credentials_form(client, app
         )
     _portal_login(client, "locked-owner")
 
-    resp = client.get(PORTAL_URL)
+    resp = client.get(DASH_URL)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # Locked banner is shown…
+    # The WhatsApp pane still exists (always shown in the sidebar)…
+    assert 'data-pp-pane="whatsapp"' in body
+    # …with the locked banner…
     assert "هذه الخدمة غير مفعلة في خطتك الحالية. يمكنك طلب تفعيلها من الإدارة." in body
     # …and the credentials wizard (its save button) is NOT rendered.
     assert "حفظ بيانات الربط" not in body
     assert 'name="action" value="save_credentials"' not in body
 
 
-def test_granted_customer_sees_wizard_step1(client, app):
+def test_granted_customer_sees_wizard_step1_in_pane(client, app):
     with app.app_context():
         _make_customer_with_user(
             company="Granted ISP", username="granted-owner", email="granted@example.test",
@@ -103,11 +163,11 @@ def test_granted_customer_sees_wizard_step1(client, app):
         )
     _portal_login(client, "granted-owner")
 
-    resp = client.get(PORTAL_URL)
+    resp = client.get(DASH_URL)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # Title + step-1 form present.
-    assert "رسائل واتساب للمشتركين" in body
+    # Pane + step-1 form present.
+    assert 'data-pp-pane="whatsapp"' in body
     assert "1. أدخل بيانات Meta" in body
     assert 'name="action" value="save_credentials"' in body
     assert "حفظ بيانات الربط" in body
@@ -116,9 +176,9 @@ def test_granted_customer_sees_wizard_step1(client, app):
 
 
 # ---------------------------------------------------------------------------
-# Save credentials encrypts the token and never shows it
+# Save credentials encrypts the token and never shows it (POST → pane PRG)
 # ---------------------------------------------------------------------------
-def test_save_credentials_encrypts_token_and_never_shows_plaintext(client, app):
+def test_save_credentials_redirects_to_pane_and_never_shows_plaintext(client, app):
     with app.app_context():
         cid, _uid = _make_customer_with_user(
             company="Creds ISP", username="creds-owner", email="creds@example.test",
@@ -127,8 +187,9 @@ def test_save_credentials_encrypts_token_and_never_shows_plaintext(client, app):
     _portal_login(client, "creds-owner")
     token = _csrf(client)
 
+    # POST goes to the legacy action URL; it must PRG-redirect to the pane.
     resp = client.post(
-        PORTAL_URL,
+        LEGACY_URL,
         data={
             "_csrf_token": token,
             "action": "save_credentials",
@@ -139,9 +200,10 @@ def test_save_credentials_encrypts_token_and_never_shows_plaintext(client, app):
             "business_display_name": "Creds ISP",
             "access_token": PLAINTEXT_TOKEN,
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
-    assert resp.status_code == 200
+    assert resp.status_code in (301, 302)
+    assert "view=whatsapp" in resp.headers.get("Location", "")
 
     # Stored ciphertext decrypts back (it WAS encrypted, not stored raw).
     with app.app_context():
@@ -152,17 +214,19 @@ def test_save_credentials_encrypts_token_and_never_shows_plaintext(client, app):
         assert decrypt_secret(account.access_token_encrypted) == PLAINTEXT_TOKEN
         ciphertext = account.access_token_encrypted
 
-    # The page must never render the plaintext token nor the raw ciphertext —
-    # only the masked preview (first chars present, full token absent).
-    page = client.get(PORTAL_URL)
+    # The dashboard pane must never render the plaintext token nor the raw
+    # ciphertext — only the masked preview (token field stays write-only).
+    page = client.get(DASH_URL)
     assert page.status_code == 200
     page_body = page.get_data(as_text=True)
     assert PLAINTEXT_TOKEN not in page_body
     assert ciphertext not in page_body
+    # The write-only token input carries no value= attribute populated with a secret.
+    assert 'name="access_token" value=""' in page_body
 
 
 # ---------------------------------------------------------------------------
-# Validate via monkeypatched provider marks connected + advances the step
+# Validate via monkeypatched provider marks connected (POST → pane PRG)
 # ---------------------------------------------------------------------------
 def test_validate_monkeypatched_marks_connected_and_advances_step(client, app, monkeypatch):
     with app.app_context():
@@ -186,12 +250,13 @@ def test_validate_monkeypatched_marks_connected_and_advances_step(client, app, m
     _portal_login(client, "validate-owner")
     token = _csrf(client)
 
-    # Before validation we are on step 2 (creds saved, not connected).
-    before = client.get(PORTAL_URL).get_data(as_text=True)
+    # Before validation we are on step 2 (creds saved, not connected) — the
+    # dashboard pane shows an active wizard step.
+    before = client.get(DASH_URL).get_data(as_text=True)
     assert 'class="wa-step is-active"' in before  # an active step exists
 
     resp = client.post(
-        PORTAL_URL,
+        LEGACY_URL,
         data={"_csrf_token": token, "action": "validate"},
         follow_redirects=True,
     )
@@ -205,7 +270,7 @@ def test_validate_monkeypatched_marks_connected_and_advances_step(client, app, m
 
 
 # ---------------------------------------------------------------------------
-# Enable events flips settings.enabled True
+# Enable events flips settings.enabled True (POST action still works)
 # ---------------------------------------------------------------------------
 def test_enable_events_sets_enabled_true(client, app):
     with app.app_context():
@@ -219,7 +284,7 @@ def test_enable_events_sets_enabled_true(client, app):
     token = _csrf(client)
 
     resp = client.post(
-        PORTAL_URL,
+        LEGACY_URL,
         data={
             "_csrf_token": token,
             "action": "enable_events",
@@ -227,13 +292,43 @@ def test_enable_events_sets_enabled_true(client, app):
             "allow_otp": "1",
             "allow_expiry_notice": "1",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
-    assert resp.status_code == 200
+    # PRG back to the dashboard WhatsApp pane.
+    assert resp.status_code in (301, 302)
+    assert "view=whatsapp" in resp.headers.get("Location", "")
     with app.app_context():
         settings_row = wa_settings.get_settings(cid)
         assert settings_row.enabled is True
         assert settings_row.allow_otp is True
+
+
+# ---------------------------------------------------------------------------
+# Locked customer cannot mutate via POST (still gated)
+# ---------------------------------------------------------------------------
+def test_locked_customer_post_is_blocked(client, app):
+    with app.app_context():
+        cid, _uid = _make_customer_with_user(
+            company="Locked POST ISP", username="locked-post", email="lockedpost@example.test",
+            grant_whatsapp=False,
+        )
+    _portal_login(client, "locked-post")
+    token = _csrf(client)
+
+    resp = client.post(
+        LEGACY_URL,
+        data={
+            "_csrf_token": token,
+            "action": "save_credentials",
+            "phone_number_id": "SHOULD-NOT-SAVE",
+            "access_token": PLAINTEXT_TOKEN,
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (301, 302)
+    with app.app_context():
+        # Nothing was written for the locked customer.
+        assert wa_settings.get_account(cid) is None
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +350,7 @@ def test_customer_cannot_affect_another_customer_account(client, app):
     _portal_login(client, "tenant-a")
     token = _csrf(client)
     resp = client.post(
-        PORTAL_URL,
+        LEGACY_URL,
         data={
             "_csrf_token": token,
             "action": "save_credentials",
@@ -278,9 +373,10 @@ def test_customer_cannot_affect_another_customer_account(client, app):
 
 
 # ---------------------------------------------------------------------------
-# Not logged in -> redirect to the portal login
+# Not logged in -> redirect to the portal login (both the dashboard and the
+# legacy WhatsApp URL bounce to login).
 # ---------------------------------------------------------------------------
 def test_not_logged_in_get_redirects_to_portal_login(client, app):
-    resp = client.get(PORTAL_URL, follow_redirects=False)
+    resp = client.get(LEGACY_URL, follow_redirects=False)
     assert resp.status_code in (301, 302)
     assert "/portal/login" in resp.headers.get("Location", "")

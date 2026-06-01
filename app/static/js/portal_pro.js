@@ -253,9 +253,19 @@
   });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModals(); });
 
-  // initial view from the URL hash (deep-link)
+  // initial view from the URL (deep-link). Supports both ?view=<name>
+  // (used by server-side post-redirects, e.g. the WhatsApp PRG) and #<name>.
+  // ?view= wins; falling back to the hash keeps the old behavior intact.
+  function initialView() {
+    try {
+      var qs = new URLSearchParams(location.search || "");
+      var v = (qs.get("view") || "").trim();
+      if (v) return v;
+    } catch (e) { /* URLSearchParams unsupported → fall through to hash */ }
+    return (location.hash || "").replace("#", "");
+  }
   function boot() {
-    var h = (location.hash || "").replace("#", "");
+    var h = initialView();
     if (h) showView(h, false);
     // Pre-load all backup summaries so the content is ready/visible without a click,
     // and bind reliable direct toggle listeners on the content buttons.

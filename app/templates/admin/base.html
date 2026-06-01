@@ -63,6 +63,9 @@
         <a class="{{ 'active' if ep == 'admin.audit_logs' else '' }}" href="{{ url_for('admin.audit_logs') }}">
           <i class="fa-solid fa-clipboard-list"></i><span>سجل التدقيق</span>
         </a>
+        <a class="{{ 'active' if ep.startswith('admin_landing.') else '' }}" href="{{ url_for('admin_landing.overview') }}">
+          <i class="fa-solid fa-window-maximize"></i><span>إدارة الصفحة الرئيسية</span>
+        </a>
         <a class="{{ 'active' if ep == 'admin.settings_page' else '' }}" href="{{ url_for('admin.settings_page') }}">
           <i class="fa-solid fa-gear"></i><span>الإعدادات</span>
         </a>
