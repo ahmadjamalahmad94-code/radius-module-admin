@@ -4,7 +4,7 @@ from flask import Blueprint, current_app, jsonify, request, url_for
 
 from ..extensions import db
 from ..license_signing import LicenseSignatureError, verify_license_signature
-from ..models import CustomerUser
+from ..models import CustomerUser, utcnow
 from ..security import clean_text, client_ip
 from ..services.license_payments import (
     LicensePaymentProofService,
@@ -24,6 +24,10 @@ from ..services.customer_control import (
     clean_username,
     create_customer_service_request,
 )
+from ..services.whatsapp import policy as wa_policy
+from ..services.whatsapp import queue as wa_queue
+from ..services.whatsapp import settings as wa_settings
+from ..services.whatsapp import worker as wa_worker
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -311,6 +315,267 @@ def hoberadius_backup_upload():
     except BackupUploadError as exc:
         return jsonify({"ok": False, "status": exc.code, "message": exc.message}), exc.status_code
     return jsonify(result), 201
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# WhatsApp integration APIs (signed, called by the radius_module runtime)
+#
+# Every endpoint reuses the SAME guard triad as the other integration
+# endpoints above: HTTPS (_integration_request_is_secure -> 426),
+# HMAC signature (_verify_integration_signature -> 401 on unsigned/bad), then
+# license resolution (_checked_license_from_integration_body). The customer is
+# resolved once from the verified license (result.license.customer). Secrets
+# (access token, app secret, verify token) are NEVER placed in any response.
+# Business rejections (policy gate, missing template, not found) return HTTP
+# 200 with ``ok: false`` so the caller can branch on the body — they are not
+# transport/auth failures and must never surface as a 5xx.
+# ─────────────────────────────────────────────────────────────────────────
+def _whatsapp_integration_context(body: dict):
+    """Run the shared integration guard triad and resolve the customer.
+
+    Returns ``(customer, license_id, None)`` on success, or
+    ``(None, None, response)`` where ``response`` is the Flask response/tuple to
+    return immediately (HTTPS / signature / license / no-customer failure).
+    """
+    if not _integration_request_is_secure():
+        return None, None, (jsonify({"ok": False, "status": "https_required", "message": "تكامل واتساب يتطلب HTTPS."}), 426)
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return None, None, signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return None, None, error_response
+    if not result.license or not result.license.customer:
+        return None, None, (jsonify({"ok": False, "status": "not_found"}), 404)
+    return result.license.customer, result.license.id, None
+
+
+def _whatsapp_inline_drain() -> None:
+    """Best-effort inline send so OTP/test messages go out promptly.
+
+    The panel has no resident worker, so we drain a tiny batch synchronously.
+    This must NEVER change the API response: any failure (provider, DB) is
+    swallowed and the row simply stays queued for the systemd drain timer.
+    """
+    try:
+        wa_worker.drain_once(batch_size=5)
+    except Exception:  # noqa: BLE001 — inline drain is best-effort only.
+        pass
+
+
+@bp.post("/integration/hoberadius/whatsapp/status")
+def hoberadius_whatsapp_status():
+    """Report the customer's WhatsApp gateway status (secret-free)."""
+    body = request.get_json(silent=True) or {}
+    customer, _license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    settings = wa_settings.get_settings(customer.id)
+    account = wa_settings.get_account(customer.id)
+    account_public = wa_settings.account_public_dict(account)
+    usage = wa_settings.get_usage(customer.id, utcnow())
+
+    templates = [
+        {
+            "local_key": template.local_key,
+            "status": template.status,
+            "language": template.language,
+        }
+        for template in wa_settings.list_templates(customer.id)
+    ]
+
+    return jsonify({
+        "ok": True,
+        "enabled": bool(settings.enabled),
+        "account_status": account_public.get("connection_status") or "disconnected",
+        "display_phone_number": account_public.get("display_phone_number") or "",
+        "business_display_name": account_public.get("business_display_name") or "",
+        "limits": {
+            "daily": {
+                "used": usage["daily"]["sent"],
+                "limit": settings.daily_message_limit,
+            },
+            "monthly": {
+                "used": usage["monthly"]["sent"],
+                "limit": settings.monthly_message_limit,
+            },
+        },
+        "allowed_events": {
+            "otp": bool(settings.allow_otp),
+            "expiry_notice": bool(settings.allow_expiry_notice),
+            "quota_warning": bool(settings.allow_quota_notice),
+            "maintenance_notice": bool(settings.allow_maintenance_notice),
+            "password_reset": bool(settings.allow_password_reset),
+        },
+        "templates": templates,
+    })
+
+
+@bp.post("/integration/hoberadius/whatsapp/messages/enqueue")
+def hoberadius_whatsapp_enqueue():
+    """Queue an outbound WhatsApp message after the send-policy gate passes."""
+    body = request.get_json(silent=True) or {}
+    customer, license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    source_event_type = str(body.get("source_event_type") or "")
+    recipient_phone = str(body.get("recipient_phone") or "")
+    template_key = body.get("template_key") or None
+    language = body.get("language") or "ar"
+    variables = body.get("variables")
+    idempotency_key = str(body.get("idempotency_key") or "")
+    subscriber_id = body.get("subscriber_id")
+    # Scope the idempotency key per-customer (the column is globally unique), so
+    # one tenant's key can never collide with — or read back — another's row.
+    scoped_key = f"c{customer.id}:{idempotency_key}" if idempotency_key else ""
+
+    decision = wa_policy.can_send(
+        customer.id,
+        event_type=source_event_type,
+        recipient_phone=recipient_phone,
+        template_key=template_key,
+        subscriber_id=subscriber_id,
+        idempotency_key=scoped_key,
+    )
+    if not decision.allowed:
+        return jsonify({
+            "ok": False,
+            "error_code": decision.reason,
+            "message_ar": decision.message_ar,
+        })
+
+    row, created = wa_queue.enqueue(
+        customer.id,
+        source_system="radius_module",
+        source_event_type=source_event_type,
+        recipient_phone=recipient_phone,
+        normalized_recipient_phone=decision.normalized_phone,
+        template_key=template_key,
+        language=language,
+        variables=variables,
+        idempotency_key=scoped_key,
+        subscriber_id=subscriber_id,
+        license_id=license_id,
+    )
+
+    _whatsapp_inline_drain()
+    row = wa_queue.get_message(row.id) or row
+
+    return jsonify({
+        "ok": True,
+        "message_id": row.id,
+        "status": row.status,
+        "already_exists": (not created),
+    })
+
+
+@bp.post("/integration/hoberadius/whatsapp/messages/test")
+def hoberadius_whatsapp_test_message():
+    """Send a test message via an approved template (operator-triggered)."""
+    body = request.get_json(silent=True) or {}
+    customer, license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    recipient_phone = str(body.get("recipient_phone") or "")
+    idempotency_key = str(body.get("idempotency_key") or "")
+    scoped_key = f"c{customer.id}:{idempotency_key}" if idempotency_key else ""
+
+    # Pick an approved template: prefer the "otp" local_key, else any approved.
+    templates = wa_settings.list_templates(customer.id)
+    approved = [t for t in templates if t.status == "approved"]
+    chosen = next((t for t in approved if t.local_key == "otp"), None) or (approved[0] if approved else None)
+    if chosen is None:
+        return jsonify({
+            "ok": False,
+            "error_code": "template_not_approved",
+            "message_ar": "لا يوجد قالب واتساب معتمد لإرسال رسالة تجربة.",
+        })
+
+    decision = wa_policy.can_send(
+        customer.id,
+        event_type="test_message",
+        recipient_phone=recipient_phone,
+        template_key=chosen.local_key,
+        idempotency_key=scoped_key,
+    )
+    if not decision.allowed:
+        return jsonify({
+            "ok": False,
+            "error_code": decision.reason,
+            "message_ar": decision.message_ar,
+        })
+
+    row, created = wa_queue.enqueue(
+        customer.id,
+        source_system="admin_panel",
+        source_event_type="test_message",
+        recipient_phone=recipient_phone,
+        normalized_recipient_phone=decision.normalized_phone,
+        template_key=chosen.local_key,
+        language=chosen.language or "ar",
+        idempotency_key=scoped_key,
+        license_id=license_id,
+    )
+
+    _whatsapp_inline_drain()
+    row = wa_queue.get_message(row.id) or row
+
+    return jsonify({
+        "ok": True,
+        "message_id": row.id,
+        "status": row.status,
+        "already_exists": (not created),
+    })
+
+
+@bp.post("/integration/hoberadius/whatsapp/subscriber-preferences/sync")
+def hoberadius_whatsapp_subscriber_sync():
+    """Batch-upsert subscriber WhatsApp consent/preferences (capped)."""
+    body = request.get_json(silent=True) or {}
+    customer, _license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    subscribers = body.get("subscribers")
+    items = subscribers if isinstance(subscribers, list) else []
+    # Cap the batch defensively; upsert_subscriber_prefs also caps at 500.
+    affected = wa_settings.upsert_subscriber_prefs(customer.id, items[:500])
+    return jsonify({"ok": True, "synced": len(affected)})
+
+
+@bp.post("/integration/hoberadius/whatsapp/messages/status")
+def hoberadius_whatsapp_message_status():
+    """Report the delivery status of a queued message (customer-scoped)."""
+    body = request.get_json(silent=True) or {}
+    customer, _license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    row = None
+    idempotency_key = body.get("idempotency_key")
+    if idempotency_key not in (None, ""):
+        row = wa_queue.get_by_idempotency_key(f"c{customer.id}:{idempotency_key}")
+    elif body.get("message_id") not in (None, ""):
+        try:
+            row = wa_queue.get_message(int(body.get("message_id")))
+        except (TypeError, ValueError):
+            row = None
+
+    # Scope strictly to the verified customer — never leak another tenant's row.
+    if row is None or row.customer_id != customer.id:
+        return jsonify({"ok": False, "error_code": "not_found"})
+
+    return jsonify({
+        "ok": True,
+        "status": row.status,
+        "provider_message_id": row.provider_message_id,
+        "error_code": row.error_code,
+        "error_message": row.error_message,
+        "attempts": row.attempts,
+    })
 
 
 def _customer_user_from_password_change_body(customer_id: int, body: dict) -> CustomerUser:
