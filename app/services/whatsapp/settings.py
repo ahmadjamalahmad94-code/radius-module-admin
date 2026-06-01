@@ -56,6 +56,34 @@ _SETTINGS_ALLOWED_FIELDS = frozenset({
 # Max subscriber-preference rows accepted in a single batch upsert.
 _MAX_PREF_BATCH = 500
 
+# Plan presets applied by apply_plan_preset(). Each maps a plan_code to the
+# limit / policy columns that the plan provisions. Only keys that are part of
+# the update_settings allow-list are used. ``whatsapp_basic`` is the fallback
+# for an unknown plan_code.
+WHATSAPP_PLAN_PRESETS = {
+    "whatsapp_basic": {
+        "monthly_message_limit": 500,
+        "daily_message_limit": 100,
+        "per_minute_limit": 10,
+        "allow_bulk_utility": False,
+    },
+    "whatsapp_pro": {
+        "monthly_message_limit": 2000,
+        "daily_message_limit": 300,
+        "per_minute_limit": 30,
+        "allow_bulk_utility": True,
+    },
+    "whatsapp_business": {
+        "monthly_message_limit": 10000,
+        "daily_message_limit": 1000,
+        "per_minute_limit": 60,
+        "allow_bulk_utility": True,
+    },
+}
+
+# Fallback plan when an unknown plan_code is supplied to apply_plan_preset().
+_DEFAULT_PLAN_CODE = "whatsapp_basic"
+
 
 def _audit(action: str, entity_type: str, entity_id, summary: str, metadata=None) -> None:
     """Append an AuditLog row (no actor: these are system/service actions)."""
@@ -229,6 +257,21 @@ def update_settings(customer_id: int, **fields) -> WhatsAppServiceSettings:
     )
     db.session.commit()
     return settings
+
+
+def apply_plan_preset(customer_id: int, plan_code: str) -> WhatsAppServiceSettings:
+    """Apply a WhatsApp plan preset's limits to the customer's settings.
+
+    Looks up ``plan_code`` in :data:`WHATSAPP_PLAN_PRESETS`, falling back to
+    ``whatsapp_basic`` when unknown, then writes the preset's limit/policy
+    columns plus ``plan_code`` through :func:`update_settings` (which enforces
+    the column allow-list, commits, and audits). Returns the settings row.
+    """
+    code = str(plan_code or "").strip()
+    if code not in WHATSAPP_PLAN_PRESETS:
+        code = _DEFAULT_PLAN_CODE
+    preset = WHATSAPP_PLAN_PRESETS[code]
+    return update_settings(customer_id, plan_code=code, **preset)
 
 
 # ---------------------------------------------------------------------------

@@ -398,6 +398,16 @@ DEFAULT_SERVICE_CATALOG = [
         "price_monthly": None,
     },
     {
+        "service_key": "whatsapp_gateway",
+        "name": "WhatsApp Gateway",
+        "name_ar": "رسائل واتساب للمشتركين",
+        "description": "إرسال إشعارات واتساب للمشتركين عبر رقم واتساب التجاري الخاص بالعميل، مع حدود إرسال وقوالب معتمدة وموافقة المشرف على التفعيل.",
+        "category": "communications",
+        "default_enabled": False,
+        "sort_order": 192,
+        "price_monthly": None,
+    },
+    {
         "service_key": "operations_center",
         "name": "مركز العمليات",
         "name_ar": "مركز العمليات",
@@ -556,6 +566,11 @@ SERVICE_LIMIT_FIELDS = {
     "cards_recharge": [("monthly_generated", "أقصى بطاقات شحن شهريًا", "إجمالي بطاقات الشحن المسبق خلال الشهر.")],
     "ip_pools": [("max_total", "أقصى عدد نطاقات", "عدد نطاقات العناوين المسموحة.")],
     "finance_center": [("max_wallets", "أقصى عدد محافظ", "عدد المحافظ المالية داخل الريدياس.")],
+    "whatsapp_gateway": [
+        ("max_messages_monthly", "حد الرسائل الشهري", "أقصى عدد رسائل واتساب المسموح إرسالها خلال الشهر (الافتراضي 500)."),
+        ("max_messages_daily", "حد الرسائل اليومي", "أقصى عدد رسائل واتساب المسموح إرسالها خلال اليوم (الافتراضي 100)."),
+        ("max_templates", "حد القوالب", "أقصى عدد قوالب واتساب المعتمدة للعميل (الافتراضي 20)."),
+    ],
     "distributors": [("max_total", "أقصى عدد موزعين", "عدد الموزعين المسموح إدارتهم.")],
     "multi_tenant": [("max_total", "أقصى عدد مستأجرين", "عدد الشركات أو المستأجرين داخل النسخة.")],
 }
