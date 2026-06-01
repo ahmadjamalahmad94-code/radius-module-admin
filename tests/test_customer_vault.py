@@ -172,6 +172,18 @@ def test_reveal_updates_timestamp_and_rotate_changes_ciphertext(app):
         assert crypto.decrypt_secret(sec2.encrypted_secret) == "new-value-456"
 
 
+def test_reveal_with_changed_key_raises_clean_error(app):
+    with app.app_context():
+        cid = _customer()
+        sec = vault.create_secret(cid, {"secret_type": "other", "label": "k"}, PLAINTEXT, actor_id=1)
+        sid = sec.id
+        # Simulate the key being rotated AFTER the secret was saved.
+        from cryptography.fernet import Fernet
+        app.config["CUSTOMER_VAULT_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+        with pytest.raises(vault.VaultError):  # clean VaultError, never an unhandled 500
+            vault.reveal_secret(sid, cid, actor_id=1)
+
+
 def test_archive_hides_secret_from_active_list(app):
     with app.app_context():
         cid = _customer()

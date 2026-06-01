@@ -261,7 +261,13 @@ def reveal_secret(secret_id: int, customer_id: int, actor_id, reason: str = ""):
     sec = CustomerSecret.query.filter_by(id=secret_id, customer_id=customer_id).first()
     if not sec:
         raise VaultError("السر غير موجود.")
-    plaintext = crypto.decrypt_secret(sec.encrypted_secret)
+    try:
+        plaintext = crypto.decrypt_secret(sec.encrypted_secret)
+    except crypto.VaultCryptoError as exc:
+        # Wrong/changed key (e.g. key rotated after the secret was saved).
+        raise VaultError(
+            "تعذّر فك تشفير السر — تأكّد أن مفتاح التشفير الحالي هو نفسه المستخدم وقت الحفظ."
+        ) from exc
     sec.last_revealed_at = utcnow()
     sec.last_revealed_by_admin_id = actor_id
     log_vault_action(customer_id, actor_id, "secret_revealed", "secret", sec.id,

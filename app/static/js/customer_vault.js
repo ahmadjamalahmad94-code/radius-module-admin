@@ -74,10 +74,18 @@
     fetch(currentUrl, {
       method: "POST",
       headers: { "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF,
+                 "Accept": "application/json",
                  "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
       credentials: "same-origin",
-    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    }).then(function (r) {
+        // Read as text first, then try JSON — so non-JSON error pages (400/403/500,
+        // or a login redirect) surface the real HTTP status instead of a generic error.
+        return r.text().then(function (txt) {
+          var j = null; try { j = JSON.parse(txt); } catch (e) {}
+          return { status: r.status, ok: r.ok, j: j };
+        });
+      })
       .then(function (res) {
         confirmBtn.disabled = false;
         if (res.ok && res.j && res.j.ok) {
@@ -85,12 +93,13 @@
           step1.hidden = true;
           step2.hidden = false;
         } else {
-          elErr.textContent = (res.j && res.j.message) || "تعذّر عرض السر.";
+          elErr.textContent = (res.j && res.j.message)
+            || ("تعذّر عرض السر (رمز " + res.status + ").");
           elErr.hidden = false;
         }
       }).catch(function () {
         confirmBtn.disabled = false;
-        elErr.textContent = "خطأ في الاتصال.";
+        elErr.textContent = "تعذّر الاتصال بالخادم.";
         elErr.hidden = false;
       });
   });
