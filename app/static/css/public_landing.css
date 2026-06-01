@@ -44,7 +44,7 @@
 .lp-root a { color: inherit; text-decoration: none; }
 
 .lp-wrap { max-width: 1180px; margin: 0 auto; padding-inline: 22px; }
-.lp-section { padding: 72px 0; }
+.lp-section { padding: 72px 0; scroll-margin-top: 86px; }
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 13px; font-weight: 800; color: var(--lp-teal-600);
@@ -142,7 +142,9 @@
 .lp-metric .l { font-size: 13px; color: var(--lp-muted); margin-top: 2px; }
 
 /* ═══════════ CARD GRIDS (features / why) ═══════════ */
-.lp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+/* centered flex wrap so an incomplete last row stays centered, not side-aligned */
+.lp-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; }
+.lp-grid > * { flex: 1 1 300px; max-width: 380px; }
 .lp-card {
   background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: var(--lp-r);
   padding: 24px; box-shadow: var(--lp-shadow); transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
@@ -156,8 +158,8 @@
 .lp-modcat { margin-bottom: 30px; }
 .lp-modcat-title { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: var(--lp-ink); margin-bottom: 14px; }
 .lp-modcat-title::before { content: ""; width: 6px; height: 18px; border-radius: 3px; background: var(--lp-grad); }
-.lp-modgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.lp-mod { display: flex; align-items: center; gap: 12px; background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: var(--lp-r-sm); padding: 14px 16px; box-shadow: var(--lp-shadow); transition: .16s; }
+.lp-modgrid { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.lp-mod { flex: 1 1 220px; max-width: 320px; display: flex; align-items: center; gap: 12px; background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: var(--lp-r-sm); padding: 14px 16px; box-shadow: var(--lp-shadow); transition: .16s; }
 .lp-mod:hover { border-color: var(--lp-teal); }
 .lp-mod i { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--lp-teal-50); color: var(--lp-teal-600); font-size: 15px; flex: none; }
 .lp-mod span { font-size: 14px; font-weight: 700; }
@@ -281,8 +283,8 @@
 @keyframes lpBar { from { transform: scaleY(.15) } to { transform: scaleY(1) } }
 
 /* BENTO features grid — varied sizes (distinct from a uniform 3-col copy) */
-.lp-grid.bento { grid-template-columns: repeat(6, 1fr); }
-.lp-grid.bento > .lp-card { grid-column: span 2; }
+.lp-grid.bento { display: grid; grid-template-columns: repeat(6, 1fr); }
+.lp-grid.bento > .lp-card { grid-column: span 2; max-width: none; }
 .lp-grid.bento > .lp-card:nth-child(1),
 .lp-grid.bento > .lp-card:nth-child(2) { grid-column: span 3; }
 .lp-grid.bento > .lp-card:nth-child(1) { background: var(--lp-grad-soft); border-color: #cdeee6; }

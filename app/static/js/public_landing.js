@@ -21,7 +21,9 @@
     window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
   }
 
-  // ── Smooth anchor scrolling with sticky-nav offset ──
+  // ── Smooth anchor scrolling ──
+  // Reveal the target first so its reveal transform (translateY) can't offset the
+  // computed scroll position, then use scrollIntoView (respects CSS scroll-margin-top).
   document.querySelectorAll('.lp-root a[href^="#"]').forEach(function (link) {
     link.addEventListener("click", function (e) {
       var id = link.getAttribute("href");
@@ -29,8 +31,9 @@
       var target = document.querySelector(id);
       if (!target) return;
       e.preventDefault();
-      var top = target.getBoundingClientRect().top + window.pageYOffset - 78;
-      window.scrollTo({ top: top, behavior: reduce ? "auto" : "smooth" });
+      if (nav) nav.classList.remove("open");
+      target.classList.add("in");  // clear any pending reveal transform on the target
+      target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
     });
   });
 
