@@ -287,6 +287,27 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "assigned_operator": "VARCHAR(160) NOT NULL DEFAULT ''",
         })
 
+    # WhatsApp Gateway tables are created fresh by db.create_all(); the guarded
+    # blocks below only matter for live DBs created before a column was added,
+    # so they mirror the pattern above and stay intentionally minimal.
+    if "whatsapp_message_queue" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("whatsapp_message_queue", {
+            "provider_message_id": "VARCHAR(190)",
+            "next_attempt_at": datetime_type,
+            "error_code": "VARCHAR(60)",
+            "error_message": "TEXT",
+        })
+
+    if "whatsapp_tenant_accounts" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("whatsapp_tenant_accounts", {
+            "quality_rating": "VARCHAR(20)",
+            "messaging_limit_tier": "VARCHAR(40)",
+            "last_health_check_at": datetime_type,
+            "last_error_code": "VARCHAR(60)",
+        })
+
 
 def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
     inspector = inspect(db.engine)

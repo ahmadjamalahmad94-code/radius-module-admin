@@ -783,6 +783,267 @@ class ProvisioningOrder(TimestampMixin, db.Model):
     target_plan = db.relationship("Plan")
 
 
+class WhatsAppTenantAccount(TimestampMixin, db.Model):
+    """Per-customer WhatsApp Business / Cloud API connection state.
+
+    One account per customer. Holds the provider linkage (Meta Cloud API by
+    default), the encrypted access token + webhook secrets, and the live
+    connection/quality health that the gateway reads before sending.
+    """
+    __tablename__ = "whatsapp_tenant_accounts"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", name="uq_whatsapp_tenant_accounts_customer"),
+        db.Index("ix_whatsapp_tenant_accounts_phone_number_id", "phone_number_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    provider = db.Column(db.String(40), default="meta_cloud", nullable=False)
+    connection_status = db.Column(db.String(20), default="disconnected", nullable=False, index=True)
+    meta_business_id = db.Column(db.String(120), nullable=True)
+    whatsapp_business_account_id = db.Column(db.String(120), nullable=True)
+    phone_number_id = db.Column(db.String(120), nullable=True)
+    display_phone_number = db.Column(db.String(40), nullable=True)
+    business_display_name = db.Column(db.String(180), nullable=True)
+    access_token_encrypted = db.Column(db.Text, nullable=True)
+    token_expires_at = db.Column(db.DateTime, nullable=True)
+    webhook_verify_token_hash = db.Column(db.String(190), nullable=True)
+    webhook_secret_encrypted = db.Column(db.Text, nullable=True)
+    quality_rating = db.Column(db.String(20), nullable=True)
+    messaging_limit_tier = db.Column(db.String(40), nullable=True)
+    last_health_check_at = db.Column(db.DateTime, nullable=True)
+    last_error_code = db.Column(db.String(60), nullable=True)
+    last_error_message = db.Column(db.Text, nullable=True)
+    connected_at = db.Column(db.DateTime, nullable=True)
+    disconnected_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+
+class WhatsAppServiceSettings(TimestampMixin, db.Model):
+    """Per-customer WhatsApp gateway plan + policy switches.
+
+    One row per customer describing the enabled plan, message-rate ceilings,
+    the per-category send permissions, quiet-hours, and opt-in policy that the
+    gateway enforces before queuing/sending.
+    """
+    __tablename__ = "whatsapp_service_settings"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", name="uq_whatsapp_service_settings_customer"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True)
+    enabled = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    plan_code = db.Column(db.String(40), default="whatsapp_basic", nullable=False, index=True)
+    monthly_message_limit = db.Column(db.Integer, default=500)
+    daily_message_limit = db.Column(db.Integer, default=100)
+    per_minute_limit = db.Column(db.Integer, default=10)
+    allow_otp = db.Column(db.Boolean, default=True)
+    allow_expiry_notice = db.Column(db.Boolean, default=True)
+    allow_quota_notice = db.Column(db.Boolean, default=True)
+    allow_maintenance_notice = db.Column(db.Boolean, default=True)
+    allow_password_reset = db.Column(db.Boolean, default=True)
+    allow_bulk_utility = db.Column(db.Boolean, default=False)
+    allow_marketing = db.Column(db.Boolean, default=False)
+    require_subscriber_opt_in = db.Column(db.Boolean, default=True)
+    quiet_hours_enabled = db.Column(db.Boolean, default=False)
+    quiet_hours_start = db.Column(db.String(5), nullable=True)
+    quiet_hours_end = db.Column(db.String(5), nullable=True)
+    timezone = db.Column(db.String(60), default="Asia/Hebron")
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+
+class WhatsAppTemplate(TimestampMixin, db.Model):
+    """A WhatsApp message template (local definition + Meta sync state).
+
+    Each customer maps a local_key (e.g. ``otp``) to a provider template in a
+    given language. ``variables_schema`` describes the placeholder slots; the
+    Meta-side id/status are mirrored back after submission/approval.
+    """
+    __tablename__ = "whatsapp_templates"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "local_key", "language", name="uq_whatsapp_templates_customer_key_lang"),
+        db.Index("ix_whatsapp_templates_customer_id", "customer_id"),
+        db.Index("ix_whatsapp_templates_status", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True)
+    local_key = db.Column(db.String(60), nullable=False)
+    provider_template_name = db.Column(db.String(190), nullable=True)
+    language = db.Column(db.String(12), default="ar", nullable=False)
+    category = db.Column(db.String(20), default="UTILITY", nullable=False)
+    status = db.Column(db.String(20), default="draft", nullable=False)
+    body_preview = db.Column(db.Text, nullable=True)
+    variables_schema_json = db.Column(db.Text, nullable=True)
+    meta_template_id = db.Column(db.String(120), nullable=True)
+    last_synced_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+    @property
+    def variables_schema(self):
+        return json_loads(self.variables_schema_json, {})
+
+    @variables_schema.setter
+    def variables_schema(self, value) -> None:
+        self.variables_schema_json = json_dumps(value or {})
+
+
+class WhatsAppMessageQueue(TimestampMixin, db.Model):
+    """Outbound WhatsApp message queue with delivery lifecycle + retries.
+
+    Every send request lands here first. ``idempotency_key`` dedups requests
+    from upstream systems; ``status`` walks queued -> sending -> sent ->
+    delivered/read or failed, with attempt/backoff bookkeeping and the
+    provider message id used to correlate webhook status callbacks.
+    """
+    __tablename__ = "whatsapp_message_queue"
+    __table_args__ = (
+        db.Index("ix_whatsapp_message_queue_status_next_attempt", "status", "next_attempt_at"),
+        db.Index("ix_whatsapp_message_queue_customer_created", "customer_id", "created_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True)
+    source_system = db.Column(db.String(40), nullable=False)
+    source_event_type = db.Column(db.String(60), nullable=False, index=True)
+    subscriber_id = db.Column(db.String(120), nullable=True)
+    recipient_phone = db.Column(db.String(40), nullable=False)
+    normalized_recipient_phone = db.Column(db.String(40), nullable=False, index=True)
+    template_key = db.Column(db.String(60), nullable=True)
+    template_name = db.Column(db.String(190), nullable=True)
+    language = db.Column(db.String(12), default="ar")
+    variables_json = db.Column(db.Text, nullable=True)
+    raw_body = db.Column(db.Text, nullable=True)
+    priority = db.Column(db.Integer, default=5)
+    status = db.Column(db.String(20), default="queued", nullable=False)
+    provider_message_id = db.Column(db.String(190), nullable=True, index=True)
+    idempotency_key = db.Column(db.String(190), nullable=False, unique=True)
+    error_code = db.Column(db.String(60), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    attempts = db.Column(db.Integer, default=0)
+    max_attempts = db.Column(db.Integer, default=3)
+    next_attempt_at = db.Column(db.DateTime, nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    read_at = db.Column(db.DateTime, nullable=True)
+    failed_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+    @property
+    def variables(self):
+        return json_loads(self.variables_json, {})
+
+    @variables.setter
+    def variables(self, value) -> None:
+        self.variables_json = json_dumps(value or {})
+
+
+class WhatsAppWebhookEvent(TimestampMixin, db.Model):
+    """Raw inbound webhook events from the provider, stored for dedup + replay.
+
+    Meta delivers status callbacks, inbound messages, and template/account
+    updates here. ``event_id`` enforces Meta-side dedup; ``payload`` keeps the
+    full JSON so processing can be retried idempotently.
+    """
+    __tablename__ = "whatsapp_webhook_events"
+    __table_args__ = (
+        db.UniqueConstraint("event_id", name="uq_whatsapp_webhook_events_event_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(40), default="meta_cloud")
+    event_type = db.Column(db.String(40), nullable=False, index=True)
+    phone_number_id = db.Column(db.String(120), nullable=True, index=True)
+    provider_message_id = db.Column(db.String(190), nullable=True, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=True, index=True)
+    event_id = db.Column(db.String(190), nullable=True, unique=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    processed = db.Column(db.Boolean, default=False, index=True)
+    processing_error = db.Column(db.Text, nullable=True)
+    received_at = db.Column(db.DateTime, nullable=False)
+    processed_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+
+    @property
+    def payload(self):
+        return json_loads(self.payload_json, {})
+
+    @payload.setter
+    def payload(self, value) -> None:
+        self.payload_json = json_dumps(value or {})
+
+
+class WhatsAppSubscriberPreference(TimestampMixin, db.Model):
+    """Per-subscriber WhatsApp consent + per-category notification prefs.
+
+    Tracks whether a subscriber opted in, which message categories they
+    accept, and whether they are blocked. Unique per (customer, subscriber).
+    """
+    __tablename__ = "whatsapp_subscriber_preferences"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "subscriber_id", name="uq_whatsapp_subscriber_preferences_customer_subscriber"),
+        db.Index("ix_whatsapp_subscriber_preferences_normalized_phone", "normalized_phone"),
+        db.Index("ix_whatsapp_subscriber_preferences_opt_in", "whatsapp_opt_in"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    subscriber_id = db.Column(db.String(120), nullable=False)
+    phone = db.Column(db.String(40), nullable=True)
+    normalized_phone = db.Column(db.String(40), nullable=True)
+    whatsapp_opt_in = db.Column(db.Boolean, default=False)
+    allow_otp = db.Column(db.Boolean, default=True)
+    allow_service_notices = db.Column(db.Boolean, default=True)
+    allow_maintenance = db.Column(db.Boolean, default=True)
+    allow_marketing = db.Column(db.Boolean, default=False)
+    blocked = db.Column(db.Boolean, default=False)
+    opted_in_at = db.Column(db.DateTime, nullable=True)
+    opted_out_at = db.Column(db.DateTime, nullable=True)
+    source = db.Column(db.String(40), nullable=True)
+
+    customer = db.relationship("Customer")
+
+
+class WhatsAppUsageCounter(TimestampMixin, db.Model):
+    """Aggregated send counters per customer per period (daily/monthly).
+
+    Backs quota enforcement and reporting. Unique per
+    (customer, period_type, period_key) where period_key is e.g. ``2026-06``
+    for monthly or ``2026-06-01`` for daily.
+    """
+    __tablename__ = "whatsapp_usage_counters"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "period_type", "period_key", name="uq_whatsapp_usage_counters_customer_period"),
+        db.Index("ix_whatsapp_usage_counters_period_type", "period_type"),
+        db.Index("ix_whatsapp_usage_counters_period_key", "period_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    period_type = db.Column(db.String(10), nullable=False)
+    period_key = db.Column(db.String(20), nullable=False)
+    queued_count = db.Column(db.Integer, default=0)
+    sent_count = db.Column(db.Integer, default=0)
+    delivered_count = db.Column(db.Integer, default=0)
+    failed_count = db.Column(db.Integer, default=0)
+
+    customer = db.relationship("Customer")
+
+
 class Setting(db.Model):
     __tablename__ = "settings"
 
