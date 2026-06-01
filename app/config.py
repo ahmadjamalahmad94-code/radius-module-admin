@@ -78,6 +78,15 @@ class Config:
     SESSION_LIFETIME_SECONDS = _env_int("SESSION_LIFETIME_SECONDS", 43200)
     PERMANENT_SESSION_LIFETIME = SESSION_LIFETIME_SECONDS
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+    WHATSAPP_GATEWAY_ENABLED = _env_bool("WHATSAPP_GATEWAY_ENABLED", True)
+    WHATSAPP_FERNET_KEY = os.environ.get("WHATSAPP_FERNET_KEY", "")
+    WHATSAPP_GRAPH_API_VERSION = os.environ.get("WHATSAPP_GRAPH_API_VERSION", "v21.0")
+    WHATSAPP_GRAPH_BASE = os.environ.get("WHATSAPP_GRAPH_BASE", "https://graph.facebook.com")
+    WHATSAPP_HTTP_TIMEOUT_SECONDS = _env_int("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15)
+    WHATSAPP_DRAIN_BATCH_SIZE = _env_int("WHATSAPP_DRAIN_BATCH_SIZE", 50)
+    WHATSAPP_MAX_ATTEMPTS = _env_int("WHATSAPP_MAX_ATTEMPTS", 3)
+    WHATSAPP_DEFAULT_TIMEZONE = os.environ.get("WHATSAPP_DEFAULT_TIMEZONE", "Asia/Hebron")
+    WHATSAPP_DEFAULT_COUNTRY = os.environ.get("WHATSAPP_DEFAULT_COUNTRY", "PS")
 
 
 class TestingConfig(Config):
@@ -86,3 +95,6 @@ class TestingConfig(Config):
     RATE_LIMITS_ENABLED = False
     AUTO_INIT_DB = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    # Fixed valid 32-byte urlsafe-base64 Fernet key so WhatsApp crypto works
+    # deterministically under tests. Test-only; never used in deployment.
+    WHATSAPP_FERNET_KEY = "t7Hk9w0Qd2cQ3pYy5sFv8nJzZbR1mLxWtUe4aGhKpD0="
