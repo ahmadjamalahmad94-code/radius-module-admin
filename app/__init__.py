@@ -491,6 +491,14 @@ def _install_csrf(app: Flask) -> None:
     app.jinja_env.globals["csrf_token"] = csrf_token
     app.jinja_env.globals["csrf_input"] = csrf_input
 
+    @app.context_processor
+    def _inject_admin_flags():
+        # Exposes `is_super_admin` to all templates so elevated-only UI (e.g. the
+        # Customer Secure Vault entry) can be hidden from non-super admins.
+        from .auth.routes import current_admin
+        admin = current_admin()
+        return {"is_super_admin": bool(admin and getattr(admin, "is_super_admin", False))}
+
     @app.before_request
     def check_csrf():
         if not app.config.get("WTF_CSRF_ENABLED", True):
