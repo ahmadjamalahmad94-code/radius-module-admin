@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}عناصر القسم{% endblock %}
+{% block page_title %}عناصر: {{ sec.title or sec.section_key }}{% endblock %}
+{% block page_subtitle %}أضف، عدّل، أظهِر/أخفِ، أو رتّب عناصر هذا القسم. العناصر المخفية لا تظهر في الصفحة العامة.{% endblock %}
+
+{% block content %}
+{% call hub.section("العناصر", icon="list", meta=items|length|string ~ " عنصر") %}
+  <div style="margin-bottom:12px;display:flex;gap:8px">
+    <a class="hub-btn hub-btn--primary hub-btn--sm" href="{{ url_for('admin_landing.item_new', sid=sec.id) }}"><i class="fa-solid fa-plus"></i> إضافة عنصر</a>
+    <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin_landing.overview') }}">رجوع للأقسام</a>
+  </div>
+  {% if items %}
+  <div style="overflow-x:auto">
+    <table class="hub-table" style="width:100%">
+      <thead><tr><th>ترتيب</th><th>العنوان</th><th>النوع</th><th>الحالة/الشارة</th><th>الظهور</th><th>إجراءات</th></tr></thead>
+      <tbody>
+        {% for it in items %}
+        <tr style="{{ 'opacity:.55' if not it.is_visible }}">
+          <td style="white-space:nowrap">
+            <form method="post" action="{{ url_for('admin_landing.item_move', iid=it.id) }}" style="display:inline">{{ csrf_input() }}<input type="hidden" name="dir" value="up"><button class="hub-btn hub-btn--ghost hub-btn--sm">▲</button></form>
+            <form method="post" action="{{ url_for('admin_landing.item_move', iid=it.id) }}" style="display:inline">{{ csrf_input() }}<input type="hidden" name="dir" value="down"><button class="hub-btn hub-btn--ghost hub-btn--sm">▼</button></form>
+          </td>
+          <td><strong>{{ it.title or it.label_text or '—' }}</strong>{% if it.description %}<br><small style="color:#94a3b8">{{ it.description[:70] }}</small>{% endif %}</td>
+          <td><small>{{ it.item_type }}</small></td>
+          <td><small>{{ it.status_badge or '—' }}</small></td>
+          <td>
+            <form method="post" action="{{ url_for('admin_landing.item_toggle', iid=it.id) }}">{{ csrf_input() }}
+              <button class="hub-btn hub-btn--sm" style="background:{{ '#ecfdf5' if it.is_visible else '#f1f5f9' }};color:{{ '#047857' if it.is_visible else '#64748b' }}">{{ 'ظاهر' if it.is_visible else 'مخفي' }}</button>
+            </form>
+          </td>
+          <td style="white-space:nowrap">
+            <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.item_edit', iid=it.id) }}"><i class="fa-solid fa-pen"></i></a>
+            <form method="post" action="{{ url_for('admin_landing.item_delete', iid=it.id) }}" style="display:inline" onsubmit="return confirm('حذف هذا العنصر؟');">{{ csrf_input() }}<button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626"><i class="fa-solid fa-trash"></i></button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {{ hub.empty("لا عناصر بعد", sub="أضف أول عنصر لهذا القسم.", icon="inbox") }}
+  {% endif %}
+{% endcall %}
+{% endblock %}

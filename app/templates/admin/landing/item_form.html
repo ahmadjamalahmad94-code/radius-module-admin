@@ -1,0 +1,62 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% set it = item %}
+{% block title %}عنصر{% endblock %}
+{% block page_title %}{{ 'تعديل عنصر' if it else 'إضافة عنصر' }} — {{ sec.title or sec.section_key }}{% endblock %}
+{% block page_subtitle %}املأ الحقول المناسبة لنوع العنصر. الحقول غير المستخدمة لنوعك يمكن تركها فارغة.{% endblock %}
+
+{% block content %}
+{% call hub.section("بيانات العنصر", icon="pen") %}
+  <form method="post" action="{{ url_for('admin_landing.item_update', iid=it.id) if it else url_for('admin_landing.item_create', sid=sec.id) }}">
+    {{ csrf_input() }}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <label>نوع العنصر
+        <select class="hub-input" name="item_type" {{ 'disabled' if it }}>
+          {% for t in ['feature','module','integration','metric','step','faq','trust_chip','offer','footer_link'] %}
+          <option value="{{ t }}" {{ 'selected' if (it and it.item_type==t) or (not it and sec.section_type in ['cards_grid'] and t=='feature') }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if it %}<input type="hidden" name="item_type" value="{{ it.item_type }}">{% endif %}
+      <label>الأيقونة (FontAwesome)<input class="hub-input" name="icon_name" value="{{ it.icon_name if it else '' }}" placeholder="users / shield-halved / whatsapp"></label>
+
+      <label style="grid-column:1/-1">العنوان / السؤال (لـ FAQ)<input class="hub-input" name="title" value="{{ it.title if it else '' }}"></label>
+      <label style="grid-column:1/-1">الوصف / الإجابة (لـ FAQ)<textarea class="hub-input" name="description" rows="3">{{ it.description if it else '' }}</textarea></label>
+
+      <label>الرقم (إحصائية / رقم الخطوة)<input class="hub-input" name="value_text" value="{{ it.value_text if it else '' }}"></label>
+      <label>النص الصغير (إحصائية)<input class="hub-input" name="label_text" value="{{ it.label_text if it else '' }}"></label>
+
+      <label>الحالة (للتكاملات)
+        <select class="hub-input" name="status_badge">
+          {% for st in statuses %}<option value="{{ st }}" {{ 'selected' if it and it.status_badge==st }}>{{ st or '— بدون —' }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>شارة (Badge)<input class="hub-input" name="badge_text" value="{{ it.badge_text if it else '' }}"></label>
+
+      <label>نص الزر<input class="hub-input" name="button_text" value="{{ it.button_text if it else '' }}"></label>
+      <label>رابط الزر / الرابط (لروابط الفوتر)<input class="hub-input" name="button_url" value="{{ it.button_url if it else '' }}"></label>
+
+      <label>فئة الوحدة (للوحدات)<input class="hub-input" name="category" value="{{ it.settings.get('category','') if it else '' }}"></label>
+      <label>عمود الفوتر (لروابط الفوتر)<input class="hub-input" name="column" value="{{ it.settings.get('column','') if it else '' }}"></label>
+
+      <label>السعر (للعروض)<input class="hub-input" name="price_text" value="{{ it.price_text if it else '' }}"></label>
+      <label>السعر القديم<input class="hub-input" name="old_price_text" value="{{ it.old_price_text if it else '' }}"></label>
+      <label>المدة (شهري/سنوي)<input class="hub-input" name="period_text" value="{{ it.period_text if it else '' }}"></label>
+      <label>العنوان الفرعي<input class="hub-input" name="subtitle" value="{{ it.subtitle if it else '' }}"></label>
+
+      <label style="grid-column:1/-1">المزايا (للعروض) — ميزة في كل سطر
+        <textarea class="hub-input" name="features" rows="4">{{ (it.features | join('\n')) if it else '' }}</textarea>
+      </label>
+    </div>
+    <div style="font-size:12.5px;color:#94a3b8;margin-top:10px;line-height:1.9">
+      • اترك الرابط فارغًا لإخفاء الزر.<br>
+      • يمكنك إخفاء العنصر بدل حذفه من قائمة العناصر.<br>
+      • استخدم حالة «قريبًا» أو «قيد التجهيز» للخدمات غير المتاحة بعد.
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin_landing.items', sid=sec.id) }}">رجوع</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}
