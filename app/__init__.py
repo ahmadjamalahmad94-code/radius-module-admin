@@ -511,7 +511,7 @@ def _install_csrf(app: Flask) -> None:
         expected = session.get("_csrf_token")
         if not expected or sent != expected:
             # Safe diagnostic: presence flags + lengths only, never token values.
-            app.logger.warning(
+            app.logger.error(
                 "CSRF fail path=%s form_tok=%s hdr_tok=%s session_tok=%s sent_len=%s exp_len=%s match=%s",
                 request.path,
                 bool(request.form.get("_csrf_token")),
