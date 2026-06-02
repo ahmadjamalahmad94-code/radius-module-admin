@@ -1680,7 +1680,12 @@ def whatsapp_cloud_test_message():
     if blocked:
         return blocked
     try:
-        result = wac.send_test_message(request.form.get("recipient") or "", actor_audit=audit)
+        result = wac.send_test_message(
+            request.form.get("recipient") or "",
+            template_name=request.form.get("template_name") or "",
+            language=request.form.get("language") or "",
+            actor_audit=audit,
+        )
     except wac.CloudSettingsError as exc:
         db.session.rollback()
         flash(str(exc), "error")
