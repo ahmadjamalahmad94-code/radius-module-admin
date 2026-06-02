@@ -118,6 +118,15 @@
           chip.appendChild(sLang);
           chip.appendChild(sSt);
 
+          // Requirement hint: media header / N variables / ready.
+          var req = document.createElement("span");
+          req.className = "req";
+          if (t.needs_media) { req.textContent = "يحتاج وسائط"; req.classList.add("req--warn"); }
+          else if (t.body_params) { req.textContent = t.body_params + " متغيّر (تلقائي)"; }
+          else { req.textContent = "جاهز"; req.classList.add("req--ok"); }
+          chip.appendChild(req);
+          if (t.needs_media) chip.classList.add("is-dim");
+
           chip.addEventListener("click", function () {
             var n = document.getElementById("wac-tpl-name");
             var l = document.getElementById("wac-tpl-lang");
