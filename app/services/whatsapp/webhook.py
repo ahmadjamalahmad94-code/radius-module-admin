@@ -31,6 +31,7 @@ import hashlib
 import hmac
 import json
 
+from flask import current_app
 from werkzeug.security import check_password_hash
 
 from ...extensions import db
@@ -151,19 +152,27 @@ def _event_id_for(event: dict) -> str:
 def _signature_ok(account, signature_header, raw_body) -> bool:
     """Verify Meta's ``X-Hub-Signature-256`` app-secret signature.
 
-    Phase-1 lenient: an account with no stored secret is trusted. When a secret
-    IS stored AND a header is presented, the header must equal
-    ``"sha256=" + HMAC_SHA256(secret, raw_body)`` (constant-time compare).
+    Secret resolution order:
+      1. the account's per-account ``webhook_secret_encrypted`` (manual path), else
+      2. the app-level ``META_APP_SECRET`` — Embedded Signup connections don't
+         store a per-account secret; their webhooks are signed with the Meta app
+         secret, so we verify against it.
+    Phase-1 lenient: if neither secret exists (or no header is presented) the
+    event is trusted. When a secret IS resolved AND a header is presented, the
+    header must equal ``"sha256=" + HMAC_SHA256(secret, raw_body)`` (constant-time).
     """
-    if account is None:
-        return True
-    encrypted = getattr(account, "webhook_secret_encrypted", None)
-    if not encrypted:
-        return True
-    try:
-        secret = decrypt_secret(encrypted)
-    except Exception:  # noqa: BLE001 — a corrupt stored secret must not 5xx
-        secret = ""
+    secret = ""
+    encrypted = getattr(account, "webhook_secret_encrypted", None) if account is not None else None
+    if encrypted:
+        try:
+            secret = decrypt_secret(encrypted)
+        except Exception:  # noqa: BLE001 — a corrupt stored secret must not 5xx
+            secret = ""
+    if not secret:
+        try:
+            secret = (current_app.config.get("META_APP_SECRET") or "").strip()
+        except Exception:  # noqa: BLE001 — outside app context, etc.
+            secret = ""
     if not secret:
         return True
     if not signature_header:
