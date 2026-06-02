@@ -230,6 +230,8 @@ def test_connection(*, actor_audit) -> dict:
 #: Default approved template every WhatsApp Business account ships with.
 DEFAULT_TEST_TEMPLATE = "hello_world"
 DEFAULT_TEST_LANGUAGE = "en_US"
+#: Templates we suggest first for a quick test (no variables/media expected).
+PREFERRED_TEST_TEMPLATES = ("hello_world", "jaspers_market_plain_text_v1")
 
 
 def send_test_message(recipient: str, *, template_name: str = "", language: str = "", actor_audit) -> dict:
@@ -366,17 +368,30 @@ def list_message_templates(limit: int = 200) -> dict:
     items = []
     for t in (data or []):
         if isinstance(t, dict) and t.get("name"):
+            name = t.get("name")
+            status = (t.get("status") or "").upper()
             body_params, header_format = _parse_components(t.get("components"))
+            needs_media = header_format in _MEDIA_HEADERS
+            testable = status == "APPROVED" and not needs_media
             items.append({
-                "name": t.get("name"),
+                "name": name,
                 "language": t.get("language") or "",
-                "status": (t.get("status") or "").upper(),
+                "status": status,
                 "category": (t.get("category") or "").upper(),
                 "body_params": body_params,
-                "needs_media": header_format in _MEDIA_HEADERS,
+                "needs_media": needs_media,
                 # quick-test friendly = approved + no media header (body params are auto-filled)
-                "testable": (t.get("status") or "").upper() == "APPROVED" and header_format not in _MEDIA_HEADERS,
+                "testable": testable,
+                # simple = approved, no media, no variables → safest one-click test
+                "simple": testable and body_params == 0,
+                # surfaced first as a recommendation for a quick test
+                "recommended": name in PREFERRED_TEST_TEMPLATES,
             })
-    # approved + testable first, then by name
-    items.sort(key=lambda x: (0 if x["status"] == "APPROVED" else 1, 0 if x["testable"] else 1, x["name"]))
+    # Order: approved first → recommended names → simple (no vars/media) → name.
+    items.sort(key=lambda x: (
+        0 if x["status"] == "APPROVED" else 1,
+        0 if x["recommended"] else 1,
+        0 if x["simple"] else 1,
+        x["name"],
+    ))
     return {"ok": True, "templates": items}

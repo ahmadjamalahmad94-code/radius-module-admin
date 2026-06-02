@@ -300,6 +300,35 @@ def test_list_templates_returns_approved_first(client, app, monkeypatch):
     assert j["templates"][0]["status"] == "APPROVED"
 
 
+def test_recommended_and_simple_flags_sorted_first(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "GET" and path.endswith("/message_templates"):
+            return 200, {"data": [
+                {"name": "zeta_custom", "language": "ar", "status": "APPROVED",
+                 "components": [{"type": "BODY", "text": "أهلًا {{1}}"}]},
+                {"name": "promo_img", "language": "en_US", "status": "APPROVED",
+                 "components": [{"type": "HEADER", "format": "IMAGE"}, {"type": "BODY", "text": "x"}]},
+                {"name": "hello_world", "language": "en_US", "status": "APPROVED",
+                 "components": [{"type": "BODY", "text": "Hello"}]},
+            ]}
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["templates"], data={"_csrf_token": _csrf(client, urls["page"])},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    j = r.get_json()
+    assert j["templates"][0]["name"] == "hello_world"   # recommended → first
+    hw = j["templates"][0]
+    assert hw["recommended"] is True and hw["simple"] is True
+    by = {t["name"]: t for t in j["templates"]}
+    assert by["zeta_custom"]["simple"] is False and by["zeta_custom"]["body_params"] == 1
+    assert by["promo_img"]["needs_media"] is True and by["promo_img"]["testable"] is False
+
+
 def test_send_autofills_body_params(client, app, monkeypatch):
     """A template with {{1}} {{2}} body params is auto-filled so it sends."""
     urls = _urls(app)

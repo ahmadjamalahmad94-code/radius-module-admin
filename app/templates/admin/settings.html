@@ -127,7 +127,11 @@
   .wac-tpl-chip .req--ok { color:#166534; }
   .wac-tpl-chip .req--warn { color:#b45309; }
   .wac-tpl-chip.is-dim { opacity:.7; }
+  .wac-tpl-chip .rec { font-size:10.5px; font-weight:800; padding:1px 6px; border-radius:999px; background:#fef3c7; color:#92400e; }
+  .wac-tpl-chip.is-rec { border-color:#16a34a; }
   .wac-tpl-note { font-size:12px; color:#64748b; }
+  .wac-tpl-warn { margin:8px 0 0; font-size:12.5px; color:#92400e; background:#fffbeb;
+    border:1px solid #fde68a; border-radius:10px; padding:8px 11px; }
 </style>
 {% macro wac_src(field) %}
   {% if field.source == 'panel' %}<span class="wac-src wac-src--panel">محفوظ في إعدادات اللوحة</span>
@@ -237,6 +241,7 @@
           <input id="wac-tpl-lang" class="hub-input mono ltr" name="language" value="en_US" placeholder="en_US">
         </div>
       </div>
+      <p class="wac-tpl-warn" data-wac-tpl-warn hidden></p>
       <div class="wac-actions-row" style="margin-top:10px">
         <button type="button" class="hub-btn hub-btn--ghost" data-wac-templates><i class="fa-solid fa-list-check"></i> اكتشاف القوالب المعتمدة</button>
       </div>
