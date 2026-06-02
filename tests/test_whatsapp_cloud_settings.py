@@ -249,6 +249,33 @@ def test_send_message_failure(client, app, monkeypatch):
     assert "تعذّر إرسال رسالة الاختبار" in r.get_data(as_text=True)
 
 
+def test_send_uses_template_and_hint_on_invalid(client, app, monkeypatch):
+    """Test message must go out as an APPROVED TEMPLATE (free-form text is
+    blocked outside the 24h window), and an invalid template surfaces a hint."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    seen = {}
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "POST" and path.endswith("/messages"):
+            seen["body"] = json_body
+            raise WhatsAppProviderError("meta_request_invalid",
+                                        "تعذّر إرسال الرسالة: الطلب أو القالب غير صالح.",
+                                        retryable=False, http_status=400)
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["msg"], data={"recipient": "970599000111", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    # sent as a template (not free-form text), defaulting to hello_world
+    assert seen["body"]["type"] == "template"
+    assert seen["body"]["template"]["name"] == "hello_world"
+    assert seen["body"]["template"]["language"]["code"] == "en_US"
+    # helpful Arabic hint about template approval surfaced to the admin
+    assert "معتمد في حسابك" in r.get_data(as_text=True)
+
+
 def test_send_message_requires_recipient(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))

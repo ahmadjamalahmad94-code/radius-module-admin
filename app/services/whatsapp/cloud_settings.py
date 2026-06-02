@@ -225,12 +225,25 @@ def test_connection(*, actor_audit) -> dict:
     }
 
 
-def send_test_message(recipient: str, *, actor_audit) -> dict:
-    """Send a simple text test message to ``recipient``. Audited. Never raises
-    for provider errors — returns a structured result."""
+#: Default approved template every WhatsApp Business account ships with.
+DEFAULT_TEST_TEMPLATE = "hello_world"
+DEFAULT_TEST_LANGUAGE = "en_US"
+
+
+def send_test_message(recipient: str, *, template_name: str = "", language: str = "", actor_audit) -> dict:
+    """Send a test message to ``recipient`` via an APPROVED TEMPLATE. Audited.
+
+    WhatsApp forbids free-form text to a recipient unless they messaged the
+    business in the last 24h (the customer-service window). A test number rarely
+    has an open window, so we send an approved template (default ``hello_world``)
+    which Meta allows at any time. Never raises for provider errors — returns a
+    structured result.
+    """
     recipient = (recipient or "").strip()
     if not recipient:
         raise CloudSettingsError("أدخل رقم واتساب المستلم.")
+    template_name = (template_name or "").strip() or DEFAULT_TEST_TEMPLATE
+    language = (language or "").strip() or DEFAULT_TEST_LANGUAGE
     creds = resolved()
     token = creds["access_token"]
     phone = creds["phone_number_id"]
@@ -239,15 +252,25 @@ def send_test_message(recipient: str, *, actor_audit) -> dict:
 
     provider = MetaCloudWhatsAppProvider()
     shim = _AccountShim(token, phone)
-    body = "رسالة اختبار من لوحة HobeRadius ✅ — تم ضبط واتساب Cloud API بنجاح."
     try:
-        result = provider.send_text_message(shim, recipient=recipient, body=body)
+        result = provider.send_template_message(
+            shim, recipient=recipient, template_name=template_name,
+            language=language, variables=None,
+        )
     except WhatsAppProviderError as exc:
         actor_audit("whatsapp_cloud_test_message_failed", "whatsapp_cloud", "global",
-                    "WhatsApp Cloud test message failed", {"code": exc.code})
-        return {"ok": False, "code": exc.code, "message": exc.message}
+                    "WhatsApp Cloud test message failed",
+                    {"code": exc.code, "template": template_name})
+        # Add a hint for the most common cause: the template isn't approved in
+        # this WABA / the name or language is wrong.
+        msg = exc.message
+        if exc.code == "meta_request_invalid":
+            msg = (exc.message + " تأكّد أن القالب «" + template_name + "» معتمد في حسابك "
+                   "وأن اللغة «" + language + "» صحيحة، وأن الرقم بصيغة دولية بدون +.")
+        return {"ok": False, "code": exc.code, "message": msg}
 
     actor_audit("whatsapp_cloud_test_message_sent", "whatsapp_cloud", "global",
                 "WhatsApp Cloud test message sent",
-                {"provider_message_id": result.get("provider_message_id") or ""})
+                {"provider_message_id": result.get("provider_message_id") or "",
+                 "template": template_name})
     return {"ok": True, "provider_message_id": result.get("provider_message_id") or ""}

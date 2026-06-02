@@ -203,12 +203,25 @@
         <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-plug-circle-check"></i> اختبار الاتصال</button>
       </form>
     </div>
+    <p class="hub-field-hint" style="margin:0 0 10px">
+      واتساب لا يسمح بالرسائل النصّية الحرّة إلا داخل نافذة 24 ساعة بعد أن يراسلك العميل،
+      لذلك تُرسَل رسالة الاختبار عبر <b>قالب معتمد</b>. الافتراضي <span class="mono">hello_world</span>
+      (لغة <span class="mono">en_US</span>) متوفّر في كل حساب جديد.
+    </p>
     <form method="post" action="{{ url_for('admin.whatsapp_cloud_test_message') }}">
       {{ csrf_input() }}
       <div class="hub-form-grid">
         <div class="hub-field">
           <label>رقم واتساب المستلم</label>
           <input class="hub-input mono ltr" name="recipient" placeholder="9705xxxxxxxx">
+        </div>
+        <div class="hub-field">
+          <label>اسم القالب</label>
+          <input class="hub-input mono ltr" name="template_name" value="hello_world" placeholder="hello_world">
+        </div>
+        <div class="hub-field">
+          <label>لغة القالب</label>
+          <input class="hub-input mono ltr" name="language" value="en_US" placeholder="en_US">
         </div>
       </div>
       <div class="hub-form-foot" style="padding-top:12px">
