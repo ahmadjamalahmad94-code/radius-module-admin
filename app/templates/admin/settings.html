@@ -244,79 +244,11 @@
   {% endcall %}
 {% endcall %}
 
-<script>
-(function () {
-  function csrf() { var n = document.querySelector('input[name="_csrf_token"]'); return n ? n.value : ""; }
-  document.querySelectorAll('[data-wac-reveal]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var field = btn.getAttribute('data-wac-reveal');
-      var out = document.querySelector('[data-wac-secret="' + field + '"]');
-      if (!out) return;
-      btn.disabled = true;
-      var body = new URLSearchParams(); body.append('field', field); body.append('_csrf_token', csrf());
-      fetch("{{ url_for('admin.whatsapp_cloud_reveal') }}", {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
-                   'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString()
-      }).then(function (r) {
-          return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok, status: r.status, j: j }; });
-        })
-        .then(function (res) {
-          btn.disabled = false;
-          var j = res.j;
-          if (res.ok && j && j.ok) {
-            out.textContent = j.value; out.hidden = false;
-            setTimeout(function () { out.textContent = ''; out.hidden = true; }, 20000); // auto-hide
-          } else { out.textContent = (j && j.message) || ('تعذّر الإظهار (رمز ' + res.status + ').'); out.hidden = false; }
-        }).catch(function () { btn.disabled = false; out.textContent = 'تعذّر الاتصال.'; out.hidden = false; });
-    });
-  });
-
-  // ── Discover the WABA's approved templates → clickable chips ──
-  var discBtn = document.querySelector('[data-wac-templates]');
-  var discOut = document.querySelector('[data-wac-templates-out]');
-  if (discBtn && discOut) {
-    discBtn.addEventListener('click', function () {
-      discBtn.disabled = true;
-      discOut.hidden = false;
-      discOut.innerHTML = '<span class="wac-tpl-note">جارٍ جلب القوالب…</span>';
-      var body = new URLSearchParams(); body.append('_csrf_token', csrf());
-      fetch("{{ url_for('admin.whatsapp_cloud_templates') }}", {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
-                   'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString()
-      }).then(function (r) {
-          // Read as text first so a non-JSON error (CSRF 400 / login redirect /
-          // 500) surfaces the real HTTP status instead of being swallowed.
-          return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok, status: r.status, j: j }; });
-        })
-        .then(function (res) {
-          discBtn.disabled = false;
-          var j = res.j;
-          if (!res.ok || !j || !j.ok) {
-            discOut.innerHTML = '<span class="wac-tpl-note">' + ((j && j.message) || ('تعذّر جلب القوالب (رمز ' + res.status + '). تأكّد أن التوكن يملك صلاحية إدارة القوالب وأن Business Account ID صحيح.')) + '</span>';
-            return;
-          }
-          if (!j.templates || !j.templates.length) { discOut.innerHTML = '<span class="wac-tpl-note">لا توجد قوالب في هذا الحساب. أنشئ قالبًا في Meta أولًا.</span>'; return; }
-          discOut.innerHTML = '<span class="wac-tpl-note">اختر قالبًا لتعبئة الحقول:</span>';
-          j.templates.forEach(function (t) {
-            var ok = t.status === 'APPROVED';
-            var chip = document.createElement('button');
-            chip.type = 'button'; chip.className = 'wac-tpl-chip';
-            chip.innerHTML = '<span>' + t.name + '</span><span class="lng">' + t.language + '</span>' +
-              '<span class="st ' + (ok ? 'st--ok' : 'st--no') + '">' + (ok ? 'معتمد' : t.status) + '</span>';
-            chip.addEventListener('click', function () {
-              var n = document.getElementById('wac-tpl-name'); var l = document.getElementById('wac-tpl-lang');
-              if (n) n.value = t.name; if (l) l.value = t.language;
-            });
-            discOut.appendChild(chip);
-          });
-        }).catch(function () { discBtn.disabled = false; discOut.innerHTML = '<span class="wac-tpl-note">تعذّر الاتصال بالخادم.</span>'; });
-    });
-  }
-})();
-</script>
+{# CSP is `script-src 'self'` (no inline JS) → behaviour lives in an external
+   file; URLs are passed via data-* attributes it reads. #}
+<div data-wac-js
+     data-reveal-url="{{ url_for('admin.whatsapp_cloud_reveal') }}"
+     data-templates-url="{{ url_for('admin.whatsapp_cloud_templates') }}" hidden></div>
+<script src="{{ url_for('static', filename='js/whatsapp_cloud_settings.js') }}" defer></script>
 {% endif %}
 {% endblock %}
