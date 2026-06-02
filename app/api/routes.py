@@ -532,6 +532,44 @@ def hoberadius_whatsapp_test_message():
     })
 
 
+@bp.post("/integration/hoberadius/whatsapp/cloud-test")
+def hoberadius_whatsapp_cloud_test():
+    """Bridge: send a TEST WhatsApp message via the panel's HOUSE Cloud API
+    credentials (the settings panel) — test-only, no customer queue.
+
+    Authenticated by the same integration guard triad (HTTPS + signature +
+    license). The resolved customer is intentionally unused: the house
+    credentials are panel-wide, and this endpoint sends nothing but a test
+    template (variables auto-filled, media templates refused). Returns the
+    provider message id or a friendly Arabic error."""
+    body = request.get_json(silent=True) or {}
+    _customer, _license_id, error_response = _whatsapp_integration_context(body)
+    if error_response is not None:
+        return error_response
+
+    from ..auth.routes import audit
+    from ..services.whatsapp import cloud_settings as wac
+
+    if not wac.enabled():
+        return jsonify({"ok": False, "error_code": "disabled",
+                        "message_ar": "قسم واتساب Cloud API غير مُفعّل في اللوحة."}), 403
+    recipient = str(body.get("recipient_phone") or body.get("recipient") or "")
+    template_name = str(body.get("template_name") or "")
+    language = str(body.get("language") or "")
+    try:
+        result = wac.send_test_message(
+            recipient, template_name=template_name, language=language, actor_audit=audit,
+        )
+    except wac.CloudSettingsError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error_code": "validation", "message_ar": str(exc)}), 400
+    db.session.commit()
+    if result.get("ok"):
+        return jsonify({"ok": True, "provider_message_id": result.get("provider_message_id") or ""})
+    return jsonify({"ok": False, "error_code": result.get("code") or "send_failed",
+                    "message_ar": result.get("message") or "تعذّر إرسال رسالة الاختبار."})
+
+
 @bp.post("/integration/hoberadius/whatsapp/subscriber-preferences/sync")
 def hoberadius_whatsapp_subscriber_sync():
     """Batch-upsert subscriber WhatsApp consent/preferences (capped)."""

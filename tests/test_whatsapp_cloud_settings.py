@@ -425,6 +425,45 @@ def test_unauthenticated_save_redirects_to_login(client, app):
 
 # ───────────────────────── 9. audit on save ─────────────────────────
 
+BRIDGE_URL = "/api/integration/hoberadius/whatsapp/cloud-test"
+
+
+def test_bridge_cloud_test_sends_via_house_creds(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    # Bypass the integration auth triad (HTTPS+signature+license) for the unit test.
+    from app.api import routes as api_routes
+    monkeypatch.setattr(api_routes, "_whatsapp_integration_context", lambda body: (object(), 1, None))
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _ok_request)
+    r = client.post(BRIDGE_URL, json={"recipient_phone": "970599000111"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is True
+    assert "provider_message_id" in body
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_test_message_sent").first() is not None
+
+
+def test_bridge_cloud_test_requires_creds(client, app, monkeypatch):
+    from app.api import routes as api_routes
+    monkeypatch.setattr(api_routes, "_whatsapp_integration_context", lambda body: (object(), 1, None))
+    r = client.post(BRIDGE_URL, json={"recipient_phone": "970599000111"})
+    assert r.status_code == 400
+    assert r.get_json()["ok"] is False
+
+
+def test_bridge_cloud_test_respects_auth_guard(client, app, monkeypatch):
+    # When the integration guard rejects (e.g. unsigned), the endpoint returns
+    # that response and never sends.
+    from app.api import routes as api_routes
+    from flask import jsonify
+    monkeypatch.setattr(api_routes, "_whatsapp_integration_context",
+                        lambda body: (None, None, (jsonify({"ok": False, "status": "signature_invalid"}), 401)))
+    r = client.post(BRIDGE_URL, json={"recipient_phone": "970599000111"})
+    assert r.status_code == 401
+
+
 def test_save_is_audited(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))
