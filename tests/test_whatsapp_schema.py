@@ -5,7 +5,11 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
-from app.models import Customer, WhatsAppMessageQueue
+from app.models import (
+    Customer,
+    WhatsAppEmbeddedSignupAttempt,
+    WhatsAppMessageQueue,
+)
 
 
 WHATSAPP_TABLES = {
@@ -16,6 +20,7 @@ WHATSAPP_TABLES = {
     "whatsapp_webhook_events",
     "whatsapp_subscriber_preferences",
     "whatsapp_usage_counters",
+    "whatsapp_embedded_signup_attempts",
 }
 
 
@@ -44,6 +49,44 @@ def test_tenant_account_key_columns_present(app):
         "access_token_encrypted",
         "connection_status",
     }.issubset(columns)
+
+
+def test_embedded_signup_attempts_key_columns_present(app):
+    columns = _columns("whatsapp_embedded_signup_attempts")
+    assert {
+        "customer_id",
+        "state_hash",
+        "nonce_hash",
+        "status",
+        "initiated_by",
+        "expires_at",
+        "completed_at",
+    }.issubset(columns)
+
+
+def test_embedded_signup_attempts_state_hash_unique_constraint_is_enforced(app):
+    customer = Customer(company_name="WhatsApp Embedded Customer")
+    db.session.add(customer)
+    db.session.flush()
+
+    state_hash = "a" * 64
+    db.session.add_all([
+        WhatsAppEmbeddedSignupAttempt(
+            customer_id=customer.id,
+            state_hash=state_hash,
+            status="pending",
+        ),
+        WhatsAppEmbeddedSignupAttempt(
+            customer_id=customer.id,
+            state_hash=state_hash,
+            status="pending",
+        ),
+    ])
+
+    with pytest.raises(IntegrityError):
+        db.session.commit()
+
+    db.session.rollback()
 
 
 def test_message_queue_idempotency_key_unique_constraint_is_enforced(app):
