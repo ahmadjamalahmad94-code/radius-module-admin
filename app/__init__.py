@@ -322,6 +322,11 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "messaging_limit_tier": "VARCHAR(40)",
             "last_health_check_at": datetime_type,
             "last_error_code": "VARCHAR(60)",
+            "last_error_message": "TEXT",
+            # Meta Embedded Signup (P1): onboarding path + granted scopes + sync time.
+            "onboarding_method": "VARCHAR(20)",
+            "scopes": "TEXT",
+            "last_sync_at": datetime_type,
         })
 
 

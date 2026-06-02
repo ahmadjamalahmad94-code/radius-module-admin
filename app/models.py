@@ -819,6 +819,13 @@ class WhatsAppTenantAccount(TimestampMixin, db.Model):
     last_error_message = db.Column(db.Text, nullable=True)
     connected_at = db.Column(db.DateTime, nullable=True)
     disconnected_at = db.Column(db.DateTime, nullable=True)
+    # How the connection was established: "manual" (admin pasted credentials,
+    # legacy/advanced path) or "embedded" (Meta Embedded Signup self-service).
+    onboarding_method = db.Column(db.String(20), default="manual", nullable=False)
+    # Space-separated OAuth scopes granted during embedded signup.
+    scopes = db.Column(db.Text, nullable=True)
+    # Last time the connection health/metadata was synced from Meta.
+    last_sync_at = db.Column(db.DateTime, nullable=True)
 
     customer = db.relationship("Customer")
     license = db.relationship("License")
