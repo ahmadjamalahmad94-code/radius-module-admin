@@ -199,13 +199,37 @@ def test_connection(*, actor_audit) -> dict:
         raise CloudSettingsError("أكمل رمز الوصول و Phone Number ID و Business Account ID أولًا.")
 
     provider = MetaCloudWhatsAppProvider()
-    shim = _AccountShim(token, phone)
+
+    # Minimal liveness probe: can the token read the phone node's basic field?
+    # This is the true "is the connection valid" check. The richer fields
+    # (verified_name / quality_rating / messaging_limit_tier) are RESTRICTED and
+    # can return 403 on a messaging-scoped token that can still send fine — so
+    # they must NOT fail the whole connection test.
     try:
-        info = provider.validate_credentials(shim)
+        _s, basic = provider._request("GET", phone, token, params={"fields": "display_phone_number"})
     except WhatsAppProviderError as exc:
+        hint = exc.message
+        if exc.code == "meta_auth_failed":
+            hint = (exc.message + " قد يكون رمز الوصول منتهيًا (رموز Meta المؤقتة تنتهي خلال 24 ساعة) — "
+                    "استخدم رمزًا دائمًا (System User)، وتأكّد من صحة Phone Number ID.")
         actor_audit("whatsapp_cloud_test_failed", "whatsapp_cloud", "global",
                     "WhatsApp Cloud test connection failed", {"code": exc.code})
-        return {"ok": False, "code": exc.code, "message": exc.message}
+        return {"ok": False, "code": exc.code, "message": hint}
+
+    display_phone = basic.get("display_phone_number") or ""
+
+    # Best-effort enrichment of the restricted health fields (never fatal).
+    business_name = quality = tier = ""
+    try:
+        _s2, rich = provider._request(
+            "GET", phone, token,
+            params={"fields": "verified_name,quality_rating,messaging_limit_tier"},
+        )
+        business_name = rich.get("verified_name") or ""
+        quality = rich.get("quality_rating") or ""
+        tier = rich.get("messaging_limit_tier") or ""
+    except WhatsAppProviderError:
+        pass  # restricted fields unavailable to this token — connection is still valid
 
     # Best-effort WABA reachability (does not fail the overall check).
     waba_ok = False
@@ -217,12 +241,13 @@ def test_connection(*, actor_audit) -> dict:
 
     actor_audit("whatsapp_cloud_test_success", "whatsapp_cloud", "global",
                 "WhatsApp Cloud test connection succeeded",
-                {"waba_reachable": waba_ok, "phone": info.get("display_phone_number") or ""})
+                {"waba_reachable": waba_ok, "phone": display_phone})
     return {
         "ok": True,
-        "display_phone_number": info.get("display_phone_number") or "",
-        "business_display_name": info.get("business_display_name") or "",
-        "quality_rating": info.get("quality_rating") or "",
+        "display_phone_number": display_phone,
+        "business_display_name": business_name,
+        "quality_rating": quality,
+        "messaging_limit_tier": tier,
         "waba_reachable": waba_ok,
     }
 
