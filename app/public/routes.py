@@ -935,10 +935,12 @@ def customer_portal_whatsapp_embedded_start():
 def customer_portal_whatsapp_embedded_complete():
     """Finish Meta Embedded Signup for the SESSION customer (AJAX → JSON).
 
-    The browser popup returns {code, waba_id, phone_number_id}; we complete the
-    server-side exchange + storage and return JSON so the pane updates without a
-    full reload. Scoped to the session customer — any customer_id in the body is
-    ignored. CSRF is enforced by the global before_request (X-CSRFToken header).
+    The browser popup returns {code, waba_id, phone_number_id, state, nonce}; we
+    validate the server-issued state (tenant-scoped), complete the exchange +
+    storage, and return JSON so the pane updates without a full reload. Scoped to
+    the session customer — any customer_id in the body is ignored. A replayed
+    callback returns the existing connection without creating a duplicate. CSRF
+    is enforced by the global before_request (X-CSRFToken header).
     """
     user = _current_customer_user()
     if not user:
@@ -956,20 +958,25 @@ def customer_portal_whatsapp_embedded_complete():
 
     payload = request.get_json(silent=True) or {}
     try:
-        result = wa_embed.complete_signup(
+        result = wa_embed.complete_with_state(
             customer.id,
             code=(payload.get("code") or "").strip(),
             waba_id=(payload.get("waba_id") or "").strip(),
             phone_number_id=(payload.get("phone_number_id") or "").strip(),
+            state=(payload.get("state") or "").strip(),
+            nonce=(payload.get("nonce") or "").strip(),
             license_id=getattr(customer, "license_id", None) or None,
         )
     except wa_embed.EmbeddedSignupError as exc:
-        try:
-            wa_settings.set_connection_status(
-                customer.id, "error", error_code=exc.code, error_message=exc.message
-            )
-        except Exception:  # noqa: BLE001 — never let status-write mask the real error
-            db.session.rollback()
+        # Meta/exchange failures mark the account as error; a bad/expired/reused
+        # state must NOT flip a (possibly connected) account — just reject it.
+        if exc.code not in wa_embed.STATE_ERROR_CODES:
+            try:
+                wa_settings.set_connection_status(
+                    customer.id, "error", error_code=exc.code, error_message=exc.message
+                )
+            except Exception:  # noqa: BLE001 — never let status-write mask the real error
+                db.session.rollback()
         return jsonify({"ok": False, "error": exc.code, "message": exc.message}), 400
 
     return jsonify({"ok": True, **result, "message": "تم ربط واتساب بنجاح ✅",

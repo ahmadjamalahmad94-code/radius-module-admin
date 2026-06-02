@@ -78,6 +78,10 @@ AUDIT_TEST_FAILED = "whatsapp_tenant_test_message_failed"
 _LEGACY_CONNECTED = "whatsapp_embedded_connected"
 _LEGACY_DISCONNECTED = "whatsapp_embedded_disconnected"
 
+# Error codes raised by state/nonce validation (vs. Meta exchange failures). The
+# route uses these to decide NOT to flip a (possibly connected) account to error.
+STATE_ERROR_CODES = frozenset({"invalid_state", "expired_state", "missing_state"})
+
 # Non-technical Arabic surfaced when an onboarding state is missing/expired.
 _STATE_INVALID_AR = "جلسة الربط غير صالحة. أعد المحاولة من زر «ربط واتساب»."
 _STATE_EXPIRED_AR = "انتهت مهلة جلسة الربط. أعد المحاولة من زر «ربط واتساب»."
@@ -417,6 +421,85 @@ def complete_signup(
         "display_phone_number": phone.get("display_phone_number", ""),
         "business_name": account.business_display_name or "",
     }
+
+
+def complete_with_state(
+    customer_id: int,
+    *,
+    code: str,
+    waba_id: str,
+    phone_number_id: str,
+    state: str = "",
+    nonce: str = "",
+    license_id: int | None = None,
+    require_state: bool | None = None,
+) -> dict:
+    """State-validated, idempotent embedded-signup completion (the route entry).
+
+    Wraps :func:`complete_signup` with:
+
+    * **State/nonce enforcement** — when ``state`` is supplied it MUST match a
+      live pending attempt for THIS customer (tenant-scoped); otherwise an
+      ``EmbeddedSignupError`` (``invalid_state``/``expired_state``) is raised.
+    * **Safe degrade** — when no ``state`` is supplied the legacy direct path is
+      used, UNLESS ``require_state`` (``META_EMBEDDED_REQUIRE_STATE``) forces it.
+    * **Idempotency** — a replayed callback whose ``state`` was already consumed
+      and whose account is already connected returns the existing connection
+      (``idempotent=True``) without a second code exchange or a duplicate row.
+    * **Failure auditing** — any failure (state or Meta) finalizes the attempt
+      ``failed`` and audits ``embedded_signup_failed`` with a safe code only.
+
+    Returns the same dict shape as :func:`complete_signup` (+ ``idempotent``).
+    """
+    state = (state or "").strip()
+    nonce = (nonce or "").strip()
+    if require_state is None:
+        require_state = bool(current_app.config.get("META_EMBEDDED_REQUIRE_STATE", False))
+
+    attempt = None
+    try:
+        if state:
+            existing = WhatsAppEmbeddedSignupAttempt.query.filter_by(state_hash=_hash(state)).first()
+            # Idempotent replay: same state already completed + account connected.
+            if (existing is not None
+                    and existing.customer_id == int(customer_id)
+                    and existing.status == "completed"):
+                account = wa_settings.get_account(customer_id)
+                if account is not None and account.connection_status == "connected":
+                    return {
+                        "ok": True, "status": "connected", "idempotent": True,
+                        "display_phone_number": account.display_phone_number or "",
+                        "business_name": account.business_display_name or "",
+                    }
+            # Otherwise require a live pending attempt (raises on bad/expired/reused).
+            attempt = _consume_state(customer_id, state, nonce=nonce or None)
+        elif require_state:
+            raise EmbeddedSignupError("missing_state", _STATE_INVALID_AR)
+        # else: no state supplied and not required → legacy direct path.
+
+        result = complete_signup(
+            customer_id,
+            code=code,
+            waba_id=waba_id,
+            phone_number_id=phone_number_id,
+            license_id=license_id,
+        )
+    except EmbeddedSignupError as exc:
+        if attempt is not None:
+            _finalize_attempt(attempt, status="failed",
+                              error_code=exc.code, error_message=exc.message)
+        _emit_audit(
+            AUDIT_FAILED, None,
+            "whatsapp_embedded_attempt", attempt.id if attempt else int(customer_id),
+            "Embedded Signup failed",
+            {"customer_id": int(customer_id), "code": exc.code},
+        )
+        db.session.commit()
+        raise
+
+    if attempt is not None:
+        _finalize_attempt(attempt, status="completed")
+    return result
 
 
 def validate_connection(customer_id: int) -> dict:
