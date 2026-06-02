@@ -457,7 +457,7 @@
                 <a class="pp-btn wa-btn--wa" href="#wa-step-test"><i class="fa-solid fa-paper-plane"></i> اختبار رسالة</a>
                 <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="display:inline">
                   {{ csrf_input() }}
-                  <input type="hidden" name="action" value="validate">
+                  <input type="hidden" name="action" value="refresh_status">
                   <button type="submit" class="pp-btn pp-btn--soft"><i class="fa-solid fa-rotate"></i> تحديث الحالة</button>
                 </form>
                 {% if wa_embedded_available %}

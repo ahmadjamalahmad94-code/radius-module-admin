@@ -456,6 +456,17 @@ def complete_with_state(
     if require_state is None:
         require_state = bool(current_app.config.get("META_EMBEDDED_REQUIRE_STATE", False))
 
+    # A "reconnect" replaces a LIVE connection. The old credentials stay intact
+    # until (and unless) the new exchange succeeds — complete_signup only upserts
+    # the token after a successful exchange, so a failed reconnect leaves the
+    # working connection untouched (we do NOT flip it to error).
+    account_before = wa_settings.get_account(customer_id)
+    was_connected = bool(
+        account_before is not None
+        and account_before.connection_status == "connected"
+        and account_before.access_token_encrypted
+    )
+
     attempt = None
     try:
         if state:
@@ -488,17 +499,35 @@ def complete_with_state(
         if attempt is not None:
             _finalize_attempt(attempt, status="failed",
                               error_code=exc.code, error_message=exc.message)
+        # Mark the account 'error' ONLY when it isn't a live connection and the
+        # failure was a real exchange error (not a state rejection). A failed
+        # reconnect of a connected account keeps its 'connected' state + token.
+        if (not was_connected and account_before is not None
+                and exc.code not in STATE_ERROR_CODES):
+            wa_settings.set_connection_status(
+                customer_id, "error", error_code=exc.code, error_message=exc.message
+            )
         _emit_audit(
             AUDIT_FAILED, None,
             "whatsapp_embedded_attempt", attempt.id if attempt else int(customer_id),
             "Embedded Signup failed",
-            {"customer_id": int(customer_id), "code": exc.code},
+            {"customer_id": int(customer_id), "code": exc.code,
+             "reconnect": bool(was_connected)},
         )
         db.session.commit()
         raise
 
     if attempt is not None:
         _finalize_attempt(attempt, status="completed")
+    if was_connected:
+        account = wa_settings.get_account(customer_id)
+        _emit_audit(
+            AUDIT_RECONNECTED, None,
+            "whatsapp_account", account.id if account else int(customer_id),
+            "WhatsApp reconnected via Embedded Signup",
+            {"customer_id": int(customer_id)},
+        )
+        db.session.commit()
     return result
 
 
@@ -539,10 +568,18 @@ def validate_connection(customer_id: int) -> dict:
 
 
 def disconnect(customer_id: int) -> bool:
-    """Clear the stored connection (token + IDs) and mark disconnected. Audited."""
+    """Soft-disconnect: clear the stored token, mark disconnected, audit.
+
+    Idempotent — repeating a disconnect on an already-disconnected account is a
+    safe no-op (no second audit row, audit history preserved). Returns False
+    only when there is no account at all.
+    """
     account = wa_settings.get_account(customer_id)
     if account is None:
         return False
+    # Already soft-disconnected → no-op (keep history, don't re-audit).
+    if account.connection_status == "disconnected" and not account.access_token_encrypted:
+        return True
     account.access_token_encrypted = None
     account.webhook_secret_encrypted = None
     account.connection_status = "disconnected"

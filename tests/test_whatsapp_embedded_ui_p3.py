@@ -110,8 +110,8 @@ def test_connected_detail_panel_after_signup(client, app, monkeypatch):
     assert "تحديث الحالة" in body                          # refresh status
     assert "إعادة الربط" in body                           # reconnect
     assert "فصل الحساب" in body                            # disconnect
-    # The refresh action reuses the working validate endpoint.
-    assert 'name="action" value="validate"' in body
+    # The refresh action re-probes Meta via validate_connection.
+    assert 'name="action" value="refresh_status"' in body
 
 
 # ───────────────────────── 4. error state ─────────────────────────

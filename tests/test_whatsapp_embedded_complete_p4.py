@@ -173,9 +173,10 @@ def test_complete_meta_error_first_time_no_phantom_account(client, app, monkeypa
         assert WhatsAppTenantAccount.query.filter_by(customer_id=cid).count() == 0
 
 
-def test_complete_meta_error_on_reconnect_flips_account_to_error(client, app, monkeypatch):
-    # When an account is already connected, a failing reconnect audits failed
-    # AND flips the existing account to 'error'.
+def test_complete_meta_error_on_reconnect_preserves_live_connection(client, app, monkeypatch):
+    # When an account is already connected, a FAILED reconnect audits failed but
+    # leaves the live connection intact (status connected, old token preserved) —
+    # old credentials are replaced ONLY after a new connection succeeds.
     with app.app_context():
         cid = _customer()
     _login(client)
@@ -194,7 +195,9 @@ def test_complete_meta_error_on_reconnect_flips_account_to_error(client, app, mo
                   .order_by(WhatsAppEmbeddedSignupAttempt.id.desc()).first())
         assert latest.status == "failed"
         acc = wa_settings.get_account(cid)
-        assert acc is not None and acc.connection_status == "error"
+        # The working connection survives the failed reconnect.
+        assert acc is not None and acc.connection_status == "connected"
+        assert decrypt_secret(acc.access_token_encrypted) == LIVE_TOKEN
 
 
 # ───────────────────────── 3. success ─────────────────────────

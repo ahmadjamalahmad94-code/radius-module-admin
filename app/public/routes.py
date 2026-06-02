@@ -869,6 +869,22 @@ def customer_portal_whatsapp_post():
         flash("تم إيقاف الخدمة.", "warning")
         return redirect(_whatsapp_pane_url())
 
+    if action == "refresh_status":
+        # Re-probe Meta for the connected tenant account and sync health.
+        # validate_connection never raises and never leaks the token; it updates
+        # last_sync_at/status/last_error and audits whatsapp_connection_synced.
+        from ..services.whatsapp import embedded_signup as wa_embed
+        account = wa_settings.get_account(customer.id)
+        if account is None or not account.access_token_encrypted:
+            flash("لا يوجد حساب واتساب مربوط لتحديث حالته.", "error")
+            return redirect(_whatsapp_pane_url())
+        result = wa_embed.validate_connection(customer.id)
+        if result.get("ok"):
+            flash("تم تحديث حالة الربط بنجاح.", "success")
+        else:
+            flash("تعذّر تحديث الحالة. تحقق من الربط أو أعد الاتصال.", "error")
+        return redirect(_whatsapp_pane_url())
+
     if action == "disconnect":
         from ..services.whatsapp import embedded_signup as wa_embed
         wa_embed.disconnect(customer.id)
@@ -951,7 +967,6 @@ def customer_portal_whatsapp_embedded_complete():
                         "message": "هذه الخدمة غير مفعلة في خطتك الحالية."}), 403
 
     from ..services.whatsapp import embedded_signup as wa_embed
-    from ..services.whatsapp import settings as wa_settings
     if not wa_embed.embedded_signup_available():
         return jsonify({"ok": False, "error": "unavailable",
                         "message": "خدمة الربط التلقائي غير مهيأة بعد. استخدم الإعداد المتقدم."}), 503
@@ -968,15 +983,9 @@ def customer_portal_whatsapp_embedded_complete():
             license_id=getattr(customer, "license_id", None) or None,
         )
     except wa_embed.EmbeddedSignupError as exc:
-        # Meta/exchange failures mark the account as error; a bad/expired/reused
-        # state must NOT flip a (possibly connected) account — just reject it.
-        if exc.code not in wa_embed.STATE_ERROR_CODES:
-            try:
-                wa_settings.set_connection_status(
-                    customer.id, "error", error_code=exc.code, error_message=exc.message
-                )
-            except Exception:  # noqa: BLE001 — never let status-write mask the real error
-                db.session.rollback()
+        # Account status on failure is owned by complete_with_state: a real Meta
+        # error marks a non-live account 'error', a failed reconnect keeps the
+        # live connection, and a state rejection touches nothing.
         return jsonify({"ok": False, "error": exc.code, "message": exc.message}), 400
 
     return jsonify({"ok": True, **result, "message": "تم ربط واتساب بنجاح ✅",
