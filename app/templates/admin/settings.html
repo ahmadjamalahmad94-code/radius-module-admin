@@ -115,6 +115,15 @@
   .wac-reveal-box { margin-top:6px; display:flex; gap:8px; align-items:center; }
   .wac-reveal-box code { background:#0f172a; color:#e2e8f0; padding:4px 9px; border-radius:7px; font-size:12px; word-break:break-all; flex:1; }
   .wac-actions-row { display:flex; flex-wrap:wrap; gap:10px; }
+  .wac-tpl-out { margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; }
+  .wac-tpl-chip { border:1px solid #cbd5e1; background:#fff; border-radius:10px; padding:6px 10px; cursor:pointer;
+    font-size:12.5px; display:inline-flex; gap:7px; align-items:center; }
+  .wac-tpl-chip:hover { border-color:#16a34a; background:#f0fdf4; }
+  .wac-tpl-chip .st { font-size:10.5px; font-weight:800; padding:1px 6px; border-radius:999px; }
+  .wac-tpl-chip .st--ok { background:#dcfce7; color:#166534; }
+  .wac-tpl-chip .st--no { background:#eef0f6; color:#64748b; }
+  .wac-tpl-chip .lng { color:#64748b; font-family:ui-monospace,monospace; }
+  .wac-tpl-note { font-size:12px; color:#64748b; }
 </style>
 {% macro wac_src(field) %}
   {% if field.source == 'panel' %}<span class="wac-src wac-src--panel">محفوظ في إعدادات اللوحة</span>
@@ -217,13 +226,17 @@
         </div>
         <div class="hub-field">
           <label>اسم القالب</label>
-          <input class="hub-input mono ltr" name="template_name" value="hello_world" placeholder="hello_world">
+          <input id="wac-tpl-name" class="hub-input mono ltr" name="template_name" value="hello_world" placeholder="hello_world">
         </div>
         <div class="hub-field">
           <label>لغة القالب</label>
-          <input class="hub-input mono ltr" name="language" value="en_US" placeholder="en_US">
+          <input id="wac-tpl-lang" class="hub-input mono ltr" name="language" value="en_US" placeholder="en_US">
         </div>
       </div>
+      <div class="wac-actions-row" style="margin-top:10px">
+        <button type="button" class="hub-btn hub-btn--ghost" data-wac-templates><i class="fa-solid fa-list-check"></i> اكتشاف القوالب المعتمدة</button>
+      </div>
+      <div class="wac-tpl-out" data-wac-templates-out hidden></div>
       <div class="hub-form-foot" style="padding-top:12px">
         <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-brands fa-whatsapp"></i> إرسال رسالة اختبار</button>
       </div>
@@ -256,6 +269,42 @@
         }).catch(function () { btn.disabled = false; out.textContent = 'تعذّر الاتصال.'; out.hidden = false; });
     });
   });
+
+  // ── Discover the WABA's approved templates → clickable chips ──
+  var discBtn = document.querySelector('[data-wac-templates]');
+  var discOut = document.querySelector('[data-wac-templates-out]');
+  if (discBtn && discOut) {
+    discBtn.addEventListener('click', function () {
+      discBtn.disabled = true;
+      discOut.hidden = false;
+      discOut.innerHTML = '<span class="wac-tpl-note">جارٍ جلب القوالب…</span>';
+      var body = new URLSearchParams(); body.append('_csrf_token', csrf());
+      fetch("{{ url_for('admin.whatsapp_cloud_templates') }}", {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
+                   'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+        .then(function (j) {
+          discBtn.disabled = false;
+          if (!j || !j.ok) { discOut.innerHTML = '<span class="wac-tpl-note">' + ((j && j.message) || 'تعذّر جلب القوالب.') + '</span>'; return; }
+          if (!j.templates || !j.templates.length) { discOut.innerHTML = '<span class="wac-tpl-note">لا توجد قوالب في هذا الحساب. أنشئ قالبًا في Meta أولًا.</span>'; return; }
+          discOut.innerHTML = '<span class="wac-tpl-note">اختر قالبًا لتعبئة الحقول:</span>';
+          j.templates.forEach(function (t) {
+            var ok = t.status === 'APPROVED';
+            var chip = document.createElement('button');
+            chip.type = 'button'; chip.className = 'wac-tpl-chip';
+            chip.innerHTML = '<span>' + t.name + '</span><span class="lng">' + t.language + '</span>' +
+              '<span class="st ' + (ok ? 'st--ok' : 'st--no') + '">' + (ok ? 'معتمد' : t.status) + '</span>';
+            chip.addEventListener('click', function () {
+              var n = document.getElementById('wac-tpl-name'); var l = document.getElementById('wac-tpl-lang');
+              if (n) n.value = t.name; if (l) l.value = t.language;
+            });
+            discOut.appendChild(chip);
+          });
+        }).catch(function () { discBtn.disabled = false; discOut.innerHTML = '<span class="wac-tpl-note">تعذّر الاتصال بالخادم.</span>'; });
+    });
+  }
 })();
 </script>
 {% endif %}

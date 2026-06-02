@@ -1715,6 +1715,20 @@ def whatsapp_cloud_reveal():
     return jsonify({"ok": True, "value": value})
 
 
+@bp.post("/settings/whatsapp-cloud/templates")
+@login_required
+def whatsapp_cloud_templates():
+    """List the WABA's message templates so the admin can pick a real one (JSON)."""
+    from ..services.whatsapp import cloud_settings as wac
+    if not wac.enabled():
+        return jsonify({"ok": False, "message": "القسم غير مُفعّل."}), 403
+    try:
+        result = wac.list_message_templates()
+    except wac.CloudSettingsError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    return jsonify(result)
+
+
 def _payment_error(message: str, status_code: int = 400):
     return jsonify({"ok": False, "error": message}), status_code
 

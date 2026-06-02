@@ -274,3 +274,37 @@ def send_test_message(recipient: str, *, template_name: str = "", language: str 
                 {"provider_message_id": result.get("provider_message_id") or "",
                  "template": template_name})
     return {"ok": True, "provider_message_id": result.get("provider_message_id") or ""}
+
+
+def list_message_templates(limit: int = 200) -> dict:
+    """List the WABA's message templates (name/language/status/category).
+
+    Lets the admin pick a template that actually exists in their account instead
+    of guessing ``hello_world``. Approved templates are returned first. Never
+    raises for provider errors — returns ``{ok: False, message}``.
+    """
+    creds = resolved()
+    token = creds["access_token"]
+    waba = creds["whatsapp_business_account_id"]
+    if not (token and waba):
+        raise CloudSettingsError("أكمل رمز الوصول و Business Account ID أولًا.")
+    provider = MetaCloudWhatsAppProvider()
+    try:
+        _status, resp = provider._request(
+            "GET", f"{waba}/message_templates", token,
+            params={"fields": "name,language,status,category", "limit": int(limit)},
+        )
+    except WhatsAppProviderError as exc:
+        return {"ok": False, "message": exc.message}
+    data = resp.get("data") if isinstance(resp, dict) else None
+    items = []
+    for t in (data or []):
+        if isinstance(t, dict) and t.get("name"):
+            items.append({
+                "name": t.get("name"),
+                "language": t.get("language") or "",
+                "status": (t.get("status") or "").upper(),
+                "category": (t.get("category") or "").upper(),
+            })
+    items.sort(key=lambda x: (0 if x["status"] == "APPROVED" else 1, x["name"]))
+    return {"ok": True, "templates": items}
