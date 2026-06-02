@@ -27,6 +27,7 @@ def _urls(app):
             "test": url_for("admin.whatsapp_cloud_test"),
             "msg": url_for("admin.whatsapp_cloud_test_message"),
             "reveal": url_for("admin.whatsapp_cloud_reveal"),
+            "templates": url_for("admin.whatsapp_cloud_templates"),
         }
 
 
@@ -274,6 +275,29 @@ def test_send_uses_template_and_hint_on_invalid(client, app, monkeypatch):
     assert seen["body"]["template"]["language"]["code"] == "en_US"
     # helpful Arabic hint about template approval surfaced to the admin
     assert "معتمد في حسابك" in r.get_data(as_text=True)
+
+
+def test_list_templates_returns_approved_first(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "GET" and path.endswith("/message_templates"):
+            return 200, {"data": [
+                {"name": "promo", "language": "ar", "status": "PENDING", "category": "MARKETING"},
+                {"name": "order_update", "language": "ar", "status": "APPROVED", "category": "UTILITY"},
+            ]}
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["templates"], data={"_csrf_token": _csrf(client, urls["page"])},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["templates"][0]["name"] == "order_update"      # APPROVED sorted first
+    assert j["templates"][0]["status"] == "APPROVED"
 
 
 def test_send_message_requires_recipient(client, app):
