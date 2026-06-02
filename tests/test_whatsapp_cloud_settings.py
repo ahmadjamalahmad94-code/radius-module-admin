@@ -219,6 +219,41 @@ def test_connection_failure(client, app, monkeypatch):
         assert AuditLog.query.filter_by(action="whatsapp_cloud_test_failed").first() is not None
 
 
+def test_connection_ok_when_restricted_fields_forbidden(client, app, monkeypatch):
+    """A messaging-scoped token can read display_phone_number but 403s on the
+    restricted health fields — the connection test must still pass."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        fields = (params or {}).get("fields", "")
+        if method == "GET" and fields == "display_phone_number":
+            return 200, {"display_phone_number": "+970 599 000111"}
+        if method == "GET" and fields.startswith("verified_name"):
+            raise WhatsAppProviderError("meta_auth_failed", "فشل التحقق", retryable=False, http_status=403)
+        if method == "GET":  # waba reachability (fields=id)
+            return 200, {"id": path}
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    assert "نجح الاتصال" in r.get_data(as_text=True)
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_test_success").first() is not None
+
+
+def test_connection_auth_failure_hints_expiry(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _fail_auth)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "فشل الاتصال" in body
+    assert "منتهيًا" in body  # expiry hint surfaced
+
+
 def test_connection_without_creds_errors(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))
