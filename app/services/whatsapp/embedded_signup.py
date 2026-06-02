@@ -26,17 +26,20 @@ Design rules (mirrors ``providers.py``):
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import timedelta
 from typing import Any
 
 from flask import current_app
 
 from ...extensions import db
-from ...models import utcnow
+from ...models import WhatsAppEmbeddedSignupAttempt, utcnow
 from . import settings as wa_settings
 from .providers import MetaCloudWhatsAppProvider, WhatsAppProviderError
 
@@ -55,6 +58,134 @@ class EmbeddedSignupError(Exception):
 
     def __str__(self) -> str:  # pragma: no cover - cosmetic
         return f"[{self.code}] {self.message}"
+
+
+# ───────────────────────────── audit taxonomy ─────────────────────────────
+#
+# Spec event names for the embedded-signup lifecycle. During a transition window
+# the older names (``whatsapp_embedded_connected`` / ``..._disconnected``) are
+# emitted ALONGSIDE the new ones via :func:`_emit_audit`, so existing dashboards
+# and queries keep working while consumers migrate.
+AUDIT_STARTED = "embedded_signup_started"
+AUDIT_SUCCEEDED = "embedded_signup_succeeded"
+AUDIT_FAILED = "embedded_signup_failed"
+AUDIT_SYNCED = "whatsapp_connection_synced"
+AUDIT_DISCONNECTED = "whatsapp_connection_disconnected"
+AUDIT_RECONNECTED = "whatsapp_connection_reconnected"
+AUDIT_TEST_SENT = "whatsapp_tenant_test_message_sent"
+AUDIT_TEST_FAILED = "whatsapp_tenant_test_message_failed"
+
+_LEGACY_CONNECTED = "whatsapp_embedded_connected"
+_LEGACY_DISCONNECTED = "whatsapp_embedded_disconnected"
+
+# Non-technical Arabic surfaced when an onboarding state is missing/expired.
+_STATE_INVALID_AR = "جلسة الربط غير صالحة. أعد المحاولة من زر «ربط واتساب»."
+_STATE_EXPIRED_AR = "انتهت مهلة جلسة الربط. أعد المحاولة من زر «ربط واتساب»."
+
+
+def _emit_audit(event: str, legacy: str | None, entity_type: str, entity_id,
+                summary: str, metadata: dict | None = None) -> None:
+    """Append the spec audit ``event`` (+ optional ``legacy`` alias). Caller commits."""
+    wa_settings._audit(event, entity_type, entity_id, summary, metadata)
+    if legacy:
+        wa_settings._audit(legacy, entity_type, entity_id, summary, metadata)
+
+
+# ───────────────────────── state/nonce sessions ─────────────────────────
+#
+# Server-issued, single-use ``state`` + ``nonce`` bind Meta's popup to the
+# session customer. Only SHA-256 hashes are persisted (raw values are handed to
+# the browser once); the completion callback (P4) must echo a ``state`` matching
+# a live pending attempt for the SAME customer. Additive + feature-flagged.
+
+def _hash(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+def _attempt_ttl_seconds() -> int:
+    try:
+        return int(current_app.config.get("META_EMBEDDED_ATTEMPT_TTL_SECONDS") or 600)
+    except (TypeError, ValueError):
+        return 600
+
+
+def start_session(customer_id: int, *, license_id: int | None = None,
+                  initiated_by: int | None = None) -> dict:
+    """Begin a server-bound embedded-signup attempt for one customer.
+
+    Issues a one-time ``state`` + ``nonce``, persists only their hashes as a
+    *pending* attempt (with ``expires_at`` + ``initiated_by``), expires any
+    older live attempts for the customer, and audits ``embedded_signup_started``.
+
+    Returns the RAW ``{"state", "nonce"}`` for the browser to echo back on
+    completion. The raw values are never stored.
+    """
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(16)
+    now = utcnow()
+
+    # Single active state: invalidate any prior live attempts for this customer.
+    WhatsAppEmbeddedSignupAttempt.query.filter_by(
+        customer_id=int(customer_id), status="pending",
+    ).update({"status": "expired", "completed_at": now}, synchronize_session=False)
+
+    attempt = WhatsAppEmbeddedSignupAttempt(
+        customer_id=int(customer_id),
+        license_id=license_id,
+        state_hash=_hash(state),
+        nonce_hash=_hash(nonce),
+        status="pending",
+        initiated_by=initiated_by,
+        expires_at=now + timedelta(seconds=_attempt_ttl_seconds()),
+    )
+    db.session.add(attempt)
+    db.session.commit()
+
+    _emit_audit(
+        AUDIT_STARTED, None,
+        "whatsapp_embedded_attempt", attempt.id,
+        "Embedded Signup started",
+        {"customer_id": int(customer_id)},
+    )
+    db.session.commit()
+    return {"state": state, "nonce": nonce}
+
+
+def _consume_state(customer_id: int, state: str, *, nonce: str | None = None):
+    """Validate an echoed ``state`` (+ optional ``nonce``) for this customer.
+
+    Returns the matching live *pending* :class:`WhatsAppEmbeddedSignupAttempt`
+    so the caller (P4) can finalize it after the code exchange. Raises
+    :class:`EmbeddedSignupError` when no live attempt matches the SESSION
+    customer, or when it is expired / already consumed. Tenant-isolated: an
+    attempt belonging to another customer never matches.
+    """
+    state = (state or "").strip()
+    if not state:
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    attempt = WhatsAppEmbeddedSignupAttempt.query.filter_by(state_hash=_hash(state)).first()
+    if attempt is None or attempt.customer_id != int(customer_id) or attempt.status != "pending":
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    if attempt.expires_at and attempt.expires_at < utcnow():
+        attempt.status = "expired"
+        attempt.completed_at = utcnow()
+        db.session.commit()
+        raise EmbeddedSignupError("expired_state", _STATE_EXPIRED_AR)
+    if nonce is not None and _hash((nonce or "").strip()) != (attempt.nonce_hash or ""):
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    return attempt
+
+
+def _finalize_attempt(attempt, *, status: str, error_code: str | None = None,
+                      error_message: str | None = None) -> None:
+    """Mark an attempt terminal (``completed``/``failed``/``expired``). Commits."""
+    if attempt is None:
+        return
+    attempt.status = status
+    attempt.completed_at = utcnow()
+    attempt.error_code = error_code
+    attempt.error_message = error_message
+    db.session.commit()
 
 
 # ───────────────────────────── config ─────────────────────────────
@@ -270,8 +401,8 @@ def complete_signup(
     account.last_error_message = None
     db.session.commit()
 
-    wa_settings._audit(
-        "whatsapp_embedded_connected",
+    _emit_audit(
+        AUDIT_SUCCEEDED, _LEGACY_CONNECTED,
         "whatsapp_account",
         account.id,
         "WhatsApp connected via Embedded Signup",
@@ -314,6 +445,13 @@ def validate_connection(customer_id: int) -> dict:
     account.last_error_code = None
     account.last_error_message = None
     db.session.commit()
+    _emit_audit(
+        AUDIT_SYNCED, None,
+        "whatsapp_account", account.id,
+        "WhatsApp connection synced",
+        {"customer_id": int(customer_id)},
+    )
+    db.session.commit()
     return {"ok": True, "status": "connected", **info}
 
 
@@ -328,8 +466,8 @@ def disconnect(customer_id: int) -> bool:
     account.disconnected_at = utcnow()
     account.last_sync_at = utcnow()
     db.session.commit()
-    wa_settings._audit(
-        "whatsapp_embedded_disconnected",
+    _emit_audit(
+        AUDIT_DISCONNECTED, _LEGACY_DISCONNECTED,
         "whatsapp_account",
         account.id,
         "WhatsApp disconnected",

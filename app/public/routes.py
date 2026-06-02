@@ -873,6 +873,58 @@ def customer_portal_whatsapp_post():
     return redirect(_whatsapp_pane_url())
 
 
+@bp.get("/portal/whatsapp/embedded/config")
+def customer_portal_whatsapp_embedded_config():
+    """Safe, non-secret config the browser SDK needs (never the app secret).
+
+    Returns ``{ok, enabled, app_id, config_id, graph_version}``. When embedded
+    signup is unavailable (flag off or creds missing) ``enabled`` is False and
+    the id fields are blank, so the UI can show the setup-incomplete state
+    instead of a broken button. Requires a logged-in portal user.
+    """
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from ..services.whatsapp import embedded_signup as wa_embed
+    enabled = wa_embed.embedded_signup_available()
+    cfg = wa_embed.public_config() if enabled else {"app_id": "", "config_id": "", "graph_version": ""}
+    return jsonify({"ok": True, "enabled": enabled, **cfg})
+
+
+@bp.post("/portal/whatsapp/embedded/start")
+def customer_portal_whatsapp_embedded_start():
+    """Begin a server-bound embedded-signup attempt; return one-time state+nonce.
+
+    Issues + persists (hashed) a pending attempt for the SESSION customer and
+    audits ``embedded_signup_started``. Tenant-isolated — any customer_id in the
+    body is ignored. Behind the feature flag (503 when unavailable). CSRF is
+    enforced by the global before_request (X-CSRFToken header).
+    """
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    customer = user.customer
+    if not _whatsapp_gateway_granted(customer):
+        return jsonify({"ok": False, "error": "locked",
+                        "message": "هذه الخدمة غير مفعلة في خطتك الحالية."}), 403
+    from ..services.whatsapp import embedded_signup as wa_embed
+    if not wa_embed.embedded_signup_available():
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "خدمة الربط التلقائي غير مهيأة بعد. استخدم الإعداد المتقدم."}), 503
+
+    issued = wa_embed.start_session(
+        customer.id,
+        license_id=getattr(customer, "license_id", None) or None,
+        initiated_by=user.id,
+    )
+    return jsonify({
+        "ok": True,
+        "state": issued["state"],
+        "nonce": issued["nonce"],
+        "config": wa_embed.public_config(),
+    })
+
+
 @bp.post("/portal/whatsapp/embedded/complete")
 def customer_portal_whatsapp_embedded_complete():
     """Finish Meta Embedded Signup for the SESSION customer (AJAX → JSON).
