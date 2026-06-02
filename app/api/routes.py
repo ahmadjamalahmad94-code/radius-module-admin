@@ -480,15 +480,23 @@ def hoberadius_whatsapp_test_message():
     if error_response is not None:
         return error_response
 
+    from ..services.whatsapp import embedded_signup as wa_embed
+
     recipient_phone = str(body.get("recipient_phone") or "")
     idempotency_key = str(body.get("idempotency_key") or "")
     scoped_key = f"c{customer.id}:{idempotency_key}" if idempotency_key else ""
 
-    # Pick an approved template: prefer the "otp" local_key, else any approved.
-    templates = wa_settings.list_templates(customer.id)
-    approved = [t for t in templates if t.status == "approved"]
-    chosen = next((t for t in approved if t.local_key == "otp"), None) or (approved[0] if approved else None)
+    # The send always goes through the connected TENANT account (the worker reads
+    # the per-customer encrypted token) — never the house Cloud API credentials
+    # (those are the separate /cloud-test path). Default template: hello_world,
+    # else the first recommended approved template.
+    preferred = body.get("template_key") or None
+    chosen = wa_settings.pick_test_template(customer.id, preferred_local_key=preferred)
     if chosen is None:
+        wa_embed.audit_tenant_test_message(
+            customer.id, ok=False, recipient=recipient_phone,
+            error_code="template_not_approved",
+        )
         return jsonify({
             "ok": False,
             "error_code": "template_not_approved",
@@ -503,6 +511,10 @@ def hoberadius_whatsapp_test_message():
         idempotency_key=scoped_key,
     )
     if not decision.allowed:
+        wa_embed.audit_tenant_test_message(
+            customer.id, ok=False, recipient=recipient_phone,
+            template_key=chosen.local_key, error_code=decision.reason,
+        )
         return jsonify({
             "ok": False,
             "error_code": decision.reason,
@@ -524,11 +536,25 @@ def hoberadius_whatsapp_test_message():
     _whatsapp_inline_drain()
     row = wa_queue.get_message(row.id) or row
 
+    sent = (row.status == "sent")
+    wa_embed.audit_tenant_test_message(
+        customer.id, ok=sent, recipient=recipient_phone, template_key=chosen.local_key,
+        message_id=row.id, error_code=(row.error_code or ""), error_message=(row.error_message or ""),
+    )
+    if sent:
+        return jsonify({
+            "ok": True,
+            "message_id": row.id,
+            "status": row.status,
+            "provider_message_id": row.provider_message_id or "",
+            "already_exists": (not created),
+        })
     return jsonify({
-        "ok": True,
+        "ok": False,
         "message_id": row.id,
         "status": row.status,
-        "already_exists": (not created),
+        "error_code": row.error_code or "send_failed",
+        "message_ar": row.error_message or "تعذّر إرسال رسالة الاختبار.",
     })
 
 

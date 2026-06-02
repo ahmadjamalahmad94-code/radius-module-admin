@@ -95,6 +95,40 @@ def _emit_audit(event: str, legacy: str | None, entity_type: str, entity_id,
         wa_settings._audit(legacy, entity_type, entity_id, summary, metadata)
 
 
+def audit_tenant_test_message(
+    customer_id: int,
+    *,
+    ok: bool,
+    recipient: str = "",
+    template_key: str = "",
+    message_id: int | None = None,
+    error_code: str = "",
+    error_message: str = "",
+) -> None:
+    """Audit a TENANT test-message outcome (sent/failed taxonomy). Commits.
+
+    Records the safe facts only — recipient (PII, not a secret), template key,
+    queue message id, and a stable error code. NEVER a token or app secret.
+    """
+    meta: dict[str, Any] = {
+        "customer_id": int(customer_id),
+        "template_key": template_key or "",
+        "recipient": (recipient or "")[:40],
+    }
+    if message_id is not None:
+        meta["message_id"] = int(message_id)
+    if not ok and error_code:
+        meta["error_code"] = error_code
+    wa_settings._audit(
+        AUDIT_TEST_SENT if ok else AUDIT_TEST_FAILED,
+        "whatsapp_test_message",
+        message_id if message_id is not None else int(customer_id),
+        "WhatsApp tenant test message " + ("sent" if ok else "failed"),
+        meta,
+    )
+    db.session.commit()
+
+
 # ───────────────────────── state/nonce sessions ─────────────────────────
 #
 # Server-issued, single-use ``state`` + ``nonce`` bind Meta's popup to the

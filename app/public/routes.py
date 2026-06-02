@@ -799,9 +799,12 @@ def customer_portal_whatsapp_post():
         return redirect(_whatsapp_pane_url())
 
     if action == "send_test":
+        # Sends through the connected TENANT account (the worker reads the
+        # per-customer encrypted token) — never the house credentials.
         from ..services.whatsapp import policy as wa_policy
         from ..services.whatsapp import queue as wa_queue
         from ..services.whatsapp import worker as wa_worker
+        from ..services.whatsapp import embedded_signup as wa_embed
         from ..services.whatsapp.phone import WhatsAppPhoneError, normalize_phone_for_whatsapp
         from ..models import utcnow
 
@@ -815,35 +818,55 @@ def customer_portal_whatsapp_post():
             flash(str(exc), "error")
             return redirect(_whatsapp_pane_url())
 
+        # Honour the chosen template, else default to hello_world / first approved.
+        preferred = (request.form.get("template_key") or "").strip() or None
+        chosen = wa_settings.pick_test_template(customer.id, preferred_local_key=preferred)
+        if chosen is None:
+            flash("لا يوجد قالب واتساب معتمد لإرسال رسالة تجربة. اعتمد قالبًا أولًا.", "error")
+            return redirect(_whatsapp_pane_url())
+
         idem = f"portal-test:{customer.id}:{normalized}:{int(utcnow().timestamp())}"
         decision = wa_policy.can_send(
             customer.id,
             event_type="test_message",
             recipient_phone=recipient,
+            template_key=chosen.local_key,
             idempotency_key=idem,
         )
         if not decision.allowed:
+            wa_embed.audit_tenant_test_message(
+                customer.id, ok=False, recipient=recipient,
+                template_key=chosen.local_key, error_code=decision.reason,
+            )
             flash(decision.message_ar or "تعذّر إرسال رسالة التجربة.", "error")
             return redirect(_whatsapp_pane_url())
 
-        template_key = (request.form.get("template_key") or "").strip()
-        template = wa_settings.get_template(customer.id, template_key, "ar") if template_key else None
-        wa_queue.enqueue(
+        row, _created = wa_queue.enqueue(
             customer.id,
             source_system="customer_portal",
             source_event_type="test_message",
             recipient_phone=recipient,
             normalized_recipient_phone=decision.normalized_phone or normalized,
             idempotency_key=idem,
-            template_key=template_key or None,
-            template_name=(template.provider_template_name if template else None),
-            language=(template.language if template else "ar"),
+            template_key=chosen.local_key,
+            template_name=chosen.provider_template_name,
+            language=chosen.language or "ar",
         )
         try:
             wa_worker.drain_once()
         except Exception:  # noqa: BLE001 — drain is best-effort.
             db.session.rollback()
-        flash("تمت جدولة رسالة التجربة. تابع حالتها في سجل الرسائل.", "success")
+        row = wa_queue.get_message(row.id) or row
+
+        sent = (row.status == "sent")
+        wa_embed.audit_tenant_test_message(
+            customer.id, ok=sent, recipient=recipient, template_key=chosen.local_key,
+            message_id=row.id, error_code=(row.error_code or ""), error_message=(row.error_message or ""),
+        )
+        if sent:
+            flash("تم إرسال رسالة التجربة بنجاح ✅. تابع حالتها في سجل الرسائل.", "success")
+        else:
+            flash("تعذّر إرسال رسالة التجربة. " + (row.error_message or "راجع الربط والقالب ثم أعد المحاولة."), "error")
         return redirect(_whatsapp_pane_url())
 
     if action in ("enable_events", "save_settings"):
