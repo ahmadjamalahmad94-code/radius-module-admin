@@ -250,6 +250,33 @@ def test_status_response_never_contains_token(client, app):
     assert "access_token" not in raw
 
 
+def test_status_onboarding_state_connected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Connected")
+    _provision_whatsapp(customer_id)
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-conn").get_json()
+    assert body["onboarding_state"] == "connected"
+    assert isinstance(body["embedded_available"], bool)
+
+
+def test_status_onboarding_state_needs_setup_when_never_connected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Needs Setup")
+    # No account provisioned at all.
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-needs").get_json()
+    assert body["onboarding_state"] == "needs_setup"
+    assert body["account_status"] == "disconnected"
+
+
+def test_status_onboarding_state_not_connected_when_disconnected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Not Connected")
+    wa_settings.upsert_account(customer_id, phone_number_id="123", access_token=DUMMY_TOKEN)
+    wa_settings.set_connection_status(customer_id, "disconnected")
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-notconn").get_json()
+    assert body["onboarding_state"] == "not_connected"
+
+
 # --------------------------------------------------------------------------- enqueue
 
 def test_enqueue_signed_queues_and_sends_then_is_idempotent(client, app, monkeypatch):

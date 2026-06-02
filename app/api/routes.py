@@ -372,6 +372,8 @@ def hoberadius_whatsapp_status():
     if error_response is not None:
         return error_response
 
+    from ..services.whatsapp import embedded_signup as wa_embed
+
     settings = wa_settings.get_settings(customer.id)
     account = wa_settings.get_account(customer.id)
     account_public = wa_settings.account_public_dict(account)
@@ -386,10 +388,24 @@ def hoberadius_whatsapp_status():
         for template in wa_settings.list_templates(customer.id)
     ]
 
+    # A coarse onboarding state the thin client can render directly (so it can
+    # tell "needs setup" — never connected — apart from "not connected" — set up
+    # before, now disconnected/error). Secret-free, derived from existing fields.
+    account_status = account_public.get("connection_status") or "disconnected"
+    has_account = account is not None and bool((account.phone_number_id or "").strip())
+    if account_status == "connected":
+        onboarding_state = "connected"
+    elif has_account:
+        onboarding_state = "not_connected"
+    else:
+        onboarding_state = "needs_setup"
+
     return jsonify({
         "ok": True,
         "enabled": bool(settings.enabled),
-        "account_status": account_public.get("connection_status") or "disconnected",
+        "account_status": account_status,
+        "onboarding_state": onboarding_state,
+        "embedded_available": bool(wa_embed.embedded_signup_available()),
         "display_phone_number": account_public.get("display_phone_number") or "",
         "business_display_name": account_public.get("business_display_name") or "",
         "limits": {
