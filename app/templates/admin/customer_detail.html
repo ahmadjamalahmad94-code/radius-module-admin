@@ -59,6 +59,11 @@
       <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">
         <i class="fa-solid fa-pen"></i> تعديل
       </a>
+      {% if is_super_admin %}
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}">
+        <i class="fa-solid fa-vault"></i> الخزنة الخاصة بالعميل
+      </a>
+      {% endif %}
     </div>
   </div>
 </div>

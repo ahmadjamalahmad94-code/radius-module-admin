@@ -1,0 +1,237 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}الخزنة الخاصة بالعميل{% endblock %}
+{% block page_title %}الخزنة الخاصة بالعميل{% endblock %}
+{% block page_subtitle %}روابط وملاحظات وبيانات وصول خاصة بالإدارة فقط — لا تظهر هذه البيانات للعميل.{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/customer_vault.css') }}">
+{% endblock %}
+
+{% set action_labels = {
+  'private_record_created':'إضافة بيان','private_record_updated':'تعديل بيان','private_record_archived':'أرشفة بيان',
+  'secret_created':'إضافة سر','secret_updated_metadata':'تعديل بيانات سر','secret_rotated':'تدوير سر',
+  'secret_revealed':'عرض سر','secret_archived':'أرشفة سر'
+} %}
+{% set secret_type_labels = {
+  'vps_password':'كلمة مرور VPS','ssh_password':'كلمة مرور SSH','ssh_private_key':'مفتاح SSH خاص',
+  'database_password':'كلمة مرور قاعدة بيانات','mikrotik_api_password':'كلمة مرور MikroTik API',
+  'google_drive_secret':'سر Google Drive','whatsapp_token':'توكن واتساب','api_token':'توكن API',
+  'backup_secret':'سر النسخ الاحتياطي','other':'أخرى'
+} %}
+{% set record_type_labels = {
+  'vps_url':'رابط VPS','radius_url':'رابط RADIUS','server_ip':'عنوان الخادم (IP)',
+  'deployment_note':'ملاحظة نشر','support_note':'ملاحظة دعم','backup_note':'ملاحظة نسخ احتياطي','other':'أخرى'
+} %}
+{% set status_labels = {'active':'نشط','rotated':'مُدوّر','revoked':'ملغى','archived':'مؤرشف'} %}
+{% set target_labels = {'private_record':'بيان تشغيلي','secret':'سر'} %}
+
+{% block content %}
+{{ hub.hero("الخزنة الخاصة بالعميل — " ~ customer.company_name,
+   subtitle="بيانات حسّاسة للإدارة فقط. الأسرار مشفّرة في قاعدة البيانات ولا تُعرض إلا بإجراء صريح يُسجَّل في سجل التدقيق.",
+   icon="vault",
+   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-right"></i> ملف العميل</a>') }}
+
+{% if not encryption_ok %}
+<div class="vault-warn"><i class="fa-solid fa-triangle-exclamation"></i>
+  مفتاح تشفير الخزنة غير مضبوط. لا يمكن حفظ أو عرض الأسرار. اضبط <code>CUSTOMER_VAULT_ENCRYPTION_KEY</code> في البيئة.
+</div>
+{% endif %}
+
+<div class="vault-tabs" role="tablist">
+  <button class="vault-tab is-active" data-tab="records"><i class="fa-solid fa-clipboard-list"></i> بيانات تشغيلية</button>
+  <button class="vault-tab" data-tab="secrets"><i class="fa-solid fa-key"></i> الأسرار المحمية</button>
+  <button class="vault-tab" data-tab="audit"><i class="fa-solid fa-clock-rotate-left"></i> سجل الخزنة</button>
+</div>
+
+{# ═══════════ TAB 1: PRIVATE RECORDS ═══════════ #}
+<div class="vault-panel is-active" id="tab-records">
+  {% call hub.section("إضافة بيان تشغيلي", icon="plus") %}
+    <form method="post" action="{{ url_for('admin_vault.record_create', customer_id=customer.id) }}">
+      {{ csrf_input() }}
+      <div class="vault-grid">
+        <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}">{{ record_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
+        <label>العنوان<input class="hub-input" name="title" required maxlength="160"></label>
+        <label>القيمة<input class="hub-input" name="value" maxlength="5000"></label>
+        <label>الرابط<input class="hub-input" name="url" placeholder="https://…" maxlength="500"></label>
+        <label style="grid-column:1/-1">الملاحظات<textarea class="hub-input" name="notes" rows="2" maxlength="5000"></textarea></label>
+        <label class="vault-check"><input type="checkbox" name="is_pinned"> تثبيت في الأعلى</label>
+      </div>
+      <div style="margin-top:10px"><button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ البيان</button></div>
+    </form>
+  {% endcall %}
+
+  {% call hub.section("البيانات التشغيلية", icon="clipboard-list", meta=records|length|string ~ " بيان") %}
+    {% if records %}
+    <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+      <thead><tr><th>النوع</th><th>العنوان</th><th>القيمة / الرابط</th><th>محدّث</th><th>إجراءات</th></tr></thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td><small>{{ record_type_labels.get(r.record_type, r.record_type) }}</small>{% if r.is_pinned %} <span class="vault-pill">مثبّت</span>{% endif %}</td>
+          <td><strong>{{ r.title }}</strong>{% if r.notes %}<br><small style="color:#94a3b8">{{ r.notes[:80] }}</small>{% endif %}</td>
+          <td class="vault-mono small">{{ r.value or '—' }}{% if r.url %}<br><a href="{{ r.url }}" target="_blank" rel="noopener">فتح الرابط <i class="fa-solid fa-up-right-from-square"></i></a>{% endif %}</td>
+          <td class="vault-mono small">{{ r.updated_at.strftime('%Y-%m-%d %H:%M') if r.updated_at else '—' }}</td>
+          <td style="white-space:nowrap">
+            <button class="hub-btn hub-btn--ghost hub-btn--sm" type="button" data-toggle="rec-{{ r.id }}"><i class="fa-solid fa-pen"></i></button>
+            <form method="post" action="{{ url_for('admin_vault.record_archive', customer_id=customer.id, record_id=r.id) }}" style="display:inline" onsubmit="return confirm('أرشفة هذا البيان؟');">{{ csrf_input() }}<button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626"><i class="fa-solid fa-box-archive"></i></button></form>
+          </td>
+        </tr>
+        <tr class="vault-edit" id="rec-{{ r.id }}" hidden><td colspan="5">
+          <form method="post" action="{{ url_for('admin_vault.record_update', customer_id=customer.id, record_id=r.id) }}" class="vault-grid">
+            {{ csrf_input() }}
+            <label>النوع<select class="hub-input" name="record_type">{% for t in record_types %}<option value="{{ t }}" {{ 'selected' if r.record_type==t }}>{{ record_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
+            <label>العنوان<input class="hub-input" name="title" value="{{ r.title }}" required></label>
+            <label>القيمة<input class="hub-input" name="value" value="{{ r.value }}"></label>
+            <label>الرابط<input class="hub-input" name="url" value="{{ r.url }}"></label>
+            <label style="grid-column:1/-1">الملاحظات<textarea class="hub-input" name="notes" rows="2">{{ r.notes }}</textarea></label>
+            <label class="vault-check"><input type="checkbox" name="is_pinned" {{ 'checked' if r.is_pinned }}> تثبيت في الأعلى</label>
+            <div style="grid-column:1/-1"><button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">حفظ التعديل</button></div>
+          </form>
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{{ hub.empty("لا توجد بيانات تشغيلية محفوظة بعد.", icon="clipboard-list") }}{% endif %}
+  {% endcall %}
+</div>
+
+{# ═══════════ TAB 2: SECRETS ═══════════ #}
+<div class="vault-panel" id="tab-secrets" hidden>
+  <div class="vault-note"><i class="fa-solid fa-shield-halved"></i>
+    الأسرار مشفّرة داخل قاعدة البيانات. لا يظهر السر إلا عند الضغط على عرض أو نسخ، ويتم تسجيل العملية في سجل التدقيق.
+  </div>
+
+  {% if can_manage_secrets and encryption_ok %}
+  {% call hub.section("إضافة سر محمي", icon="plus") %}
+    <form method="post" action="{{ url_for('admin_vault.secret_create', customer_id=customer.id) }}">
+      {{ csrf_input() }}
+      <div class="vault-grid">
+        <label>النوع<select class="hub-input" name="secret_type">{% for t in secret_types %}<option value="{{ t }}">{{ secret_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
+        <label>الاسم (label)<input class="hub-input" name="label" required maxlength="160"></label>
+        <label>المضيف (host)<input class="hub-input" name="host" maxlength="255"></label>
+        <label>الرابط<input class="hub-input" name="url" placeholder="https://…" maxlength="500"></label>
+        <label>اسم المستخدم<input class="hub-input" name="username" maxlength="160" autocomplete="off"></label>
+        <label>تلميح (hint)<input class="hub-input" name="secret_hint" maxlength="160" placeholder="مثال: آخر 4 أرقام"></label>
+        <label style="grid-column:1/-1">قيمة السر<textarea class="hub-input vault-secret-input" name="secret_value" rows="3" required autocomplete="off" spellcheck="false"></textarea></label>
+        <label style="grid-column:1/-1">ملاحظات<textarea class="hub-input" name="notes" rows="2" maxlength="5000"></textarea></label>
+      </div>
+      <div style="margin-top:10px"><button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-lock"></i> حفظ السر مشفّرًا</button></div>
+    </form>
+  {% endcall %}
+  {% elif not can_manage_secrets %}
+  <div class="vault-warn"><i class="fa-solid fa-user-shield"></i> عرض الأسرار وإدارتها يتطلب صلاحية مسؤول عام (super admin). يمكنك رؤية البيانات الوصفية فقط.</div>
+  {% endif %}
+
+  {% call hub.section("الأسرار المحمية", icon="key", meta=secrets|length|string ~ " سر") %}
+    {% if secrets %}
+    <div class="vault-secrets">
+      {% for s in secrets %}
+      <div class="vault-secret-card" data-secret-id="{{ s.id }}">
+        <div class="vault-secret-head">
+          <div><strong>{{ s.label }}</strong> <span class="vault-pill">{{ secret_type_labels.get(s.secret_type, s.secret_type) }}</span>
+            <span class="vault-pill vault-status-{{ s.status }}">{{ status_labels.get(s.status, s.status) }}</span></div>
+        </div>
+        <div class="vault-secret-meta">
+          {% if s.username %}<span><i class="fa-solid fa-user"></i> {{ s.username }}</span>{% endif %}
+          {% if s.host %}<span><i class="fa-solid fa-server"></i> {{ s.host }}</span>{% endif %}
+          {% if s.url %}<span><i class="fa-solid fa-link"></i> <a href="{{ s.url }}" target="_blank" rel="noopener">رابط</a></span>{% endif %}
+          {% if s.secret_hint %}<span><i class="fa-solid fa-circle-info"></i> {{ s.secret_hint }}</span>{% endif %}
+        </div>
+        <div class="vault-secret-sub">
+          آخر عرض: {{ s.last_revealed_at.strftime('%Y-%m-%d %H:%M') if s.last_revealed_at else '—' }} ·
+          آخر تدوير: {{ s.last_rotated_at.strftime('%Y-%m-%d %H:%M') if s.last_rotated_at else '—' }} ·
+          محدّث: {{ s.updated_at.strftime('%Y-%m-%d %H:%M') if s.updated_at else '—' }}
+        </div>
+        {% if can_manage_secrets and encryption_ok %}
+        <div class="vault-secret-actions">
+          <button class="hub-btn hub-btn--primary hub-btn--sm" type="button"
+                  data-reveal data-url="{{ url_for('admin_vault.secret_reveal', customer_id=customer.id, secret_id=s.id) }}"
+                  data-label="{{ s.label }}"><i class="fa-solid fa-eye"></i> عرض السر</button>
+          <button class="hub-btn hub-btn--ghost hub-btn--sm" type="button" data-toggle="rot-{{ s.id }}"><i class="fa-solid fa-rotate"></i> تدوير</button>
+          <button class="hub-btn hub-btn--ghost hub-btn--sm" type="button" data-toggle="meta-{{ s.id }}"><i class="fa-solid fa-pen"></i> تعديل البيانات</button>
+          <form method="post" action="{{ url_for('admin_vault.secret_archive', customer_id=customer.id, secret_id=s.id) }}" style="display:inline" onsubmit="return confirm('أرشفة هذا السر؟');">{{ csrf_input() }}<button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626"><i class="fa-solid fa-box-archive"></i> أرشفة</button></form>
+        </div>
+        <form method="post" action="{{ url_for('admin_vault.secret_rotate', customer_id=customer.id, secret_id=s.id) }}" id="rot-{{ s.id }}" hidden class="vault-inline-form">
+          {{ csrf_input() }}
+          <label>القيمة الجديدة للسر<textarea class="hub-input vault-secret-input" name="secret_value" rows="3" required autocomplete="off"></textarea></label>
+          <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">تدوير الآن</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_vault.secret_metadata', customer_id=customer.id, secret_id=s.id) }}" id="meta-{{ s.id }}" hidden class="vault-grid vault-inline-form">
+          {{ csrf_input() }}
+          <label>النوع<select class="hub-input" name="secret_type">{% for t in secret_types %}<option value="{{ t }}" {{ 'selected' if s.secret_type==t }}>{{ secret_type_labels.get(t, t) }}</option>{% endfor %}</select></label>
+          <label>الاسم<input class="hub-input" name="label" value="{{ s.label }}" required></label>
+          <label>المضيف<input class="hub-input" name="host" value="{{ s.host }}"></label>
+          <label>الرابط<input class="hub-input" name="url" value="{{ s.url }}"></label>
+          <label>اسم المستخدم<input class="hub-input" name="username" value="{{ s.username }}"></label>
+          <label>تلميح<input class="hub-input" name="secret_hint" value="{{ s.secret_hint }}"></label>
+          <label style="grid-column:1/-1">ملاحظات<textarea class="hub-input" name="notes" rows="2">{{ s.notes }}</textarea></label>
+          <div style="grid-column:1/-1"><button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">حفظ البيانات</button></div>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}{{ hub.empty("لا توجد أسرار محفوظة بعد.", icon="key") }}{% endif %}
+  {% endcall %}
+</div>
+
+{# ═══════════ TAB 3: AUDIT ═══════════ #}
+<div class="vault-panel" id="tab-audit" hidden>
+  {% call hub.section("سجل عمليات الخزنة", icon="clock-rotate-left", meta=audit_logs|length|string ~ " عملية") %}
+    <form method="get" class="hub-filterbar" style="margin-bottom:12px">
+      <select class="hub-input" name="action" style="max-width:240px" onchange="this.form.submit()">
+        <option value="">كل العمليات</option>
+        {% for code, label in action_labels.items() %}<option value="{{ code }}" {{ 'selected' if action_filter==code }}>{{ label }}</option>{% endfor %}
+      </select>
+      <noscript><button class="hub-btn hub-btn--sm" type="submit">تصفية</button></noscript>
+    </form>
+    {% if audit_logs %}
+    <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+      <thead><tr><th>التاريخ</th><th>المنفّذ</th><th>العملية</th><th>الهدف</th><th>السبب</th><th>IP</th></tr></thead>
+      <tbody>
+        {% for a in audit_logs %}
+        <tr>
+          <td class="vault-mono small">{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
+          <td>{{ a.actor.username if a.actor else '—' }}</td>
+          <td>{{ action_labels.get(a.action, a.action) }}</td>
+          <td><small>{{ target_labels.get(a.target_type, a.target_type) }}{% if a.target_id %} #{{ a.target_id }}{% endif %}</small></td>
+          <td class="small">{{ a.reason or '—' }}</td>
+          <td class="vault-mono small" title="{{ a.user_agent }}">{{ a.ip_address or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{{ hub.empty("لا توجد عمليات مسجّلة بعد.", icon="clock-rotate-left") }}{% endif %}
+  {% endcall %}
+</div>
+
+{# Reveal modal — plaintext is injected by JS only after the reveal call. #}
+<div class="vault-modal" id="vaultRevealModal" hidden>
+  <div class="vault-modal-box">
+    <h3><i class="fa-solid fa-eye"></i> عرض السر</h3>
+    <p>العميل: <strong>{{ customer.company_name }}</strong></p>
+    <p class="vault-modal-label">السر: <strong id="vaultRevealLabel"></strong></p>
+    <div class="vault-warn"><i class="fa-solid fa-triangle-exclamation"></i> سيتم تسجيل عملية العرض في سجل التدقيق.</div>
+    <div id="vaultRevealStep1">
+      <label>سبب العرض (اختياري)<input class="hub-input" id="vaultRevealReason" maxlength="255"></label>
+      <div class="vault-modal-actions">
+        <button class="hub-btn hub-btn--primary" type="button" id="vaultRevealConfirm"><i class="fa-solid fa-unlock"></i> عرض السر الآن</button>
+        <button class="hub-btn hub-btn--ghost" type="button" data-close-modal>إلغاء</button>
+      </div>
+    </div>
+    <div id="vaultRevealStep2" hidden>
+      <label>القيمة<textarea class="hub-input vault-secret-input" id="vaultRevealValue" rows="4" readonly></textarea></label>
+      <p class="vault-modal-hint">لا تحفظ السر خارج النظام إلا عند الحاجة.</p>
+      <div class="vault-modal-actions">
+        <button class="hub-btn hub-btn--primary" type="button" id="vaultCopyBtn"><i class="fa-solid fa-copy"></i> نسخ</button>
+        <button class="hub-btn hub-btn--ghost" type="button" data-close-modal>إغلاق</button>
+      </div>
+    </div>
+    <div id="vaultRevealError" class="vault-warn" hidden></div>
+  </div>
+</div>
+
+<script>window.VAULT_CSRF = "{{ csrf_token() }}";</script>
+<script src="{{ url_for('static', filename='js/customer_vault.js') }}"></script>
+{% endblock %}

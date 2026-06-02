@@ -88,6 +88,25 @@ class Config:
     WHATSAPP_DEFAULT_TIMEZONE = os.environ.get("WHATSAPP_DEFAULT_TIMEZONE", "Asia/Hebron")
     WHATSAPP_DEFAULT_COUNTRY = os.environ.get("WHATSAPP_DEFAULT_COUNTRY", "PS")
 
+    # Customer Secure Vault — Fernet key for encrypting per-customer secrets at rest.
+    # Comes from the environment ONLY; never stored in the DB, never committed.
+    # If empty, the vault UI works but creating/revealing secrets is blocked.
+    CUSTOMER_VAULT_ENCRYPTION_KEY = os.environ.get("CUSTOMER_VAULT_ENCRYPTION_KEY", "")
+
+    # ── Meta WhatsApp Embedded Signup ──────────────────────────────────────
+    # Self-service onboarding via Meta's Embedded Signup (replaces manual token
+    # paste as the primary path). All values come from the environment ONLY —
+    # never hardcoded, never committed. When the App ID / Config ID are absent
+    # (or the flag is off) the embedded-signup CTA is hidden and the manual
+    # "advanced" path remains available, so nothing breaks before creds exist.
+    META_EMBEDDED_SIGNUP_ENABLED = _env_bool("META_EMBEDDED_SIGNUP_ENABLED", True)
+    META_APP_ID = os.environ.get("META_APP_ID", "")
+    META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+    META_CONFIG_ID = os.environ.get("META_CONFIG_ID", "")  # Embedded Signup configuration id
+    META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", WHATSAPP_GRAPH_API_VERSION)
+    # Optional explicit OAuth redirect override (else derived from url_for).
+    META_OAUTH_REDIRECT_URI = os.environ.get("META_OAUTH_REDIRECT_URI", "")
+
 
 class TestingConfig(Config):
     TESTING = True
@@ -95,6 +114,12 @@ class TestingConfig(Config):
     RATE_LIMITS_ENABLED = False
     AUTO_INIT_DB = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    # Fixed valid 32-byte urlsafe-base64 Fernet key so WhatsApp crypto works
+    # Fixed valid 32-byte urlsafe-base64 Fernet keys so crypto works
     # deterministically under tests. Test-only; never used in deployment.
     WHATSAPP_FERNET_KEY = "t7Hk9w0Qd2cQ3pYy5sFv8nJzZbR1mLxWtUe4aGhKpD0="
+    CUSTOMER_VAULT_ENCRYPTION_KEY = "e1R4rJoOuYz751w-g5Xd1HzPIUPuIWwXdI8bD8Zty_8="
+    # Deterministic Meta Embedded Signup creds for tests (mocked network calls).
+    META_EMBEDDED_SIGNUP_ENABLED = True
+    META_APP_ID = "test-app-id"
+    META_APP_SECRET = "test-app-secret"
+    META_CONFIG_ID = "test-config-id"

@@ -647,6 +647,7 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
     A ``wa_`` prefix avoids clashing with the dashboard's own ``settings`` etc.
     """
     from ..services.whatsapp import settings as wa_settings
+    from ..services.whatsapp import embedded_signup as wa_embed
     from ..models import WhatsAppMessageQueue, utcnow
 
     customer = user.customer
@@ -661,6 +662,8 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
             "wa_usage": {"daily": {}, "monthly": {}},
             "wa_recent_messages": [],
             "wa_current_step": 1,
+            "wa_embedded_available": False,
+            "wa_embedded_config": {},
         }
 
     now = utcnow()
@@ -683,6 +686,9 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
         "wa_usage": usage,
         "wa_recent_messages": recent_messages,
         "wa_current_step": _whatsapp_current_step(account, settings_row, templates),
+        # Embedded Signup (primary, self-service) availability + browser config.
+        "wa_embedded_available": wa_embed.embedded_signup_available(),
+        "wa_embedded_config": wa_embed.public_config(),
     }
 
 
@@ -857,8 +863,59 @@ def customer_portal_whatsapp_post():
         flash("تم إيقاف الخدمة.", "warning")
         return redirect(_whatsapp_pane_url())
 
+    if action == "disconnect":
+        from ..services.whatsapp import embedded_signup as wa_embed
+        wa_embed.disconnect(customer.id)
+        flash("تم فصل حساب واتساب. يمكنك إعادة الربط في أي وقت.", "warning")
+        return redirect(_whatsapp_pane_url())
+
     flash("إجراء غير معروف.", "error")
     return redirect(_whatsapp_pane_url())
+
+
+@bp.post("/portal/whatsapp/embedded/complete")
+def customer_portal_whatsapp_embedded_complete():
+    """Finish Meta Embedded Signup for the SESSION customer (AJAX → JSON).
+
+    The browser popup returns {code, waba_id, phone_number_id}; we complete the
+    server-side exchange + storage and return JSON so the pane updates without a
+    full reload. Scoped to the session customer — any customer_id in the body is
+    ignored. CSRF is enforced by the global before_request (X-CSRFToken header).
+    """
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    customer = user.customer
+    if not _whatsapp_gateway_granted(customer):
+        return jsonify({"ok": False, "error": "locked",
+                        "message": "هذه الخدمة غير مفعلة في خطتك الحالية."}), 403
+
+    from ..services.whatsapp import embedded_signup as wa_embed
+    from ..services.whatsapp import settings as wa_settings
+    if not wa_embed.embedded_signup_available():
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "خدمة الربط التلقائي غير مهيأة بعد. استخدم الإعداد المتقدم."}), 503
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = wa_embed.complete_signup(
+            customer.id,
+            code=(payload.get("code") or "").strip(),
+            waba_id=(payload.get("waba_id") or "").strip(),
+            phone_number_id=(payload.get("phone_number_id") or "").strip(),
+            license_id=getattr(customer, "license_id", None) or None,
+        )
+    except wa_embed.EmbeddedSignupError as exc:
+        try:
+            wa_settings.set_connection_status(
+                customer.id, "error", error_code=exc.code, error_message=exc.message
+            )
+        except Exception:  # noqa: BLE001 — never let status-write mask the real error
+            db.session.rollback()
+        return jsonify({"ok": False, "error": exc.code, "message": exc.message}), 400
+
+    return jsonify({"ok": True, **result, "message": "تم ربط واتساب بنجاح ✅",
+                    "redirect": _whatsapp_pane_url()})
 
 
 def _runtime_setup_for_license(lic: License | None) -> dict:

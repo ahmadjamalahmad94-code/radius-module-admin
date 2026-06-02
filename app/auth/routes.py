@@ -30,6 +30,34 @@ def login_required(view):
     return wrapped
 
 
+def super_admin_required(view):
+    """Gate sensitive actions (e.g. revealing/managing vault secrets) to super admins.
+    Denials are audited and return JSON 403 for XHR or a flash+redirect otherwise."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        admin = current_admin()
+        if not admin or not admin.active:
+            session.clear()
+            flash("سجل الدخول للمتابعة.", "warning")
+            return redirect(url_for("auth.login", next=request.path))
+        if not getattr(admin, "is_super_admin", False):
+            from flask import jsonify
+            audit("vault_permission_denied", "vault", "",
+                  f"رُفض وصول {admin.username} لإجراء يتطلب مسؤولًا عامًا",
+                  {"path": request.path})
+            db.session.commit()
+            wants_json = (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                          or "application/json" in (request.headers.get("Accept") or ""))
+            if wants_json:
+                return jsonify({"ok": False, "error": "forbidden",
+                                "message": "هذا الإجراء يتطلب صلاحية مسؤول عام."}), 403
+            flash("هذا الإجراء يتطلب صلاحية مسؤول عام (super admin).", "error")
+            return redirect(request.referrer or url_for("admin.dashboard"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def audit(action: str, entity_type: str, entity_id: str = "", summary: str = "", metadata=None) -> None:
     admin_id = session.get("admin_id")
     row = AuditLog(

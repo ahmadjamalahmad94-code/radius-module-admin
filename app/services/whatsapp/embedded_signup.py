@@ -1,0 +1,339 @@
+"""Meta WhatsApp Embedded Signup — OAuth code exchange + asset discovery.
+
+Self-service onboarding (replaces manual token paste as the primary path):
+
+  1. The browser runs Meta's Embedded Signup popup (``FB.login`` with the
+     configured ``config_id``). On success Meta returns, via a ``message``
+     event, the selected ``waba_id`` + ``phone_number_id`` and an authorization
+     ``code``.
+  2. The page POSTs ``{code, waba_id, phone_number_id}`` to the backend.
+  3. :func:`complete_signup` exchanges the code for a business access token,
+     reads the granted scopes (``/debug_token``), discovers the phone-number +
+     WABA metadata, subscribes our app to the WABA (so webhooks flow), and
+     persists an *encrypted* connection through the existing
+     ``settings.upsert_account`` — then flips ``connection_status='connected'``.
+
+Design rules (mirrors ``providers.py``):
+
+* The ONLY network access points are :func:`_graph_get` / :func:`_graph_post`.
+  Tests monkeypatch them and never hit Meta.
+* Secrets (app secret, access token, code) are NEVER logged, never placed in
+  exception messages. Surfaced errors are :class:`EmbeddedSignupError` with a
+  stable ``code`` and a non-technical Arabic ``message``.
+* All config comes from the environment via ``current_app.config`` — never
+  hardcoded. When unconfigured, :func:`embedded_signup_available` is ``False``
+  and the UI hides the CTA (manual path still works).
+"""
+from __future__ import annotations
+
+import json
+import socket
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any
+
+from flask import current_app
+
+from ...extensions import db
+from ...models import utcnow
+from . import settings as wa_settings
+from .providers import MetaCloudWhatsAppProvider, WhatsAppProviderError
+
+
+class EmbeddedSignupError(Exception):
+    """A self-service onboarding failure surfaced to the customer portal.
+
+    Carries a stable machine ``code`` and a non-technical Arabic ``message``.
+    Its string form never contains a token, code, or app secret.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+    def __str__(self) -> str:  # pragma: no cover - cosmetic
+        return f"[{self.code}] {self.message}"
+
+
+# ───────────────────────────── config ─────────────────────────────
+
+def _cfg() -> dict[str, str]:
+    c = current_app.config
+    return {
+        "app_id": (c.get("META_APP_ID") or "").strip(),
+        "app_secret": (c.get("META_APP_SECRET") or "").strip(),
+        "config_id": (c.get("META_CONFIG_ID") or "").strip(),
+        "version": (c.get("META_GRAPH_VERSION") or c.get("WHATSAPP_GRAPH_API_VERSION") or "v21.0").strip("/"),
+        "base": (c.get("WHATSAPP_GRAPH_BASE") or "https://graph.facebook.com").rstrip("/"),
+    }
+
+
+def embedded_signup_available() -> bool:
+    """True iff embedded signup is enabled AND the minimum creds are present."""
+    if not current_app.config.get("META_EMBEDDED_SIGNUP_ENABLED", False):
+        return False
+    cfg = _cfg()
+    return bool(cfg["app_id"] and cfg["app_secret"] and cfg["config_id"])
+
+
+def public_config() -> dict[str, str]:
+    """Non-secret values the browser JS SDK needs (never the app secret)."""
+    cfg = _cfg()
+    return {"app_id": cfg["app_id"], "config_id": cfg["config_id"], "graph_version": cfg["version"]}
+
+
+def _timeout() -> int:
+    try:
+        return int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS") or 15)
+    except (TypeError, ValueError):
+        return 15
+
+
+# ───────────────────────────── network (mockable) ─────────────────────────────
+
+def _graph_get(path: str, params: dict[str, Any]) -> dict:
+    """GET a Graph API node. Single mockable network point. Never logs secrets."""
+    cfg = _cfg()
+    url = f"{cfg['base']}/{cfg['version']}/{path.lstrip('/')}?{urllib.parse.urlencode(params)}"
+    return _do(urllib.request.Request(url, method="GET"))
+
+
+def _graph_post(path: str, data: dict[str, Any]) -> dict:
+    """POST to a Graph API node (form-encoded). Single mockable network point."""
+    cfg = _cfg()
+    url = f"{cfg['base']}/{cfg['version']}/{path.lstrip('/')}"
+    body = urllib.parse.urlencode(data).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    return _do(req)
+
+
+def _do(req: urllib.request.Request) -> dict:
+    try:
+        with urllib.request.urlopen(req, timeout=_timeout()) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        try:
+            parsed = json.loads(exc.read().decode("utf-8") or "{}")
+        except Exception:  # pragma: no cover - defensive
+            parsed = {}
+        raise _classify(parsed) from None
+    except (urllib.error.URLError, socket.timeout, TimeoutError, OSError):
+        raise EmbeddedSignupError("meta_unreachable", "تعذّر الاتصال بخدمة Meta. حاول مرة أخرى.") from None
+    try:
+        parsed = json.loads(raw.decode("utf-8") or "{}")
+    except (ValueError, UnicodeDecodeError):
+        parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _classify(body: dict) -> EmbeddedSignupError:
+    """Map a Meta OAuth error body to a safe EmbeddedSignupError. No raw echo."""
+    err = body.get("error") if isinstance(body, dict) else None
+    code = ""
+    if isinstance(err, dict):
+        code = str(err.get("code") or err.get("type") or "")
+    # 190 = invalid/expired token or code; treat as a retryable user re-auth.
+    if code in {"190", "OAuthException"}:
+        return EmbeddedSignupError(
+            "auth_failed",
+            "تعذّر إكمال الربط. حاول إعادة الاتصال أو تحقق من صلاحيات Meta.",
+        )
+    return EmbeddedSignupError("meta_error", "تعذّر إكمال الربط مع Meta. حاول مرة أخرى لاحقًا.")
+
+
+# ───────────────────────────── flow steps ─────────────────────────────
+
+def exchange_code(code: str, redirect_uri: str = "") -> dict:
+    """Exchange the Embedded Signup authorization ``code`` for an access token.
+
+    Returns ``{"access_token": str, "expires_in": int|None}``. Raises
+    :class:`EmbeddedSignupError` on any failure.
+    """
+    code = (code or "").strip()
+    if not code:
+        raise EmbeddedSignupError("missing_code", "رمز الربط مفقود. أعد المحاولة.")
+    cfg = _cfg()
+    if not (cfg["app_id"] and cfg["app_secret"]):
+        raise EmbeddedSignupError("not_configured", "خدمة الربط غير مُهيأة بعد. تواصل مع الدعم.")
+    params = {
+        "client_id": cfg["app_id"],
+        "client_secret": cfg["app_secret"],
+        "code": code,
+    }
+    if redirect_uri:
+        params["redirect_uri"] = redirect_uri
+    resp = _graph_get("oauth/access_token", params)
+    token = (resp.get("access_token") or "").strip()
+    if not token:
+        raise EmbeddedSignupError("no_token", "لم تُرجع Meta رمز وصول صالحًا. أعد المحاولة.")
+    expires_in = resp.get("expires_in")
+    return {"access_token": token, "expires_in": int(expires_in) if expires_in else None}
+
+
+def granted_scopes(token: str) -> list[str]:
+    """Read granted scopes for ``token`` via /debug_token (best-effort)."""
+    cfg = _cfg()
+    app_token = f"{cfg['app_id']}|{cfg['app_secret']}"
+    try:
+        resp = _graph_get("debug_token", {"input_token": token, "access_token": app_token})
+    except EmbeddedSignupError:
+        return []
+    data = resp.get("data") if isinstance(resp, dict) else None
+    scopes = data.get("scopes") if isinstance(data, dict) else None
+    return [str(s) for s in scopes] if isinstance(scopes, list) else []
+
+
+def _phone_metadata(token: str, phone_number_id: str) -> dict:
+    resp = _graph_get(
+        phone_number_id,
+        {"fields": "display_phone_number,verified_name,quality_rating,messaging_limit_tier",
+         "access_token": token},
+    )
+    return {
+        "display_phone_number": resp.get("display_phone_number") or "",
+        "business_display_name": resp.get("verified_name") or "",
+        "quality_rating": resp.get("quality_rating") or "",
+        "messaging_limit_tier": resp.get("messaging_limit_tier") or "",
+    }
+
+
+def _waba_metadata(token: str, waba_id: str) -> dict:
+    try:
+        resp = _graph_get(waba_id, {"fields": "name,owner_business_info", "access_token": token})
+    except EmbeddedSignupError:
+        return {"name": "", "business_id": ""}
+    owner = resp.get("owner_business_info") if isinstance(resp, dict) else None
+    business_id = owner.get("id") if isinstance(owner, dict) else ""
+    return {"name": resp.get("name") or "", "business_id": business_id or ""}
+
+
+def subscribe_app_to_waba(token: str, waba_id: str) -> bool:
+    """Subscribe our app to the WABA so delivery webhooks flow. Best-effort."""
+    try:
+        resp = _graph_post(f"{waba_id}/subscribed_apps", {"access_token": token})
+        return bool(resp.get("success", True))
+    except EmbeddedSignupError:
+        return False
+
+
+def complete_signup(
+    customer_id: int,
+    *,
+    code: str,
+    waba_id: str,
+    phone_number_id: str,
+    redirect_uri: str = "",
+    license_id: int | None = None,
+) -> dict:
+    """Run the full server-side embedded-signup completion for one customer.
+
+    Returns a status dict ``{ok, status, display_phone_number, business_name}``.
+    Raises :class:`EmbeddedSignupError` on failure (the route turns it into a
+    friendly portal message + audited error state).
+    """
+    waba_id = (waba_id or "").strip()
+    phone_number_id = (phone_number_id or "").strip()
+    if not waba_id or not phone_number_id:
+        raise EmbeddedSignupError(
+            "missing_assets",
+            "لم يكتمل اختيار حساب واتساب أو الرقم. أعد المحاولة من زر الربط.",
+        )
+
+    token = exchange_code(code, redirect_uri=redirect_uri)["access_token"]
+    scopes = granted_scopes(token)
+    phone = _phone_metadata(token, phone_number_id)
+    waba = _waba_metadata(token, waba_id)
+    subscribe_app_to_waba(token, waba_id)
+
+    account = wa_settings.upsert_account(
+        customer_id,
+        license_id=license_id,
+        meta_business_id=waba.get("business_id", ""),
+        whatsapp_business_account_id=waba_id,
+        phone_number_id=phone_number_id,
+        display_phone_number=phone.get("display_phone_number", ""),
+        business_display_name=phone.get("business_display_name") or waba.get("name", ""),
+        access_token=token,
+    )
+    # Embedded-signup metadata + connected state (fields upsert_account doesn't own).
+    account.onboarding_method = "embedded"
+    account.scopes = " ".join(scopes) if scopes else None
+    account.quality_rating = phone.get("quality_rating") or account.quality_rating
+    account.messaging_limit_tier = phone.get("messaging_limit_tier") or account.messaging_limit_tier
+    account.connection_status = "connected"
+    account.connected_at = utcnow()
+    account.last_sync_at = utcnow()
+    account.last_error_code = None
+    account.last_error_message = None
+    db.session.commit()
+
+    wa_settings._audit(
+        "whatsapp_embedded_connected",
+        "whatsapp_account",
+        account.id,
+        "WhatsApp connected via Embedded Signup",
+        {"customer_id": int(customer_id), "waba_id": waba_id,
+         "phone_number_id": phone_number_id, "onboarding_method": "embedded"},
+    )
+    db.session.commit()
+
+    return {
+        "ok": True,
+        "status": "connected",
+        "display_phone_number": phone.get("display_phone_number", ""),
+        "business_name": account.business_display_name or "",
+    }
+
+
+def validate_connection(customer_id: int) -> dict:
+    """Re-probe Meta for the stored account and sync health. Never raises.
+
+    Returns ``{ok, status, ...}``. Used by the portal status refresh + after
+    connect to confirm the number is live.
+    """
+    account = wa_settings.get_account(customer_id)
+    if account is None or not account.access_token_encrypted:
+        return {"ok": False, "status": "disconnected"}
+    provider = MetaCloudWhatsAppProvider()
+    try:
+        info = provider.validate_credentials(account)
+    except WhatsAppProviderError as exc:
+        wa_settings.set_connection_status(
+            customer_id, "error", error_code=exc.code, error_message=exc.message
+        )
+        return {"ok": False, "status": "error", "code": exc.code}
+    account.display_phone_number = info.get("display_phone_number") or account.display_phone_number
+    account.business_display_name = info.get("business_display_name") or account.business_display_name
+    account.quality_rating = info.get("quality_rating") or account.quality_rating
+    account.messaging_limit_tier = info.get("messaging_limit_tier") or account.messaging_limit_tier
+    account.connection_status = "connected"
+    account.last_sync_at = utcnow()
+    account.last_error_code = None
+    account.last_error_message = None
+    db.session.commit()
+    return {"ok": True, "status": "connected", **info}
+
+
+def disconnect(customer_id: int) -> bool:
+    """Clear the stored connection (token + IDs) and mark disconnected. Audited."""
+    account = wa_settings.get_account(customer_id)
+    if account is None:
+        return False
+    account.access_token_encrypted = None
+    account.webhook_secret_encrypted = None
+    account.connection_status = "disconnected"
+    account.disconnected_at = utcnow()
+    account.last_sync_at = utcnow()
+    db.session.commit()
+    wa_settings._audit(
+        "whatsapp_embedded_disconnected",
+        "whatsapp_account",
+        account.id,
+        "WhatsApp disconnected",
+        {"customer_id": int(customer_id)},
+    )
+    db.session.commit()
+    return True

@@ -41,12 +41,14 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
+    from .admin.vault_routes import bp as admin_vault_bp
     from .admin.landing_routes import bp as admin_landing_bp
     from .api.routes import bp as api_bp
     from .public.routes import bp as public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_vault_bp)
     app.register_blueprint(admin_landing_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(public_bp)
@@ -261,6 +263,14 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
             "currency": "VARCHAR(12) NOT NULL DEFAULT 'USD'",
         })
+    # Customer Secure Vault: elevated-admin flag on existing admins tables.
+    # The 3 vault tables themselves are created fresh by db.create_all().
+    if "admins" in tables:
+        _add_columns_if_missing("admins", {
+            "is_super_admin": "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {
@@ -312,6 +322,11 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "messaging_limit_tier": "VARCHAR(40)",
             "last_health_check_at": datetime_type,
             "last_error_code": "VARCHAR(60)",
+            "last_error_message": "TEXT",
+            # Meta Embedded Signup (P1): onboarding path + granted scopes + sync time.
+            "onboarding_method": "VARCHAR(20)",
+            "scopes": "TEXT",
+            "last_sync_at": datetime_type,
         })
 
 
@@ -328,6 +343,20 @@ def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
 def seed_defaults(app: Flask) -> None:
     bootstrap_admin_from_config(app, fail_if_exists=False)
     seed_service_catalog()
+
+    # Customer Secure Vault: the primary/bootstrap admin is elevated to super_admin
+    # so the owner can manage & reveal secrets out of the box. Other admins stay
+    # non-super (can view metadata/records but not reveal) until promoted.
+    try:
+        from .models import Admin as _Admin
+        _primary = _Admin.query.filter_by(username=app.config.get("ADMIN_USERNAME", "admin")).first()
+        if _primary is None:
+            _primary = _Admin.query.order_by(_Admin.id.asc()).first()
+        if _primary is not None and not _primary.is_super_admin:
+            _primary.is_super_admin = True
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     sample_plans = [
         ("Starter", "starter", Decimal("29.00"), 300, 2, 1, 1, {
@@ -481,6 +510,14 @@ def _install_csrf(app: Flask) -> None:
     app.jinja_env.globals["csrf_token"] = csrf_token
     app.jinja_env.globals["csrf_input"] = csrf_input
 
+    @app.context_processor
+    def _inject_admin_flags():
+        # Exposes `is_super_admin` to all templates so elevated-only UI (e.g. the
+        # Customer Secure Vault entry) can be hidden from non-super admins.
+        from .auth.routes import current_admin
+        admin = current_admin()
+        return {"is_super_admin": bool(admin and getattr(admin, "is_super_admin", False))}
+
     @app.before_request
     def check_csrf():
         if not app.config.get("WTF_CSRF_ENABLED", True):
@@ -492,6 +529,17 @@ def _install_csrf(app: Flask) -> None:
         sent = request.form.get("_csrf_token") or request.headers.get("X-CSRFToken")
         expected = session.get("_csrf_token")
         if not expected or sent != expected:
+            # Safe diagnostic: presence flags + lengths only, never token values.
+            app.logger.error(
+                "CSRF fail path=%s form_tok=%s hdr_tok=%s session_tok=%s sent_len=%s exp_len=%s match=%s",
+                request.path,
+                bool(request.form.get("_csrf_token")),
+                bool(request.headers.get("X-CSRFToken")),
+                bool(expected),
+                len(sent or ""),
+                len(expected or ""),
+                (sent == expected),
+            )
             abort(400, "CSRF token is invalid")
         return None
 
