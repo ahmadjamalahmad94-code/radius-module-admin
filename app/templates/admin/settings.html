@@ -104,4 +104,146 @@
     </div>
   </form>
 {% endcall %}
+
+{% if wac_enabled and wac_state %}
+{# ════════════ واتساب Cloud API (إدارة بيانات اعتماد Meta) ════════════ #}
+<style>
+  .wac-src { display:inline-block; margin-inline-start:8px; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; vertical-align:middle; }
+  .wac-src--panel { background:#dcfce7; color:#166534; }
+  .wac-src--env   { background:#e0edff; color:#1e40af; }
+  .wac-src--unset { background:#eef0f6; color:#64748b; }
+  .wac-reveal-box { margin-top:6px; display:flex; gap:8px; align-items:center; }
+  .wac-reveal-box code { background:#0f172a; color:#e2e8f0; padding:4px 9px; border-radius:7px; font-size:12px; word-break:break-all; flex:1; }
+  .wac-actions-row { display:flex; flex-wrap:wrap; gap:10px; }
+</style>
+{% macro wac_src(field) %}
+  {% if field.source == 'panel' %}<span class="wac-src wac-src--panel">محفوظ في إعدادات اللوحة</span>
+  {% elif field.source == 'env' %}<span class="wac-src wac-src--env">مُحمّل من البيئة</span>
+  {% else %}<span class="wac-src wac-src--unset">غير مضبوط</span>{% endif %}
+{% endmacro %}
+
+{% call hub.section("واتساب Cloud API", icon="whatsapp") %}
+  <div id="whatsapp-cloud"></div>
+  <p class="hub-field-hint" style="margin:0 0 14px">
+    خزّن بيانات Meta WhatsApp Cloud API هنا (مشفّرة) بدل تعديل متغيّرات البيئة. القيم المحفوظة تتجاوز قيم البيئة.
+    {% if wac_state.configured %}<b style="color:#166534">— مكتمل وجاهز للاختبار.</b>{% endif %}
+  </p>
+
+  {# ── credentials form ── #}
+  <form method="post" action="{{ url_for('admin.whatsapp_cloud_save') }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      {% set f = wac_state.fields.access_token %}
+      <div class="hub-field full">
+        <label>رمز الوصول {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="access_token" type="password" autocomplete="new-password"
+               value="" placeholder="{{ 'محفوظ — اتركه فارغًا للإبقاء عليه' if f.present else 'الصق Access Token' }}">
+        <div class="hub-field-hint">
+          {% if f.present %}محفوظ مشفّرًا: <span class="mono">{{ f.masked }}</span> — لا يُعرض. اتركه فارغًا للإبقاء أو أدخل قيمة جديدة لاستبداله.
+          {% else %}يُخزَّن مشفّرًا ولا يُعرض أبدًا بعد الحفظ.{% endif %}
+        </div>
+        {% if is_super_admin and f.present %}
+        <div class="wac-reveal-box">
+          <button type="button" class="hub-btn hub-btn--ghost" data-wac-reveal="access_token"><i class="fa-solid fa-eye"></i> إظهار مؤقت</button>
+          <code data-wac-secret="access_token" hidden></code>
+        </div>
+        {% endif %}
+      </div>
+
+      {% set f = wac_state.fields.phone_number_id %}
+      <div class="hub-field">
+        <label>Phone Number ID {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="phone_number_id" value="{{ f.value }}" placeholder="رقمي فقط">
+      </div>
+
+      {% set f = wac_state.fields.whatsapp_business_account_id %}
+      <div class="hub-field">
+        <label>WhatsApp Business Account ID {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="whatsapp_business_account_id" value="{{ f.value }}" placeholder="رقمي فقط">
+      </div>
+
+      {% set f = wac_state.fields.meta_app_id %}
+      <div class="hub-field">
+        <label>Meta App ID <span class="hub-field-hint" style="display:inline">(اختياري)</span> {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="meta_app_id" value="{{ f.value }}" placeholder="رقمي فقط">
+      </div>
+
+      {% set f = wac_state.fields.meta_config_id %}
+      <div class="hub-field">
+        <label>Embedded Signup Config ID <span class="hub-field-hint" style="display:inline">(اختياري)</span> {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="meta_config_id" value="{{ f.value }}" placeholder="رقمي فقط">
+      </div>
+
+      {% set f = wac_state.fields.meta_app_secret %}
+      <div class="hub-field full">
+        <label>Meta App Secret <span class="hub-field-hint" style="display:inline">(اختياري)</span> {{ wac_src(f) }}</label>
+        <input class="hub-input mono ltr" name="meta_app_secret" type="password" autocomplete="new-password"
+               value="" placeholder="{{ 'محفوظ — اتركه فارغًا للإبقاء عليه' if f.present else 'الصق App Secret' }}">
+        {% if f.present %}<div class="hub-field-hint">محفوظ مشفّرًا: <span class="mono">{{ f.masked }}</span></div>{% endif %}
+        {% if is_super_admin and f.present %}
+        <div class="wac-reveal-box">
+          <button type="button" class="hub-btn hub-btn--ghost" data-wac-reveal="meta_app_secret"><i class="fa-solid fa-eye"></i> إظهار مؤقت</button>
+          <code data-wac-secret="meta_app_secret" hidden></code>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات</button>
+    </div>
+  </form>
+
+  <div style="height:14px"></div>
+
+  {# ── test actions ── #}
+  {% call hub.fieldset("الاختبار", icon="vial") %}
+    <div class="wac-actions-row" style="margin-bottom:12px">
+      <form method="post" action="{{ url_for('admin.whatsapp_cloud_test') }}">
+        {{ csrf_input() }}
+        <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-plug-circle-check"></i> اختبار الاتصال</button>
+      </form>
+    </div>
+    <form method="post" action="{{ url_for('admin.whatsapp_cloud_test_message') }}">
+      {{ csrf_input() }}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>رقم واتساب المستلم</label>
+          <input class="hub-input mono ltr" name="recipient" placeholder="9705xxxxxxxx">
+        </div>
+      </div>
+      <div class="hub-form-foot" style="padding-top:12px">
+        <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-brands fa-whatsapp"></i> إرسال رسالة اختبار</button>
+      </div>
+    </form>
+  {% endcall %}
+{% endcall %}
+
+<script>
+(function () {
+  function csrf() { var n = document.querySelector('input[name="_csrf_token"]'); return n ? n.value : ""; }
+  document.querySelectorAll('[data-wac-reveal]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var field = btn.getAttribute('data-wac-reveal');
+      var out = document.querySelector('[data-wac-secret="' + field + '"]');
+      if (!out) return;
+      btn.disabled = true;
+      var body = new URLSearchParams(); body.append('field', field); body.append('_csrf_token', csrf());
+      fetch("{{ url_for('admin.whatsapp_cloud_reveal') }}", {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
+                   'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+        .then(function (j) {
+          btn.disabled = false;
+          if (j && j.ok) {
+            out.textContent = j.value; out.hidden = false;
+            setTimeout(function () { out.textContent = ''; out.hidden = true; }, 20000); // auto-hide
+          } else { out.textContent = (j && j.message) || 'تعذّر الإظهار.'; out.hidden = false; }
+        }).catch(function () { btn.disabled = false; out.textContent = 'تعذّر الاتصال.'; out.hidden = false; });
+    });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

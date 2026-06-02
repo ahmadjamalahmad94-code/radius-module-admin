@@ -107,6 +107,16 @@ class Config:
     # Optional explicit OAuth redirect override (else derived from url_for).
     META_OAUTH_REDIRECT_URI = os.environ.get("META_OAUTH_REDIRECT_URI", "")
 
+    # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
+    # Lets an admin store/manage the house Meta Cloud API credentials in the
+    # panel settings (encrypted) instead of editing env. When disabled, the
+    # section is hidden. Env vars below act as a FALLBACK when no DB value is
+    # saved (DB overrides env only when explicitly saved).
+    WHATSAPP_CLOUD_SETTINGS_ENABLED = _env_bool("WHATSAPP_CLOUD_SETTINGS_ENABLED", True)
+    WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+    WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+
 
 class TestingConfig(Config):
     TESTING = True

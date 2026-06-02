@@ -1,0 +1,308 @@
+"""WhatsApp Cloud API settings panel — service + routes + UI + audit tests.
+
+No Meta network: MetaCloudWhatsAppProvider._request (the single network point)
+is monkeypatched. Uses conftest's app (seeded super-admin 'admin') + client.
+"""
+from __future__ import annotations
+
+import pytest
+from flask import url_for
+
+from app.extensions import db
+from app.models import Admin, AuditLog, Setting
+from app.services.whatsapp import cloud_settings as wac
+from app.services.whatsapp.crypto import decrypt_secret
+from app.services.whatsapp.providers import MetaCloudWhatsAppProvider, WhatsAppProviderError
+
+PLAINTEXT_TOKEN = "EAAB-cloud-house-token-abcdefghijklmnop-1234567890"
+
+
+# ───────────────────────── helpers ─────────────────────────
+
+def _urls(app):
+    with app.test_request_context():
+        return {
+            "page": url_for("admin.settings_page"),
+            "save": url_for("admin.whatsapp_cloud_save"),
+            "test": url_for("admin.whatsapp_cloud_test"),
+            "msg": url_for("admin.whatsapp_cloud_test_message"),
+            "reveal": url_for("admin.whatsapp_cloud_reveal"),
+        }
+
+
+def _super_id(app):
+    with app.app_context():
+        return Admin.query.filter_by(username="admin").first().id
+
+
+def _nonsuper_id(app):
+    with app.app_context():
+        a = Admin(username="staff", full_name="Staff", active=True, is_super_admin=False)
+        a.set_password("staffpass123")
+        db.session.add(a)
+        db.session.commit()
+        return a.id
+
+
+def _login(client, admin_id):
+    with client.session_transaction() as s:
+        s["admin_id"] = admin_id
+
+
+def _csrf(client, page_url):
+    client.get(page_url)  # render sets session _csrf_token
+    with client.session_transaction() as s:
+        return s.get("_csrf_token", "")
+
+
+def _valid_form(token=PLAINTEXT_TOKEN):
+    return {
+        "access_token": token,
+        "phone_number_id": "123456789012345",
+        "whatsapp_business_account_id": "987654321098765",
+        "meta_app_id": "111222333",
+        "meta_config_id": "444555666",
+        "meta_app_secret": "app-secret-value",
+    }
+
+
+def _save(client, urls, form):
+    return client.post(urls["save"], data={**form, "_csrf_token": _csrf(client, urls["page"])},
+                       follow_redirects=False)
+
+
+# Canned provider network: success unless overridden.
+def _ok_request(self, method, path, token, *, json_body=None, params=None):
+    if method == "POST" and path.endswith("/messages"):
+        return 200, {"messages": [{"id": "wamid.TESTMSG"}]}
+    if method == "GET":
+        if (params or {}).get("fields", "").startswith("display_phone_number"):
+            return 200, {"display_phone_number": "+970 599 000111", "verified_name": "House ISP",
+                         "quality_rating": "GREEN", "messaging_limit_tier": "TIER_1K"}
+        return 200, {"id": path}  # waba reachability
+    return 200, {}
+
+
+def _fail_auth(self, method, path, token, *, json_body=None, params=None):
+    raise WhatsAppProviderError("meta_auth_failed", "فشل التحقق من بيانات الاعتماد لدى Meta.",
+                                retryable=False, http_status=401)
+
+
+# ───────────────────────── 1. render + feature flag ─────────────────────────
+
+def test_section_renders_when_enabled(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    body = client.get(urls["page"]).get_data(as_text=True)
+    assert "واتساب Cloud API" in body
+    assert "رمز الوصول" in body
+    assert 'action="' + urls["test"] + '"' in body or urls["test"] in body
+    assert "إرسال رسالة اختبار" in body
+
+
+def test_section_hidden_when_flag_off(client, app, monkeypatch):
+    urls = _urls(app)
+    monkeypatch.setitem(app.config, "WHATSAPP_CLOUD_SETTINGS_ENABLED", False)
+    _login(client, _super_id(app))
+    body = client.get(urls["page"]).get_data(as_text=True)
+    assert "واتساب Cloud API" not in body
+
+
+# ───────────────────────── 2. save + validation ─────────────────────────
+
+def test_save_persists_encrypted_and_redirects(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    r = _save(client, urls, _valid_form())
+    assert r.status_code in (301, 302)
+    with app.app_context():
+        row = db.session.get(Setting, "whatsapp_cloud.access_token")
+        assert row and row.value and row.value != PLAINTEXT_TOKEN          # encrypted
+        assert decrypt_secret(row.value) == PLAINTEXT_TOKEN                 # recoverable
+        assert db.session.get(Setting, "whatsapp_cloud.phone_number_id").value == "123456789012345"
+
+
+def test_save_missing_required_is_rejected(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    form = _valid_form()
+    form["phone_number_id"] = ""  # required
+    r = client.post(urls["save"], data={**form, "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "مطلوب" in body
+    with app.app_context():
+        assert db.session.get(Setting, "whatsapp_cloud.access_token") is None  # nothing saved
+
+
+def test_save_non_numeric_id_rejected(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    form = _valid_form()
+    form["phone_number_id"] = "abc123"
+    r = client.post(urls["save"], data={**form, "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "أرقامًا فقط" in r.get_data(as_text=True)
+
+
+def test_blank_secret_keeps_existing(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    # Re-save with blank token (write-only keep) + changed phone.
+    form = _valid_form(token="")
+    form["phone_number_id"] = "555555555555555"
+    _save(client, urls, form)
+    with app.app_context():
+        assert decrypt_secret(db.session.get(Setting, "whatsapp_cloud.access_token").value) == PLAINTEXT_TOKEN
+        assert db.session.get(Setting, "whatsapp_cloud.phone_number_id").value == "555555555555555"
+
+
+# ───────────────────────── 3. masked display ─────────────────────────
+
+def test_masked_display_never_shows_token(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    body = client.get(urls["page"]).get_data(as_text=True)
+    assert PLAINTEXT_TOKEN not in body
+    assert "محفوظ في إعدادات اللوحة" in body  # source badge = panel
+    # the write-only token field carries no value
+    assert 'name="access_token" type="password" autocomplete="new-password"\n               value=""' in body or 'name="access_token"' in body
+
+
+# ───────────────────────── 4. env fallback + source ─────────────────────────
+
+def test_env_fallback_source(client, app, monkeypatch):
+    urls = _urls(app)
+    monkeypatch.setitem(app.config, "WHATSAPP_PHONE_NUMBER_ID", "700700700700700")
+    _login(client, _super_id(app))
+    with app.app_context():
+        value, source = wac._resolve("phone_number_id")
+        assert value == "700700700700700" and source == "env"
+    body = client.get(urls["page"]).get_data(as_text=True)
+    assert "مُحمّل من البيئة" in body
+
+
+def test_saved_db_overrides_env(client, app, monkeypatch):
+    urls = _urls(app)
+    monkeypatch.setitem(app.config, "WHATSAPP_PHONE_NUMBER_ID", "700700700700700")
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())  # saves phone 123456789012345
+    with app.app_context():
+        value, source = wac._resolve("phone_number_id")
+        assert value == "123456789012345" and source == "panel"
+
+
+# ───────────────────────── 5. test connection (mocked) ─────────────────────────
+
+def test_connection_success(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _ok_request)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    assert "نجح الاتصال" in r.get_data(as_text=True)
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_test_success").first() is not None
+
+
+def test_connection_failure(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _fail_auth)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    assert "فشل الاتصال" in r.get_data(as_text=True)
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_test_failed").first() is not None
+
+
+def test_connection_without_creds_errors(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    assert "أكمل" in r.get_data(as_text=True)
+
+
+# ───────────────────────── 6. send test message (mocked) ─────────────────────────
+
+def test_send_message_success(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _ok_request)
+    r = client.post(urls["msg"], data={"recipient": "970599000111", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "تم إرسال رسالة الاختبار" in r.get_data(as_text=True)
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_test_message_sent").first() is not None
+
+
+def test_send_message_failure(client, app, monkeypatch):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", _fail_auth)
+    r = client.post(urls["msg"], data={"recipient": "970599000111", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "تعذّر إرسال رسالة الاختبار" in r.get_data(as_text=True)
+
+
+def test_send_message_requires_recipient(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    r = client.post(urls["msg"], data={"recipient": "", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "أدخل رقم" in r.get_data(as_text=True)
+
+
+# ───────────────────────── 7. reveal: permissions + audit ─────────────────────────
+
+def test_reveal_super_admin_ok_and_audited(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    r = client.post(urls["reveal"], data={"field": "access_token", "_csrf_token": _csrf(client, urls["page"])},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 200
+    assert r.get_json()["value"] == PLAINTEXT_TOKEN
+    with app.app_context():
+        ev = AuditLog.query.filter_by(action="whatsapp_cloud_secret_revealed").first()
+        assert ev is not None
+        # audit must record the field, NEVER the secret value
+        assert PLAINTEXT_TOKEN not in (ev.summary or "")
+        assert PLAINTEXT_TOKEN not in (str(ev.meta) if hasattr(ev, "meta") else "")
+
+
+def test_reveal_denied_for_non_super(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())   # save as super
+    _login(client, _nonsuper_id(app))     # then act as non-super
+    r = client.post(urls["reveal"], data={"field": "access_token", "_csrf_token": _csrf(client, urls["page"])},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 403
+    assert PLAINTEXT_TOKEN not in r.get_data(as_text=True)
+
+
+# ───────────────────────── 8. unauthenticated blocked ─────────────────────────
+
+def test_unauthenticated_save_redirects_to_login(client, app):
+    urls = _urls(app)
+    r = client.post(urls["save"], data=_valid_form(), follow_redirects=False)
+    assert r.status_code in (301, 302)
+    assert "/login" in r.headers.get("Location", "")
+    with app.app_context():
+        assert db.session.get(Setting, "whatsapp_cloud.access_token") is None
+
+
+# ───────────────────────── 9. audit on save ─────────────────────────
+
+def test_save_is_audited(client, app):
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="whatsapp_cloud_saved").first() is not None

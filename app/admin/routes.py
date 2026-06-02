@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func
 
-from ..auth.routes import audit, current_admin, login_required
+from ..auth.routes import audit, current_admin, login_required, super_admin_required
 from ..extensions import db
 from ..models import (
     AuditLog,
@@ -1584,8 +1584,14 @@ def audit_logs():
 @bp.get("/settings")
 @login_required
 def settings_page():
+    from ..services.whatsapp import cloud_settings as wac
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
-    return render_template("admin/settings.html", settings=settings)
+    return render_template(
+        "admin/settings.html",
+        settings=settings,
+        wac_enabled=wac.enabled(),
+        wac_state=wac.get_state() if wac.enabled() else None,
+    )
 
 
 @bp.post("/settings")
@@ -1609,6 +1615,99 @@ def settings_update():
     db.session.commit()
     flash("تم حفظ الإعدادات.", "success")
     return redirect(url_for("admin.settings_page"))
+
+
+# ── WhatsApp Cloud API settings (admin-managed house credentials) ──────────
+def _wac_redirect():
+    return redirect(url_for("admin.settings_page") + "#whatsapp-cloud")
+
+
+def _wac_guard():
+    """Return None if enabled; else a redirect (feature flag off)."""
+    from ..services.whatsapp import cloud_settings as wac
+    if not wac.enabled():
+        flash("قسم واتساب Cloud API غير مُفعّل.", "error")
+        return _wac_redirect()
+    return None
+
+
+@bp.post("/settings/whatsapp-cloud")
+@login_required
+def whatsapp_cloud_save():
+    from ..services.whatsapp import cloud_settings as wac
+    blocked = _wac_guard()
+    if blocked:
+        return blocked
+    try:
+        wac.validate_and_save(request.form, actor_audit=audit)
+    except wac.CloudSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _wac_redirect()
+    db.session.commit()
+    flash("تم حفظ إعدادات واتساب Cloud API بنجاح.", "success")
+    return _wac_redirect()
+
+
+@bp.post("/settings/whatsapp-cloud/test")
+@login_required
+def whatsapp_cloud_test():
+    from ..services.whatsapp import cloud_settings as wac
+    blocked = _wac_guard()
+    if blocked:
+        return blocked
+    try:
+        result = wac.test_connection(actor_audit=audit)
+    except wac.CloudSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _wac_redirect()
+    db.session.commit()
+    if result.get("ok"):
+        phone = result.get("display_phone_number") or "—"
+        waba = "ومتاح" if result.get("waba_reachable") else "لكن تعذّر فحص الحساب"
+        flash(f"نجح الاتصال ✅ — الرقم {phone} {waba}.", "success")
+    else:
+        flash("فشل الاتصال: " + (result.get("message") or "تحقّق من البيانات."), "error")
+    return _wac_redirect()
+
+
+@bp.post("/settings/whatsapp-cloud/test-message")
+@login_required
+def whatsapp_cloud_test_message():
+    from ..services.whatsapp import cloud_settings as wac
+    blocked = _wac_guard()
+    if blocked:
+        return blocked
+    try:
+        result = wac.send_test_message(request.form.get("recipient") or "", actor_audit=audit)
+    except wac.CloudSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _wac_redirect()
+    db.session.commit()
+    if result.get("ok"):
+        flash("تم إرسال رسالة الاختبار ✅ — تحقّق من واتساب المستلم.", "success")
+    else:
+        flash("تعذّر إرسال رسالة الاختبار: " + (result.get("message") or "حاول مرة أخرى."), "error")
+    return _wac_redirect()
+
+
+@bp.post("/settings/whatsapp-cloud/reveal")
+@super_admin_required
+def whatsapp_cloud_reveal():
+    """Temporarily reveal a stored secret (super-admin only, audited, JSON)."""
+    from ..services.whatsapp import cloud_settings as wac
+    if not wac.enabled():
+        return jsonify({"ok": False, "message": "القسم غير مُفعّل."}), 403
+    field = (request.form.get("field") or "").strip()
+    try:
+        value = wac.reveal(field, actor_audit=audit)
+    except wac.CloudSettingsError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "value": value})
 
 
 def _payment_error(message: str, status_code: int = 400):
