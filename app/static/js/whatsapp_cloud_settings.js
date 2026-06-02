@@ -69,6 +69,19 @@
   // ── Discover the WABA's templates → clickable chips ──
   var discBtn = document.querySelector("[data-wac-templates]");
   var discOut = document.querySelector("[data-wac-templates-out]");
+  var warnEl = document.querySelector("[data-wac-tpl-warn]");
+
+  // Friendly warning when the selected template likely needs variables/media.
+  function setWarn(t) {
+    if (!warnEl) return;
+    if (t && (t.needs_media || t.body_params)) {
+      warnEl.textContent = "قد يحتاج هذا القالب إلى متغيرات أو وسائط. جرّب hello_world للاختبار السريع.";
+      warnEl.hidden = false;
+    } else {
+      warnEl.textContent = "";
+      warnEl.hidden = true;
+    }
+  }
   if (discBtn && discOut && TEMPLATES_URL) {
     discBtn.addEventListener("click", function () {
       discBtn.disabled = true;
@@ -127,11 +140,21 @@
           chip.appendChild(req);
           if (t.needs_media) chip.classList.add("is-dim");
 
+          // Recommended (preferred name or simple no-variable approved) badge.
+          if (t.recommended || t.simple) {
+            chip.classList.add("is-rec");
+            var rec = document.createElement("span");
+            rec.className = "rec";
+            rec.textContent = "موصى به";
+            chip.appendChild(rec);
+          }
+
           chip.addEventListener("click", function () {
             var n = document.getElementById("wac-tpl-name");
             var l = document.getElementById("wac-tpl-lang");
             if (n) n.value = t.name;
             if (l && t.language) l.value = t.language;
+            setWarn(t);
           });
           discOut.appendChild(chip);
         });
