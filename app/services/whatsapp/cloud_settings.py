@@ -188,6 +188,22 @@ class _AccountShim:
         self.phone_number_id = phone_number_id or ""
 
 
+def _meta_suffix(exc) -> str:
+    """Expose the RAW Meta error (code + message) to the admin for diagnosis.
+
+    Safe here because these are the admin's OWN house credentials. Returns a
+    parenthesised Arabic suffix, or "" when no Meta detail is present.
+    """
+    code = getattr(exc, "meta_code", None)
+    detail = (getattr(exc, "meta_detail", "") or "").strip()
+    parts = []
+    if code is not None:
+        parts.append(f"رمز Meta {code}")
+    if detail:
+        parts.append(detail)
+    return (" (" + " — ".join(parts) + ")") if parts else ""
+
+
 def _diagnose_token() -> str:
     """Best-effort Arabic diagnosis of WHY Meta rejects the token, via
     /debug_token. Needs Meta App ID + App Secret; returns "" when unavailable or
@@ -234,15 +250,16 @@ def test_connection(*, actor_audit) -> dict:
     try:
         _s, basic = provider._request("GET", phone, token, params={"fields": "display_phone_number"})
     except WhatsAppProviderError as exc:
-        hint = exc.message
+        hint = exc.message + _meta_suffix(exc)
         if exc.code == "meta_auth_failed":
-            hint = (exc.message + " قد يكون رمز الوصول منتهيًا (رموز Meta المؤقتة تنتهي خلال 24 ساعة) — "
-                    "استخدم رمزًا دائمًا (System User)، وتأكّد من صحة Phone Number ID.")
+            hint += (" قد يكون رمز الوصول منتهيًا (رموز Meta المؤقتة تنتهي خلال 24 ساعة) — "
+                     "استخدم رمزًا دائمًا (System User)، وتأكّد من صحة Phone Number ID.")
             diag = _diagnose_token()
             if diag:
-                hint = hint + " " + diag
+                hint += " " + diag
         actor_audit("whatsapp_cloud_test_failed", "whatsapp_cloud", "global",
-                    "WhatsApp Cloud test connection failed", {"code": exc.code})
+                    "WhatsApp Cloud test connection failed",
+                    {"code": exc.code, "meta_code": getattr(exc, "meta_code", None)})
         return {"ok": False, "code": exc.code, "message": hint}
 
     display_phone = basic.get("display_phone_number") or ""
@@ -331,10 +348,10 @@ def send_test_message(recipient: str, *, template_name: str = "", language: str 
                     {"code": exc.code, "template": template_name})
         # Add a hint for the most common cause: the template isn't approved in
         # this WABA / the name or language is wrong.
-        msg = exc.message
+        msg = exc.message + _meta_suffix(exc)
         if exc.code == "meta_request_invalid":
-            msg = (exc.message + " تأكّد أن القالب «" + template_name + "» معتمد في حسابك "
-                   "وأن اللغة «" + language + "» صحيحة، وأن الرقم بصيغة دولية بدون +.")
+            msg += (" تأكّد أن القالب «" + template_name + "» معتمد في حسابك "
+                    "وأن اللغة «" + language + "» صحيحة، وأن الرقم بصيغة دولية بدون +.")
         return {"ok": False, "code": exc.code, "message": msg}
 
     actor_audit("whatsapp_cloud_test_message_sent", "whatsapp_cloud", "global",
@@ -417,7 +434,7 @@ def list_message_templates(limit: int = 200) -> dict:
             params={"fields": "name,language,status,category,components", "limit": int(limit)},
         )
     except WhatsAppProviderError as exc:
-        return {"ok": False, "message": exc.message}
+        return {"ok": False, "message": exc.message + _meta_suffix(exc)}
     data = resp.get("data") if isinstance(resp, dict) else None
     items = []
     for t in (data or []):

@@ -272,6 +272,26 @@ def test_connection_debug_token_diagnoses_expiry(client, app, monkeypatch):
     assert "منتهي الصلاحية" in r.get_data(as_text=True)
 
 
+def test_connection_surfaces_raw_meta_code(client, app, monkeypatch):
+    """The admin sees the RAW Meta code + detail (e.g. 190 expired) for diagnosis."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        raise WhatsAppProviderError(
+            "meta_auth_failed", "فشل التحقق من بيانات الاعتماد لدى Meta.",
+            retryable=False, http_status=401, meta_code=190,
+            meta_detail="Error validating access token: Session has expired",
+        )
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "رمز Meta 190" in body
+    assert "Session has expired" in body
+
+
 def test_connection_without_creds_errors(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))

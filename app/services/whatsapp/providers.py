@@ -54,12 +54,21 @@ class WhatsAppProviderError(Exception):
         *,
         retryable: bool = False,
         http_status: int | None = None,
+        meta_code: int | None = None,
+        meta_subcode: int | None = None,
+        meta_detail: str = "",
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = bool(retryable)
         self.http_status = http_status
+        # Raw Meta error facts (code/subcode/message). Kept as attributes for
+        # admin-facing diagnostics; NEVER folded into ``message``/``str`` (which
+        # stay curated and token-free).
+        self.meta_code = meta_code
+        self.meta_subcode = meta_subcode
+        self.meta_detail = meta_detail or ""
 
     def __str__(self) -> str:
         # Deliberately limited to code + curated message. Never include tokens,
@@ -491,76 +500,48 @@ class MetaCloudWhatsAppProvider(BaseWhatsAppProvider):
 
         meta_code = None
         meta_subcode = None
+        meta_detail = ""
         if isinstance(body, dict):
             error = body.get("error")
             if isinstance(error, dict):
                 meta_code = error.get("code")
                 meta_subcode = error.get("error_subcode")
+                meta_detail = str(error.get("message") or "")
 
         # Normalize Meta code to int when possible for set membership.
         code_int = meta_code if isinstance(meta_code, int) else None
         if code_int is None and isinstance(meta_code, str) and meta_code.isdigit():
             code_int = int(meta_code)
 
+        sub_int = meta_subcode if isinstance(meta_subcode, int) else None
+
+        def _err(code: str, message: str, *, retryable: bool = False) -> WhatsAppProviderError:
+            # Attach the raw Meta facts for admin diagnostics without leaking them
+            # into the curated message/str.
+            return WhatsAppProviderError(
+                code, message, retryable=retryable, http_status=status,
+                meta_code=code_int, meta_subcode=sub_int, meta_detail=meta_detail,
+            )
+
         # 1) Explicit transient Meta codes win (rate limits) regardless of status.
         if code_int in _META_RETRYABLE_CODES:
-            return WhatsAppProviderError(
-                "meta_rate_limited",
-                "تم تجاوز حد الإرسال مؤقتًا، أعد المحاولة لاحقًا.",
-                retryable=True,
-                http_status=status,
-            )
+            return _err("meta_rate_limited", "تم تجاوز حد الإرسال مؤقتًا، أعد المحاولة لاحقًا.", retryable=True)
 
         # 2) Explicit permanent Meta codes (bad template / recipient / params).
         if code_int in _META_NON_RETRYABLE_CODES:
-            return WhatsAppProviderError(
-                "meta_request_invalid",
-                "تعذّر إرسال الرسالة: الطلب أو القالب غير صالح.",
-                retryable=False,
-                http_status=status,
-            )
+            return _err("meta_request_invalid", "تعذّر إرسال الرسالة: الطلب أو القالب غير صالح.")
 
         # 3) Fall back to HTTP-status classification.
         if status == 429:
-            return WhatsAppProviderError(
-                "meta_rate_limited",
-                "تم تجاوز حد الإرسال مؤقتًا، أعد المحاولة لاحقًا.",
-                retryable=True,
-                http_status=status,
-            )
+            return _err("meta_rate_limited", "تم تجاوز حد الإرسال مؤقتًا، أعد المحاولة لاحقًا.", retryable=True)
         if status is not None and 500 <= status < 600:
-            return WhatsAppProviderError(
-                "meta_server_error",
-                "خطأ مؤقت في خدمة Meta، أعد المحاولة لاحقًا.",
-                retryable=True,
-                http_status=status,
-            )
+            return _err("meta_server_error", "خطأ مؤقت في خدمة Meta، أعد المحاولة لاحقًا.", retryable=True)
         if status in (401, 403):
-            return WhatsAppProviderError(
-                "meta_auth_failed",
-                "فشل التحقق من بيانات الاعتماد لدى Meta.",
-                retryable=False,
-                http_status=status,
-            )
+            return _err("meta_auth_failed", "فشل التحقق من بيانات الاعتماد لدى Meta.")
         if status == 400:
-            return WhatsAppProviderError(
-                "meta_request_invalid",
-                "تعذّر إرسال الرسالة: الطلب غير صالح.",
-                retryable=False,
-                http_status=status,
-            )
+            return _err("meta_request_invalid", "تعذّر إرسال الرسالة: الطلب غير صالح.")
 
         # 4) Anything else: treat 4xx as permanent, unknown/none as non-retryable.
         if status is not None and 400 <= status < 500:
-            return WhatsAppProviderError(
-                "meta_request_invalid",
-                "تعذّر إرسال الرسالة عبر Meta.",
-                retryable=False,
-                http_status=status,
-            )
-        return WhatsAppProviderError(
-            "meta_error",
-            "حدث خطأ أثناء الاتصال بخدمة Meta.",
-            retryable=False,
-            http_status=status,
-        )
+            return _err("meta_request_invalid", "تعذّر إرسال الرسالة عبر Meta.")
+        return _err("meta_error", "حدث خطأ أثناء الاتصال بخدمة Meta.")
