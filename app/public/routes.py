@@ -663,6 +663,7 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
             "wa_recent_messages": [],
             "wa_current_step": 1,
             "wa_embedded_available": False,
+            "wa_embedded_setup_incomplete": False,
             "wa_embedded_config": {},
         }
 
@@ -688,6 +689,11 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
         "wa_current_step": _whatsapp_current_step(account, settings_row, templates),
         # Embedded Signup (primary, self-service) availability + browser config.
         "wa_embedded_available": wa_embed.embedded_signup_available(),
+        # True when the flag is ON but the panel creds are missing — drives the
+        # "admin config incomplete" state (a friendly warning, never a broken CTA).
+        "wa_embedded_setup_incomplete": bool(
+            current_app.config.get("META_EMBEDDED_SIGNUP_ENABLED", False)
+        ) and not wa_embed.embedded_signup_available(),
         "wa_embedded_config": wa_embed.public_config(),
     }
 

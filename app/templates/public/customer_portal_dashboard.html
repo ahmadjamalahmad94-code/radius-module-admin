@@ -162,6 +162,9 @@
 {# turn a raw ISO timestamp (e.g. 2026-05-30T17:25:03.088Z) into "2026-05-30 · 17:25" #}
 {% macro fmt_iso(s) %}{% if s and s|length >= 16 %}{{ s[:10] }} · {{ s[11:16] }}{% elif s %}{{ s }}{% else %}—{% endif %}{% endmacro %}
 
+{# mask a technical id, showing only the last `keep` chars (e.g. WABA → ••••BA-1) #}
+{% macro wa_mask_tail(s, keep=4) %}{% if s and s|length > keep %}••••{{ s[-keep:] }}{% elif s %}{{ s }}{% else %}—{% endif %}{% endmacro %}
+
 {# ── reusable service card macro ── #}
 {% macro svc_card(item, svc, icon, limit_text) %}
   {% set is_on = svc.enabled %}
@@ -417,24 +420,48 @@
           <div>تحتاج رقم واتساب تجاري خاص بك، وتدفع لـ Meta مباشرة (تسعير Meta للمحادثات). نحن نوفّر الربط والأتمتة والسجلات والقوالب وإدارة الإشعارات داخل HobeRadius.</div>
         </div>
 
-        {# ════ الربط السريع — Meta Embedded Signup (المسار الأساسي) ════ #}
+        {# ════ الربط السريع — Meta Embedded Signup (المسار الأساسي) ════
+           Six connection states drive this card:
+             connected · connecting (JS) · not_connected · disconnected ·
+             needs_attention (admin config incomplete) · error
+           ('unconfigured' = flag off entirely → manual/advanced fallback). #}
         {% set wa_conn = wa_account.connection_status if wa_account else 'disconnected' %}
-        <div class="pp-card wa-card-accent wa-connect">
+        {% if wa_conn == 'connected' %}{% set wa_state = 'connected' %}
+        {% elif wa_conn == 'error' %}{% set wa_state = 'error' %}
+        {% elif wa_embedded_setup_incomplete %}{% set wa_state = 'needs_attention' %}
+        {% elif wa_embedded_available and wa_account and wa_account.disconnected_at %}{% set wa_state = 'disconnected' %}
+        {% elif wa_embedded_available %}{% set wa_state = 'not_connected' %}
+        {% else %}{% set wa_state = 'unconfigured' %}{% endif %}
+        <div class="pp-card wa-card-accent wa-connect" data-wa-card data-wa-state="{{ wa_state }}">
           <div class="pp-card-head"><span class="ic"><i class="fa-brands fa-whatsapp"></i></span><h2>ربط واتساب الرسمي</h2></div>
           <div class="pp-card-body">
-            {% if wa_conn == 'connected' %}
+            {# transient "connecting" banner — revealed by whatsapp_embedded.js #}
+            <div class="wa-state wa-state--pending wa-connecting" data-wa-connecting hidden>
+              <i class="fa-solid fa-circle-notch fa-spin"></i> جارٍ الاتصال بـ Meta… أكمل الخطوات في النافذة المنبثقة.
+            </div>
+
+            {% if wa_state == 'connected' %}
+              {# ── 3. Connected ── #}
               <div class="wa-state wa-state--ok" style="margin:0 0 14px"><i class="fa-solid fa-circle-check"></i> واتساب متصل</div>
               <dl class="wa-kv" style="margin-bottom:14px">
-                {% if wa_account.business_display_name %}<dt>الاسم</dt><dd>{{ wa_account.business_display_name }}</dd>{% endif %}
-                {% if wa_account.display_phone_number %}<dt>الرقم</dt><dd class="ltr">{{ wa_account.display_phone_number }}</dd>{% endif %}
-                <dt>الحالة</dt><dd>متصل ✅</dd>
+                {% if wa_account.business_display_name %}<dt>الاسم الظاهر</dt><dd>{{ wa_account.business_display_name }}</dd>{% endif %}
+                {% if wa_account.display_phone_number %}<dt>رقم الهاتف</dt><dd class="ltr">{{ wa_account.display_phone_number }}</dd>{% endif %}
+                <dt>الحالة</dt><dd><span class="wa-pill wa-pill--approved">متصل ✅</span></dd>
+                <dt>معرّف حساب واتساب (WABA)</dt><dd class="ltr wa-mask">{{ wa_mask_tail(wa_account.whatsapp_business_account_id) }}</dd>
+                <dt>معرّف الرقم</dt><dd class="ltr wa-mask">{{ wa_mask_tail(wa_account.phone_number_id) }}</dd>
                 {% if wa_account.connected_at %}<dt>تاريخ الربط</dt><dd>{{ wa_account.connected_at|dt }}</dd>{% endif %}
+                <dt>آخر مزامنة</dt><dd>{% if wa_account.last_sync_at %}{{ wa_account.last_sync_at|dt }}{% else %}—{% endif %}</dd>
                 {% if wa_account.quality_rating %}<dt>تقييم الجودة</dt><dd>{{ wa_account.quality_rating }}</dd>{% endif %}
               </dl>
               <div class="wa-actions" style="margin-top:0">
                 <a class="pp-btn wa-btn--wa" href="#wa-step-test"><i class="fa-solid fa-paper-plane"></i> اختبار رسالة</a>
+                <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="action" value="validate">
+                  <button type="submit" class="pp-btn pp-btn--soft"><i class="fa-solid fa-rotate"></i> تحديث الحالة</button>
+                </form>
                 {% if wa_embedded_available %}
-                <button type="button" class="pp-btn pp-btn--ghost" data-wa-embedded-launch><i class="fa-solid fa-rotate"></i> إعادة الربط</button>
+                <button type="button" class="pp-btn pp-btn--ghost" data-wa-embedded-launch><i class="fa-solid fa-rotate-right"></i> إعادة الربط</button>
                 {% endif %}
                 <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" onsubmit="return confirm('فصل حساب واتساب؟ يمكنك إعادة الربط لاحقًا.');" style="display:inline">
                   {{ csrf_input() }}
@@ -442,11 +469,39 @@
                   <button type="submit" class="pp-btn wa-btn--danger"><i class="fa-solid fa-link-slash"></i> فصل الحساب</button>
                 </form>
               </div>
-            {% elif wa_embedded_available %}
-              <p class="pp-svc-desc" style="margin:0 0 14px">اربط رقم واتساب الرسمي بنقرة واحدة: سجّل الدخول إلى فيسبوك، اختر رقم واتساب، ووافق على الصلاحيات — وسنُكمل الباقي تلقائيًا. لا حاجة لنسخ أي رموز أو معرّفات.</p>
-              {% if wa_conn == 'error' %}
-              <div class="wa-state wa-state--error" style="margin:0 0 12px"><i class="fa-solid fa-circle-xmark"></i> تعذّر إكمال الربط في المحاولة السابقة. حاول إعادة الاتصال أو تحقق من صلاحيات Meta.</div>
+
+            {% elif wa_state == 'error' %}
+              {# ── 5. Error ── #}
+              <div class="wa-state wa-state--error" style="margin:0 0 12px"><i class="fa-solid fa-circle-xmark"></i> تعذّر إكمال الربط. حاول إعادة الاتصال أو تواصل مع الدعم.</div>
+              {% if wa_embedded_available %}
+              <div class="wa-actions" style="margin-top:0;align-items:center">
+                <button type="button" class="pp-btn wa-btn--wa wa-connect-cta" data-wa-embedded-launch><i class="fa-solid fa-rotate-right"></i> إعادة الربط</button>
+                <span class="wa-connect-status" data-wa-embedded-status hidden></span>
+              </div>
+              <p class="pp-hint" style="margin-top:10px">تملك بيانات Meta جاهزة؟ استخدم <a href="#" data-wa-toggle-advanced>الإعداد المتقدم (اليدوي)</a>.</p>
+              {% else %}
+              <p class="pp-hint" style="margin:0">استخدم <a href="#" data-wa-toggle-advanced>الإعداد المتقدم (اليدوي)</a> أو تواصل مع الدعم.</p>
               {% endif %}
+
+            {% elif wa_state == 'needs_attention' %}
+              {# ── 4. Needs attention — admin config incomplete (never a broken CTA) ── #}
+              <div class="wa-state wa-state--pending" style="margin:0 0 10px"><i class="fa-solid fa-triangle-exclamation"></i> إعداد الربط عبر Meta غير مكتمل من لوحة الإدارة.</div>
+              <p class="pp-hint" style="margin:0">الربط التلقائي غير مُهيأ بعد. يمكنك استخدام <a href="#" data-wa-toggle-advanced>الإعداد المتقدم (اليدوي)</a> أدناه، أو تواصل مع الدعم.</p>
+
+            {% elif wa_state == 'disconnected' %}
+              {# ── 6. Disconnected (was connected before) ── #}
+              <div class="wa-state wa-state--pending" style="margin:0 0 12px"><i class="fa-solid fa-link-slash"></i> تم فصل واتساب. أعد الربط لاستئناف إرسال الإشعارات.</div>
+              <p class="pp-svc-desc" style="margin:0 0 14px">اربط رقم واتساب الرسمي بخطوات بسيطة دون نسخ رموز أو الدخول إلى إعدادات Meta المعقدة.</p>
+              <div class="wa-actions" style="margin-top:0;align-items:center">
+                <button type="button" class="pp-btn wa-btn--wa wa-connect-cta" data-wa-embedded-launch><i class="fa-brands fa-whatsapp"></i> ربط واتساب</button>
+                <span class="wa-connect-status" data-wa-embedded-status hidden></span>
+              </div>
+              <p class="pp-hint" style="margin-top:10px">تملك بيانات Meta جاهزة؟ استخدم <a href="#" data-wa-toggle-advanced>الإعداد المتقدم (اليدوي)</a>.</p>
+
+            {% elif wa_state == 'not_connected' %}
+              {# ── 1. Not connected ── #}
+              <p class="pp-svc-desc" style="margin:0 0 6px">اربط واتساب الرسمي لإرسال الإشعارات من رقمك المعتمد.</p>
+              <p class="pp-hint" style="margin:0 0 14px">اربط رقم واتساب الرسمي بخطوات بسيطة دون نسخ رموز أو الدخول إلى إعدادات Meta المعقدة.</p>
               <div class="wa-actions" style="margin-top:0;align-items:center">
                 <button type="button" class="pp-btn wa-btn--wa wa-connect-cta" data-wa-embedded-launch>
                   <i class="fa-brands fa-whatsapp"></i> ربط واتساب
@@ -454,7 +509,9 @@
                 <span class="wa-connect-status" data-wa-embedded-status hidden></span>
               </div>
               <p class="pp-hint" style="margin-top:10px">تملك بيانات Meta جاهزة؟ استخدم <a href="#" data-wa-toggle-advanced>الإعداد المتقدم (اليدوي)</a>.</p>
+
             {% else %}
+              {# ── unconfigured (flag off) — manual/advanced fallback ── #}
               <div class="wa-state wa-state--pending" style="margin:0"><i class="fa-solid fa-hourglass-half"></i> الربط التلقائي غير مُهيأ بعد. استخدم الإعداد المتقدم (اليدوي) أدناه، أو تواصل مع الدعم.</div>
             {% endif %}
           </div>
@@ -492,8 +549,8 @@
         {% endif %}
 
         {# ════ STEP 1 — credentials (manual / advanced fallback) ════ #}
-        <details class="wa-advanced" id="wa-advanced"{% if wa_conn != 'connected' and not wa_embedded_available %} open{% endif %}>
-        <summary class="wa-advanced-sum"><i class="fa-solid fa-screwdriver-wrench"></i> إعداد متقدم — إدخال يدوي لبيانات Meta</summary>
+        <details class="wa-advanced" id="wa-advanced">
+        <summary class="wa-advanced-sum"><i class="fa-solid fa-screwdriver-wrench"></i> إعداد متقدم — إعداد يدوي للمسؤول فقط</summary>
         <div class="pp-card wa-card-accent">
           <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-id-card"></i></span><h2>1. أدخل بيانات Meta</h2></div>
           <div class="pp-card-body">
@@ -735,13 +792,19 @@
           </div>
         </div>
 
-        {# ════ Embedded Signup — Meta JS SDK + launch/complete (primary path) ════ #}
-        {% if wa_embedded_available %}
+        {# ════ Embedded Signup — Meta JS SDK launcher (primary path) ════
+           CSP-clean: the flow lives in the external whatsapp_embedded.js. Boot
+           data (endpoints + csrf + public config) is passed via a JSON island;
+           the script is rendered for every non-locked state so the advanced
+           toggle + GET-config availability check work even when the CTA is
+           hidden. The launcher itself decides (GET /embedded/config) whether to
+           load the Meta SDK and bind the connect button. #}
         <style>
           .wa-connect-cta { font-size:15px; padding:12px 22px; }
           .wa-connect-status { font-size:13px; font-weight:600; color:#475569; }
           .wa-connect-status.is-ok { color:#166534; }
           .wa-connect-status.is-err { color:#b91c1c; }
+          .wa-connecting { margin:0 0 12px; }
           .wa-advanced { margin-top:4px; border:1px dashed #cbd5e1; border-radius:14px; background:#fafafa; }
           .wa-advanced[open] { background:#fff; }
           .wa-advanced > .wa-advanced-sum { cursor:pointer; list-style:none; padding:12px 16px; font-weight:700;
@@ -750,77 +813,17 @@
           .wa-advanced > .wa-advanced-sum i { color:#64748b; }
           .wa-advanced > .pp-card { margin:0 12px 12px; }
         </style>
-        <script type="application/json" data-wa-embedded-config>{{ wa_embedded_config|tojson }}</script>
-        <script>
-        (function () {
-          "use strict";
-          var cfg = {};
-          try { cfg = JSON.parse(document.querySelector('[data-wa-embedded-config]').textContent || '{}'); } catch (e) {}
-          if (!cfg.app_id || !cfg.config_id) return;
-          var COMPLETE_URL = "{{ url_for('public.customer_portal_whatsapp_embedded_complete') }}";
-
-          function csrf() { var n = document.querySelector('input[name="_csrf_token"]'); return n ? n.value : ""; }
-          function setStatus(msg, ok) {
-            var el = document.querySelector('[data-wa-embedded-status]');
-            if (!el) return;
-            el.hidden = false; el.textContent = msg;
-            el.className = 'wa-connect-status' + (ok === true ? ' is-ok' : ok === false ? ' is-err' : '');
-          }
-
-          // Load the Meta JS SDK once.
-          window.fbAsyncInit = function () {
-            FB.init({ appId: cfg.app_id, autoLogAppEvents: true, xfbml: false, version: cfg.graph_version || 'v21.0' });
-          };
-          (function (d, s, id) {
-            if (d.getElementById(id)) return;
-            var js = d.createElement(s); js.id = id; js.src = 'https://connect.facebook.net/en_US/sdk.js';
-            var fjs = d.getElementsByTagName(s)[0]; fjs.parentNode.insertBefore(js, fjs);
-          }(document, 'script', 'facebook-jssdk'));
-
-          // The embedded-signup popup posts the selected assets back via message.
-          var selected = {};
-          window.addEventListener('message', function (ev) {
-            if (typeof ev.origin === 'string' && ev.origin.indexOf('facebook.com') === -1) return;
-            var data; try { data = (typeof ev.data === 'string') ? JSON.parse(ev.data) : ev.data; } catch (e) { return; }
-            if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') return;
-            if (data.data) { selected.waba_id = data.data.waba_id || selected.waba_id; selected.phone_number_id = data.data.phone_number_id || selected.phone_number_id; }
-          });
-
-          function complete(code) {
-            setStatus('جارٍ إكمال الربط…');
-            fetch(COMPLETE_URL, {
-              method: 'POST', credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
-              body: JSON.stringify({ code: code, waba_id: selected.waba_id || '', phone_number_id: selected.phone_number_id || '' })
-            }).then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok, j: j, status: r.status }; }); })
-              .then(function (res) {
-                if (res.ok && res.j && res.j.ok) { setStatus('تم الربط بنجاح ✅ — جارٍ التحديث…', true); setTimeout(function () { location.href = (res.j && res.j.redirect) || location.href; }, 700); }
-                else { setStatus((res.j && res.j.message) || ('تعذّر إكمال الربط (رمز ' + res.status + ').'), false); }
-              }).catch(function () { setStatus('تعذّر الاتصال بالخادم. حاول مرة أخرى.', false); });
-          }
-
-          document.querySelectorAll('[data-wa-embedded-launch]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              if (typeof FB === 'undefined') { setStatus('جارٍ تحميل أدوات Meta… أعد المحاولة بعد لحظات.', false); return; }
-              selected = {};
-              setStatus('بانتظار إكمال نافذة Meta…');
-              FB.login(function (resp) {
-                var code = resp && resp.authResponse && resp.authResponse.code;
-                if (code) { complete(code); }
-                else { setStatus('تم إلغاء الربط أو لم تُمنح الصلاحيات.', false); }
-              }, { config_id: cfg.config_id, response_type: 'code', override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: '2' } });
-            });
-          });
-
-          var advLink = document.querySelector('[data-wa-toggle-advanced]');
-          if (advLink) advLink.addEventListener('click', function (e) {
-            e.preventDefault();
-            var d = document.getElementById('wa-advanced');
-            if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-          });
-        })();
-        </script>
-        {% endif %}
+        <script type="application/json" data-wa-embedded-boot>{{ {
+          "endpoints": {
+            "config": url_for('public.customer_portal_whatsapp_embedded_config'),
+            "start": url_for('public.customer_portal_whatsapp_embedded_start'),
+            "complete": url_for('public.customer_portal_whatsapp_embedded_complete')
+          },
+          "csrf": csrf_token(),
+          "message_type": "WA_EMBEDDED_SIGNUP",
+          "config": wa_embedded_config
+        }|tojson }}</script>
+        <script src="{{ url_for('static', filename='js/whatsapp_embedded.js') }}?v=20260602" defer></script>
         {% endif %}
       </section>
 
