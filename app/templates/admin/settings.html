@@ -259,13 +259,16 @@
         headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
                    'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString()
-      }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
-        .then(function (j) {
+      }).then(function (r) {
+          return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok, status: r.status, j: j }; });
+        })
+        .then(function (res) {
           btn.disabled = false;
-          if (j && j.ok) {
+          var j = res.j;
+          if (res.ok && j && j.ok) {
             out.textContent = j.value; out.hidden = false;
             setTimeout(function () { out.textContent = ''; out.hidden = true; }, 20000); // auto-hide
-          } else { out.textContent = (j && j.message) || 'تعذّر الإظهار.'; out.hidden = false; }
+          } else { out.textContent = (j && j.message) || ('تعذّر الإظهار (رمز ' + res.status + ').'); out.hidden = false; }
         }).catch(function () { btn.disabled = false; out.textContent = 'تعذّر الاتصال.'; out.hidden = false; });
     });
   });
@@ -284,10 +287,18 @@
         headers: { 'X-CSRFToken': csrf(), 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json',
                    'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString()
-      }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
-        .then(function (j) {
+      }).then(function (r) {
+          // Read as text first so a non-JSON error (CSRF 400 / login redirect /
+          // 500) surfaces the real HTTP status instead of being swallowed.
+          return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { ok: r.ok, status: r.status, j: j }; });
+        })
+        .then(function (res) {
           discBtn.disabled = false;
-          if (!j || !j.ok) { discOut.innerHTML = '<span class="wac-tpl-note">' + ((j && j.message) || 'تعذّر جلب القوالب.') + '</span>'; return; }
+          var j = res.j;
+          if (!res.ok || !j || !j.ok) {
+            discOut.innerHTML = '<span class="wac-tpl-note">' + ((j && j.message) || ('تعذّر جلب القوالب (رمز ' + res.status + '). تأكّد أن التوكن يملك صلاحية إدارة القوالب وأن Business Account ID صحيح.')) + '</span>';
+            return;
+          }
           if (!j.templates || !j.templates.length) { discOut.innerHTML = '<span class="wac-tpl-note">لا توجد قوالب في هذا الحساب. أنشئ قالبًا في Meta أولًا.</span>'; return; }
           discOut.innerHTML = '<span class="wac-tpl-note">اختر قالبًا لتعبئة الحقول:</span>';
           j.templates.forEach(function (t) {
