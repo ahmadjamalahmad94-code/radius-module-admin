@@ -188,6 +188,32 @@ class _AccountShim:
         self.phone_number_id = phone_number_id or ""
 
 
+def _diagnose_token() -> str:
+    """Best-effort Arabic diagnosis of WHY Meta rejects the token, via
+    /debug_token. Needs Meta App ID + App Secret; returns "" when unavailable or
+    the probe itself fails. Never raises."""
+    creds = resolved()
+    user_token = creds["access_token"]
+    app_id = creds["meta_app_id"]
+    app_secret = creds["meta_app_secret"]
+    if not (user_token and app_id and app_secret):
+        return ""
+    provider = MetaCloudWhatsAppProvider()
+    app_token = f"{app_id}|{app_secret}"
+    try:
+        _s, resp = provider._request("GET", "debug_token", app_token, params={"input_token": user_token})
+    except WhatsAppProviderError:
+        return ""
+    data = resp.get("data") if isinstance(resp, dict) else None
+    if not isinstance(data, dict) or data.get("is_valid"):
+        return ""  # valid token → the 401/403 is about scope/phone, not the token
+    err = data.get("error") if isinstance(data.get("error"), dict) else {}
+    detail = err.get("message") or ""
+    if data.get("expires_at"):
+        return "تشخيص Meta: الرمز منتهي الصلاحية — أنشئ رمزًا دائمًا (System User) والصقه."
+    return "تشخيص Meta: الرمز غير صالح" + (f" — {detail}" if detail else "") + ". أنشئ رمزًا دائمًا (System User)."
+
+
 def test_connection(*, actor_audit) -> dict:
     """Verify the resolved credentials against Meta. Never raises for provider
     errors — returns a structured result. Audits success/failure."""
@@ -212,6 +238,9 @@ def test_connection(*, actor_audit) -> dict:
         if exc.code == "meta_auth_failed":
             hint = (exc.message + " قد يكون رمز الوصول منتهيًا (رموز Meta المؤقتة تنتهي خلال 24 ساعة) — "
                     "استخدم رمزًا دائمًا (System User)، وتأكّد من صحة Phone Number ID.")
+            diag = _diagnose_token()
+            if diag:
+                hint = hint + " " + diag
         actor_audit("whatsapp_cloud_test_failed", "whatsapp_cloud", "global",
                     "WhatsApp Cloud test connection failed", {"code": exc.code})
         return {"ok": False, "code": exc.code, "message": hint}

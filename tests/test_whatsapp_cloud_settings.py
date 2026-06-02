@@ -254,6 +254,24 @@ def test_connection_auth_failure_hints_expiry(client, app, monkeypatch):
     assert "منتهيًا" in body  # expiry hint surfaced
 
 
+def test_connection_debug_token_diagnoses_expiry(client, app, monkeypatch):
+    """When the auth probe fails and app creds exist, /debug_token surfaces the
+    precise reason (expired) in the message."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "GET" and path == "debug_token":
+            return 200, {"data": {"is_valid": False, "expires_at": 1700000000,
+                                   "error": {"message": "Session has expired"}}}
+        raise WhatsAppProviderError("meta_auth_failed", "فشل التحقق", retryable=False, http_status=401)
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["test"], data={"_csrf_token": _csrf(client, urls["page"])}, follow_redirects=True)
+    assert "منتهي الصلاحية" in r.get_data(as_text=True)
+
+
 def test_connection_without_creds_errors(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))
