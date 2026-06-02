@@ -300,6 +300,51 @@ def test_list_templates_returns_approved_first(client, app, monkeypatch):
     assert j["templates"][0]["status"] == "APPROVED"
 
 
+def test_send_autofills_body_params(client, app, monkeypatch):
+    """A template with {{1}} {{2}} body params is auto-filled so it sends."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+    seen = {}
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "GET" and path.endswith("/message_templates"):
+            return 200, {"data": [{"name": "order_update", "language": "ar", "status": "APPROVED",
+                                   "components": [{"type": "BODY", "text": "مرحبا {{1}} طلبك {{2}}"}]}]}
+        if method == "POST" and path.endswith("/messages"):
+            seen["body"] = json_body
+            return 200, {"messages": [{"id": "wamid.X"}]}
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["msg"], data={"recipient": "970599000111", "template_name": "order_update",
+                                       "language": "ar", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "تم إرسال رسالة الاختبار" in r.get_data(as_text=True)
+    body_comp = [c for c in seen["body"]["template"]["components"] if c["type"] == "body"][0]
+    assert len(body_comp["parameters"]) == 2  # both {{1}} {{2}} auto-filled
+
+
+def test_send_rejects_media_header_template(client, app, monkeypatch):
+    """A template needing a media header is refused with a friendly message."""
+    urls = _urls(app)
+    _login(client, _super_id(app))
+    _save(client, urls, _valid_form())
+
+    def fake_request(self, method, path, token, *, json_body=None, params=None):
+        if method == "GET" and path.endswith("/message_templates"):
+            return 200, {"data": [{"name": "image_cta", "language": "en_US", "status": "APPROVED",
+                                   "components": [{"type": "HEADER", "format": "IMAGE"},
+                                                  {"type": "BODY", "text": "hi"}]}]}
+        return 200, {}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "_request", fake_request)
+    r = client.post(urls["msg"], data={"recipient": "970599000111", "template_name": "image_cta",
+                                       "language": "en_US", "_csrf_token": _csrf(client, urls["page"])},
+                    follow_redirects=True)
+    assert "يتطلّب وسائط" in r.get_data(as_text=True)
+
+
 def test_send_message_requires_recipient(client, app):
     urls = _urls(app)
     _login(client, _super_id(app))

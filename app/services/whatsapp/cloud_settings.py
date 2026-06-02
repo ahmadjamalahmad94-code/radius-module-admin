@@ -15,6 +15,8 @@ Security rules:
 """
 from __future__ import annotations
 
+import re
+
 from flask import current_app
 
 from ...extensions import db
@@ -247,15 +249,25 @@ def send_test_message(recipient: str, *, template_name: str = "", language: str 
     creds = resolved()
     token = creds["access_token"]
     phone = creds["phone_number_id"]
+    waba = creds["whatsapp_business_account_id"]
     if not (token and phone):
         raise CloudSettingsError("أكمل رمز الوصول و Phone Number ID أولًا.")
+
+    # Inspect the template so we can auto-fill placeholder body variables and
+    # refuse media-header templates (which need a real image/video URL).
+    body_params, header_format = _template_shape(token, waba, template_name, language)
+    if header_format in _MEDIA_HEADERS:
+        return {"ok": False, "code": "needs_media",
+                "message": ("القالب «" + template_name + "» يتطلّب وسائط (صورة/فيديو/مستند) في الترويسة "
+                            "ولا يمكن اختباره تلقائيًا. جرّب قالبًا نصّيًا مثل hello_world.")}
+    variables = ["تجربة"] * body_params if body_params else None
 
     provider = MetaCloudWhatsAppProvider()
     shim = _AccountShim(token, phone)
     try:
         result = provider.send_template_message(
             shim, recipient=recipient, template_name=template_name,
-            language=language, variables=None,
+            language=language, variables=variables,
         )
     except WhatsAppProviderError as exc:
         actor_audit("whatsapp_cloud_test_message_failed", "whatsapp_cloud", "global",
@@ -276,6 +288,60 @@ def send_test_message(recipient: str, *, template_name: str = "", language: str 
     return {"ok": True, "provider_message_id": result.get("provider_message_id") or ""}
 
 
+_PARAM_RE = re.compile(r"{{\s*\d+\s*}}")
+_MEDIA_HEADERS = {"IMAGE", "VIDEO", "DOCUMENT", "LOCATION"}
+
+
+def _parse_components(components) -> tuple[int, str]:
+    """Return ``(body_param_count, header_format)`` for a template's components.
+
+    ``body_param_count`` is the number of distinct ``{{n}}`` placeholders in the
+    BODY text; ``header_format`` is the HEADER component's format (TEXT / IMAGE /
+    VIDEO / DOCUMENT / "") so the caller can tell whether media is required.
+    """
+    body_params = 0
+    header_format = ""
+    for c in (components or []):
+        if not isinstance(c, dict):
+            continue
+        ctype = (c.get("type") or "").upper()
+        if ctype == "BODY":
+            body_params = len(set(_PARAM_RE.findall(c.get("text") or "")))
+        elif ctype == "HEADER":
+            header_format = (c.get("format") or "").upper()
+    return body_params, header_format
+
+
+def _template_shape(token: str, waba: str, name: str, language: str) -> tuple[int, str]:
+    """Best-effort lookup of a template's body-param count + header format.
+
+    Used to auto-fill placeholder body variables for the test message. Returns
+    ``(0, "")`` on any failure so the caller can still attempt the send.
+    """
+    if not (token and waba and name):
+        return 0, ""
+    provider = MetaCloudWhatsAppProvider()
+    try:
+        _status, resp = provider._request(
+            "GET", f"{waba}/message_templates", token,
+            params={"name": name, "fields": "name,language,status,components", "limit": 50},
+        )
+    except WhatsAppProviderError:
+        return 0, ""
+    data = resp.get("data") if isinstance(resp, dict) else None
+    exact = None
+    by_name = None
+    for t in (data or []):
+        if not isinstance(t, dict) or t.get("name") != name:
+            continue
+        by_name = by_name or t
+        if not language or t.get("language") == language:
+            exact = t
+            break
+    chosen = exact or by_name
+    return _parse_components(chosen.get("components")) if chosen else (0, "")
+
+
 def list_message_templates(limit: int = 200) -> dict:
     """List the WABA's message templates (name/language/status/category).
 
@@ -292,7 +358,7 @@ def list_message_templates(limit: int = 200) -> dict:
     try:
         _status, resp = provider._request(
             "GET", f"{waba}/message_templates", token,
-            params={"fields": "name,language,status,category", "limit": int(limit)},
+            params={"fields": "name,language,status,category,components", "limit": int(limit)},
         )
     except WhatsAppProviderError as exc:
         return {"ok": False, "message": exc.message}
@@ -300,11 +366,17 @@ def list_message_templates(limit: int = 200) -> dict:
     items = []
     for t in (data or []):
         if isinstance(t, dict) and t.get("name"):
+            body_params, header_format = _parse_components(t.get("components"))
             items.append({
                 "name": t.get("name"),
                 "language": t.get("language") or "",
                 "status": (t.get("status") or "").upper(),
                 "category": (t.get("category") or "").upper(),
+                "body_params": body_params,
+                "needs_media": header_format in _MEDIA_HEADERS,
+                # quick-test friendly = approved + no media header (body params are auto-filled)
+                "testable": (t.get("status") or "").upper() == "APPROVED" and header_format not in _MEDIA_HEADERS,
             })
-    items.sort(key=lambda x: (0 if x["status"] == "APPROVED" else 1, x["name"]))
+    # approved + testable first, then by name
+    items.sort(key=lambda x: (0 if x["status"] == "APPROVED" else 1, 0 if x["testable"] else 1, x["name"]))
     return {"ok": True, "templates": items}
