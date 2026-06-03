@@ -65,6 +65,33 @@ SESSION_LIFETIME_SECONDS=43200
 
 # Operational logging.
 LOG_LEVEL=INFO
+
+# ─── WhatsApp encryption (REQUIRED when WhatsApp is used) ───────────────────
+# Fernet key encrypting every WhatsApp access token / webhook secret at rest.
+# Generate ONCE, keep stable (rotating it makes stored tokens unrecoverable):
+#   python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+WHATSAPP_FERNET_KEY=replace-with-a-generated-fernet-key
+
+# ─── Meta WhatsApp Embedded Signup (customer self-service onboarding) ───────
+# Primary, no-copy-paste onboarding. HTTPS is REQUIRED for the OAuth callback.
+WHATSAPP_EMBEDDED_SIGNUP_ENABLED=1
+META_APP_ID=replace-with-meta-app-id
+META_APP_SECRET=replace-with-meta-app-secret      # server-side only, never sent to the browser
+META_CONFIG_ID=replace-with-embedded-signup-config-id   # a.k.a. META_EMBEDDED_SIGNUP_CONFIG_ID
+META_GRAPH_VERSION=v21.0
+META_OAUTH_REDIRECT_URI=                            # optional; else derived from the request
+META_EMBEDDED_ATTEMPT_TTL_SECONDS=600
+# Recommended for production: require a valid server-issued state on completion.
+META_EMBEDDED_REQUIRE_STATE=1
+
+# ─── WhatsApp Cloud API house/manual settings (admin/fallback path) ─────────
+# Kept available as the Admin/Fallback path. House creds can also be managed
+# (encrypted) from the admin Settings page; these are the env fallback.
+WHATSAPP_CLOUD_SETTINGS_ENABLED=1
+WHATSAPP_GRAPH_API_VERSION=v21.0
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_BUSINESS_ACCOUNT_ID=
 ```
 
 ## Temporary IP-Only Bootstrap Mode

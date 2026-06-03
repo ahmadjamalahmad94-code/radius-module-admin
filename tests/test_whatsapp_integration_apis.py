@@ -34,10 +34,12 @@ from app import create_app, seed_defaults
 from app.config import TestingConfig
 from app.extensions import db
 from app.license_signing import license_integration_secret, sign_license_payload
-from app.models import Customer, License, Plan, WhatsAppMessageQueue, utcnow
+from app.models import AuditLog, Customer, License, Plan, WhatsAppMessageQueue, utcnow
 from app.services.license_service import generate_license_key
+from app.services.whatsapp import cloud_settings as wac
 from app.services.whatsapp import settings as wa_settings
-from app.services.whatsapp.providers import MetaCloudWhatsAppProvider
+from app.services.whatsapp.crypto import decrypt_secret
+from app.services.whatsapp.providers import MetaCloudWhatsAppProvider, WhatsAppProviderError
 
 
 HTTPS_BASE = "https://license-panel.test"
@@ -248,6 +250,33 @@ def test_status_response_never_contains_token(client, app):
     assert "access_token" not in raw
 
 
+def test_status_onboarding_state_connected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Connected")
+    _provision_whatsapp(customer_id)
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-conn").get_json()
+    assert body["onboarding_state"] == "connected"
+    assert isinstance(body["embedded_available"], bool)
+
+
+def test_status_onboarding_state_needs_setup_when_never_connected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Needs Setup")
+    # No account provisioned at all.
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-needs").get_json()
+    assert body["onboarding_state"] == "needs_setup"
+    assert body["account_status"] == "disconnected"
+
+
+def test_status_onboarding_state_not_connected_when_disconnected(client, app):
+    customer_id, _license_id, license_key = _make_customer_with_license("OB Not Connected")
+    wa_settings.upsert_account(customer_id, phone_number_id="123", access_token=DUMMY_TOKEN)
+    wa_settings.set_connection_status(customer_id, "disconnected")
+    body = _post_signed(client, app, "/api/integration/hoberadius/whatsapp/status",
+                        license_key, nonce="ob-notconn").get_json()
+    assert body["onboarding_state"] == "not_connected"
+
+
 # --------------------------------------------------------------------------- enqueue
 
 def test_enqueue_signed_queues_and_sends_then_is_idempotent(client, app, monkeypatch):
@@ -362,6 +391,87 @@ def test_test_message_without_approved_template_is_rejected(client, app, monkeyp
     assert body["ok"] is False
     assert body["error_code"] == "template_not_approved"
     assert body["message_ar"] == "لا يوجد قالب واتساب معتمد لإرسال رسالة تجربة."
+
+
+def test_test_message_sends_via_tenant_account_not_house(client, app, monkeypatch):
+    """The send uses the connected TENANT account's token, never house creds."""
+    captured: dict = {}
+
+    def fake_send_template(self, account, *, recipient, template_name, language, variables=None):
+        captured["customer_id"] = account.customer_id
+        captured["token"] = decrypt_secret(account.access_token_encrypted)
+        captured["template_name"] = template_name
+        return {"provider_message_id": "wamid.TENANT"}
+
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "send_template_message", fake_send_template)
+    # The house Cloud API path must never be invoked by this endpoint.
+    def _house_boom(*a, **k):  # noqa: ANN001
+        raise AssertionError("house cloud_settings.send_test_message must not be called")
+    monkeypatch.setattr(wac, "send_test_message", _house_boom)
+
+    customer_id, _license_id, license_key = _make_customer_with_license("Tenant Co")
+    _provision_whatsapp(customer_id)
+    res = _post_signed(
+        client, app, "/api/integration/hoberadius/whatsapp/messages/test",
+        license_key, nonce="tenant-1", extra={"recipient_phone": PHONE, "idempotency_key": "tenant-1"},
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["ok"] is True and body["status"] == "sent"
+    assert body["provider_message_id"] == "wamid.TENANT"
+    assert captured["customer_id"] == customer_id
+    assert captured["token"] == DUMMY_TOKEN          # the TENANT token, not house creds
+
+
+def test_test_message_emits_sent_audit(client, app, monkeypatch):
+    _patch_provider_ok(monkeypatch)
+    customer_id, _license_id, license_key = _make_customer_with_license("Sent Audit Co")
+    _provision_whatsapp(customer_id)
+    _post_signed(
+        client, app, "/api/integration/hoberadius/whatsapp/messages/test",
+        license_key, nonce="sent-aud", extra={"recipient_phone": PHONE, "idempotency_key": "sent-aud"},
+    )
+    assert AuditLog.query.filter_by(action="whatsapp_tenant_test_message_sent").count() == 1
+    assert AuditLog.query.filter_by(action="whatsapp_tenant_test_message_failed").count() == 0
+
+
+def test_test_message_failure_emits_failed_audit_and_safe_message(client, app, monkeypatch):
+    def fake_send_fail(self, account, *, recipient, template_name, language, variables=None):
+        raise WhatsAppProviderError("template_paused", "القالب موقوف مؤقتًا.")
+    monkeypatch.setattr(MetaCloudWhatsAppProvider, "send_template_message", fake_send_fail)
+
+    customer_id, _license_id, license_key = _make_customer_with_license("Fail Audit Co")
+    _provision_whatsapp(customer_id)
+    res = _post_signed(
+        client, app, "/api/integration/hoberadius/whatsapp/messages/test",
+        license_key, nonce="fail-aud", extra={"recipient_phone": PHONE, "idempotency_key": "fail-aud"},
+    )
+    body = res.get_json()
+    assert body["ok"] is False
+    assert body["error_code"] == "template_paused"
+    assert body["message_ar"] == "القالب موقوف مؤقتًا."
+    # never leak the token (plaintext or ciphertext) in the response
+    raw = res.get_data(as_text=True)
+    assert DUMMY_TOKEN not in raw
+    assert AuditLog.query.filter_by(action="whatsapp_tenant_test_message_failed").count() == 1
+
+
+def test_test_message_defaults_to_hello_world(client, app, monkeypatch):
+    calls = _patch_provider_ok(monkeypatch)
+    customer_id, _license_id, license_key = _make_customer_with_license("HW Co")
+    wa_settings.upsert_account(customer_id, phone_number_id="999", access_token=DUMMY_TOKEN)
+    wa_settings.set_connection_status(customer_id, "connected")
+    wa_settings.update_settings(customer_id, enabled=True)
+    # Both otp and hello_world are approved → hello_world wins as the default.
+    wa_settings.upsert_template(customer_id, local_key="otp", provider_template_name="otp_ar",
+                                language="ar", status="approved")
+    wa_settings.upsert_template(customer_id, local_key="hello_world", provider_template_name="hello_world",
+                                language="en", status="approved")
+    _post_signed(
+        client, app, "/api/integration/hoberadius/whatsapp/messages/test",
+        license_key, nonce="hw-1", extra={"recipient_phone": PHONE, "idempotency_key": "hw-1"},
+    )
+    assert calls["template_name"] == "hello_world"
 
 
 # --------------------------------------------------------------------------- subscriber sync

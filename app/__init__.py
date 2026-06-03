@@ -329,6 +329,23 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "last_sync_at": datetime_type,
         })
 
+    # Meta Embedded Signup onboarding attempts (state/nonce sessions). The table
+    # itself + its PK and the unique state_hash constraint are created fresh by
+    # db.create_all() on both new and live DBs; this guarded block only heals the
+    # additive/nullable columns on a pre-existing table, mirroring the pattern above.
+    if "whatsapp_embedded_signup_attempts" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("whatsapp_embedded_signup_attempts", {
+            "license_id": "INTEGER",
+            "nonce_hash": "VARCHAR(128)",
+            "status": "VARCHAR(20)",
+            "error_code": "VARCHAR(60)",
+            "error_message": "TEXT",
+            "initiated_by": "INTEGER",
+            "expires_at": datetime_type,
+            "completed_at": datetime_type,
+        })
+
 
 def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
     inspector = inspect(db.engine)

@@ -26,17 +26,20 @@ Design rules (mirrors ``providers.py``):
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import timedelta
 from typing import Any
 
 from flask import current_app
 
 from ...extensions import db
-from ...models import utcnow
+from ...models import WhatsAppEmbeddedSignupAttempt, utcnow
 from . import settings as wa_settings
 from .providers import MetaCloudWhatsAppProvider, WhatsAppProviderError
 
@@ -55,6 +58,172 @@ class EmbeddedSignupError(Exception):
 
     def __str__(self) -> str:  # pragma: no cover - cosmetic
         return f"[{self.code}] {self.message}"
+
+
+# ───────────────────────────── audit taxonomy ─────────────────────────────
+#
+# Spec event names for the embedded-signup lifecycle. During a transition window
+# the older names (``whatsapp_embedded_connected`` / ``..._disconnected``) are
+# emitted ALONGSIDE the new ones via :func:`_emit_audit`, so existing dashboards
+# and queries keep working while consumers migrate.
+AUDIT_STARTED = "embedded_signup_started"
+AUDIT_SUCCEEDED = "embedded_signup_succeeded"
+AUDIT_FAILED = "embedded_signup_failed"
+AUDIT_SYNCED = "whatsapp_connection_synced"
+AUDIT_DISCONNECTED = "whatsapp_connection_disconnected"
+AUDIT_RECONNECTED = "whatsapp_connection_reconnected"
+AUDIT_TEST_SENT = "whatsapp_tenant_test_message_sent"
+AUDIT_TEST_FAILED = "whatsapp_tenant_test_message_failed"
+
+_LEGACY_CONNECTED = "whatsapp_embedded_connected"
+_LEGACY_DISCONNECTED = "whatsapp_embedded_disconnected"
+
+# Error codes raised by state/nonce validation (vs. Meta exchange failures). The
+# route uses these to decide NOT to flip a (possibly connected) account to error.
+STATE_ERROR_CODES = frozenset({"invalid_state", "expired_state", "missing_state"})
+
+# Non-technical Arabic surfaced when an onboarding state is missing/expired.
+_STATE_INVALID_AR = "جلسة الربط غير صالحة. أعد المحاولة من زر «ربط واتساب»."
+_STATE_EXPIRED_AR = "انتهت مهلة جلسة الربط. أعد المحاولة من زر «ربط واتساب»."
+
+
+def _emit_audit(event: str, legacy: str | None, entity_type: str, entity_id,
+                summary: str, metadata: dict | None = None) -> None:
+    """Append the spec audit ``event`` (+ optional ``legacy`` alias). Caller commits."""
+    wa_settings._audit(event, entity_type, entity_id, summary, metadata)
+    if legacy:
+        wa_settings._audit(legacy, entity_type, entity_id, summary, metadata)
+
+
+def audit_tenant_test_message(
+    customer_id: int,
+    *,
+    ok: bool,
+    recipient: str = "",
+    template_key: str = "",
+    message_id: int | None = None,
+    error_code: str = "",
+    error_message: str = "",
+) -> None:
+    """Audit a TENANT test-message outcome (sent/failed taxonomy). Commits.
+
+    Records the safe facts only — recipient (PII, not a secret), template key,
+    queue message id, and a stable error code. NEVER a token or app secret.
+    """
+    meta: dict[str, Any] = {
+        "customer_id": int(customer_id),
+        "template_key": template_key or "",
+        "recipient": (recipient or "")[:40],
+    }
+    if message_id is not None:
+        meta["message_id"] = int(message_id)
+    if not ok and error_code:
+        meta["error_code"] = error_code
+    wa_settings._audit(
+        AUDIT_TEST_SENT if ok else AUDIT_TEST_FAILED,
+        "whatsapp_test_message",
+        message_id if message_id is not None else int(customer_id),
+        "WhatsApp tenant test message " + ("sent" if ok else "failed"),
+        meta,
+    )
+    db.session.commit()
+
+
+# ───────────────────────── state/nonce sessions ─────────────────────────
+#
+# Server-issued, single-use ``state`` + ``nonce`` bind Meta's popup to the
+# session customer. Only SHA-256 hashes are persisted (raw values are handed to
+# the browser once); the completion callback (P4) must echo a ``state`` matching
+# a live pending attempt for the SAME customer. Additive + feature-flagged.
+
+def _hash(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+def _attempt_ttl_seconds() -> int:
+    try:
+        return int(current_app.config.get("META_EMBEDDED_ATTEMPT_TTL_SECONDS") or 600)
+    except (TypeError, ValueError):
+        return 600
+
+
+def start_session(customer_id: int, *, license_id: int | None = None,
+                  initiated_by: int | None = None) -> dict:
+    """Begin a server-bound embedded-signup attempt for one customer.
+
+    Issues a one-time ``state`` + ``nonce``, persists only their hashes as a
+    *pending* attempt (with ``expires_at`` + ``initiated_by``), expires any
+    older live attempts for the customer, and audits ``embedded_signup_started``.
+
+    Returns the RAW ``{"state", "nonce"}`` for the browser to echo back on
+    completion. The raw values are never stored.
+    """
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(16)
+    now = utcnow()
+
+    # Single active state: invalidate any prior live attempts for this customer.
+    WhatsAppEmbeddedSignupAttempt.query.filter_by(
+        customer_id=int(customer_id), status="pending",
+    ).update({"status": "expired", "completed_at": now}, synchronize_session=False)
+
+    attempt = WhatsAppEmbeddedSignupAttempt(
+        customer_id=int(customer_id),
+        license_id=license_id,
+        state_hash=_hash(state),
+        nonce_hash=_hash(nonce),
+        status="pending",
+        initiated_by=initiated_by,
+        expires_at=now + timedelta(seconds=_attempt_ttl_seconds()),
+    )
+    db.session.add(attempt)
+    db.session.commit()
+
+    _emit_audit(
+        AUDIT_STARTED, None,
+        "whatsapp_embedded_attempt", attempt.id,
+        "Embedded Signup started",
+        {"customer_id": int(customer_id)},
+    )
+    db.session.commit()
+    return {"state": state, "nonce": nonce}
+
+
+def _consume_state(customer_id: int, state: str, *, nonce: str | None = None):
+    """Validate an echoed ``state`` (+ optional ``nonce``) for this customer.
+
+    Returns the matching live *pending* :class:`WhatsAppEmbeddedSignupAttempt`
+    so the caller (P4) can finalize it after the code exchange. Raises
+    :class:`EmbeddedSignupError` when no live attempt matches the SESSION
+    customer, or when it is expired / already consumed. Tenant-isolated: an
+    attempt belonging to another customer never matches.
+    """
+    state = (state or "").strip()
+    if not state:
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    attempt = WhatsAppEmbeddedSignupAttempt.query.filter_by(state_hash=_hash(state)).first()
+    if attempt is None or attempt.customer_id != int(customer_id) or attempt.status != "pending":
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    if attempt.expires_at and attempt.expires_at < utcnow():
+        attempt.status = "expired"
+        attempt.completed_at = utcnow()
+        db.session.commit()
+        raise EmbeddedSignupError("expired_state", _STATE_EXPIRED_AR)
+    if nonce is not None and _hash((nonce or "").strip()) != (attempt.nonce_hash or ""):
+        raise EmbeddedSignupError("invalid_state", _STATE_INVALID_AR)
+    return attempt
+
+
+def _finalize_attempt(attempt, *, status: str, error_code: str | None = None,
+                      error_message: str | None = None) -> None:
+    """Mark an attempt terminal (``completed``/``failed``/``expired``). Commits."""
+    if attempt is None:
+        return
+    attempt.status = status
+    attempt.completed_at = utcnow()
+    attempt.error_code = error_code
+    attempt.error_message = error_message
+    db.session.commit()
 
 
 # ───────────────────────────── config ─────────────────────────────
@@ -270,8 +439,8 @@ def complete_signup(
     account.last_error_message = None
     db.session.commit()
 
-    wa_settings._audit(
-        "whatsapp_embedded_connected",
+    _emit_audit(
+        AUDIT_SUCCEEDED, _LEGACY_CONNECTED,
         "whatsapp_account",
         account.id,
         "WhatsApp connected via Embedded Signup",
@@ -286,6 +455,114 @@ def complete_signup(
         "display_phone_number": phone.get("display_phone_number", ""),
         "business_name": account.business_display_name or "",
     }
+
+
+def complete_with_state(
+    customer_id: int,
+    *,
+    code: str,
+    waba_id: str,
+    phone_number_id: str,
+    state: str = "",
+    nonce: str = "",
+    license_id: int | None = None,
+    require_state: bool | None = None,
+) -> dict:
+    """State-validated, idempotent embedded-signup completion (the route entry).
+
+    Wraps :func:`complete_signup` with:
+
+    * **State/nonce enforcement** — when ``state`` is supplied it MUST match a
+      live pending attempt for THIS customer (tenant-scoped); otherwise an
+      ``EmbeddedSignupError`` (``invalid_state``/``expired_state``) is raised.
+    * **Safe degrade** — when no ``state`` is supplied the legacy direct path is
+      used, UNLESS ``require_state`` (``META_EMBEDDED_REQUIRE_STATE``) forces it.
+    * **Idempotency** — a replayed callback whose ``state`` was already consumed
+      and whose account is already connected returns the existing connection
+      (``idempotent=True``) without a second code exchange or a duplicate row.
+    * **Failure auditing** — any failure (state or Meta) finalizes the attempt
+      ``failed`` and audits ``embedded_signup_failed`` with a safe code only.
+
+    Returns the same dict shape as :func:`complete_signup` (+ ``idempotent``).
+    """
+    state = (state or "").strip()
+    nonce = (nonce or "").strip()
+    if require_state is None:
+        require_state = bool(current_app.config.get("META_EMBEDDED_REQUIRE_STATE", False))
+
+    # A "reconnect" replaces a LIVE connection. The old credentials stay intact
+    # until (and unless) the new exchange succeeds — complete_signup only upserts
+    # the token after a successful exchange, so a failed reconnect leaves the
+    # working connection untouched (we do NOT flip it to error).
+    account_before = wa_settings.get_account(customer_id)
+    was_connected = bool(
+        account_before is not None
+        and account_before.connection_status == "connected"
+        and account_before.access_token_encrypted
+    )
+
+    attempt = None
+    try:
+        if state:
+            existing = WhatsAppEmbeddedSignupAttempt.query.filter_by(state_hash=_hash(state)).first()
+            # Idempotent replay: same state already completed + account connected.
+            if (existing is not None
+                    and existing.customer_id == int(customer_id)
+                    and existing.status == "completed"):
+                account = wa_settings.get_account(customer_id)
+                if account is not None and account.connection_status == "connected":
+                    return {
+                        "ok": True, "status": "connected", "idempotent": True,
+                        "display_phone_number": account.display_phone_number or "",
+                        "business_name": account.business_display_name or "",
+                    }
+            # Otherwise require a live pending attempt (raises on bad/expired/reused).
+            attempt = _consume_state(customer_id, state, nonce=nonce or None)
+        elif require_state:
+            raise EmbeddedSignupError("missing_state", _STATE_INVALID_AR)
+        # else: no state supplied and not required → legacy direct path.
+
+        result = complete_signup(
+            customer_id,
+            code=code,
+            waba_id=waba_id,
+            phone_number_id=phone_number_id,
+            license_id=license_id,
+        )
+    except EmbeddedSignupError as exc:
+        if attempt is not None:
+            _finalize_attempt(attempt, status="failed",
+                              error_code=exc.code, error_message=exc.message)
+        # Mark the account 'error' ONLY when it isn't a live connection and the
+        # failure was a real exchange error (not a state rejection). A failed
+        # reconnect of a connected account keeps its 'connected' state + token.
+        if (not was_connected and account_before is not None
+                and exc.code not in STATE_ERROR_CODES):
+            wa_settings.set_connection_status(
+                customer_id, "error", error_code=exc.code, error_message=exc.message
+            )
+        _emit_audit(
+            AUDIT_FAILED, None,
+            "whatsapp_embedded_attempt", attempt.id if attempt else int(customer_id),
+            "Embedded Signup failed",
+            {"customer_id": int(customer_id), "code": exc.code,
+             "reconnect": bool(was_connected)},
+        )
+        db.session.commit()
+        raise
+
+    if attempt is not None:
+        _finalize_attempt(attempt, status="completed")
+    if was_connected:
+        account = wa_settings.get_account(customer_id)
+        _emit_audit(
+            AUDIT_RECONNECTED, None,
+            "whatsapp_account", account.id if account else int(customer_id),
+            "WhatsApp reconnected via Embedded Signup",
+            {"customer_id": int(customer_id)},
+        )
+        db.session.commit()
+    return result
 
 
 def validate_connection(customer_id: int) -> dict:
@@ -314,22 +591,37 @@ def validate_connection(customer_id: int) -> dict:
     account.last_error_code = None
     account.last_error_message = None
     db.session.commit()
+    _emit_audit(
+        AUDIT_SYNCED, None,
+        "whatsapp_account", account.id,
+        "WhatsApp connection synced",
+        {"customer_id": int(customer_id)},
+    )
+    db.session.commit()
     return {"ok": True, "status": "connected", **info}
 
 
 def disconnect(customer_id: int) -> bool:
-    """Clear the stored connection (token + IDs) and mark disconnected. Audited."""
+    """Soft-disconnect: clear the stored token, mark disconnected, audit.
+
+    Idempotent — repeating a disconnect on an already-disconnected account is a
+    safe no-op (no second audit row, audit history preserved). Returns False
+    only when there is no account at all.
+    """
     account = wa_settings.get_account(customer_id)
     if account is None:
         return False
+    # Already soft-disconnected → no-op (keep history, don't re-audit).
+    if account.connection_status == "disconnected" and not account.access_token_encrypted:
+        return True
     account.access_token_encrypted = None
     account.webhook_secret_encrypted = None
     account.connection_status = "disconnected"
     account.disconnected_at = utcnow()
     account.last_sync_at = utcnow()
     db.session.commit()
-    wa_settings._audit(
-        "whatsapp_embedded_disconnected",
+    _emit_audit(
+        AUDIT_DISCONNECTED, _LEGACY_DISCONNECTED,
         "whatsapp_account",
         account.id,
         "WhatsApp disconnected",

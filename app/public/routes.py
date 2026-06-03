@@ -663,6 +663,7 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
             "wa_recent_messages": [],
             "wa_current_step": 1,
             "wa_embedded_available": False,
+            "wa_embedded_setup_incomplete": False,
             "wa_embedded_config": {},
         }
 
@@ -688,6 +689,11 @@ def whatsapp_pane_context(user: CustomerUser) -> dict:
         "wa_current_step": _whatsapp_current_step(account, settings_row, templates),
         # Embedded Signup (primary, self-service) availability + browser config.
         "wa_embedded_available": wa_embed.embedded_signup_available(),
+        # True when the flag is ON but the panel creds are missing — drives the
+        # "admin config incomplete" state (a friendly warning, never a broken CTA).
+        "wa_embedded_setup_incomplete": bool(
+            current_app.config.get("META_EMBEDDED_SIGNUP_ENABLED", False)
+        ) and not wa_embed.embedded_signup_available(),
         "wa_embedded_config": wa_embed.public_config(),
     }
 
@@ -793,9 +799,12 @@ def customer_portal_whatsapp_post():
         return redirect(_whatsapp_pane_url())
 
     if action == "send_test":
+        # Sends through the connected TENANT account (the worker reads the
+        # per-customer encrypted token) — never the house credentials.
         from ..services.whatsapp import policy as wa_policy
         from ..services.whatsapp import queue as wa_queue
         from ..services.whatsapp import worker as wa_worker
+        from ..services.whatsapp import embedded_signup as wa_embed
         from ..services.whatsapp.phone import WhatsAppPhoneError, normalize_phone_for_whatsapp
         from ..models import utcnow
 
@@ -809,35 +818,55 @@ def customer_portal_whatsapp_post():
             flash(str(exc), "error")
             return redirect(_whatsapp_pane_url())
 
+        # Honour the chosen template, else default to hello_world / first approved.
+        preferred = (request.form.get("template_key") or "").strip() or None
+        chosen = wa_settings.pick_test_template(customer.id, preferred_local_key=preferred)
+        if chosen is None:
+            flash("لا يوجد قالب واتساب معتمد لإرسال رسالة تجربة. اعتمد قالبًا أولًا.", "error")
+            return redirect(_whatsapp_pane_url())
+
         idem = f"portal-test:{customer.id}:{normalized}:{int(utcnow().timestamp())}"
         decision = wa_policy.can_send(
             customer.id,
             event_type="test_message",
             recipient_phone=recipient,
+            template_key=chosen.local_key,
             idempotency_key=idem,
         )
         if not decision.allowed:
+            wa_embed.audit_tenant_test_message(
+                customer.id, ok=False, recipient=recipient,
+                template_key=chosen.local_key, error_code=decision.reason,
+            )
             flash(decision.message_ar or "تعذّر إرسال رسالة التجربة.", "error")
             return redirect(_whatsapp_pane_url())
 
-        template_key = (request.form.get("template_key") or "").strip()
-        template = wa_settings.get_template(customer.id, template_key, "ar") if template_key else None
-        wa_queue.enqueue(
+        row, _created = wa_queue.enqueue(
             customer.id,
             source_system="customer_portal",
             source_event_type="test_message",
             recipient_phone=recipient,
             normalized_recipient_phone=decision.normalized_phone or normalized,
             idempotency_key=idem,
-            template_key=template_key or None,
-            template_name=(template.provider_template_name if template else None),
-            language=(template.language if template else "ar"),
+            template_key=chosen.local_key,
+            template_name=chosen.provider_template_name,
+            language=chosen.language or "ar",
         )
         try:
             wa_worker.drain_once()
         except Exception:  # noqa: BLE001 — drain is best-effort.
             db.session.rollback()
-        flash("تمت جدولة رسالة التجربة. تابع حالتها في سجل الرسائل.", "success")
+        row = wa_queue.get_message(row.id) or row
+
+        sent = (row.status == "sent")
+        wa_embed.audit_tenant_test_message(
+            customer.id, ok=sent, recipient=recipient, template_key=chosen.local_key,
+            message_id=row.id, error_code=(row.error_code or ""), error_message=(row.error_message or ""),
+        )
+        if sent:
+            flash("تم إرسال رسالة التجربة بنجاح ✅. تابع حالتها في سجل الرسائل.", "success")
+        else:
+            flash("تعذّر إرسال رسالة التجربة. " + (row.error_message or "راجع الربط والقالب ثم أعد المحاولة."), "error")
         return redirect(_whatsapp_pane_url())
 
     if action in ("enable_events", "save_settings"):
@@ -863,6 +892,22 @@ def customer_portal_whatsapp_post():
         flash("تم إيقاف الخدمة.", "warning")
         return redirect(_whatsapp_pane_url())
 
+    if action == "refresh_status":
+        # Re-probe Meta for the connected tenant account and sync health.
+        # validate_connection never raises and never leaks the token; it updates
+        # last_sync_at/status/last_error and audits whatsapp_connection_synced.
+        from ..services.whatsapp import embedded_signup as wa_embed
+        account = wa_settings.get_account(customer.id)
+        if account is None or not account.access_token_encrypted:
+            flash("لا يوجد حساب واتساب مربوط لتحديث حالته.", "error")
+            return redirect(_whatsapp_pane_url())
+        result = wa_embed.validate_connection(customer.id)
+        if result.get("ok"):
+            flash("تم تحديث حالة الربط بنجاح.", "success")
+        else:
+            flash("تعذّر تحديث الحالة. تحقق من الربط أو أعد الاتصال.", "error")
+        return redirect(_whatsapp_pane_url())
+
     if action == "disconnect":
         from ..services.whatsapp import embedded_signup as wa_embed
         wa_embed.disconnect(customer.id)
@@ -873,14 +918,68 @@ def customer_portal_whatsapp_post():
     return redirect(_whatsapp_pane_url())
 
 
+@bp.get("/portal/whatsapp/embedded/config")
+def customer_portal_whatsapp_embedded_config():
+    """Safe, non-secret config the browser SDK needs (never the app secret).
+
+    Returns ``{ok, enabled, app_id, config_id, graph_version}``. When embedded
+    signup is unavailable (flag off or creds missing) ``enabled`` is False and
+    the id fields are blank, so the UI can show the setup-incomplete state
+    instead of a broken button. Requires a logged-in portal user.
+    """
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from ..services.whatsapp import embedded_signup as wa_embed
+    enabled = wa_embed.embedded_signup_available()
+    cfg = wa_embed.public_config() if enabled else {"app_id": "", "config_id": "", "graph_version": ""}
+    return jsonify({"ok": True, "enabled": enabled, **cfg})
+
+
+@bp.post("/portal/whatsapp/embedded/start")
+def customer_portal_whatsapp_embedded_start():
+    """Begin a server-bound embedded-signup attempt; return one-time state+nonce.
+
+    Issues + persists (hashed) a pending attempt for the SESSION customer and
+    audits ``embedded_signup_started``. Tenant-isolated — any customer_id in the
+    body is ignored. Behind the feature flag (503 when unavailable). CSRF is
+    enforced by the global before_request (X-CSRFToken header).
+    """
+    user = _current_customer_user()
+    if not user:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    customer = user.customer
+    if not _whatsapp_gateway_granted(customer):
+        return jsonify({"ok": False, "error": "locked",
+                        "message": "هذه الخدمة غير مفعلة في خطتك الحالية."}), 403
+    from ..services.whatsapp import embedded_signup as wa_embed
+    if not wa_embed.embedded_signup_available():
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "خدمة الربط التلقائي غير مهيأة بعد. استخدم الإعداد المتقدم."}), 503
+
+    issued = wa_embed.start_session(
+        customer.id,
+        license_id=getattr(customer, "license_id", None) or None,
+        initiated_by=user.id,
+    )
+    return jsonify({
+        "ok": True,
+        "state": issued["state"],
+        "nonce": issued["nonce"],
+        "config": wa_embed.public_config(),
+    })
+
+
 @bp.post("/portal/whatsapp/embedded/complete")
 def customer_portal_whatsapp_embedded_complete():
     """Finish Meta Embedded Signup for the SESSION customer (AJAX → JSON).
 
-    The browser popup returns {code, waba_id, phone_number_id}; we complete the
-    server-side exchange + storage and return JSON so the pane updates without a
-    full reload. Scoped to the session customer — any customer_id in the body is
-    ignored. CSRF is enforced by the global before_request (X-CSRFToken header).
+    The browser popup returns {code, waba_id, phone_number_id, state, nonce}; we
+    validate the server-issued state (tenant-scoped), complete the exchange +
+    storage, and return JSON so the pane updates without a full reload. Scoped to
+    the session customer — any customer_id in the body is ignored. A replayed
+    callback returns the existing connection without creating a duplicate. CSRF
+    is enforced by the global before_request (X-CSRFToken header).
     """
     user = _current_customer_user()
     if not user:
@@ -891,27 +990,25 @@ def customer_portal_whatsapp_embedded_complete():
                         "message": "هذه الخدمة غير مفعلة في خطتك الحالية."}), 403
 
     from ..services.whatsapp import embedded_signup as wa_embed
-    from ..services.whatsapp import settings as wa_settings
     if not wa_embed.embedded_signup_available():
         return jsonify({"ok": False, "error": "unavailable",
                         "message": "خدمة الربط التلقائي غير مهيأة بعد. استخدم الإعداد المتقدم."}), 503
 
     payload = request.get_json(silent=True) or {}
     try:
-        result = wa_embed.complete_signup(
+        result = wa_embed.complete_with_state(
             customer.id,
             code=(payload.get("code") or "").strip(),
             waba_id=(payload.get("waba_id") or "").strip(),
             phone_number_id=(payload.get("phone_number_id") or "").strip(),
+            state=(payload.get("state") or "").strip(),
+            nonce=(payload.get("nonce") or "").strip(),
             license_id=getattr(customer, "license_id", None) or None,
         )
     except wa_embed.EmbeddedSignupError as exc:
-        try:
-            wa_settings.set_connection_status(
-                customer.id, "error", error_code=exc.code, error_message=exc.message
-            )
-        except Exception:  # noqa: BLE001 — never let status-write mask the real error
-            db.session.rollback()
+        # Account status on failure is owned by complete_with_state: a real Meta
+        # error marks a non-live account 'error', a failed reconnect keeps the
+        # live connection, and a state rejection touches nothing.
         return jsonify({"ok": False, "error": exc.code, "message": exc.message}), 400
 
     return jsonify({"ok": True, **result, "message": "تم ربط واتساب بنجاح ✅",

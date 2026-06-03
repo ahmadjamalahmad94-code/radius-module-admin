@@ -106,6 +106,13 @@ class Config:
     META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", WHATSAPP_GRAPH_API_VERSION)
     # Optional explicit OAuth redirect override (else derived from url_for).
     META_OAUTH_REDIRECT_URI = os.environ.get("META_OAUTH_REDIRECT_URI", "")
+    # Lifetime (seconds) of a server-issued embedded-signup state/nonce session
+    # before it expires; the completion callback must arrive within this window.
+    META_EMBEDDED_ATTEMPT_TTL_SECONDS = _env_int("META_EMBEDDED_ATTEMPT_TTL_SECONDS", 600)
+    # When True, the completion callback MUST carry a valid server-issued state
+    # (no legacy/no-state path). Default False so a missing/legacy flow degrades
+    # safely; the callback still enforces state whenever the frontend supplies it.
+    META_EMBEDDED_REQUIRE_STATE = _env_bool("META_EMBEDDED_REQUIRE_STATE", False)
 
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the

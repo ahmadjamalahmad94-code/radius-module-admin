@@ -831,6 +831,47 @@ class WhatsAppTenantAccount(TimestampMixin, db.Model):
     license = db.relationship("License")
 
 
+class WhatsAppEmbeddedSignupAttempt(TimestampMixin, db.Model):
+    """A single Meta Embedded Signup onboarding attempt (state/nonce session).
+
+    Hardens the self-service flow: before the browser opens Meta's popup the
+    backend issues a one-time ``state`` + ``nonce`` and records a *pending*
+    attempt here. The completion callback must echo a ``state`` that matches a
+    live (non-expired, non-consumed) attempt for the SAME session customer,
+    which is then marked ``completed``/``failed``. This binds the popup to the
+    server session and makes a replayed/forged callback fail closed.
+
+    Only SHA-256 *hashes* of the state/nonce are stored (mirrors
+    ``WhatsAppTenantAccount.webhook_verify_token_hash``); the raw values are
+    handed to the browser once and never persisted in clear.
+
+    Additive + feature-flagged: when embedded signup is disabled, nothing
+    writes here and the legacy flow is untouched.
+    """
+    __tablename__ = "whatsapp_embedded_signup_attempts"
+    __table_args__ = (
+        db.UniqueConstraint("state_hash", name="uq_whatsapp_embedded_attempts_state_hash"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    # SHA-256 hex digests of the one-time state + nonce (raw values never stored).
+    state_hash = db.Column(db.String(128), nullable=False)
+    nonce_hash = db.Column(db.String(128), nullable=True)
+    # pending -> completed | failed | expired
+    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    error_code = db.Column(db.String(60), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    # The customer_user who started the attempt ("initiated_by user id").
+    initiated_by = db.Column(db.Integer, db.ForeignKey("customer_users.id"), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+
 class WhatsAppServiceSettings(TimestampMixin, db.Model):
     """Per-customer WhatsApp gateway plan + policy switches.
 

@@ -293,6 +293,33 @@ def get_template(customer_id: int, local_key: str, language: str = "ar") -> What
     ).first()
 
 
+def pick_test_template(customer_id: int, preferred_local_key: str | None = None) -> WhatsAppTemplate | None:
+    """Choose an approved template for a test send.
+
+    Preference order: an explicit (approved) ``preferred_local_key`` → a
+    ``hello_world`` template (Meta's default sample) → ``otp`` → the first
+    approved template ("the first recommended simple template"). Returns
+    ``None`` when the customer has no approved template at all.
+    """
+    approved = [t for t in list_templates(customer_id) if t.status == "approved"]
+    if not approved:
+        return None
+    if preferred_local_key:
+        match = next((t for t in approved if t.local_key == preferred_local_key), None)
+        if match is not None:
+            return match
+
+    def _find(pred) -> WhatsAppTemplate | None:
+        return next((t for t in approved if pred(t)), None)
+
+    return (
+        _find(lambda t: t.local_key == "hello_world"
+              or (t.provider_template_name or "").lower() == "hello_world")
+        or _find(lambda t: t.local_key == "otp")
+        or approved[0]
+    )
+
+
 def upsert_template(
     customer_id: int,
     *,
