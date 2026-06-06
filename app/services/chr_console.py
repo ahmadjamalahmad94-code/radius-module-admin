@@ -48,14 +48,26 @@ def status() -> dict:
     return {"ok": True, **info}
 
 
-def _section(label: str, fetch) -> dict:
-    """يجلب قسمًا واحدًا مستقلًّا. أي فشل (400/404/شبكة) يبقى محصورًا في هذا القسم
-    فيُعرَض «غير متاح» دون إسقاط بقية الوحدة. يعيد {available, items, error, code}."""
+# أكواد تعني «القائمة غير مُهيّأة/غير موجودة على هذا CHR» لا «عطل حقيقي». حين تكون
+# بقية الأقسام تعمل (الاتصال/المصادقة سليمة) نعامل هذه على أنها قائمة فارغة (حالة
+# فارغة) بدل إظهار خطأ «Bad Request» لقائمة لم تُهيّأ بعد.
+_SOFT_EMPTY_CODES = ("request_invalid", "not_found")
+
+
+def _section(label: str, fetch, *, soft_empty: bool = False) -> dict:
+    """يجلب قسمًا واحدًا مستقلًّا. أي فشل (شبكة/مصادقة) يبقى محصورًا في هذا القسم
+    فيُعرَض «غير متاح» دون إسقاط بقية الوحدة. يعيد {available, rows, error, code}.
+
+    ``soft_empty=True``: إن رفض CHR هذه القائمة بـ 400/404 (قائمة غير مُهيّأة على هذا
+    الجهاز) نعيدها كقائمة فارغة (حالة فارغة) لا كخطأ — يُحجز الخطأ للأعطال الحقيقية."""
     try:
-        items = fetch()
+        rows = fetch()
     except RouterOSError as exc:
+        if soft_empty and exc.code in _SOFT_EMPTY_CODES:
+            return {"available": True, "rows": [], "error": "", "code": exc.code,
+                    "label": label, "soft_empty": True}
         return {"available": False, "rows": [], "error": exc.message, "code": exc.code, "label": label}
-    return {"available": True, "rows": items, "error": "", "code": "", "label": label}
+    return {"available": True, "rows": rows, "error": "", "code": "", "label": label}
 
 
 def _system_section(client) -> dict:
@@ -95,7 +107,9 @@ def overview() -> dict:
     sections = {
         "ppp_secrets": _section("مستخدمو الأنفاق (PPP)", client.list_ppp_secrets),
         "ppp_active": _section("جلسات PPP النشطة", client.list_ppp_active),
-        "ipsec_users": _section("مستخدمو IPsec", client.list_ipsec_users),
+        # قائمة مستخدمي IPsec قد تكون غير مُهيّأة على بعض أجهزة CHR فترجع 400/404؛
+        # نعاملها كفارغة (حالة فارغة) لا كعطل. رؤية IKEv2 تبقى عبر الهويات والجلسات.
+        "ipsec_users": _section("مستخدمو IPsec", client.list_ipsec_users, soft_empty=True),
         "ipsec_identities": _section("هويات IPsec", client.list_ipsec_identities),
         "ipsec_active": _section("جلسات IPsec النشطة", client.list_ipsec_active_peers),
         "interfaces": _section("الواجهات", client.list_interfaces),

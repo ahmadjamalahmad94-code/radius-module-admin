@@ -71,6 +71,10 @@ class _FakeConsoleClient:
 
     # أسماء دوال القراءة التي يجب أن ترفع 400 (لمحاكاة رفض CHR لمسار واحد).
     bad_400 = set()
+    # دوال ترفع عطلًا حقيقيًا (اتصال) لاختبار أن المعالجة الناعمة لا تبتلعه.
+    bad_connect = set()
+    # دوال تعيد قائمة فارغة (لاختبار الحالة الفارغة).
+    empty = set()
 
     def __init__(self, *a, **k):
         pass
@@ -80,6 +84,8 @@ class _FakeConsoleClient:
             raise RouterOSError("connect_failed", "تعذّر الاتصال بمضيف CHR.", retryable=True)
         if name and name in _FakeConsoleClient.bad_400:
             raise RouterOSError("request_invalid", "طلب غير مقبول من CHR — Bad Request", http_status=400)
+        if name and name in _FakeConsoleClient.bad_connect:
+            raise RouterOSError("connect_failed", "تعذّر الاتصال بمضيف CHR.", retryable=True)
 
     def test_connection(self):
         self._guard("test_connection")
@@ -104,6 +110,8 @@ class _FakeConsoleClient:
 
     def list_ipsec_users(self):
         self._guard("list_ipsec_users")
+        if "list_ipsec_users" in _FakeConsoleClient.empty:
+            return []
         return [{".id": "*u1", "name": "c1-bbbb", "disabled": "false", "comment": "hoberadius"}]
 
     def list_ipsec_identities(self):
@@ -147,6 +155,8 @@ class _FakeConsoleClient:
 def fake_console(app, monkeypatch):
     _FakeConsoleClient.raise_all = False
     _FakeConsoleClient.bad_400 = set()
+    _FakeConsoleClient.bad_connect = set()
+    _FakeConsoleClient.empty = set()
     _FakeConsoleClient.disabled_calls = []
     _FakeConsoleClient.removed_calls = []
     _FakeConsoleClient.rebooted = False
@@ -299,6 +309,62 @@ def test_console_one_section_400_others_still_render(app, fake_console):
     assert data["sections"]["ppp_secrets"]["available"] is True
     assert data["sections"]["interfaces"]["available"] is True
     assert data["system"]["available"] is True
+
+
+def test_ipsec_users_success_renders_list(app, fake_console):
+    _configure_chr()
+    data = chr_console.overview()
+    sec = data["sections"]["ipsec_users"]
+    assert sec["available"] is True
+    assert sec["rows"][0]["name"] == "c1-bbbb"
+
+
+def test_ipsec_users_empty_renders_empty_state(app, fake_console):
+    _configure_chr()
+    fake_console.empty = {"list_ipsec_users"}
+    data = chr_console.overview()
+    sec = data["sections"]["ipsec_users"]
+    assert sec["available"] is True   # متاح لكن فارغ ⇒ حالة فارغة لا خطأ
+    assert sec["rows"] == []
+    assert not sec.get("error")
+
+
+def test_ipsec_users_400_renders_empty_not_error(app, fake_console):
+    """الخلل الحيّ: GET /rest/ip/ipsec/user يرجع 400 على هذا CHR (قائمة غير مُهيّأة).
+    يُعرَض كحالة فارغة لا كـ «Bad Request»، وبقية الأقسام تعمل."""
+    _configure_chr()
+    fake_console.bad_400 = {"list_ipsec_users"}
+    data = chr_console.overview()
+    sec = data["sections"]["ipsec_users"]
+    assert sec["available"] is True          # ليس خطأ
+    assert sec["rows"] == []                  # حالة فارغة
+    assert sec.get("soft_empty") is True
+    assert not sec.get("error")
+    # بقية الأقسام سليمة.
+    assert data["sections"]["ipsec_identities"]["available"] is True
+    assert data["sections"]["ipsec_active"]["available"] is True
+
+
+def test_ipsec_users_real_failure_still_shows_error(app, fake_console):
+    """عطل حقيقي (اتصال) لا يُبتلع — يبقى خطأً ظاهرًا في القسم."""
+    _configure_chr()
+    fake_console.bad_connect = {"list_ipsec_users"}
+    data = chr_console.overview()
+    sec = data["sections"]["ipsec_users"]
+    assert sec["available"] is False
+    assert sec["error"]
+
+
+def test_console_page_ipsec_users_400_shows_empty_state(app, client, fake_console):
+    _configure_chr()
+    fake_console.bad_400 = {"list_ipsec_users"}
+    _login(client)
+    resp = client.get("/admin/chr/console")
+    assert resp.status_code == 200
+    # القسم يظهر بحالة فارغة (رسالة الفراغ) لا بشارة «غير متاح».
+    assert "لم تُهيّأ هذه القائمة".encode() in resp.data
+    # وبقية الأقسام ظاهرة.
+    assert "ether1".encode() in resp.data
 
 
 def test_console_mutations(app, fake_console):
