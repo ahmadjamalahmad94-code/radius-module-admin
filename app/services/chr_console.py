@@ -48,51 +48,65 @@ def status() -> dict:
     return {"ok": True, **info}
 
 
-def overview() -> dict:
-    """لقطة كاملة للوحدة: النظام + الأعداد + قوائم (PPP/IPsec/واجهات/جلسات).
+def _section(label: str, fetch) -> dict:
+    """يجلب قسمًا واحدًا مستقلًّا. أي فشل (400/404/شبكة) يبقى محصورًا في هذا القسم
+    فيُعرَض «غير متاح» دون إسقاط بقية الوحدة. يعيد {available, items, error, code}."""
+    try:
+        items = fetch()
+    except RouterOSError as exc:
+        return {"available": False, "rows": [], "error": exc.message, "code": exc.code, "label": label}
+    return {"available": True, "rows": items, "error": "", "code": "", "label": label}
 
-    لا يرفع: عند تعذّر الوصول يعيد ``{"ok": False, "message": …}`` فقط، فتعرض
-    الصفحة شارة «تعذّر الوصول» دون أي انهيار.
+
+def _system_section(client) -> dict:
+    """قسم النظام/الهوية مستقلّ أيضًا (نفس مسارات اختبار الاتصال الناجح)."""
+    try:
+        resource = client.system_resource()
+        identity = client.system_identity()
+    except RouterOSError as exc:
+        return {"available": False, "error": exc.message, "code": exc.code}
+    return {
+        "available": True,
+        "error": "",
+        "identity": str(identity.get("name") or ""),
+        "version": str(resource.get("version") or ""),
+        "board_name": str(resource.get("board-name") or ""),
+        "uptime": str(resource.get("uptime") or ""),
+        "cpu_load": str(resource.get("cpu-load") or ""),
+        "free_memory": str(resource.get("free-memory") or ""),
+        "total_memory": str(resource.get("total-memory") or ""),
+    }
+
+
+def overview() -> dict:
+    """لقطة الوحدة. **كل قسم يُجلب مستقلًّا**: إن رفض CHR نداءً واحدًا (مثلاً 400 على
+    مسار REST معيّن) يبقى الخطأ محصورًا في قسمه ويُعرَض «غير متاح»، وتظل بقية الأقسام
+    تعمل — لا تنهار الوحدة كلها برسالة واحدة. لا يرفع أبدًا.
+
+    * ``ok=False`` فقط حين لا يكون CHR مضبوطًا (تعذّر بناء العميل).
+    * ``reachable=False`` حين كان مضبوطًا لكن لم يستجب أي قسم (انقطاع كامل).
     """
     try:
         client = _client()
     except chr_settings.ChrSettingsError as exc:
-        return {"ok": False, "code": "not_configured", "message": str(exc)}
-    try:
-        resource = client.system_resource()
-        identity = client.system_identity()
-        ppp_secrets = client.list_ppp_secrets()
-        ppp_active = client.list_ppp_active()
-        ipsec_users = client.list_ipsec_users()
-        ipsec_identities = client.list_ipsec_identities()
-        ipsec_active = client.list_ipsec_active_peers()
-        interfaces = client.list_interfaces()
-    except RouterOSError as exc:
-        return _fail(exc)
+        return {"ok": False, "reachable": False, "code": "not_configured", "message": str(exc)}
+
+    system = _system_section(client)
+    sections = {
+        "ppp_secrets": _section("مستخدمو الأنفاق (PPP)", client.list_ppp_secrets),
+        "ppp_active": _section("جلسات PPP النشطة", client.list_ppp_active),
+        "ipsec_users": _section("مستخدمو IPsec", client.list_ipsec_users),
+        "ipsec_identities": _section("هويات IPsec", client.list_ipsec_identities),
+        "ipsec_active": _section("جلسات IPsec النشطة", client.list_ipsec_active_peers),
+        "interfaces": _section("الواجهات", client.list_interfaces),
+    }
+    reachable = system.get("available") or any(s["available"] for s in sections.values())
     return {
         "ok": True,
-        "system": {
-            "identity": str(identity.get("name") or ""),
-            "version": str(resource.get("version") or ""),
-            "board_name": str(resource.get("board-name") or ""),
-            "uptime": str(resource.get("uptime") or ""),
-            "cpu_load": str(resource.get("cpu-load") or ""),
-            "free_memory": str(resource.get("free-memory") or ""),
-            "total_memory": str(resource.get("total-memory") or ""),
-        },
-        "ppp_secrets": ppp_secrets,
-        "ppp_active": ppp_active,
-        "ipsec_users": ipsec_users,
-        "ipsec_identities": ipsec_identities,
-        "ipsec_active": ipsec_active,
-        "interfaces": interfaces,
-        "counts": {
-            "ppp_secrets": len(ppp_secrets),
-            "ppp_active": len(ppp_active),
-            "ipsec_users": len(ipsec_users),
-            "ipsec_active": len(ipsec_active),
-            "interfaces": len(interfaces),
-        },
+        "reachable": bool(reachable),
+        "system": system,
+        "sections": sections,
+        "counts": {key: len(sec["rows"]) for key, sec in sections.items()},
     }
 
 

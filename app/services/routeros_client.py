@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import socket
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 class RouterOSError(Exception):
@@ -129,6 +132,9 @@ class RouterOSClient:
             with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as exc:
+            # تشخيص آمن: المنهج والمسار والحالة فقط (دون أسرار/جسم) كي نحدّد بالضبط
+            # أي نداء REST رُفض (مثلاً 400 على مسار معيّن في وحدة التحكّم).
+            _log.warning("RouterOS REST %s /rest/%s -> HTTP %s", method.upper(), path.lstrip("/"), exc.code)
             raise self._http_error(exc) from None
         except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
             # لا نُدرج تفاصيل النظام الخام (قد تكشف بنية الشبكة)؛ كود عام قابل لإعادة المحاولة.
