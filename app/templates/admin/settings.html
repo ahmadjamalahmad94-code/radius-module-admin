@@ -119,9 +119,22 @@
   <p class="hub-field-hint" style="margin:0 0 14px">
     بيانات اتصال CHR المركزي (RouterOS REST API). تُستخدم لإنشاء حسابات SSTP/PPTP/L2TP
     وتسليمها لِلوحات العملاء عبر الجسر. كلمة المرور تُخزَّن <b>مشفّرة</b> ولا تظهر بعد الحفظ.
+    كل الحقول أدناه تُضبط وتُخزَّن من هنا (قاعدة البيانات)، والمتغيّر البيئي يبقى افتراضيًا احتياطيًا فقط.
     {% if chr_state.configured %}<b style="color:#166534">— مكتمل وجاهز للاختبار.</b>{% endif %}
-    {% if not chr_state.encryption_available %}<b style="color:#b91c1c">— تنبيه: مفتاح التشفير غير مضبوط (CUSTOMER_VAULT_ENCRYPTION_KEY)، لا يمكن حفظ كلمة المرور.</b>{% endif %}
   </p>
+
+  {# مفتاح التشفير الرئيسي: بيئي حصرًا (يشفّر هذه الإعدادات) — لا يُخزَّن في القاعدة أبدًا. #}
+  {% if not chr_state.encryption_available %}
+  <div style="margin:0 0 16px;padding:11px 14px;border-radius:10px;background:#fee2e2;border:1px solid #fecaca;color:#991b1b">
+    <i class="fa-solid fa-key"></i> <b>مفتاح التشفير الرئيسي غير مضبوط</b> (<span class="mono">CUSTOMER_VAULT_ENCRYPTION_KEY</span>).
+    لا يمكن حفظ كلمة مرور CHR بدونه. هذا المفتاح <b>بيئي حصرًا</b> ولا يُخزَّن في قاعدة البيانات إطلاقًا
+    (فهو يشفّر هذه الإعدادات نفسها) — اضبطه في بيئة الخادم.
+  </div>
+  {% else %}
+  <p class="hub-field-hint" style="margin:0 0 14px;color:#475569">
+    <i class="fa-solid fa-key"></i> مفتاح التشفير الرئيسي (<span class="mono">CUSTOMER_VAULT_ENCRYPTION_KEY</span>) مضبوط ويبقى <b>بيئيًا حصرًا</b> — لا يُخزَّن هنا.
+  </p>
+  {% endif %}
 
   {# ── حالة القفل: يحمي الاتصال من الكتابة بالخطأ بعد التحقق ── #}
   {% set lk = chr_state.lock %}
@@ -219,7 +232,13 @@
         {% set f = chr_state.fields.public_host %}
         <div class="hub-field">
           <label>{{ f.label }}</label>
-          <input class="hub-input mono ltr" name="public_host" value="{{ f.value }}" placeholder="vpn.hoberadius.com (افتراضي: المضيف الإداري)">
+          <input class="hub-input mono ltr" name="public_host" value="{{ f.value }}" placeholder="vpn-test.hoberadius.com (افتراضي: المضيف الإداري)">
+        </div>
+        {% set f = chr_state.fields.public_ip %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="public_ip" value="{{ f.value }}" placeholder="178.105.244.112">
+          <div class="hub-field-hint">عنوان IP العام لـ CHR (مرجعي/يُعرَض).</div>
         </div>
         {% set pd = chr_state.service_port_defaults %}
         {% for svc in ['sstp', 'pptp', 'l2tp', 'ipsec'] %}
@@ -230,6 +249,40 @@
         </div>
         {% endfor %}
       </div>
+    </div>
+
+    {# ── إعدادات IPsec المتقدّمة + قفل التحكّم (كلها مخزّنة بالواجهة) ── #}
+    <div style="margin-top:18px;padding-top:14px;border-top:1px dashed #e2e8f0">
+      <p class="hub-field-hint" style="margin:0 0 10px">
+        <i class="fa-solid fa-lock"></i>
+        إعدادات IPsec/IKEv2 وحصر التحكّم. تُخزَّن هنا (لا في البيئة)؛ المتغيّر البيئي يبقى افتراضيًا احتياطيًا فقط.
+      </p>
+      <div class="hub-form-grid">
+        {% set f = chr_state.fields.ipsec_certificate %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="ipsec_certificate" value="{{ f.value }}" placeholder="Lets encrypt1780754140">
+          <div class="hub-field-hint">اسم الشهادة على CHR كما هو حرفيًا (قد يحتوي مسافات).</div>
+        </div>
+        {% set f = chr_state.fields.ipsec_address_pool %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="ipsec_address_pool" value="{{ f.value }}" placeholder="ipsec-pool">
+        </div>
+        {% set f = chr_state.fields.api_allowed_ip %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="api_allowed_ip" value="{{ f.value }}" placeholder="178.105.180.6">
+          <div class="hub-field-hint">حقل معلوماتي/تدقيقي — الفرض الفعلي على RouterOS (www-ssl <code>address=</code> و/أو جدار النار)، لا في التطبيق.</div>
+        </div>
+      </div>
+      {% if chr_state.lockdown_commands %}
+      <div style="margin-top:12px">
+        <p class="hub-field-hint" style="margin:0 0 6px"><i class="fa-solid fa-terminal"></i> أوامر RouterOS لقفل نقطة REST على IP اللوحة (انسخها إلى الراوتر):</p>
+        <pre class="mono ltr" style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre-wrap">{% for cmd in chr_state.lockdown_commands %}{{ cmd }}
+{% endfor %}</pre>
+      </div>
+      {% endif %}
     </div>
 
     {% if chr_state.lock.locked %}

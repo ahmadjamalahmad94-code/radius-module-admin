@@ -241,10 +241,15 @@ def _ensure_ipsec_infra(client) -> None:
     cfg = current_app.config
     if not cfg.get("CHR_IPSEC_MANAGE_INFRA", True):
         return
+    # الشهادة ومجمّع العناوين يضبطهما المالك من الواجهة (DB→بيئة)؛ نفضّلهما على config
+    # المباشر. اسم الشهادة قد يحتوي مسافات فيُستعمل حرفيًا كما خُزِّن.
+    overrides = chr_settings.ipsec_overrides()
+    address_pool = overrides["address_pool"] or (cfg.get("CHR_IPSEC_ADDRESS_POOL") or "").strip()
+    certificate = overrides["certificate"] or (cfg.get("CHR_IPSEC_CERTIFICATE") or "").strip()
     mode_config, peer = _ipsec_infra_names()
     client.ensure_ipsec_mode_config(
         name=mode_config,
-        address_pool=(cfg.get("CHR_IPSEC_ADDRESS_POOL") or "").strip(),
+        address_pool=address_pool,
         static_dns=(cfg.get("CHR_IPSEC_DNS") or "").strip(),
     )
     client.ensure_ipsec_peer(
@@ -255,7 +260,7 @@ def _ensure_ipsec_infra(client) -> None:
         peer=peer,
         mode_config=mode_config,
         eap_methods=(cfg.get("CHR_IPSEC_EAP_METHODS") or "eap-mschapv2").strip() or "eap-mschapv2",
-        certificate=(cfg.get("CHR_IPSEC_CERTIFICATE") or "").strip(),
+        certificate=certificate,
     )
 
 
