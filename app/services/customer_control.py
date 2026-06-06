@@ -14,6 +14,7 @@ from ..models import (
     AuditLog,
     Customer,
     CustomerServiceEntitlement,
+    CustomerRadiusAdmin,
     CustomerServiceRequest,
     CustomerServiceRequestMessage,
     CustomerUser,
@@ -625,6 +626,8 @@ AUDIT_ACTION_LABELS = {
     "customer_user_password_changed": "تغيير كلمة مرور عميل",
     "customer_user_password_changed_from_runtime": "تغيير كلمة المرور من الريدياس",
     "customer_user_password_changed_from_portal": "تغيير كلمة المرور من بوابة العميل",
+    "radius_admin_force_super_enabled": "فرض سوبر يوزر على أدمن الراديوس",
+    "radius_admin_force_super_disabled": "إلغاء فرض سوبر يوزر عن أدمن الراديوس",
     "customer_user_password_set_by_admin": "تعيين كلمة مرور من الإدارة",
     "customer_service_entitlement_updated": "تحديث خدمة عميل",
     "customer_service_payment_request_created": "إنشاء طلب دفع خدمة",
@@ -676,6 +679,7 @@ ENTITY_TYPE_LABELS = {
     "admin": "مدير",
     "customer": "عميل",
     "customer_user": "مستخدم عميل",
+    "customer_radius_admin": "أدمن راديوس",
     "customer_service_entitlement": "خدمة عميل",
     "customer_service_request": "طلب خدمة",
     "customer_vpn_entitlement": "خدمة الشبكة الخاصة للعميل",
@@ -1016,6 +1020,7 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
             "license_key": lic.license_key,
             "version": customer_users_version(customer),
             "users": [],
+            "admin_super_overrides": [],
         }
     users = []
     for user in customer.users.order_by(CustomerUser.id.asc()).all():
@@ -1040,7 +1045,85 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
         "license_key": lic.license_key,
         "version": customer_users_version(customer),
         "users": users,
+        # تعليمات فرض السوبر على أدمن الراديوس المحليين (غير المُدارين بالهوية).
+        # الراديوس يطبّقها idempotent في كل مزامنة: يضبط is_super_admin=1 لهؤلاء
+        # دون المساس بكلمة المرور أو مزوّد الهوية، فلا ينكسر الدخول المحلي.
+        "admin_super_overrides": build_admin_super_overrides(customer),
     }
+
+
+def build_admin_super_overrides(customer: Customer) -> list[dict[str, Any]]:
+    """قائمة تعليمات فرض السوبر على أدمن الراديوس المحليين لهذا العميل.
+
+    تُرسل ضمن عقد مزامنة الهوية ليطبّقها الراديوس على أدمنياته المحلية. تشمل فقط
+    الصفوف المفعّل عليها ``force_super`` في اللوحة. المطابقة على الراديوس بالـ
+    ``radius_admin_id`` أولاً ثم ``username`` احتياطاً.
+    """
+    rows = (
+        CustomerRadiusAdmin.query
+        .filter_by(customer_id=customer.id, force_super=True)
+        .order_by(CustomerRadiusAdmin.radius_admin_id.asc())
+        .all()
+    )
+    return [
+        {
+            "radius_admin_id": row.radius_admin_id,
+            "username": row.username,
+            "is_super": True,
+        }
+        for row in rows
+    ]
+
+
+def radius_admins_for_customer(customer: Customer) -> list[CustomerRadiusAdmin]:
+    """لقطة أدمن الراديوس المخزّنة لهذا العميل (للعرض في تفاصيل العميل)."""
+    return (
+        CustomerRadiusAdmin.query
+        .filter_by(customer_id=customer.id)
+        .order_by(CustomerRadiusAdmin.radius_admin_id.asc())
+        .all()
+    )
+
+
+def import_radius_admins(
+    customer: Customer,
+    license_obj: License | None,
+    admins: list[Any],
+) -> int:
+    """تحديث لقطة أدمن الراديوس من بلاغ الراديوس (القناة العكسية للجسر).
+
+    upsert idempotent بالمفتاح (customer_id, radius_admin_id). الحقل المملوك
+    للّوحة ``force_super`` لا يُداس هنا أبداً — الراديوس يبلّغ بحالته الواقعة فقط،
+    واللوحة هي من تتحكم بالفرض. يتجاهل العناصر بلا معرّف رقمي صالح.
+    """
+    if not isinstance(admins, list):
+        return 0
+    now = utcnow()
+    imported = 0
+    for raw in admins[:200]:  # سقف دفاعي على حجم الدفعة.
+        if not isinstance(raw, dict):
+            continue
+        try:
+            radius_admin_id = int(raw.get("id") if raw.get("id") is not None else raw.get("radius_admin_id"))
+        except (TypeError, ValueError):
+            continue
+        row = CustomerRadiusAdmin.query.filter_by(
+            customer_id=customer.id, radius_admin_id=radius_admin_id
+        ).first()
+        if row is None:
+            row = CustomerRadiusAdmin(customer_id=customer.id, radius_admin_id=radius_admin_id)
+            db.session.add(row)
+        if license_obj is not None:
+            row.license_id = license_obj.id
+        row.username = str(raw.get("username") or "").strip()[:80]
+        row.role = str(raw.get("role") or "").strip()[:40]
+        row.is_super_admin = bool(raw.get("is_super_admin"))
+        row.enabled = bool(raw.get("enabled", True))
+        row.managed_by_license_admin = bool(raw.get("managed_by_license_admin"))
+        row.external_identity_provider = str(raw.get("external_identity_provider") or "").strip()[:40]
+        row.last_seen_at = now
+        imported += 1
+    return imported
 
 
 def create_customer_service_request(

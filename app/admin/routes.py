@@ -12,6 +12,7 @@ from ..extensions import db
 from ..models import (
     AuditLog,
     Customer,
+    CustomerRadiusAdmin,
     CustomerServiceEntitlement,
     CustomerServiceRequest,
     CustomerServiceRequestMessage,
@@ -52,6 +53,7 @@ from ..services.customer_control import (
     parse_optional_decimal as parse_service_decimal,
     normalize_contact_email,
     normalize_contact_phone,
+    radius_admins_for_customer,
     service_catalog_items,
     service_label,
     service_limit_fields,
@@ -472,6 +474,7 @@ def customer_detail(customer_id: int):
         service_limit_summary=service_limit_summary,
         customer_backups=list_customer_backups(customer.id),
         customer_gdrive=_customer_gdrive_status(customer.id),
+        radius_admins=radius_admins_for_customer(customer),
     )
 
 
@@ -919,6 +922,38 @@ def customer_user_enable(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تفعيل مستخدم العميل.", "success")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/radius-admins/<int:row_id>/super")
+@login_required
+def customer_radius_admin_super(customer_id: int, row_id: int):
+    """تفعيل/إلغاء فرض «سوبر يوزر» على أدمن راديوس محلي معروض في اللوحة.
+
+    عند التفعيل تُدفع التعليمة للراديوس عبر عقد مزامنة الهوية ليضبط
+    is_super_admin=1 لهذا الأدمن في كل دورة (idempotent) دون كسر دخوله المحلي.
+    """
+    customer = db.get_or_404(Customer, customer_id)
+    row = CustomerRadiusAdmin.query.filter_by(id=row_id, customer_id=customer.id).first_or_404()
+    enable = (request.form.get("action") or "enable") != "disable"
+    row.force_super = enable
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="radius_admin_force_super_enabled" if enable else "radius_admin_force_super_disabled",
+        entity_type="customer_radius_admin",
+        entity_id=str(row.id),
+        summary=(
+            f"تم فرض سوبر يوزر على أدمن الراديوس {row.username}" if enable
+            else f"تم إلغاء فرض سوبر يوزر عن أدمن الراديوس {row.username}"
+        ),
+        metadata={"customer_id": customer.id, "radius_admin_id": row.radius_admin_id, "username": row.username},
+    )
+    db.session.commit()
+    flash(
+        "تم فرض «سوبر يوزر»؛ سيُطبَّق على راديوس العميل عند المزامنة التالية." if enable
+        else "تم إلغاء فرض «سوبر يوزر» لهذا الأدمن.",
+        "success",
+    )
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 

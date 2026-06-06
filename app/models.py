@@ -127,6 +127,52 @@ class CustomerUser(TimestampMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class CustomerRadiusAdmin(TimestampMixin, db.Model):
+    """لقطة (snapshot) عن حساب أدمن موجود محلياً على راديوس العميل.
+
+    حسابات أدمن الراديوس تُنشأ وتُدار محلياً على راديوس العميل — خصوصاً الأدمن
+    الرئيسي المحلي (``external_identity_provider == ""`` و
+    ``managed_by_license_admin == 0``) — فلا تعرفها لوحة التراخيص أصلاً. عبر
+    القناة العكسية للجسر (مثل رفع النسخ الاحتياطية) يبلّغ الراديوسُ اللوحةَ بجرد
+    أدمنياته، فتخزّن اللوحة هذه اللقطة لأجل العرض والتحكم. اللقطة للعرض فقط ولا
+    تمثّل مصدر الحقيقة لكلمات المرور أبداً.
+
+    ``force_super`` هو تحكّم اللوحة: عند تفعيله تُدفع تعليمة صريحة للراديوس عبر
+    عقد مزامنة الهوية ليجعل ``is_super_admin = 1`` لهذا الأدمن في كل دورة مزامنة
+    (idempotent)، دون المساس بكلمة مروره أو مزوّد هويته — فلا ينكسر دخوله المحلي.
+    """
+    __tablename__ = "customer_radius_admins"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "radius_admin_id", name="uq_customer_radius_admins_customer_rid"),
+        db.Index("ix_customer_radius_admins_customer_enabled", "customer_id", "enabled"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    # المعرّف كما هو على راديوس العميل — المفتاح المستقر للمطابقة وتطبيق الفرض.
+    radius_admin_id = db.Column(db.Integer, nullable=False)
+    username = db.Column(db.String(80), default="", nullable=False)
+    role = db.Column(db.String(40), default="", nullable=False)
+    # آخر حالة سوبر أبلغ عنها الراديوس (للعرض فقط).
+    is_super_admin = db.Column(db.Boolean, default=False, nullable=False)
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+    # هل الأدمن مُدار أصلاً من لوحة التراخيص (هوية مُزامَنة) أم محلي بحت.
+    managed_by_license_admin = db.Column(db.Boolean, default=False, nullable=False)
+    external_identity_provider = db.Column(db.String(40), default="", nullable=False)
+    # تحكّم اللوحة: فرض is_super_admin=1 على الراديوس عبر الجسر (idempotent).
+    force_super = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+    @property
+    def is_effective_super(self) -> bool:
+        """السوبر الفعلي المعروض: فرض اللوحة أو ما أبلغ عنه الراديوس فعلاً."""
+        return bool(self.force_super) or bool(self.is_super_admin)
+
+
 class ServiceCatalogItem(TimestampMixin, db.Model):
     __tablename__ = "service_catalog_items"
     __table_args__ = (

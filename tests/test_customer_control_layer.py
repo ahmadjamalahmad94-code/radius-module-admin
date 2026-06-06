@@ -12,6 +12,7 @@ from app.license_signing import license_integration_secret, sign_license_payload
 from app.models import (
     AuditLog,
     Customer,
+    CustomerRadiusAdmin,
     CustomerServiceEntitlement,
     CustomerServiceRequest,
     CustomerServiceRequestMessage,
@@ -538,6 +539,99 @@ def test_customer_user_form_persists_explicit_is_super(client):
     user = CustomerUser.query.filter_by(customer_id=customer.id, username="explicit-super").one()
     assert user.is_super is True
     assert user.is_effective_super is True
+
+
+def test_radius_admins_report_ingests_snapshot_and_does_not_clobber_force_super():
+    """بلاغ الراديوس يحدّث اللقطة، وحقل force_super المملوك للّوحة لا يُداس."""
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        # صف موجود مسبقاً مفعّل عليه الفرض من اللوحة.
+        existing = CustomerRadiusAdmin(
+            customer_id=customer.id, radius_admin_id=1, username="admin",
+            is_super_admin=False, enabled=True, force_super=True,
+        )
+        db.session.add(existing)
+        db.session.commit()
+        client = app.test_client()
+
+        payload = _signed_payload_with(lic.license_key, nonce="admins-report", extra={"admins": [
+            {"id": 1, "username": "admin", "is_super_admin": False, "enabled": True,
+             "role": "owner", "managed_by_license_admin": False, "external_identity_provider": ""},
+            {"id": 2, "username": "helpdesk", "is_super_admin": False, "enabled": True,
+             "role": "support", "managed_by_license_admin": True, "external_identity_provider": "license_admin"},
+        ]})
+        res = client.post(
+            "/api/integration/hoberadius/admins/report",
+            json=payload,
+            base_url="https://license-panel.test",
+        )
+        body = res.get_json()
+        assert res.status_code == 200
+        assert body["ok"] is True
+        assert body["imported"] == 2
+
+        rows = {r.radius_admin_id: r for r in CustomerRadiusAdmin.query.filter_by(customer_id=customer.id).all()}
+        assert rows[1].force_super is True  # لم يُداس بالبلاغ
+        assert rows[1].username == "admin"
+        assert rows[2].managed_by_license_admin is True
+
+
+def test_identity_sync_carries_admin_super_overrides():
+    """عقد مزامنة الهوية يحمل تعليمات فرض السوبر لأدمن الراديوس المحليين فقط."""
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        db.session.add_all([
+            CustomerRadiusAdmin(customer_id=customer.id, radius_admin_id=1, username="admin",
+                                enabled=True, force_super=True),
+            CustomerRadiusAdmin(customer_id=customer.id, radius_admin_id=2, username="helpdesk",
+                                enabled=True, force_super=False),
+        ])
+        db.session.commit()
+        client = app.test_client()
+
+        res = client.post(
+            "/api/integration/hoberadius/identity-sync",
+            json=_signed_payload(lic.license_key, nonce="overrides"),
+            base_url="https://license-panel.test",
+        )
+        body = res.get_json()
+        assert res.status_code == 200
+        overrides = body["admin_super_overrides"]
+        assert len(overrides) == 1
+        assert overrides[0] == {"radius_admin_id": 1, "username": "admin", "is_super": True}
+
+
+def test_admin_can_toggle_radius_admin_force_super(client):
+    """زر «اجعله سوبر يوزر» يضبط/يلغي الفرض على صف أدمن الراديوس."""
+    _login(client)
+    customer, _lic = _customer_with_license()
+    row = CustomerRadiusAdmin(
+        customer_id=customer.id, radius_admin_id=1, username="admin", enabled=True, force_super=False,
+    )
+    db.session.add(row)
+    db.session.commit()
+
+    enabled = client.post(
+        f"/admin/customers/{customer.id}/radius-admins/{row.id}/super",
+        data={"action": "enable"}, follow_redirects=True,
+    )
+    assert enabled.status_code == 200
+    db.session.refresh(row)
+    assert row.force_super is True
+
+    disabled = client.post(
+        f"/admin/customers/{customer.id}/radius-admins/{row.id}/super",
+        data={"action": "disable"}, follow_redirects=True,
+    )
+    assert disabled.status_code == 200
+    db.session.refresh(row)
+    assert row.force_super is False
 
 
 def test_runtime_contract_includes_services_limits_and_user_version():
