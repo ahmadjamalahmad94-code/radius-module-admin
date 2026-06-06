@@ -167,8 +167,8 @@
       {% set f = chr_state.fields.port %}
       <div class="hub-field">
         <label>{{ f.label }}</label>
-        <input class="hub-input mono ltr" name="port" value="{{ f.value }}" placeholder="443">
-        <div class="hub-field-hint">منفذ خدمة REST/HTTPS على RouterOS (افتراضي 443).</div>
+        <input class="hub-input mono ltr" name="port" value="{{ f.value }}" placeholder="8443">
+        <div class="hub-field-hint">منفذ REST عبر HTTPS (خدمة <b>www-ssl</b>) — وليس API الثنائية 8728/8729. منفصل عن منفذ SSTP؛ في هذا النشر SSTP على 443 فاجعل REST على 8443.</div>
       </div>
 
       {% set f = chr_state.fields.username %}
@@ -204,7 +204,7 @@
           <input type="checkbox" name="verify_tls" value="1" {% if chr_state.fields.verify_tls.value %}checked{% endif %}>
           <span>التحقق من شهادة TLS</span>
         </label>
-        <div class="hub-field-hint">CHR يأتي بشهادة موقّعة ذاتيًا — اترك التحقق غير مفعّل ما لم تثبّت شهادة موثوقة.</div>
+        <div class="hub-field-hint">إن كان لدى CHR شهادة موثوقة (مثل Let's Encrypt على النطاق) فعّل التحقق. للشهادة الموقّعة ذاتيًا اتركه غير مفعّل.</div>
       </div>
     </div>
 

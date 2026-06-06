@@ -136,6 +136,23 @@ chr_not_configured, chr_create_failed, type_not_auto}` مع `message_ar`.
 انظر `.env.example` قسم «MikroTik CHR». المطلوب: `CUSTOMER_VAULT_ENCRYPTION_KEY`
 (لتشفير كلمة مرور CHR والأنفاق)، و`CHR_PROVISIONING_ENABLED=1`. باقي القيم اختيارية.
 
+**النقل (transport) — مهم:** اللوحة تتصل بـ CHR عبر **REST API لـ RouterOS v7 فوق
+HTTPS** (`https://<host>:<port>/rest`) المخدوم بخدمة **www-ssl**، وليس واجهة API
+الثنائية (8728/8729). بما أن **SSTP يشغل 443** في نشر المالك، يجب أن تعمل www-ssl
+على منفذ بديل (**8443**) — وهو الافتراضي الآن (`CHR_REST_DEFAULT_PORT=8443`،
+`_default_port()`). منفذ SSTP الذي يتصل به العميل يبقى 443 (منفصل عن منفذ الإدارة).
+الشهادة Let's Encrypt صالحة على النطاق فيمكن تفعيل `CHR_TLS_VERIFY=1` بأمان، مع بقاء
+تجاوز التحقق متاحًا كاحتياط للشهادات الموقّعة ذاتيًا.
+
+**تقييد IP المتحكّم بـ CHR — على جانب RouterOS لا التطبيق:** السماح لعنوان اللوحة وحده
+(`178.105.180.6/32`) بالتحكّم في نقطة REST يُفرَض على RouterOS عبر `address=` لخدمة
+www-ssl (و/أو جدار النار)، لا في الكود. التطبيق يتصل صادرًا فقط. `CHR_API_ALLOWED_IP`
+في الإعدادات توثيقية فقط (غير مقروءة للتنفيذ).
+
+**نشر المالك الحالي:** RouterOS 7.21.4، المضيف `vpn-test.hoberadius.com` /
+`178.105.244.112`، شهادة `Lets encrypt1780754140`، SSTP على 443، REST (www-ssl)
+على 8443، وعنوان اللوحة المسموح `178.105.180.6`.
+
 **أتمتة IPsec:** `CHR_IPSEC_AUTO_PROVISION` (افتراضي 1)، `CHR_IPSEC_MANAGE_INFRA`
 (افتراضي 1)، أسماء البنية `CHR_IPSEC_PEER`/`CHR_IPSEC_MODE_CONFIG`/`CHR_IPSEC_PROFILE`
 (افتراضي `hoberadius`/`hoberadius`/`default`)، `CHR_IPSEC_EAP_METHODS`

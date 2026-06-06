@@ -9,7 +9,10 @@
 * الأخطاء تُرفع كـ :class:`RouterOSError` بحقل ``code`` آلي ورسالة عربية آمنة
   وعلم ``retryable`` كي تقرّر طبقة التزويد إعادة المحاولة من عدمها.
 
-RouterOS v7 يوفّر REST API على ``https://<host>:<port>/rest/...`` فوق HTTPS.
+RouterOS v7 يوفّر REST API على ``https://<host>:<port>/rest/...`` فوق HTTPS عبر خدمة
+``www-ssl`` (ليس واجهة API الثنائية 8728/8729). في نشر المالك يشغل SSTP المنفذ 443،
+لذا تعمل ``www-ssl`` على منفذ بديل (8443). شهادة Let's Encrypt صالحة على النطاق فيمكن
+تفعيل ``verify_tls`` بأمان، مع بقاء تجاوز التحقق متاحًا كاحتياط للشهادات الموقّعة ذاتيًا.
 ``requests`` ليست من اعتماديات المشروع، لذا نستخدم ``urllib``.
 """
 from __future__ import annotations
@@ -56,7 +59,7 @@ class RouterOSClient:
         self,
         *,
         host: str,
-        port: int = 443,
+        port: int = 8443,
         username: str,
         password: str,
         use_tls: bool = True,
@@ -64,7 +67,8 @@ class RouterOSClient:
         timeout: int = 15,
     ) -> None:
         self.host = (host or "").strip()
-        self.port = int(port or (443 if use_tls else 80))
+        # REST عبر www-ssl؛ المنفذ الافتراضي 8443 (لا 443 لأنه مشغول بـ SSTP).
+        self.port = int(port or (8443 if use_tls else 80))
         self.username = username or ""
         self._password = password or ""
         self.use_tls = bool(use_tls)
