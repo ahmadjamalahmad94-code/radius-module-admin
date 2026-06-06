@@ -23,6 +23,7 @@ from ..services.customer_control import (
     build_runtime_contract_for_license,
     clean_username,
     create_customer_service_request,
+    import_radius_admins,
 )
 from ..services.whatsapp import policy as wa_policy
 from ..services.whatsapp import queue as wa_queue
@@ -295,6 +296,32 @@ def hoberadius_customer_user_password_change():
         "password_version": int(user.password_version or 0),
         "updated_at": user.updated_at.replace(microsecond=0).isoformat() + "Z" if user.updated_at else None,
     })
+
+
+@bp.post("/integration/hoberadius/admins/report")
+def hoberadius_admins_report():
+    """القناة العكسية: يبلّغ الراديوس اللوحةَ بجرد أدمنياته المحلية.
+
+    نفس ثلاثية الحماية المشتركة (HTTPS + توقيع HMAC + حلّ الترخيص). تُحدَّث لقطة
+    ``CustomerRadiusAdmin`` (للعرض والتحكم في تفاصيل العميل). الحقل المملوك
+    للّوحة ``force_super`` لا يُداس — هو تحكّم اللوحة وحدها. لا تُخزَّن ولا تُعاد
+    أي كلمات مرور.
+    """
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "بلاغ الأدمن يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license or not result.license.customer:
+        return jsonify({"ok": False, "status": "not_found"}), 404
+    admins = body.get("admins")
+    imported = import_radius_admins(result.license.customer, result.license, admins if isinstance(admins, list) else [])
+    db.session.commit()
+    return jsonify({"ok": True, "status": "ok", "imported": imported})
 
 
 @bp.post("/integration/hoberadius/backups/upload")
@@ -657,6 +684,113 @@ def hoberadius_whatsapp_message_status():
         "error_message": row.error_message,
         "attempts": row.attempts,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# VPN tunnel provisioning bridge (signed, called by the radius_module runtime)
+#
+# Same guard triad as the other integration endpoints (HTTPS + HMAC signature +
+# license). The panel provisions tunnel accounts CENTRALLY on the owner's CHR
+# and delivers credentials here; the customer panel NEVER holds CHR access. The
+# clear password is returned only until the customer acknowledges delivery.
+# Business rejections (limit reached, CHR not configured) return HTTP 200 with
+# ``ok: false`` + a machine ``error_code`` so the caller can branch.
+# ─────────────────────────────────────────────────────────────────────────
+def _vpn_integration_context(body: dict, *, require_active: bool):
+    """Run the shared guard triad and resolve (customer, license).
+
+    Returns ``(customer, license, None)`` on success, or ``(None, None, response)``.
+    """
+    if not _integration_request_is_secure():
+        return None, None, (jsonify({"ok": False, "status": "https_required", "message": "تزويد الأنفاق يتطلب HTTPS."}), 426)
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return None, None, signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return None, None, error_response
+    if not result.license or not result.license.customer:
+        return None, None, (jsonify({"ok": False, "status": "not_found"}), 404)
+    if require_active and not result.active:
+        return None, None, (jsonify({"ok": False, "status": result.status, "message": "الترخيص ليس نشطًا."}), 403)
+    return result.license.customer, result.license, None
+
+
+@bp.post("/integration/hoberadius/vpn/tunnels/request")
+def hoberadius_vpn_tunnel_request():
+    """Auto-provision an SSTP tunnel for the customer and return its credentials.
+
+    The credentials are returned ONCE here; the customer can also re-fetch any
+    not-yet-acknowledged tunnel via the list endpoint below (at-least-once)."""
+    body = request.get_json(silent=True) or {}
+    customer, license_obj, error_response = _vpn_integration_context(body, require_active=True)
+    if error_response is not None:
+        return error_response
+
+    from ..services import vpn_tunnels as vt
+
+    tunnel_type = str(body.get("tunnel_type") or "sstp").strip().lower()
+    if tunnel_type not in vt.BRIDGE_AUTO_TYPES:
+        return jsonify({
+            "ok": False,
+            "error_code": "type_not_auto",
+            "message_ar": "هذا النوع لا يُزوَّد تلقائيًا عبر الجسر؛ يُنشئه المدير يدويًا.",
+        })
+
+    try:
+        tunnel = vt.provision_tunnel(
+            customer,
+            license_obj,
+            tunnel_type=tunnel_type,
+            source="bridge_request",
+        )
+    except vt.VpnTunnelError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error_code": exc.code, "message_ar": exc.message})
+
+    audit_customer_control(
+        actor_admin_id=None,
+        action="customer_vpn_tunnel_provisioned",
+        entity_type="customer_vpn_tunnel",
+        entity_id=str(tunnel.id),
+        summary=f"تزويد نفق {tunnel.tunnel_type} تلقائيًا عبر الجسر للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username},
+    )
+    db.session.commit()
+    return jsonify({"ok": True, "tunnel": vt.serialize_tunnel(tunnel, include_password=True)}), 201
+
+
+@bp.post("/integration/hoberadius/vpn/tunnels")
+def hoberadius_vpn_tunnels_list():
+    """List the customer's tunnels. Clear passwords are included only for
+    tunnels whose delivery has not yet been acknowledged."""
+    body = request.get_json(silent=True) or {}
+    customer, _license_obj, error_response = _vpn_integration_context(body, require_active=False)
+    if error_response is not None:
+        return error_response
+
+    from ..services import vpn_tunnels as vt
+
+    tunnels = [vt.serialize_tunnel(t, include_password=True) for t in vt.deliverable_tunnels(customer)]
+    return jsonify({"ok": True, "tunnels": tunnels})
+
+
+@bp.post("/integration/hoberadius/vpn/tunnels/ack")
+def hoberadius_vpn_tunnels_ack():
+    """Acknowledge delivery of one or more tunnels (stops returning the clear
+    password for them)."""
+    body = request.get_json(silent=True) or {}
+    customer, _license_obj, error_response = _vpn_integration_context(body, require_active=False)
+    if error_response is not None:
+        return error_response
+
+    from ..services import vpn_tunnels as vt
+
+    usernames = body.get("usernames")
+    items = usernames if isinstance(usernames, list) else []
+    count = vt.acknowledge_delivery(customer, items)
+    db.session.commit()
+    return jsonify({"ok": True, "acknowledged": count})
 
 
 # ─────────────────────────────────────────────────────────────────────────

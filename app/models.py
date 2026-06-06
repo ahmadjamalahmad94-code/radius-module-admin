@@ -102,10 +102,19 @@ class CustomerUser(TimestampMixin, db.Model):
     password_hash_scheme = db.Column(db.String(40), default="werkzeug", nullable=False)
     password_version = db.Column(db.Integer, default=1, nullable=False)
     role_key = db.Column(db.String(40), default="owner", nullable=False, index=True)
+    # سوبر يوزر صريح: عند تفعيله يضمن الجسر أن مستخدم الراديوس يصبح
+    # is_super_admin = 1 على راديوس العميل دائماً (كل الأقسام مفتوحة)، بصرف النظر
+    # عن الدور. مالك الحساب (owner) يبقى سوبر ضمنياً للتوافق مع السلوك القديم.
+    is_super = db.Column(db.Boolean, default=False, nullable=False, index=True)
     active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     last_password_changed_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     customer = db.relationship("Customer", back_populates="users")
+
+    @property
+    def is_effective_super(self) -> bool:
+        """السوبر الفعلي: العلم الصريح is_super أو دور المالك (توافقاً مع القديم)."""
+        return bool(self.is_super) or self.role_key == "owner"
 
     def set_password(self, password: str, *, increment_version: bool = True) -> None:
         self.password_hash = generate_password_hash(password)
@@ -116,6 +125,52 @@ class CustomerUser(TimestampMixin, db.Model):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+
+class CustomerRadiusAdmin(TimestampMixin, db.Model):
+    """لقطة (snapshot) عن حساب أدمن موجود محلياً على راديوس العميل.
+
+    حسابات أدمن الراديوس تُنشأ وتُدار محلياً على راديوس العميل — خصوصاً الأدمن
+    الرئيسي المحلي (``external_identity_provider == ""`` و
+    ``managed_by_license_admin == 0``) — فلا تعرفها لوحة التراخيص أصلاً. عبر
+    القناة العكسية للجسر (مثل رفع النسخ الاحتياطية) يبلّغ الراديوسُ اللوحةَ بجرد
+    أدمنياته، فتخزّن اللوحة هذه اللقطة لأجل العرض والتحكم. اللقطة للعرض فقط ولا
+    تمثّل مصدر الحقيقة لكلمات المرور أبداً.
+
+    ``force_super`` هو تحكّم اللوحة: عند تفعيله تُدفع تعليمة صريحة للراديوس عبر
+    عقد مزامنة الهوية ليجعل ``is_super_admin = 1`` لهذا الأدمن في كل دورة مزامنة
+    (idempotent)، دون المساس بكلمة مروره أو مزوّد هويته — فلا ينكسر دخوله المحلي.
+    """
+    __tablename__ = "customer_radius_admins"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "radius_admin_id", name="uq_customer_radius_admins_customer_rid"),
+        db.Index("ix_customer_radius_admins_customer_enabled", "customer_id", "enabled"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    # المعرّف كما هو على راديوس العميل — المفتاح المستقر للمطابقة وتطبيق الفرض.
+    radius_admin_id = db.Column(db.Integer, nullable=False)
+    username = db.Column(db.String(80), default="", nullable=False)
+    role = db.Column(db.String(40), default="", nullable=False)
+    # آخر حالة سوبر أبلغ عنها الراديوس (للعرض فقط).
+    is_super_admin = db.Column(db.Boolean, default=False, nullable=False)
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+    # هل الأدمن مُدار أصلاً من لوحة التراخيص (هوية مُزامَنة) أم محلي بحت.
+    managed_by_license_admin = db.Column(db.Boolean, default=False, nullable=False)
+    external_identity_provider = db.Column(db.String(40), default="", nullable=False)
+    # تحكّم اللوحة: فرض is_super_admin=1 على الراديوس عبر الجسر (idempotent).
+    force_super = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+    @property
+    def is_effective_super(self) -> bool:
+        """السوبر الفعلي المعروض: فرض اللوحة أو ما أبلغ عنه الراديوس فعلاً."""
+        return bool(self.force_super) or bool(self.is_super_admin)
 
 
 class ServiceCatalogItem(TimestampMixin, db.Model):
@@ -465,6 +520,64 @@ class CustomerVpnEntitlement(TimestampMixin, db.Model):
     license = db.relationship("License")
     vpn_plan = db.relationship("VpnServicePlan", back_populates="entitlements")
     updated_by = db.relationship("Admin")
+
+
+class CustomerVpnTunnel(TimestampMixin, db.Model):
+    """A concrete VPN tunnel account provisioned CENTRALLY on the owner's CHR.
+
+    This is the *implementation* layer beneath ``CustomerVpnEntitlement`` (which
+    is the commercial allowance: speed/users/locations). One row = one real
+    account created on the central MikroTik CHR (a ``/ppp/secret`` for
+    SSTP/PPTP/L2TP). The username/password are generated here and pushed to the
+    CHR via the RouterOS REST API; the customer panel pulls them over the signed
+    bridge and injects them into its own RADIUS — credentials and CHR access NEVER
+    live in the customer panel.
+
+    The password is stored ENCRYPTED (Fernet, ``CUSTOMER_VAULT_ENCRYPTION_KEY``)
+    and only ever returned in clear over the bridge to the owning license, and
+    only until the customer acknowledges delivery (``delivery_status`` flips to
+    ``delivered``). Operators see a masked hint, never the clear password.
+    """
+    __tablename__ = "customer_vpn_tunnels"
+    __table_args__ = (
+        db.UniqueConstraint("username", name="uq_customer_vpn_tunnels_username"),
+        db.Index("ix_customer_vpn_tunnels_customer_status", "customer_id", "status"),
+        db.Index("ix_customer_vpn_tunnels_delivery", "customer_id", "delivery_status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    # sstp | pptp | l2tp | ipsec  (ipsec is recorded-only in P1; see vpn_tunnels.py)
+    tunnel_type = db.Column(db.String(20), default="sstp", nullable=False, index=True)
+    username = db.Column(db.String(80), nullable=False)
+    # Fernet ciphertext ONLY — never plaintext.
+    password_encrypted = db.Column(db.Text, nullable=False)
+    password_hint = db.Column(db.String(40), default="", nullable=False)
+    profile = db.Column(db.String(80), default="default", nullable=False)
+    # How many simultaneous connections this account is allowed (member's quota).
+    max_connections = db.Column(db.Integer, default=1, nullable=False)
+    # pending | active | suspended | revoked | failed
+    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    # auto (bridge SSTP) | manual (admin PPTP/IPsec)
+    provisioning = db.Column(db.String(20), default="auto", nullable=False)
+    # bridge_request | admin_manual
+    source = db.Column(db.String(30), default="bridge_request", nullable=False)
+    # Whether the account was actually created on the CHR (False for ipsec/record-only).
+    chr_provisioned = db.Column(db.Boolean, default=False, nullable=False)
+    chr_secret_id = db.Column(db.String(40), default="", nullable=False)
+    chr_host = db.Column(db.String(255), default="", nullable=False)
+    remote_address = db.Column(db.String(64), default="", nullable=False)
+    # pending | delivered — at-least-once delivery of the clear password over the bridge.
+    delivery_status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("customer_users.id"), nullable=True)
+    created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    last_error = db.Column(db.String(255), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
 
 
 class CustomerBackupArtifact(TimestampMixin, db.Model):

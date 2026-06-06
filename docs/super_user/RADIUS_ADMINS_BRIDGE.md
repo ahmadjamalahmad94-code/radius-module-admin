@@ -1,0 +1,133 @@
+# إظهار أدمن الراديوس في لوحة التراخيص + فرض «سوبر يوزر» عليهم
+
+## المشكلة
+الأدمن الرئيسي للراديوس (وغيره من الأدمنيات) يُنشأ ويُدار **محلياً** على راديوس
+العميل (`external_identity_provider == ""` و `managed_by_license_admin == 0`)،
+فلا تعرفه لوحة التراخيص أصلاً ولا يظهر فيها. المطلوب: إظهار هذه الحسابات داخل
+صفحة تفاصيل العميل في اللوحة، والتحكم بها — وعلى رأسه فرض «سوبر يوزر».
+
+## القيد المعماري الحاكم
+الجسر **سحبي (pull-based)**: راديوس العميل يستطلع نقاط اللوحة الموقّعة، واللوحة
+**لا تدفع للخارج أبداً** (قد يكون الراديوس خلف NAT). توجد قناة عكسية واحدة
+قائمة: الراديوس يرفع نسخه الاحتياطية للّوحة (`/backups/upload`). لذلك صُمّم هذا
+الحل على نفس النمطين القائمين، بلا أي اتصال صادر من اللوحة:
+
+- **الإدراج (listing):** الراديوس **يبلّغ** اللوحةَ بجرد أدمنياته (push عكسي)،
+  واللوحة تخزّن لقطة وتعرضها. (لم نختر «اللوحة تسحب GET من الراديوس» حفاظاً على
+  المعمارية السحبية وتجنّب اعتماد اتصال صادر لجهاز قد يكون خلف NAT.)
+- **فرض السوبر (enforcement):** اللوحة تخزّن العلم `force_super`، ويسافر ضمن عقد
+  مزامنة الهوية الذي **يسحبه** الراديوس، فيطبّقه idempotent في كل دورة.
+
+## ما تم بناؤه على جانب اللوحة (هذا الريبو)
+
+| الطبقة | الملف | التغيير |
+|--------|-------|---------|
+| النموذج | `app/models.py` | جدول/كلاس `CustomerRadiusAdmin` (لقطة أدمن الراديوس) + خاصية `is_effective_super`. يُنشأ تلقائياً عبر `db.create_all()`. |
+| الخدمة | `app/services/customer_control.py` | `import_radius_admins` (upsert اللقطة، لا يدوس `force_super`)، `radius_admins_for_customer`، `build_admin_super_overrides`، وتضمين `admin_super_overrides` في `build_identity_sync_contract`. |
+| القناة العكسية | `app/api/routes.py` | `POST /api/integration/hoberadius/admins/report` (نفس ثلاثية الحماية: HTTPS + HMAC + حلّ الترخيص) لاستقبال بلاغ الراديوس. |
+| التحكم | `app/admin/routes.py` | `POST /admin/customers/<id>/radius-admins/<row_id>/super` لتفعيل/إلغاء الفرض + تدقيق. تمرير `radius_admins` لقالب التفاصيل. |
+| الواجهة | `app/templates/admin/customer_detail.html` | قسم «أدمن الراديوس» مع شارة سوبر وزر «اجعله سوبر يوزر / إلغاء الفرض». |
+
+### نقطة القناة العكسية (يستدعيها الراديوس)
+`POST /api/integration/hoberadius/admins/report` — موقّعة HMAC، تتطلب HTTPS.
+
+**الطلب (من الراديوس):**
+```jsonc
+{
+  "license_key": "....",
+  "server_fingerprint": "....",
+  "timestamp": 1733500000,
+  "nonce": "....",
+  "signature": "....",            // نفس توقيع بقية نقاط التكامل
+  "admins": [
+    {
+      "id": 1,                          // معرّف الأدمن على الراديوس (مفتاح المطابقة)
+      "username": "admin",
+      "role": "owner",
+      "is_super_admin": true,
+      "enabled": true,
+      "managed_by_license_admin": false,
+      "external_identity_provider": ""  // "" للأدمن المحلي البحت
+    }
+  ]
+}
+```
+**الرد:** `{ "ok": true, "status": "ok", "imported": <عدد> }`.
+ملاحظات: لا تُخزَّن ولا تُعاد أي كلمات مرور. الحقل `force_super` المملوك للّوحة
+لا يُداس بالبلاغ. سقف الدفعة 200 عنصراً.
+
+### تعليمات الفرض في عقد مزامنة الهوية (يسحبها الراديوس)
+استجابة `POST /api/integration/hoberadius/identity-sync` صار فيها حقل جديد:
+```jsonc
+{
+  "ok": true,
+  "customer_id": 12,
+  "license_key": "....",
+  "version": 4,
+  "users": [ /* المستخدمون المُدارون مع is_super الصريح — انظر SUPER_USER_TOGGLE.md */ ],
+  "admin_super_overrides": [
+    { "radius_admin_id": 1, "username": "admin", "is_super": true }
+  ]
+}
+```
+`admin_super_overrides` يشمل فقط أدمن الراديوس المفعّل عليهم الفرض من اللوحة.
+عند تعطّل الترخيص تُرجَع القائمة فارغة (مثل `users`).
+
+## العقد المطلوب على جانب الراديوس (radius-module) — لإكماله لاحقاً
+
+> لم يُعدَّل `radius-module` من هنا. هذه الأجزاء المطلوبة هناك.
+
+### (أ) بلاغ جرد الأدمن — مُنتِج (producer)
+أضف في دورة المزامنة (أو مؤقّت دوري) استدعاءً موقّعاً يرسل جرد أدمنيات الراديوس
+إلى `POST /api/integration/hoberadius/admins/report` بالحقول أعلاه. يكفي إرساله
+عند تغيّر الجرد أو دورياً (مثلاً مع نفس نبضة مزامنة الهوية). يُقرأ من جدول أدمن
+الراديوس المحلي: `id, username, role, is_super_admin, enabled,
+managed_by_license_admin, external_identity_provider`.
+
+> بديل مكافئ إن فُضّل أن «تسحب اللوحة»: تعريض نقطة GET محمية بالـinternal secret
+> على الراديوس تُرجع نفس الحقول. لم نعتمده هنا للقيد المعماري (الجسر سحبي واللوحة
+> لا تتصل بالخارج)، لكنه ممكن إن وُفّر اتصال صادر موثوق من اللوحة للراديوس.
+
+### (ب) تطبيق فرض السوبر — مستهلِك (consumer) في مزامنة الهوية
+في الكود الذي يستهلك استجابة `identity-sync` (إلى جانب معالجة `users[]`)، أضف
+معالجة `admin_super_overrides`:
+
+```python
+for ov in contract.get("admin_super_overrides", []):
+    # المطابقة بالمعرّف أولاً ثم باسم المستخدم احتياطاً.
+    local = (
+        find_local_admin_by_id(ov.get("radius_admin_id"))
+        or find_local_admin_by_username(ov.get("username"))
+    )
+    if not local:
+        continue
+    # فرض السوبر فقط — لا تلمس كلمة المرور ولا مزوّد الهوية ولا الحالة،
+    # حتى لا ينكسر دخول الأدمن المحلي. idempotent.
+    if local.is_super_admin != bool(ov.get("is_super")):
+        local.is_super_admin = bool(ov.get("is_super"))
+        save(local)
+```
+
+#### خصائص السلوك المطلوبة على الراديوس
+1. **idempotent ولا يكسر الدخول المحلي:** يُضبط `is_super_admin` فقط؛ تبقى كلمة
+   المرور و`external_identity_provider` و`managed_by_license_admin` كما هي. الأدمن
+   المحلي غير المُدار يصبح مُداراً **لهذا العلم فقط**، ويظل دخوله المحلي يعمل.
+2. **يُطبَّق في كل مزامنة:** بما أن الفرض مصدره اللوحة، فأي تعديل SQL يدوي على
+   الراديوس يُداس عند المزامنة التالية (مقصود — المركز هو مصدر الحقيقة للسوبر).
+3. **الإلغاء:** عند إزالة الفرض من اللوحة يختفي العنصر من `admin_super_overrides`.
+   إن رغبت بإعادة `is_super_admin=0` تلقائياً عند الإزالة، أرسل العنصر مع
+   `is_super=false` بدل حذفه (تحسين مستقبلي اختياري؛ السلوك الحالي: الإزالة تتوقف
+   عن الفرض ولا تُنزّل السوبر قسراً، تجنّباً لإنزال أدمن سوبر أصلاً على الراديوس).
+
+## السلوك النهائي للمستخدم
+1. راديوس العميل يبلّغ اللوحة بجرد أدمنياته → تظهر في «تفاصيل العميل ← أدمن الراديوس».
+2. يضغط المالك «اجعله سوبر يوزر» على الأدمن الرئيسي المحلي.
+3. عند مزامنة الهوية التالية يستقبل الراديوس `admin_super_overrides` فيضبط
+   `is_super_admin=1` لهذا الأدمن (idempotent، دون كسر دخوله) → تُفتح كل الأقسام.
+
+## التحقق (على جانب اللوحة)
+- `py_compile` لكل الملفات المعدّلة — ناجح.
+- اختبارات `tests/test_customer_control_layer.py` الجديدة:
+  - `test_radius_admins_report_ingests_snapshot_and_does_not_clobber_force_super`
+  - `test_identity_sync_carries_admin_super_overrides`
+  - `test_admin_can_toggle_radius_admin_force_super`

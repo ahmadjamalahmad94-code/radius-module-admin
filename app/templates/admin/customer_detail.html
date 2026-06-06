@@ -122,7 +122,14 @@
         <tr>
           <td class="mono">{{ user.username }}</td>
           <td class="ltr-cell" style="text-align:start">{{ user.email or '—' }}</td>
-          <td>{{ user.role_key|role_label }}</td>
+          <td>
+            {{ user.role_key|role_label }}
+            {% if user.is_effective_super %}
+              <span class="badge {{ 'active'|badge_class }}" title="مشرف كامل (is_super_admin) على راديوس العميل عبر الجسر">
+                <i class="fa-solid fa-crown"></i> سوبر يوزر
+              </span>
+            {% endif %}
+          </td>
           <td>
             <span class="badge {{ ('active' if user.active else 'disabled')|badge_class }}">
               {{ 'مفعل' if user.active else 'معطل' }}
@@ -177,6 +184,80 @@
   </div>
 {% endcall %}
 
+{# ── أدمن الراديوس (لقطة مستوردة من راديوس العميل عبر الجسر) ── #}
+{% call hub.section("أدمن الراديوس", icon="user-lock", meta='حسابات الأدمن الموجودة على راديوس العميل — تُستورد عبر الجسر') %}
+  <div class="hub-flash hub-flash--info" style="margin-bottom:10px">
+    <i class="fa-solid fa-circle-info"></i>
+    هذه لقطة عن حسابات الأدمن المُنشأة محلياً على راديوس العميل (ومنها الأدمن الرئيسي المحلي).
+    «فرض سوبر يوزر» يضمن أن يصبح هذا الأدمن مشرفاً كاملاً (is_super_admin) على راديوسه عند كل مزامنة عبر الجسر،
+    دون المساس بكلمة مروره أو كسر دخوله المحلي.
+  </div>
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>اسم المستخدم</th>
+          <th>الدور</th>
+          <th>سوبر</th>
+          <th>الحالة</th>
+          <th>المصدر</th>
+          <th>آخر ظهور</th>
+          <th>تحكم</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ra in radius_admins %}
+        <tr>
+          <td class="mono">{{ ra.username or ('#' ~ ra.radius_admin_id) }}</td>
+          <td>{{ ra.role or '—' }}</td>
+          <td>
+            {% if ra.is_effective_super %}
+              <span class="badge {{ 'active'|badge_class }}" title="{{ 'مفروض من اللوحة عبر الجسر' if ra.force_super else 'سوبر على الراديوس فعلاً' }}">
+                <i class="fa-solid fa-crown"></i> سوبر{% if ra.force_super %} (مفروض){% endif %}
+              </span>
+            {% else %}
+              <span class="badge {{ 'disabled'|badge_class }}">عادي</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {{ ('active' if ra.enabled else 'disabled')|badge_class }}">
+              {{ 'مفعل' if ra.enabled else 'معطل' }}
+            </span>
+          </td>
+          <td>
+            {% if ra.managed_by_license_admin %}
+              مُدار بالجسر{% if ra.external_identity_provider %} ({{ ra.external_identity_provider }}){% endif %}
+            {% else %}
+              محلي
+            {% endif %}
+          </td>
+          <td class="date">{{ ra.last_seen_at|dt if ra.last_seen_at else '—' }}</td>
+          <td>
+            <div class="hub-actions">
+              {% if ra.force_super %}
+                <form method="post" action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="action" value="disable">
+                  <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit"><i class="fa-solid fa-crown"></i> إلغاء فرض السوبر</button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="action" value="enable">
+                  <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-crown"></i> اجعله سوبر يوزر</button>
+                </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">{{ hub.empty("لم تصل لقطة أدمن الراديوس بعد.", sub="تظهر هنا تلقائياً بعد أول بلاغ من راديوس العميل عبر الجسر.", icon="user-lock") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+
 {# ── Services 360 ── #}
 {% call hub.section("الخدمات والتحكم 360", icon="shapes", meta='تفعيل وتعطيل وحدود واضحة لكل خدمة') %}
   <div class="hub-table-wrap">
@@ -209,6 +290,9 @@
             {% if item.service_key == 'ip_change_vpn' %}
               <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_vpn_service', customer_id=customer.id) }}">
                 <i class="fa-solid fa-shield-halved"></i> إدارة الشبكة الخاصة
+              </a>
+              <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_vpn_tunnels', customer_id=customer.id) }}">
+                <i class="fa-solid fa-network-wired"></i> أنفاق CHR
               </a>
             {% endif %}
             <form method="post" action="{{ url_for('admin.customer_service_update', customer_id=customer.id, service_key=item.service_key) }}" class="cd-svc-form">

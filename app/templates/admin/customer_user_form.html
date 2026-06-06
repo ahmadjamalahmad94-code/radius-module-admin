@@ -39,6 +39,19 @@
           </select>
           <div class="hub-field-hint">مالك الحساب يحصل على صلاحية إدارة كاملة داخل ريدياس هذا العميل.</div>
         </div>
+        <div class="hub-field full">
+          <label class="hub-check-item">
+            <input type="checkbox" name="is_super" value="1"
+                   {% if customer_user.is_super or customer_user.role_key == 'owner' %}checked{% endif %}
+                   {% if customer_user.role_key == 'owner' %}disabled{% endif %}>
+            <span><i class="fa-solid fa-crown" style="color:var(--hub-accent,#d97706)"></i> سوبر يوزر — صلاحية كاملة</span>
+          </label>
+          <div class="hub-field-hint">
+            يضمن أن هذا المستخدم يصبح <strong>مشرفاً كاملاً (is_super_admin)</strong> على راديوس العميل عند كل مزامنة عبر الجسر،
+            فتفتح له جميع الأقسام ثم يدير صلاحيات بقية المدراء بنفسه من الراديوس.
+            مالك الحساب سوبر يوزر دائماً (لا يمكن إلغاؤه).
+          </div>
+        </div>
       </div>
     {% endcall %}
 
