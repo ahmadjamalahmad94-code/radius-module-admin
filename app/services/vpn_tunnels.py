@@ -219,15 +219,27 @@ def provision_tunnel(
             client = chr_settings.build_client()
         except chr_settings.ChrSettingsError as exc:
             raise VpnTunnelError("chr_not_configured", str(exc)) from exc
-        # هيّئ بروفايل السرعة على CHR (idempotent) قبل إنشاء الحساب، كي يعمل
-        # الاتصال بالـrate-limit المطلوب لا الافتراضي.
-        if speed["rate_limit"]:
-            try:
-                client.ensure_ppp_profile(name=profile, rate_limit=speed["rate_limit"])
-            except RouterOSError as exc:
-                raise VpnTunnelError(
-                    "chr_profile_failed", "تعذّر تهيئة بروفايل السرعة على CHR: " + exc.message
-                ) from exc
+        # هيّئ العنونة والبروفايل على CHR (idempotent) قبل إنشاء الحساب. حرج: بدون
+        # local/remote-address يصادق العميل لكن لا يأخذ IPv4. نضمن pool مشترك واحد ثم
+        # نضبط البروفايل (حتى الافتراضي) بالعناوين + rate-limit إن وُجد — لكل الأنواع.
+        cfg = current_app.config
+        pool_name = (cfg.get("CHR_PPP_ADDRESS_POOL") or "ppp-vpn-pool").strip() or "ppp-vpn-pool"
+        local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.98.0.1").strip() or "10.98.0.1"
+        pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.98.0.10-10.98.0.250").strip()
+        use_enc = bool(cfg.get("CHR_PPP_USE_ENCRYPTION", True))
+        try:
+            client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
+            client.ensure_ppp_profile(
+                name=profile,
+                rate_limit=speed["rate_limit"],
+                local_address=local_addr,
+                remote_address=pool_name,
+                use_encryption=use_enc,
+            )
+        except RouterOSError as exc:
+            raise VpnTunnelError(
+                "chr_profile_failed", "تعذّر تهيئة بروفايل/عنونة CHR: " + exc.message
+            ) from exc
         try:
             created = client.create_ppp_secret(
                 name=username,

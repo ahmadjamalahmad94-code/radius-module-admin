@@ -92,7 +92,10 @@ class _FakeClient:
     def test_connection(self):
         return {"identity": "CHR-Test", "version": "7.15", "board_name": "CHR", "uptime": "1d"}
 
-    def ensure_ppp_profile(self, *, name, rate_limit=""):
+    def ensure_ip_pool(self, *, name, ranges="", **_kw):
+        return {".id": "*pool", "name": name, "ranges": ranges}
+
+    def ensure_ppp_profile(self, *, name, rate_limit="", **_kw):
         _FakeClient.profiles_ensured.append((name, rate_limit))
         return {".id": "*p", "name": name, "rate-limit": rate_limit}
 

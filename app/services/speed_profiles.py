@@ -144,13 +144,26 @@ def delete_profile(profile: ChrSpeedProfile) -> None:
 # ───────────────────────── CHR application ─────────────────────────
 
 def ensure_on_chr(profile: ChrSpeedProfile):
-    """يهيّئ ``/ppp/profile`` المقابل على CHR بسرعته (idempotent). يرفع للمستدعي عند
-    فشل CHR/الإعداد. للاستخدام من واجهة «اختبار/مزامنة البروفايل»."""
+    """يهيّئ ``/ppp/profile`` المقابل على CHR بسرعته **والعنونة** (idempotent). يرفع
+    للمستدعي عند فشل CHR/الإعداد. للاستخدام من واجهة «اختبار/مزامنة البروفايل».
+
+    pool **مشترك واحد** لكل البروفايلات (لا pool لكل سرعة) — البروفايلات تختلف فقط
+    بالـrate-limit. بدون local/remote-address لا يأخذ العميل IPv4."""
+    from flask import current_app
     from . import chr_settings
+    cfg = current_app.config
+    pool_name = (cfg.get("CHR_PPP_ADDRESS_POOL") or "ppp-vpn-pool").strip() or "ppp-vpn-pool"
+    local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.98.0.1").strip() or "10.98.0.1"
+    pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.98.0.10-10.98.0.250").strip()
+    use_enc = bool(cfg.get("CHR_PPP_USE_ENCRYPTION", True))
     client = chr_settings.build_client()
+    client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
     client.ensure_ppp_profile(
         name=profile.effective_chr_profile_name,
         rate_limit=rate_limit_string(profile.download_mbps, profile.upload_mbps),
+        local_address=local_addr,
+        remote_address=pool_name,
+        use_encryption=use_enc,
     )
 
 

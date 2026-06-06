@@ -59,7 +59,10 @@ class _FakeClient:
     def __init__(self, *a, **k):
         pass
 
-    def ensure_ppp_profile(self, *, name, rate_limit=""):
+    def ensure_ip_pool(self, *, name, ranges="", **_kw):
+        return {".id": "*pool", "name": name, "ranges": ranges}
+
+    def ensure_ppp_profile(self, *, name, rate_limit="", **_kw):
         _FakeClient.profiles_ensured.append((name, rate_limit))
         return {".id": "*p", "name": name, "rate-limit": rate_limit}
 
@@ -187,8 +190,9 @@ def test_provision_without_speed_uses_default_no_rate_limit(app, customer, fake_
     lic = customer.licenses.first()
     tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
     db.session.commit()
-    # لم يُهيَّأ أي بروفايل سرعة، والحساب على البروفايل الافتراضي.
-    assert fake_chr.profiles_ensured == []
+    # لا rate-limit (سرعة)، لكن يُهيَّأ البروفايل الافتراضي دائمًا لضبط العنونة
+    # (local/remote-address) وإلا لا يأخذ العميل IPv4. rate_limit فارغ.
+    assert ("default", "") in fake_chr.profiles_ensured
     assert fake_chr.created[0]["profile"] == "default"
     assert tunnel.download_mbps is None and tunnel.rate_limit == ""
 

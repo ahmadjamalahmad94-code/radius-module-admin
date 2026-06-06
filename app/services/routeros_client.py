@@ -281,25 +281,65 @@ class RouterOSClient:
             return result
         return None
 
-    def ensure_ppp_profile(self, *, name: str, rate_limit: str = "") -> dict[str, Any]:
-        """يضمن وجود ``/ppp/profile`` باسمٍ ثابت وبسرعة ``rate_limit`` (idempotent).
+    def ensure_ip_pool(self, *, name: str, ranges: str) -> dict[str, Any]:
+        """يضمن وجود ``/ip/pool`` بالاسم ``name`` ومجاله ``ranges`` (idempotent).
 
-        إن وُجد البروفايل وكانت سرعته مختلفة عن المطلوبة حدّثها (PATCH)؛ وإلا أنشأه.
-        يعيد البروفايل (أو على الأقل اسمه) دون رفع إن نجح."""
+        بدون pool يصادق العميل لكن لا يحصل على IPv4. pool **مشترك واحد** لكل أنفاق
+        PPP — لا pool لكل بروفايل سرعة. يُنشئه إن غاب، ويعيده."""
+        if not name or not ranges:
+            return {}
+        existing = self._find_one("ip/pool", {"name": name})
+        if existing:
+            return existing
+        created = self._request("PUT", "ip/pool", body={"name": name, "ranges": ranges})
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        return created if isinstance(created, dict) else {"name": name}
+
+    def ensure_ppp_profile(
+        self,
+        *,
+        name: str,
+        rate_limit: str = "",
+        local_address: str = "",
+        remote_address: str = "",
+        use_encryption: bool = True,
+    ) -> dict[str, Any]:
+        """يضمن وجود ``/ppp/profile`` باسمٍ ثابت (idempotent) **مع تخصيص العناوين**.
+
+        حرج: لو غاب ``local-address``/``remote-address`` يصادق العميل لكن لا يأخذ IPv4
+        (Local/Remote Address فارغان، لا ping). لذا نضبط دائمًا:
+          * ``local-address`` = بوابة الـCHR لكل وصلة PPP.
+          * ``remote-address`` = اسم الـpool المشترك (لا pool لكل بروفايل).
+          * ``use-encryption`` = yes افتراضيًا.
+        لا نترك هذه الحقول فارغة أبدًا. إن وُجد البروفايل وكان أيٌّ منها مختلفًا/فارغًا
+        صحّحناه (PATCH)؛ وإلا أنشأناه كاملًا."""
+        enc = "yes" if use_encryption else "no"
+        desired: dict[str, Any] = {}
+        if rate_limit:
+            desired["rate-limit"] = rate_limit
+        if local_address:
+            desired["local-address"] = local_address
+        if remote_address:
+            desired["remote-address"] = remote_address
+        desired["use-encryption"] = enc
+
         existing = self.find_ppp_profile(name)
         if existing:
             pid = str(existing.get(".id") or existing.get("id") or "")
-            current = str(existing.get("rate-limit") or "")
-            if rate_limit and pid and current != rate_limit:
+            patch: dict[str, Any] = {}
+            for key, val in desired.items():
+                if str(existing.get(key) or "") != str(val):
+                    patch[key] = val
+            if patch and pid:
                 self._request(
                     "PATCH", "ppp/profile/" + urllib.parse.quote(pid, safe=""),
-                    body={"rate-limit": rate_limit},
+                    body=patch,
                 )
-                existing["rate-limit"] = rate_limit
+                existing.update(patch)
             return existing
         body: dict[str, Any] = {"name": name}
-        if rate_limit:
-            body["rate-limit"] = rate_limit
+        body.update(desired)
         created = self._request("PUT", "ppp/profile", body=body)
         if isinstance(created, list):
             created = created[0] if created else {}
