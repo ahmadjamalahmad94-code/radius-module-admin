@@ -133,6 +133,27 @@ class Config:
     # Default RouterOS /ppp/profile applied to provisioned secrets.
     CHR_DEFAULT_PPP_PROFILE = os.environ.get("CHR_DEFAULT_PPP_PROFILE", "default")
 
+    # ── IPsec / IKEv2 automation on the CHR (/ip/ipsec, NOT /ppp/secret) ──────
+    # IPsec users authenticate with username/password over IKEv2 EAP-MSCHAPv2; the
+    # per-user credential is an /ip/ipsec/user entry. A shared responder (mode-
+    # config + peer + identity) is ensured once (idempotent). Disable automation
+    # to fall back to record-only IPsec (manual CHR setup).
+    CHR_IPSEC_AUTO_PROVISION = _env_bool("CHR_IPSEC_AUTO_PROVISION", True)
+    # When False, assume the owner configured the IKEv2 responder manually and only
+    # manage the per-user /ip/ipsec/user entries.
+    CHR_IPSEC_MANAGE_INFRA = _env_bool("CHR_IPSEC_MANAGE_INFRA", True)
+    # Stable names of the shared responder objects created/reused on the CHR.
+    CHR_IPSEC_PEER = os.environ.get("CHR_IPSEC_PEER", "hoberadius")
+    CHR_IPSEC_MODE_CONFIG = os.environ.get("CHR_IPSEC_MODE_CONFIG", "hoberadius")
+    CHR_IPSEC_PROFILE = os.environ.get("CHR_IPSEC_PROFILE", "default")
+    CHR_IPSEC_EAP_METHODS = os.environ.get("CHR_IPSEC_EAP_METHODS", "eap-mschapv2")
+    # Optional one-time responder prerequisites the OWNER provisions on the CHR:
+    # an address pool for client IPs, a DNS to push, and the server certificate
+    # the IKEv2 responder presents for EAP. Left empty unless set in the env.
+    CHR_IPSEC_ADDRESS_POOL = os.environ.get("CHR_IPSEC_ADDRESS_POOL", "")
+    CHR_IPSEC_DNS = os.environ.get("CHR_IPSEC_DNS", "")
+    CHR_IPSEC_CERTIFICATE = os.environ.get("CHR_IPSEC_CERTIFICATE", "")
+
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the
     # panel settings (encrypted) instead of editing env. When disabled, the

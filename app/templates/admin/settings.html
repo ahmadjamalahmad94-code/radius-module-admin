@@ -177,6 +177,31 @@
         <div class="hub-field-hint">CHR يأتي بشهادة موقّعة ذاتيًا — اترك التحقق غير مفعّل ما لم تثبّت شهادة موثوقة.</div>
       </div>
     </div>
+
+    {# ── العنوان العام والمنافذ التي يتصل بها عميلُ العميل (تُسلَّم عبر الجسر) ── #}
+    <div style="margin-top:18px;padding-top:14px;border-top:1px dashed #e2e8f0">
+      <p class="hub-field-hint" style="margin:0 0 10px">
+        <i class="fa-solid fa-globe"></i>
+        العنوان العام والمنافذ التي يتصل بها <b>جهاز عميل العميل</b> (قد تختلف عن مضيف REST الإداري إن كان CHR خلف NAT).
+        تُضمَّن في رد الجسر لكل نفق. اتركها فارغة لاستخدام المضيف الإداري والمنافذ الافتراضية.
+      </p>
+      <div class="hub-form-grid">
+        {% set f = chr_state.fields.public_host %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="public_host" value="{{ f.value }}" placeholder="vpn.hoberadius.com (افتراضي: المضيف الإداري)">
+        </div>
+        {% set pd = chr_state.service_port_defaults %}
+        {% for svc in ['sstp', 'pptp', 'l2tp', 'ipsec'] %}
+        <div class="hub-field">
+          <label>{{ chr_state.fields['port_' ~ svc].label }}</label>
+          <input class="hub-input mono ltr" name="port_{{ svc }}" type="number" min="1" max="65535"
+                 value="{{ chr_state.fields['port_' ~ svc].value }}" placeholder="{{ pd[svc] }}">
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
     <div class="hub-form-foot" style="padding-top:14px">
       <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ بيانات CHR</button>
     </div>

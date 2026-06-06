@@ -69,11 +69,20 @@ def _configure_chr():
 
 
 class _FakeClient:
-    """عميل RouterOS وهمي يسجّل ما أُنشئ/حُذف بدل لمس الشبكة."""
+    """عميل RouterOS وهمي يسجّل ما أُنشئ/حُذف بدل لمس الشبكة.
+
+    يحاكي idempotency لـ IPsec: ``ip/ipsec/user`` يُخزَّن باسمه، و``ensure_*``
+    تُنشئ البنية المشتركة مرّة واحدة وتُحصي الاستدعاءات للتحقق.
+    """
 
     created: list[dict] = []
     removed: list[str] = []
     raise_on_create = False
+    # IPsec state
+    ipsec_users: dict[str, dict] = {}
+    ipsec_removed: list[str] = []
+    ipsec_disabled: list[tuple] = []
+    infra_calls: dict[str, int] = {}
 
     def __init__(self, *a, **k):
         pass
@@ -93,12 +102,48 @@ class _FakeClient:
     def set_ppp_secret_disabled(self, secret_id, disabled):
         pass
 
+    # ── IPsec ──
+    def _bump(self, key):
+        _FakeClient.infra_calls[key] = _FakeClient.infra_calls.get(key, 0) + 1
+
+    def ensure_ipsec_mode_config(self, **kwargs):
+        self._bump("mode_config")
+        return {".id": "*mc", **kwargs}
+
+    def ensure_ipsec_peer(self, **kwargs):
+        self._bump("peer")
+        return {".id": "*peer", **kwargs}
+
+    def ensure_ipsec_identity(self, **kwargs):
+        self._bump("identity")
+        return {".id": "*id", **kwargs}
+
+    def find_ipsec_user(self, name):
+        return _FakeClient.ipsec_users.get(name)
+
+    def create_ipsec_user(self, *, name, password, comment=""):
+        if _FakeClient.raise_on_create:
+            raise RouterOSError("request_invalid", "تعذّر إنشاء مستخدم IPsec.")
+        rec = {".id": f"*u{len(_FakeClient.ipsec_users) + 1}", "name": name, "comment": comment}
+        _FakeClient.ipsec_users[name] = rec
+        return rec
+
+    def remove_ipsec_user(self, user_id):
+        _FakeClient.ipsec_removed.append(user_id)
+
+    def set_ipsec_user_disabled(self, user_id, disabled):
+        _FakeClient.ipsec_disabled.append((user_id, disabled))
+
 
 @pytest.fixture()
 def fake_chr(app, monkeypatch):
     _FakeClient.created = []
     _FakeClient.removed = []
     _FakeClient.raise_on_create = False
+    _FakeClient.ipsec_users = {}
+    _FakeClient.ipsec_removed = []
+    _FakeClient.ipsec_disabled = []
+    _FakeClient.infra_calls = {}
     monkeypatch.setattr(chr_settings, "build_client", lambda: _FakeClient())
     return _FakeClient
 
@@ -183,15 +228,60 @@ def test_provision_chr_failure_persists_nothing(app, customer, fake_chr):
     assert CustomerVpnTunnel.query.filter_by(customer_id=customer.id).count() == 0
 
 
-def test_ipsec_is_record_only_no_chr_call(app, customer, fake_chr):
+def test_ipsec_provisions_user_on_chr(app, customer, fake_chr):
+    """IPsec يُؤتمت الآن: يُنشأ /ip/ipsec/user وتُهيَّأ البنية المشتركة."""
     _configure_chr()
     lic = customer.licenses.first()
     tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec", source="admin_manual")
     db.session.commit()
-    assert tunnel.chr_provisioned is False
+    assert tunnel.chr_provisioned is True
+    assert tunnel.chr_secret_id  # معرّف /ip/ipsec/user
     assert tunnel.status == "active"
+    assert len(fake_chr.ipsec_users) == 1
+    # لم يُنشأ /ppp/secret لنوع IPsec.
     assert len(fake_chr.created) == 0
-    assert "IPsec" in tunnel.notes or "سجل" in tunnel.notes
+    # البنية المشتركة هُيّئت.
+    assert fake_chr.infra_calls.get("mode_config") == 1
+    assert fake_chr.infra_calls.get("peer") == 1
+    assert fake_chr.infra_calls.get("identity") == 1
+
+
+def test_ipsec_provisioning_idempotent(app, fake_chr):
+    """إعادة التزويد لنفس المستخدم (بعد فقد الرد) لا تُكرّره — يُعاد المعرّف نفسه."""
+    _configure_chr()
+    client = fake_chr()
+    id1 = vpn_tunnels._provision_ipsec_user(client, "c1-fixeduser", "pw-1", "comment")
+    id2 = vpn_tunnels._provision_ipsec_user(client, "c1-fixeduser", "pw-1", "comment")
+    assert id1 and id1 == id2
+    assert len(fake_chr.ipsec_users) == 1
+
+
+def test_ipsec_record_only_when_automation_disabled(app, customer, fake_chr):
+    """عند تعطيل CHR_IPSEC_AUTO_PROVISION يعود السلوك إلى «سجل فقط»."""
+    _configure_chr()
+    app.config["CHR_IPSEC_AUTO_PROVISION"] = False
+    try:
+        lic = customer.licenses.first()
+        tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec", source="admin_manual")
+        db.session.commit()
+        assert tunnel.chr_provisioned is False
+        assert tunnel.status == "active"
+        assert len(fake_chr.ipsec_users) == 0
+        assert "IPsec" in tunnel.notes or "سجل" in tunnel.notes
+    finally:
+        app.config["CHR_IPSEC_AUTO_PROVISION"] = True
+
+
+def test_ipsec_revoke_removes_user_from_chr(app, customer, fake_chr):
+    _configure_chr()
+    lic = customer.licenses.first()
+    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec")
+    db.session.commit()
+    secret_id = tunnel.chr_secret_id
+    vpn_tunnels.revoke_tunnel(tunnel)
+    db.session.commit()
+    assert tunnel.status == "revoked"
+    assert secret_id in fake_chr.ipsec_removed
 
 
 def test_revoke_removes_from_chr(app, customer, fake_chr):
@@ -214,6 +304,35 @@ def test_serialize_hides_password_after_delivery(app, customer, fake_chr):
     vpn_tunnels.acknowledge_delivery(customer, [tunnel.username])
     db.session.commit()
     assert "password" not in vpn_tunnels.serialize_tunnel(tunnel, include_password=True)
+
+
+def test_serialize_includes_public_endpoint_and_service_port(app, customer, fake_chr):
+    """رد الجسر يحمل العنوان العام والمنفذ لكل خدمة (يتصل بهما عميلُ العميل)."""
+    # عنوان عام مخصّص ومنفذ SSTP مخصّص.
+    chr_settings.validate_and_save(
+        {
+            "host": "mgmt.hoberadius.com", "port": "8729", "username": "admin",
+            "password": "s3cret-chr-pass", "use_tls": "1", "verify_tls": "",
+            "public_host": "vpn.hoberadius.com", "port_sstp": "4443",
+        },
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    lic = customer.licenses.first()
+    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
+    db.session.commit()
+    data = vpn_tunnels.serialize_tunnel(tunnel, include_password=True)
+    assert data["chr_public_host"] == "vpn.hoberadius.com"
+    assert data["service_port"] == 4443
+
+
+def test_public_endpoint_falls_back_to_admin_host_and_defaults(app):
+    """بلا عنوان عام/منافذ مخصّصة: نستخدم المضيف الإداري والمنافذ الافتراضية."""
+    _configure_chr()  # host=vpn-test.hoberadius.com، بلا public_host/منافذ خدمات
+    ep = chr_settings.public_endpoint()
+    assert ep["public_host"] == "vpn-test.hoberadius.com"
+    assert ep["ports"]["sstp"] == chr_settings.SERVICE_PORT_DEFAULTS["sstp"]
+    assert ep["ports"]["ipsec"] == chr_settings.SERVICE_PORT_DEFAULTS["ipsec"]
 
 
 # ───────────────────────── bridge endpoints ─────────────────────────

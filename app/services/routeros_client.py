@@ -253,3 +253,134 @@ class RouterOSClient:
             "ppp/secret/" + urllib.parse.quote(secret_id, safe=""),
             body={"disabled": "yes" if disabled else "no"},
         )
+
+    # ───────────────────────── IPsec (IKEv2) helpers ─────────────────────────
+    # IPsec على RouterOS نظام مستقل عن ``/ppp/secret``. لمستخدمي IKEv2 بكلمة مرور
+    # (EAP-MSCHAPv2) تُخزَّن بيانات الاعتماد في ``/ip/ipsec/user``، وتُهيَّأ البنية
+    # المشتركة (mode-config/peer/identity) مرّة واحدة. كل الدوال idempotent: تبحث
+    # قبل الإنشاء فلا تُكرّر عنصرًا موجودًا.
+
+    def _find_one(self, path: str, query: dict[str, Any]) -> dict[str, Any] | None:
+        """GET على ``path`` مع ترشيح ``query``؛ يعيد أول تطابق أو None."""
+        result = self._request("GET", path, params=query)
+        if isinstance(result, list) and result:
+            first = result[0]
+            return first if isinstance(first, dict) else None
+        if isinstance(result, dict):
+            return result
+        return None
+
+    @staticmethod
+    def _new_id(created: Any) -> str:
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        if isinstance(created, dict):
+            return str(created.get(".id") or created.get("id") or "")
+        return ""
+
+    def find_ipsec_user(self, name: str) -> dict[str, Any] | None:
+        return self._find_one("ip/ipsec/user", {"name": name})
+
+    def create_ipsec_user(self, *, name: str, password: str, comment: str = "") -> dict[str, Any]:
+        """ينشئ ``/ip/ipsec/user`` (بيانات اعتماد EAP لمستخدم IKEv2) ويعيد العنصر."""
+        body: dict[str, Any] = {"name": name, "password": password}
+        if comment:
+            body["comment"] = comment
+        created = self._request("PUT", "ip/ipsec/user", body=body)
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        return created if isinstance(created, dict) else {}
+
+    def remove_ipsec_user(self, user_id: str) -> None:
+        """يحذف ``/ip/ipsec/user`` بمعرّفه. يتجاهل 404 (محذوف مسبقًا)."""
+        if not user_id:
+            return
+        try:
+            self._request("DELETE", "ip/ipsec/user/" + urllib.parse.quote(user_id, safe=""))
+        except RouterOSError as exc:
+            if exc.code == "not_found":
+                return
+            raise
+
+    def set_ipsec_user_disabled(self, user_id: str, disabled: bool) -> None:
+        """يفعّل/يعطّل ``/ip/ipsec/user`` (للتعليق دون حذف)."""
+        if not user_id:
+            return
+        self._request(
+            "PATCH",
+            "ip/ipsec/user/" + urllib.parse.quote(user_id, safe=""),
+            body={"disabled": "yes" if disabled else "no"},
+        )
+
+    def ensure_ipsec_mode_config(
+        self,
+        *,
+        name: str,
+        address_pool: str = "",
+        static_dns: str = "",
+        system_dns: bool = True,
+    ) -> dict[str, Any]:
+        """يضمن وجود ``/ip/ipsec/mode-config`` باسمٍ ثابت (يُنشئه إن غاب)."""
+        existing = self._find_one("ip/ipsec/mode-config", {"name": name})
+        if existing:
+            return existing
+        body: dict[str, Any] = {"name": name, "responder": "yes"}
+        if address_pool:
+            body["address-pool"] = address_pool
+        if static_dns:
+            body["static-dns"] = static_dns
+        elif system_dns:
+            body["system-dns"] = "yes"
+        created = self._request("PUT", "ip/ipsec/mode-config", body=body)
+        return created if isinstance(created, dict) else {"name": name}
+
+    def ensure_ipsec_peer(
+        self,
+        *,
+        name: str,
+        profile: str = "default",
+        exchange_mode: str = "ike2",
+        passive: bool = True,
+        address: str = "0.0.0.0/0",
+    ) -> dict[str, Any]:
+        """يضمن وجود ``/ip/ipsec/peer`` مستمعٍ (responder) لـ IKEv2."""
+        existing = self._find_one("ip/ipsec/peer", {"name": name})
+        if existing:
+            return existing
+        body: dict[str, Any] = {
+            "name": name,
+            "exchange-mode": exchange_mode,
+            "passive": "yes" if passive else "no",
+            "address": address,
+        }
+        if profile:
+            body["profile"] = profile
+        created = self._request("PUT", "ip/ipsec/peer", body=body)
+        return created if isinstance(created, dict) else {"name": name}
+
+    def ensure_ipsec_identity(
+        self,
+        *,
+        peer: str,
+        mode_config: str,
+        auth_method: str = "eap",
+        eap_methods: str = "eap-mschapv2",
+        generate_policy: str = "port-strict",
+        certificate: str = "",
+    ) -> dict[str, Any]:
+        """يضمن وجود ``/ip/ipsec/identity`` لمصادقة EAP المرتبطة بالـpeer المشترك."""
+        existing = self._find_one("ip/ipsec/identity", {"peer": peer})
+        if existing:
+            return existing
+        body: dict[str, Any] = {
+            "peer": peer,
+            "auth-method": auth_method,
+            "generate-policy": generate_policy,
+            "mode-config": mode_config,
+        }
+        if auth_method == "eap" and eap_methods:
+            body["eap-methods"] = eap_methods
+        if certificate:
+            body["certificate"] = certificate
+        created = self._request("PUT", "ip/ipsec/identity", body=body)
+        return created if isinstance(created, dict) else {"peer": peer}

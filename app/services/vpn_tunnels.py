@@ -9,9 +9,10 @@
 
 أنواع الأنفاق:
 * SSTP/PPTP/L2TP → تُنشأ فعليًا كـ ``/ppp/secret`` على CHR.
-* IPsec (IKEv2) → نظام مختلف على RouterOS (``/ip/ipsec``)؛ في المرحلة الأولى
-  يُسجَّل السجل ويُسلَّم عبر الجسر دون إنشاء تلقائي على CHR (يُضبط يدويًا).
-  انظر التقرير/التوثيق.
+* IPsec (IKEv2) → نظام مستقل على RouterOS (``/ip/ipsec``)؛ يُنشأ تلقائيًا الآن:
+  تُهيَّأ البنية المشتركة (mode-config/peer/identity) مرّة واحدة (idempotent)،
+  ثم لكل مستخدم تُنشأ بيانات اعتماد ``/ip/ipsec/user`` (EAP-MSCHAPv2). يمكن
+  تعطيل الأتمتة (``CHR_IPSEC_AUTO_PROVISION=0``) فيعود السلوك «سجل فقط».
 
 كلمات مرور الأنفاق تُخزَّن مشفّرة (Fernet عبر ``customer_vault_crypto``) وتُعاد
 صريحة عبر الجسر مرة واحدة فقط حتى يؤكّد العميل الاستلام (delivery_status).
@@ -32,8 +33,9 @@ from .vpn_entitlements import get_customer_vpn_entitlement
 
 # الأنواع المدعومة وتعيينها إلى خدمة RouterOS على /ppp/secret.
 PPP_SERVICES = {"sstp", "pptp", "l2tp", "ovpn"}
-RECORD_ONLY_TYPES = {"ipsec"}
-TUNNEL_TYPES = PPP_SERVICES | RECORD_ONLY_TYPES
+# IPsec/IKEv2 يُزوَّد عبر /ip/ipsec (لا /ppp/secret). تلقائي ما لم يُعطَّل بالإعداد.
+IPSEC_TYPES = {"ipsec"}
+TUNNEL_TYPES = PPP_SERVICES | IPSEC_TYPES
 # ما يُسمح بطلبه تلقائيًا عبر الجسر من لوحة العميل (SSTP فقط حسب القرار المعماري).
 BRIDGE_AUTO_TYPES = {"sstp"}
 # ما يُنشئه المدير يدويًا من «عرض العميل 360».
@@ -153,17 +155,17 @@ def provision_tunnel(
     chr_host = ""
     chr_secret_id = ""
     chr_provisioned = False
+    record_only = False
+    comment = f"hoberadius c{customer.id} {customer.company_name}"[:255]
 
     if ttype in PPP_SERVICES:
         if not chr_settings.enabled():
             raise VpnTunnelError("chr_disabled", "تزويد CHR غير مُفعّل في إعدادات اللوحة.")
-        creds = chr_settings.resolved()
-        chr_host = creds.get("host", "")
+        chr_host = chr_settings.resolved().get("host", "")
         try:
             client = chr_settings.build_client()
         except chr_settings.ChrSettingsError as exc:
             raise VpnTunnelError("chr_not_configured", str(exc)) from exc
-        comment = f"hoberadius c{customer.id} {customer.company_name}"[:255]
         try:
             created = client.create_ppp_secret(
                 name=username,
@@ -177,6 +179,24 @@ def provision_tunnel(
             raise VpnTunnelError("chr_create_failed", "تعذّر إنشاء الحساب على CHR: " + exc.message) from exc
         chr_secret_id = str(created.get(".id") or created.get("id") or "")
         chr_provisioned = True
+    elif ttype in IPSEC_TYPES:
+        if chr_settings.enabled() and current_app.config.get("CHR_IPSEC_AUTO_PROVISION", True):
+            chr_host = chr_settings.resolved().get("host", "")
+            try:
+                client = chr_settings.build_client()
+            except chr_settings.ChrSettingsError as exc:
+                raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+            try:
+                chr_secret_id = _provision_ipsec_user(client, username, password, comment)
+            except RouterOSError as exc:
+                # لا نحفظ سجلًا نصف مكتمل عند فشل CHR؛ نرفع الخطأ للمستدعي.
+                raise VpnTunnelError(
+                    "chr_create_failed", "تعذّر إنشاء مستخدم IPsec على CHR: " + exc.message
+                ) from exc
+            chr_provisioned = True
+        else:
+            # الأتمتة معطّلة (أو CHR غير مُفعّل): سجل فقط — يُضبط على CHR يدويًا.
+            record_only = True
 
     tunnel = CustomerVpnTunnel(
         customer_id=customer.id,
@@ -196,8 +216,8 @@ def provision_tunnel(
         created_by_admin_id=created_by_admin_id,
         notes=(notes or "").strip()[:2000],
     )
-    if ttype in RECORD_ONLY_TYPES:
-        note = "نفق IPsec: سجل فقط في المرحلة الأولى — اضبط الند/الهوية على CHR يدويًا."
+    if record_only:
+        note = "نفق IPsec: سجل فقط (الأتمتة معطّلة) — اضبط mode-config/peer/identity ومستخدم IPsec على CHR يدويًا."
         tunnel.notes = (tunnel.notes + ("\n" if tunnel.notes else "") + note)[:2000]
     set_tunnel_password(tunnel, password)
     db.session.add(tunnel)
@@ -205,12 +225,62 @@ def provision_tunnel(
     return tunnel
 
 
+def _ipsec_infra_names() -> tuple[str, str]:
+    cfg = current_app.config
+    mode_config = (cfg.get("CHR_IPSEC_MODE_CONFIG") or "hoberadius").strip() or "hoberadius"
+    peer = (cfg.get("CHR_IPSEC_PEER") or "hoberadius").strip() or "hoberadius"
+    return mode_config, peer
+
+
+def _ensure_ipsec_infra(client) -> None:
+    """يهيّئ البنية المشتركة لـ IKEv2 مرّة واحدة (idempotent).
+
+    قابل للتعطيل بـ ``CHR_IPSEC_MANAGE_INFRA=0`` إن كان المالك قد ضبط المستمع
+    (responder) يدويًا — عندها نكتفي بإدارة مستخدمي ``/ip/ipsec/user``.
+    """
+    cfg = current_app.config
+    if not cfg.get("CHR_IPSEC_MANAGE_INFRA", True):
+        return
+    mode_config, peer = _ipsec_infra_names()
+    client.ensure_ipsec_mode_config(
+        name=mode_config,
+        address_pool=(cfg.get("CHR_IPSEC_ADDRESS_POOL") or "").strip(),
+        static_dns=(cfg.get("CHR_IPSEC_DNS") or "").strip(),
+    )
+    client.ensure_ipsec_peer(
+        name=peer,
+        profile=(cfg.get("CHR_IPSEC_PROFILE") or "default").strip() or "default",
+    )
+    client.ensure_ipsec_identity(
+        peer=peer,
+        mode_config=mode_config,
+        eap_methods=(cfg.get("CHR_IPSEC_EAP_METHODS") or "eap-mschapv2").strip() or "eap-mschapv2",
+        certificate=(cfg.get("CHR_IPSEC_CERTIFICATE") or "").strip(),
+    )
+
+
+def _provision_ipsec_user(client, username: str, password: str, comment: str) -> str:
+    """يهيّئ البنية المشتركة ثم ينشئ ``/ip/ipsec/user`` (idempotent) ويعيد معرّفه.
+
+    إن وُجد المستخدم سلفًا (إعادة محاولة بعد فقد رد) لا يُكرَّر — يُعاد معرّفه.
+    """
+    _ensure_ipsec_infra(client)
+    existing = client.find_ipsec_user(username)
+    if existing:
+        return str(existing.get(".id") or existing.get("id") or "")
+    created = client.create_ipsec_user(name=username, password=password, comment=comment)
+    return str(created.get(".id") or created.get("id") or "")
+
+
 def revoke_tunnel(tunnel: CustomerVpnTunnel) -> None:
     """يحذف الحساب من CHR (إن وُجد) ويعلّم السجل ملغيًا. لا يُنفّذ commit."""
-    if tunnel.chr_provisioned and tunnel.chr_secret_id and tunnel.tunnel_type in PPP_SERVICES:
+    if tunnel.chr_provisioned and tunnel.chr_secret_id:
         try:
             client = chr_settings.build_client()
-            client.remove_ppp_secret(tunnel.chr_secret_id)
+            if tunnel.tunnel_type in PPP_SERVICES:
+                client.remove_ppp_secret(tunnel.chr_secret_id)
+            elif tunnel.tunnel_type in IPSEC_TYPES:
+                client.remove_ipsec_user(tunnel.chr_secret_id)
         except chr_settings.ChrSettingsError as exc:
             raise VpnTunnelError("chr_not_configured", str(exc)) from exc
         except RouterOSError as exc:
@@ -224,10 +294,13 @@ def set_tunnel_status(tunnel: CustomerVpnTunnel, status: str) -> None:
     target = (status or "").strip().lower()
     if target not in {"active", "suspended"}:
         raise VpnTunnelError("invalid_status", "حالة النفق غير مسموحة.")
-    if tunnel.chr_provisioned and tunnel.chr_secret_id and tunnel.tunnel_type in PPP_SERVICES:
+    if tunnel.chr_provisioned and tunnel.chr_secret_id:
         try:
             client = chr_settings.build_client()
-            client.set_ppp_secret_disabled(tunnel.chr_secret_id, disabled=(target == "suspended"))
+            if tunnel.tunnel_type in PPP_SERVICES:
+                client.set_ppp_secret_disabled(tunnel.chr_secret_id, disabled=(target == "suspended"))
+            elif tunnel.tunnel_type in IPSEC_TYPES:
+                client.set_ipsec_user_disabled(tunnel.chr_secret_id, disabled=(target == "suspended"))
         except chr_settings.ChrSettingsError as exc:
             raise VpnTunnelError("chr_not_configured", str(exc)) from exc
         except RouterOSError as exc:
@@ -277,6 +350,7 @@ def acknowledge_delivery(customer: Customer, usernames: list[str]) -> int:
 def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = False) -> dict:
     """تمثيل JSON لنفق. كلمة المرور الصريحة تُدرَج فقط حين ``include_password`` وعند
     الحاجة (تسليم لم يُؤكَّد بعد)."""
+    endpoint = chr_settings.public_endpoint()
     data = {
         "username": tunnel.username,
         "tunnel_type": tunnel.tunnel_type,
@@ -285,6 +359,9 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         "status": tunnel.status,
         "max_connections": tunnel.max_connections,
         "chr_host": tunnel.chr_host,
+        # العنوان العام والمنفذ اللذان يتصل بهما عميلُ العميل لهذه الخدمة.
+        "chr_public_host": endpoint["public_host"],
+        "service_port": endpoint["ports"].get(tunnel.tunnel_type),
         "chr_provisioned": bool(tunnel.chr_provisioned),
         "delivery_status": tunnel.delivery_status,
         "created_at": _iso_z(tunnel.created_at),
