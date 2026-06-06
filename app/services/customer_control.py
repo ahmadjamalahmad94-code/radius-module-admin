@@ -1076,11 +1076,14 @@ def build_admin_super_overrides(customer: Customer) -> list[dict[str, Any]]:
 
 
 def radius_admins_for_customer(customer: Customer) -> list[CustomerRadiusAdmin]:
-    """لقطة أدمن الراديوس المخزّنة لهذا العميل (للعرض في تفاصيل العميل)."""
+    """لقطة أدمن الراديوس المخزّنة لهذا العميل (للعرض في تفاصيل العميل).
+
+    الأدمن الرئيسي أولاً كي يظهر في صدارة القائمة.
+    """
     return (
         CustomerRadiusAdmin.query
         .filter_by(customer_id=customer.id)
-        .order_by(CustomerRadiusAdmin.radius_admin_id.asc())
+        .order_by(CustomerRadiusAdmin.is_primary.desc(), CustomerRadiusAdmin.radius_admin_id.asc())
         .all()
     )
 
@@ -1118,6 +1121,7 @@ def import_radius_admins(
         row.username = str(raw.get("username") or "").strip()[:80]
         row.role = str(raw.get("role") or "").strip()[:40]
         row.is_super_admin = bool(raw.get("is_super_admin"))
+        row.is_primary = bool(raw.get("is_primary"))
         row.enabled = bool(raw.get("enabled", True))
         row.managed_by_license_admin = bool(raw.get("managed_by_license_admin"))
         row.external_identity_provider = str(raw.get("external_identity_provider") or "").strip()[:40]

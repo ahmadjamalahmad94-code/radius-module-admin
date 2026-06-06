@@ -157,6 +157,9 @@ class CustomerRadiusAdmin(TimestampMixin, db.Model):
     # آخر حالة سوبر أبلغ عنها الراديوس (للعرض فقط).
     is_super_admin = db.Column(db.Boolean, default=False, nullable=False)
     enabled = db.Column(db.Boolean, default=True, nullable=False)
+    # هل هذا هو الأدمن الرئيسي المحلي للراديوس (حساب الإدارة الأساسي). يبلّغ به
+    # الراديوس كي يظهر مميَّزاً في «أدمن الراديوس» بعرض العميل 360.
+    is_primary = db.Column(db.Boolean, default=False, nullable=False)
     # هل الأدمن مُدار أصلاً من لوحة التراخيص (هوية مُزامَنة) أم محلي بحت.
     managed_by_license_admin = db.Column(db.Boolean, default=False, nullable=False)
     external_identity_provider = db.Column(db.String(40), default="", nullable=False)

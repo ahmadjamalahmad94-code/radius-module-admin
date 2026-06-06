@@ -105,6 +105,123 @@
   </form>
 {% endcall %}
 
+{% if chr_enabled and chr_state %}
+{# ════════════ MikroTik CHR — تزويد الأنفاق المركزي ════════════ #}
+<style>
+  .chr-src { display:inline-block; margin-inline-start:8px; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; vertical-align:middle; }
+  .chr-src--panel { background:#dcfce7; color:#166534; }
+  .chr-src--unset { background:#eef0f6; color:#64748b; }
+  .chr-reveal-box { margin-top:6px; display:flex; gap:8px; align-items:center; }
+  .chr-reveal-box code { background:#0f172a; color:#e2e8f0; padding:4px 9px; border-radius:7px; font-size:12px; word-break:break-all; flex:1; }
+</style>
+{% call hub.section("MikroTik CHR — تزويد الأنفاق المركزي", icon="network-wired") %}
+  <div id="chr-settings"></div>
+  <p class="hub-field-hint" style="margin:0 0 14px">
+    بيانات اتصال CHR المركزي (RouterOS REST API). تُستخدم لإنشاء حسابات SSTP/PPTP/L2TP
+    وتسليمها لِلوحات العملاء عبر الجسر. كلمة المرور تُخزَّن <b>مشفّرة</b> ولا تظهر بعد الحفظ.
+    {% if chr_state.configured %}<b style="color:#166534">— مكتمل وجاهز للاختبار.</b>{% endif %}
+    {% if not chr_state.encryption_available %}<b style="color:#b91c1c">— تنبيه: مفتاح التشفير غير مضبوط (CUSTOMER_VAULT_ENCRYPTION_KEY)، لا يمكن حفظ كلمة المرور.</b>{% endif %}
+  </p>
+
+  <form method="post" action="{{ url_for('admin.chr_settings_save') }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      {% set f = chr_state.fields.host %}
+      <div class="hub-field">
+        <label>{{ f.label }}
+          {% if f.present %}<span class="chr-src chr-src--panel">محفوظ</span>{% else %}<span class="chr-src chr-src--unset">غير مضبوط</span>{% endif %}
+        </label>
+        <input class="hub-input mono ltr" name="host" value="{{ f.value }}" placeholder="178.105.244.112 أو vpn-test.hoberadius.com">
+      </div>
+
+      {% set f = chr_state.fields.port %}
+      <div class="hub-field">
+        <label>{{ f.label }}</label>
+        <input class="hub-input mono ltr" name="port" value="{{ f.value }}" placeholder="443">
+        <div class="hub-field-hint">منفذ خدمة REST/HTTPS على RouterOS (افتراضي 443).</div>
+      </div>
+
+      {% set f = chr_state.fields.username %}
+      <div class="hub-field">
+        <label>{{ f.label }}
+          {% if f.present %}<span class="chr-src chr-src--panel">محفوظ</span>{% endif %}
+        </label>
+        <input class="hub-input mono ltr" name="username" value="{{ f.value }}" placeholder="admin">
+      </div>
+
+      {% set f = chr_state.fields.password %}
+      <div class="hub-field">
+        <label>{{ f.label }}
+          {% if f.present %}<span class="chr-src chr-src--panel">محفوظ</span>{% endif %}
+        </label>
+        <input class="hub-input mono ltr" name="password" type="password" autocomplete="new-password"
+               value="" placeholder="{{ 'محفوظ — اتركه فارغًا للإبقاء عليه' if f.present else 'أدخل كلمة مرور admin على CHR' }}">
+        {% if f.present %}<div class="hub-field-hint">محفوظ مشفّرًا: <span class="mono">{{ f.masked }}</span> — لا يُعرض. اتركه فارغًا للإبقاء عليه.</div>{% endif %}
+        {% if is_super_admin and f.present %}
+        <div class="chr-reveal-box">
+          <button type="button" class="hub-btn hub-btn--ghost" data-chr-reveal><i class="fa-solid fa-eye"></i> إظهار مؤقت</button>
+          <code data-chr-secret hidden></code>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="hub-field">
+        <label class="hub-check-item">
+          <input type="checkbox" name="use_tls" value="1" {% if chr_state.fields.use_tls.value %}checked{% endif %}>
+          <span>اتصال آمن HTTPS (مُستحسن)</span>
+        </label>
+        <label class="hub-check-item">
+          <input type="checkbox" name="verify_tls" value="1" {% if chr_state.fields.verify_tls.value %}checked{% endif %}>
+          <span>التحقق من شهادة TLS</span>
+        </label>
+        <div class="hub-field-hint">CHR يأتي بشهادة موقّعة ذاتيًا — اترك التحقق غير مفعّل ما لم تثبّت شهادة موثوقة.</div>
+      </div>
+    </div>
+
+    {# ── العنوان العام والمنافذ التي يتصل بها عميلُ العميل (تُسلَّم عبر الجسر) ── #}
+    <div style="margin-top:18px;padding-top:14px;border-top:1px dashed #e2e8f0">
+      <p class="hub-field-hint" style="margin:0 0 10px">
+        <i class="fa-solid fa-globe"></i>
+        العنوان العام والمنافذ التي يتصل بها <b>جهاز عميل العميل</b> (قد تختلف عن مضيف REST الإداري إن كان CHR خلف NAT).
+        تُضمَّن في رد الجسر لكل نفق. اتركها فارغة لاستخدام المضيف الإداري والمنافذ الافتراضية.
+      </p>
+      <div class="hub-form-grid">
+        {% set f = chr_state.fields.public_host %}
+        <div class="hub-field">
+          <label>{{ f.label }}</label>
+          <input class="hub-input mono ltr" name="public_host" value="{{ f.value }}" placeholder="vpn.hoberadius.com (افتراضي: المضيف الإداري)">
+        </div>
+        {% set pd = chr_state.service_port_defaults %}
+        {% for svc in ['sstp', 'pptp', 'l2tp', 'ipsec'] %}
+        <div class="hub-field">
+          <label>{{ chr_state.fields['port_' ~ svc].label }}</label>
+          <input class="hub-input mono ltr" name="port_{{ svc }}" type="number" min="1" max="65535"
+                 value="{{ chr_state.fields['port_' ~ svc].value }}" placeholder="{{ pd[svc] }}">
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ بيانات CHR</button>
+    </div>
+  </form>
+
+  <div style="height:14px"></div>
+  {% call hub.fieldset("الاختبار", icon="vial") %}
+    <form method="post" action="{{ url_for('admin.chr_settings_test') }}">
+      {{ csrf_input() }}
+      <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-plug-circle-check"></i> اختبار اتصال CHR</button>
+      <p class="hub-field-hint" style="margin:8px 0 0">يقرأ هوية ونسخة RouterOS للتأكد من صحة البيانات وتفعيل REST.</p>
+    </form>
+  {% endcall %}
+{% endcall %}
+
+{# CSP `script-src 'self'` → السلوك في ملف خارجي؛ الروابط عبر data-*. #}
+<div data-chr-js data-reveal-url="{{ url_for('admin.chr_settings_reveal') }}" hidden></div>
+<script src="{{ url_for('static', filename='js/chr_settings.js') }}" defer></script>
+{% endif %}
+
 {% if wac_enabled and wac_state %}
 {# ════════════ واتساب Cloud API (إدارة بيانات اعتماد Meta) ════════════ #}
 <style>

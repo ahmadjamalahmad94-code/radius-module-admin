@@ -280,6 +280,14 @@ def ensure_schema_compatibility(app: Flask) -> None:
             if db.engine.dialect.name == "sqlite"
             else "BOOLEAN NOT NULL DEFAULT FALSE",
         })
+    # لقطة أدمن الراديوس: الجدول يُنشأ عبر db.create_all() على القواعد الجديدة؛
+    # هذا البلوك يداوي العمود الإضافي is_primary على القواعد القائمة (idempotent).
+    if "customer_radius_admins" in tables:
+        _add_columns_if_missing("customer_radius_admins", {
+            "is_primary": "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {

@@ -579,6 +579,27 @@ def test_radius_admins_report_ingests_snapshot_and_does_not_clobber_force_super(
         assert rows[2].managed_by_license_admin is True
 
 
+def test_radius_admins_report_marks_primary_and_sorts_it_first():
+    """الأدمن الرئيسي (is_primary) يُستورد ويظهر في صدارة قائمة العرض."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        # يصل الرئيسي بمعرّف أكبر؛ يجب أن يتصدّر القائمة رغم ذلك.
+        import_radius_admins(customer, lic, [
+            {"id": 5, "username": "helpdesk", "role": "support", "is_primary": False},
+            {"id": 9, "username": "admin", "role": "owner", "is_primary": True},
+        ])
+        db.session.commit()
+        rows = radius_admins_for_customer(customer)
+        assert [r.username for r in rows] == ["admin", "helpdesk"]
+        assert rows[0].is_primary is True
+        assert rows[1].is_primary is False
+
+
 def test_identity_sync_carries_admin_super_overrides():
     """عقد مزامنة الهوية يحمل تعليمات فرض السوبر لأدمن الراديوس المحليين فقط."""
     app = _strict_app()

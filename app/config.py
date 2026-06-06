@@ -114,6 +114,46 @@ class Config:
     # safely; the callback still enforces state whenever the frontend supplies it.
     META_EMBEDDED_REQUIRE_STATE = _env_bool("META_EMBEDDED_REQUIRE_STATE", False)
 
+    # ── MikroTik CHR central tunnel provisioning (SSTP/PPTP/L2TP) ──────────
+    # The owner connects ONE central CHR (RouterOS v7) here; the panel creates
+    # /ppp/secret accounts on it via the RouterOS REST API and delivers the
+    # credentials to customer panels over the signed bridge. The CHR host/port/
+    # user/password are entered by the OWNER in panel settings (stored in the
+    # `settings` table; the password ENCRYPTED via CUSTOMER_VAULT_ENCRYPTION_KEY)
+    # — never hardcoded. Env vars below are only operational toggles/defaults,
+    # not credentials.
+    CHR_PROVISIONING_ENABLED = _env_bool("CHR_PROVISIONING_ENABLED", True)
+    # RouterOS REST API runs over HTTPS; CHR ships a self-signed cert, so TLS
+    # verification defaults OFF. Set CHR_TLS_VERIFY=1 once a trusted cert exists.
+    CHR_TLS_VERIFY = _env_bool("CHR_TLS_VERIFY", False)
+    CHR_HTTP_TIMEOUT_SECONDS = _env_int("CHR_HTTP_TIMEOUT_SECONDS", 15)
+    # Fallback ceiling for how many simultaneous tunnel accounts one customer may
+    # hold when their VPN entitlement does not specify max_vpn_users.
+    CHR_DEFAULT_MAX_TUNNELS = _env_int("CHR_DEFAULT_MAX_TUNNELS", 5)
+    # Default RouterOS /ppp/profile applied to provisioned secrets.
+    CHR_DEFAULT_PPP_PROFILE = os.environ.get("CHR_DEFAULT_PPP_PROFILE", "default")
+
+    # ── IPsec / IKEv2 automation on the CHR (/ip/ipsec, NOT /ppp/secret) ──────
+    # IPsec users authenticate with username/password over IKEv2 EAP-MSCHAPv2; the
+    # per-user credential is an /ip/ipsec/user entry. A shared responder (mode-
+    # config + peer + identity) is ensured once (idempotent). Disable automation
+    # to fall back to record-only IPsec (manual CHR setup).
+    CHR_IPSEC_AUTO_PROVISION = _env_bool("CHR_IPSEC_AUTO_PROVISION", True)
+    # When False, assume the owner configured the IKEv2 responder manually and only
+    # manage the per-user /ip/ipsec/user entries.
+    CHR_IPSEC_MANAGE_INFRA = _env_bool("CHR_IPSEC_MANAGE_INFRA", True)
+    # Stable names of the shared responder objects created/reused on the CHR.
+    CHR_IPSEC_PEER = os.environ.get("CHR_IPSEC_PEER", "hoberadius")
+    CHR_IPSEC_MODE_CONFIG = os.environ.get("CHR_IPSEC_MODE_CONFIG", "hoberadius")
+    CHR_IPSEC_PROFILE = os.environ.get("CHR_IPSEC_PROFILE", "default")
+    CHR_IPSEC_EAP_METHODS = os.environ.get("CHR_IPSEC_EAP_METHODS", "eap-mschapv2")
+    # Optional one-time responder prerequisites the OWNER provisions on the CHR:
+    # an address pool for client IPs, a DNS to push, and the server certificate
+    # the IKEv2 responder presents for EAP. Left empty unless set in the env.
+    CHR_IPSEC_ADDRESS_POOL = os.environ.get("CHR_IPSEC_ADDRESS_POOL", "")
+    CHR_IPSEC_DNS = os.environ.get("CHR_IPSEC_DNS", "")
+    CHR_IPSEC_CERTIFICATE = os.environ.get("CHR_IPSEC_CERTIFICATE", "")
+
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the
     # panel settings (encrypted) instead of editing env. When disabled, the

@@ -208,7 +208,14 @@
       <tbody>
       {% for ra in radius_admins %}
         <tr>
-          <td class="mono">{{ ra.username or ('#' ~ ra.radius_admin_id) }}</td>
+          <td class="mono">
+            {{ ra.username or ('#' ~ ra.radius_admin_id) }}
+            {% if ra.is_primary %}
+              <span class="badge {{ 'active'|badge_class }}" title="الأدمن الرئيسي المحلي لراديوس العميل">
+                <i class="fa-solid fa-star"></i> رئيسي
+              </span>
+            {% endif %}
+          </td>
           <td>{{ ra.role or '—' }}</td>
           <td>
             {% if ra.is_effective_super %}
