@@ -48,9 +48,35 @@ FIELDS: dict[str, tuple[str, bool, bool, bool]] = {
     "port_pptp": (_SETTING_PREFIX + "port_pptp", False, False, True),
     "port_l2tp": (_SETTING_PREFIX + "port_l2tp", False, False, True),
     "port_ipsec": (_SETTING_PREFIX + "port_ipsec", False, False, True),
+    # العنوان IP العام لـ CHR (مرجعي/يُعرَض؛ قد يستعمله العميل بدل النطاق).
+    "public_ip": (_SETTING_PREFIX + "public_ip", False, False, False),
+    # اسم شهادة IKEv2 على CHR — قد يحتوي مسافات، يُخزَّن ويُستعمل حرفيًا (verbatim).
+    "ipsec_certificate": (_SETTING_PREFIX + "ipsec_certificate", False, False, False),
+    # اسم مجمّع عناوين IPsec على CHR (mode-config address-pool).
+    "ipsec_address_pool": (_SETTING_PREFIX + "ipsec_address_pool", False, False, False),
+    # IP المسموح له بالتحكّم في REST — حقل معلوماتي/تدقيقي فقط (الفرض على RouterOS).
+    "api_allowed_ip": (_SETTING_PREFIX + "api_allowed_ip", False, False, False),
 }
 SECRET_FIELDS = {name for name, f in FIELDS.items() if f[1]}
 BOOL_FIELDS = {"use_tls", "verify_tls"}
+NUMERIC_FIELDS = {name for name, f in FIELDS.items() if f[3]}
+
+# ترتيب الحلّ لكل قيمة: إعداد قاعدة البيانات (من الواجهة) → متغيّر بيئة → افتراضي مدمج.
+# يربط كل حقل غير سرّي باسم مفتاح الإعداد البيئي المقابل (إن وُجد). السرّ (password)
+# لا يقع له fallback بيئي — يُخزَّن مشفّرًا في القاعدة فقط. مفتاح التشفير نفسه
+# (CUSTOMER_VAULT_ENCRYPTION_KEY) يبقى بيئيًا حصرًا ولا يُخزَّن أبدًا.
+ENV_FALLBACK = {
+    "host": "CHR_PUBLIC_HOST",
+    "port": "CHR_REST_DEFAULT_PORT",
+    "username": "CHR_USERNAME",
+    "use_tls": "CHR_USE_TLS",
+    "verify_tls": "CHR_TLS_VERIFY",
+    "public_host": "CHR_PUBLIC_HOST",
+    "public_ip": "CHR_PUBLIC_IP",
+    "ipsec_certificate": "CHR_IPSEC_CERTIFICATE",
+    "ipsec_address_pool": "CHR_IPSEC_ADDRESS_POOL",
+    "api_allowed_ip": "CHR_API_ALLOWED_IP",
+}
 
 # ── قفل اتصال CHR ──────────────────────────────────────────────────────────
 # بمجرد ضبط الاتصال والتحقق منه يُقفَل كي لا يُداس بصمت؛ تغييره بعدها يتطلّب تأكيدًا
@@ -75,6 +101,10 @@ ARABIC_LABEL = {
     "port_pptp": "منفذ PPTP",
     "port_l2tp": "منفذ L2TP",
     "port_ipsec": "منفذ IPsec/IKEv2",
+    "public_ip": "العنوان IP العام لـ CHR",
+    "ipsec_certificate": "شهادة IKEv2 على CHR (الاسم)",
+    "ipsec_address_pool": "مجمّع عناوين IPsec (Address Pool)",
+    "api_allowed_ip": "IP المسموح بالتحكّم بـ CHR (معلوماتي)",
 }
 
 
@@ -111,25 +141,51 @@ def _set_db_value(key: str, value: str) -> None:
     db.session.add(row)
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_value(name: str):
+    """قيمة fallback من البيئة لحقل غير سرّي (أو None)."""
+    env_key = ENV_FALLBACK.get(name)
+    if not env_key:
+        return None
+    val = current_app.config.get(env_key)
+    if val is None or val == "":
+        return None
+    return val
+
+
 def _resolve(name: str) -> str:
-    """يعيد القيمة الصريحة لحقل (يفكّ تشفير السرّي). فارغة إن لم تُضبط."""
+    """يعيد القيمة الصريحة لحقل بترتيب: قاعدة البيانات → بيئة → "" (فارغة).
+
+    السرّي يُفكّ تشفيره ولا يقع له fallback بيئي. القيمة المخزّنة في القاعدة تفوز
+    دائمًا (أي ضبط المالك من الواجهة)؛ وإلا نأخذ متغيّر البيئة كافتراضي."""
     setting_key, is_secret, _req, _num = FIELDS[name]
     raw = _db_value(setting_key)
-    if not raw:
-        return ""
+    if raw:
+        if is_secret:
+            try:
+                return decrypt_secret(raw)
+            except VaultCryptoError:
+                return ""  # نص مشفّر تالف/مفتاح خاطئ → نعامله كغير مضبوط بدل 500
+        return raw
     if is_secret:
-        try:
-            return decrypt_secret(raw)
-        except VaultCryptoError:
-            return ""  # نص مشفّر تالف/مفتاح خاطئ → نعامله كغير مضبوط بدل 500
-    return raw
+        return ""
+    env_val = _env_value(name)
+    return str(env_val) if env_val is not None else ""
 
 
 def _resolve_bool(name: str, default: bool) -> bool:
+    """قاعدة البيانات → بيئة → الافتراضي المُمرَّر."""
     raw = _db_value(FIELDS[name][0])
-    if raw == "":
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if raw != "":
+        return raw.strip().lower() in _TRUTHY
+    env_val = _env_value(name)
+    if isinstance(env_val, bool):
+        return env_val
+    if env_val is not None:
+        return str(env_val).strip().lower() in _TRUTHY
+    return default
 
 
 # ───────────────────────── lock state ─────────────────────────
@@ -214,11 +270,17 @@ def get_state() -> dict:
             "port_pptp": {"label": ARABIC_LABEL["port_pptp"], "value": _resolve("port_pptp")},
             "port_l2tp": {"label": ARABIC_LABEL["port_l2tp"], "value": _resolve("port_l2tp")},
             "port_ipsec": {"label": ARABIC_LABEL["port_ipsec"], "value": _resolve("port_ipsec")},
+            "public_ip": {"label": ARABIC_LABEL["public_ip"], "value": _resolve("public_ip"), "present": bool(_resolve("public_ip"))},
+            "ipsec_certificate": {"label": ARABIC_LABEL["ipsec_certificate"], "value": _resolve("ipsec_certificate"), "present": bool(_resolve("ipsec_certificate"))},
+            "ipsec_address_pool": {"label": ARABIC_LABEL["ipsec_address_pool"], "value": _resolve("ipsec_address_pool"), "present": bool(_resolve("ipsec_address_pool"))},
+            "api_allowed_ip": {"label": ARABIC_LABEL["api_allowed_ip"], "value": _resolve("api_allowed_ip"), "present": bool(_resolve("api_allowed_ip"))},
         },
         "configured": bool(host and username and password),
         "encryption_available": encryption_available(),
         "service_port_defaults": SERVICE_PORT_DEFAULTS,
         "lock": lock_state(),
+        # أوامر RouterOS الجاهزة لقفل نقطة REST على IP اللوحة (يُنسخها المالك للراوتر).
+        "lockdown_commands": lockdown_commands(),
     }
 
 
@@ -237,7 +299,9 @@ def public_endpoint() -> dict:
 
 
 def resolved() -> dict:
-    """داخلي: القيم الفعّالة للاختبار/التزويد (ليست للواجهة)."""
+    """داخلي: القيم الفعّالة للاختبار/التزويد (ليست للواجهة).
+
+    كلها بترتيب الحلّ قاعدة البيانات → بيئة → افتراضي، فيكفي ضبطها من الواجهة."""
     return {
         "host": _resolve("host"),
         "port": int(_resolve("port") or _default_port()),
@@ -245,7 +309,44 @@ def resolved() -> dict:
         "password": _resolve("password"),
         "use_tls": _resolve_bool("use_tls", True),
         "verify_tls": _resolve_bool("verify_tls", bool(current_app.config.get("CHR_TLS_VERIFY", False))),
+        "public_ip": _resolve("public_ip"),
+        "ipsec_certificate": _resolve("ipsec_certificate"),
+        "ipsec_address_pool": _resolve("ipsec_address_pool"),
+        "api_allowed_ip": _resolve("api_allowed_ip"),
     }
+
+
+def ipsec_overrides() -> dict:
+    """قيم IPsec التي يضبطها المالك من الواجهة (شهادة/مجمّع عناوين)، بترتيب
+    قاعدة البيانات → بيئة. تستعملها طبقة التزويد بدل قراءة config مباشرةً."""
+    return {
+        "certificate": _resolve("ipsec_certificate"),
+        "address_pool": _resolve("ipsec_address_pool"),
+    }
+
+
+def lockdown_commands() -> list[str]:
+    """أوامر RouterOS الجاهزة لحصر التحكّم بنقطة REST (www-ssl) على IP اللوحة.
+
+    تُعرَض للمالك لينسخها إلى الراوتر. الفرض على RouterOS لا التطبيق. تُبنى من القيم
+    الفعّالة (المضيف/المنفذ/الشهادة/IP المسموح). فارغة إن نقص IP المسموح."""
+    allowed = _resolve("api_allowed_ip")
+    if not allowed:
+        return []
+    port = _resolve("port") or str(_default_port())
+    cert = _resolve("ipsec_certificate")
+    addr = allowed if "/" in allowed else (allowed + "/32")
+    www = f'/ip service set www-ssl address={addr} port={port}'
+    if cert:
+        www += f' certificate="{cert}"'  # قد يحتوي الاسم مسافات → بين علامتي اقتباس
+    www += " disabled=no"
+    return [
+        www,
+        f'/ip firewall filter add chain=input protocol=tcp dst-port={port} '
+        f'src-address={addr} action=accept comment="panel REST allow" place-before=0',
+        f'/ip firewall filter add chain=input protocol=tcp dst-port={port} '
+        f'action=drop comment="panel REST deny others"',
+    ]
 
 
 def build_client() -> RouterOSClient:
@@ -286,6 +387,12 @@ def validate_and_save(form, *, actor_audit, allow_locked_change: bool = False) -
     use_tls = bool(form.get("use_tls"))
     verify_tls = bool(form.get("verify_tls"))
     public_host = (form.get("public_host") or "").strip()[:255]
+    public_ip = (form.get("public_ip") or "").strip()[:64]
+    # اسم الشهادة قد يحتوي مسافات (مثل "Lets encrypt1780754140") — نقصّ الأطراف فقط
+    # ونحفظه حرفيًا دون أي تطبيع للمسافات الداخلية.
+    ipsec_certificate = (form.get("ipsec_certificate") or "").strip()[:255]
+    ipsec_address_pool = (form.get("ipsec_address_pool") or "").strip()[:128]
+    api_allowed_ip = (form.get("api_allowed_ip") or "").strip()[:64]
     # خدمات لها حقل منفذ عام صريح في الإعدادات (ovpn يأخذ الافتراضي فقط).
     service_ports = {
         svc: (form.get("port_" + svc) or "").strip()
@@ -323,6 +430,10 @@ def validate_and_save(form, *, actor_audit, allow_locked_change: bool = False) -
     _set_db_value(FIELDS["use_tls"][0], "1" if use_tls else "0")
     _set_db_value(FIELDS["verify_tls"][0], "1" if verify_tls else "0")
     _set_db_value(FIELDS["public_host"][0], public_host)
+    _set_db_value(FIELDS["public_ip"][0], public_ip)
+    _set_db_value(FIELDS["ipsec_certificate"][0], ipsec_certificate)
+    _set_db_value(FIELDS["ipsec_address_pool"][0], ipsec_address_pool)
+    _set_db_value(FIELDS["api_allowed_ip"][0], api_allowed_ip)
     for svc, value in service_ports.items():
         _set_db_value(FIELDS["port_" + svc][0], value)
 
@@ -331,7 +442,9 @@ def validate_and_save(form, *, actor_audit, allow_locked_change: bool = False) -
         "chr_settings", "global",
         "تغيير اتصال CHR مقفل بتأكيد صريح" if (allow_locked_change and is_locked()) else "حفظ بيانات اتصال CHR",
         {"host": host, "port": port or _default_port(), "use_tls": use_tls, "verify_tls": verify_tls,
-         "public_host": public_host, "password_changed": bool(password),
+         "public_host": public_host, "public_ip": public_ip, "password_changed": bool(password),
+         "ipsec_certificate_set": bool(ipsec_certificate), "ipsec_address_pool": ipsec_address_pool,
+         "api_allowed_ip": api_allowed_ip,
          "locked_change": bool(allow_locked_change and is_locked())},
     )
 

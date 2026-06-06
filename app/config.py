@@ -128,6 +128,15 @@ class Config:
     # the SSTP service in this deployment. This is only the default applied when the
     # owner leaves the port field blank; they can override it in panel settings.
     CHR_REST_DEFAULT_PORT = _env_int("CHR_REST_DEFAULT_PORT", 8443)
+    # Optional ENV FALLBACKS for the CHR connection. The owner normally sets all of
+    # these from the panel (stored DB-backed, password encrypted); these env vars are
+    # only the fallback default when the DB value is blank. Resolution order per
+    # value: DB setting (UI) -> env var -> built-in default. The master encryption
+    # key (CUSTOMER_VAULT_ENCRYPTION_KEY) is the ONLY one that must stay env-only.
+    CHR_PUBLIC_HOST = os.environ.get("CHR_PUBLIC_HOST", "")
+    CHR_PUBLIC_IP = os.environ.get("CHR_PUBLIC_IP", "")
+    CHR_USERNAME = os.environ.get("CHR_USERNAME", "")
+    CHR_USE_TLS = _env_bool("CHR_USE_TLS", True)
     # CHR ships a self-signed cert by default, so TLS verification defaults OFF. Set
     # CHR_TLS_VERIFY=1 when a trusted cert exists (e.g. the real CHR now has a valid
     # Let's Encrypt cert on its domain — verification can be safely enabled).

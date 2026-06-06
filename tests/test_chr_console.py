@@ -340,6 +340,93 @@ def test_console_remove_requires_confirm(app, client, fake_console):
     assert ("ppp", "*1") in fake_console.removed_calls
 
 
+# ───────────────────────── DB-backed config + resolution order ─────────────────────────
+
+def test_resolution_order_db_over_env_over_default(app, monkeypatch):
+    """لكل قيمة: قاعدة البيانات → متغيّر البيئة → الافتراضي المدمج."""
+    # لا قيمة في القاعدة بعد ⇒ نأخذ البيئة (host/username) والافتراضي (port=8443).
+    monkeypatch.setitem(app.config, "CHR_PUBLIC_HOST", "env-host.example.com")
+    monkeypatch.setitem(app.config, "CHR_USERNAME", "env-admin")
+    r = chr_settings.resolved()
+    assert r["host"] == "env-host.example.com"
+    assert r["username"] == "env-admin"
+    assert r["port"] == 8443
+    # حفظ من الواجهة ⇒ قاعدة البيانات تفوز على البيئة.
+    chr_settings.validate_and_save(
+        {"host": "db-host.example.com", "username": "db-admin", "password": "p", "use_tls": "1"},
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    r2 = chr_settings.resolved()
+    assert r2["host"] == "db-host.example.com"
+    assert r2["username"] == "db-admin"
+
+
+def test_new_fields_saved_and_cert_verbatim(app):
+    chr_settings.validate_and_save(
+        {
+            "host": "h", "username": "admin", "password": "p", "use_tls": "1",
+            "public_ip": "178.105.244.112",
+            "ipsec_certificate": "Lets encrypt1780754140",  # فيه مسافة داخلية
+            "ipsec_address_pool": "ipsec-pool",
+            "api_allowed_ip": "178.105.180.6",
+        },
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    r = chr_settings.resolved()
+    assert r["public_ip"] == "178.105.244.112"
+    # الاسم يُخزَّن ويُعاد حرفيًا بمسافته الداخلية.
+    assert r["ipsec_certificate"] == "Lets encrypt1780754140"
+    assert r["ipsec_address_pool"] == "ipsec-pool"
+    assert r["api_allowed_ip"] == "178.105.180.6"
+    assert chr_settings.ipsec_overrides()["certificate"] == "Lets encrypt1780754140"
+
+
+def test_lockdown_commands_rendered_verbatim_cert(app):
+    chr_settings.validate_and_save(
+        {
+            "host": "h", "port": "8443", "username": "admin", "password": "p", "use_tls": "1",
+            "ipsec_certificate": "Lets encrypt1780754140", "api_allowed_ip": "178.105.180.6",
+        },
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    cmds = chr_settings.lockdown_commands()
+    assert cmds, "expected lockdown commands when api_allowed_ip is set"
+    www = cmds[0]
+    assert "/ip service set www-ssl" in www
+    assert "address=178.105.180.6/32" in www
+    assert "port=8443" in www
+    assert 'certificate="Lets encrypt1780754140"' in www  # اسم بين اقتباسين (مسافة)
+
+
+def test_lockdown_commands_empty_without_allowed_ip(app):
+    chr_settings.validate_and_save(
+        {"host": "h", "username": "admin", "password": "p", "use_tls": "1"},
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    assert chr_settings.lockdown_commands() == []
+
+
+def test_settings_page_shows_new_chr_fields(app, client):
+    _login(client)
+    resp = client.get("/admin/settings")
+    assert resp.status_code == 200
+    for needle in (b'name="public_ip"', b'name="ipsec_certificate"',
+                   b'name="ipsec_address_pool"', b'name="api_allowed_ip"'):
+        assert needle in resp.data
+
+
+def test_settings_page_warns_when_master_key_missing(app, client, monkeypatch):
+    monkeypatch.setitem(app.config, "CUSTOMER_VAULT_ENCRYPTION_KEY", "")
+    _login(client)
+    resp = client.get("/admin/settings")
+    assert resp.status_code == 200
+    assert "CUSTOMER_VAULT_ENCRYPTION_KEY".encode() in resp.data
+
+
 # ───────────────────────── permission registry ─────────────────────────
 
 def test_permission_registry_has_chr_console():
