@@ -149,7 +149,7 @@
         </tbody>
       </table>
     </div>
-    {% else %}{{ hub.empty("لا يوجد مستخدمو IPsec على CHR.") }}{% endif %}
+    {% else %}{{ hub.empty("لا يوجد مستخدمو IPsec (أو لم تُهيّأ هذه القائمة على CHR بعد) — رؤية IKEv2 عبر «هويات IPsec» و«جلسات IPsec النشطة» أدناه.") }}{% endif %}
   {% endcall %}
 
   {% set s = data.sections.ppp_active %}
