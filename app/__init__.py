@@ -271,6 +271,15 @@ def ensure_schema_compatibility(app: Flask) -> None:
             if db.engine.dialect.name == "sqlite"
             else "BOOLEAN NOT NULL DEFAULT FALSE",
         })
+    # سوبر يوزر صريح على مستخدمي العميل. العمود يُنشأ تلقائياً عبر db.create_all()
+    # على القواعد الجديدة؛ هذا البلوك المحمي يداوي العمود الإضافي على القواعد القائمة
+    # فقط (idempotent: يتجاهل إن كان موجوداً).
+    if "customer_users" in tables:
+        _add_columns_if_missing("customer_users", {
+            "is_super": "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {
@@ -290,6 +299,35 @@ def ensure_schema_compatibility(app: Flask) -> None:
             db.session.commit()
         except Exception:
             db.session.rollback()
+
+    # Central CHR tunnel accounts. The table + its unique username constraint are
+    # created fresh by db.create_all() on new DBs; this guarded block only heals
+    # additive columns on a pre-existing table, mirroring the pattern above.
+    if "customer_vpn_tunnels" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        bool_default_false = (
+            "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        _add_columns_if_missing("customer_vpn_tunnels", {
+            "license_id": "INTEGER",
+            "password_hint": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "profile": "VARCHAR(80) NOT NULL DEFAULT 'default'",
+            "max_connections": "INTEGER NOT NULL DEFAULT 1",
+            "provisioning": "VARCHAR(20) NOT NULL DEFAULT 'auto'",
+            "source": "VARCHAR(30) NOT NULL DEFAULT 'bridge_request'",
+            "chr_provisioned": bool_default_false,
+            "chr_secret_id": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "chr_host": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "remote_address": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "delivery_status": "VARCHAR(20) NOT NULL DEFAULT 'pending'",
+            "delivered_at": datetime_type,
+            "requested_by_user_id": "INTEGER",
+            "created_by_admin_id": "INTEGER",
+            "last_error": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "notes": "TEXT NOT NULL DEFAULT ''",
+        })
 
     if "provisioning_orders" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"

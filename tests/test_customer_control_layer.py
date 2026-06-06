@@ -477,6 +477,69 @@ def test_identity_sync_requires_https_in_strict_mode_and_returns_hashes():
         assert "password" not in body["users"][0]
 
 
+def test_identity_sync_carries_explicit_is_super_flag():
+    """الجسر يدفع is_super صريحاً: للسوبر يوزر الصريح، ولمالك الحساب (توافقاً)،
+    ولا يدفعه لمستخدم عادي غير مفعّل عليه العلم."""
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+
+        # مستخدم عادي (viewer) مع تفعيل السوبر يوزر الصريح.
+        super_user = CustomerUser(
+            customer_id=customer.id, username="super-viewer", email="sv@example.com",
+            full_name="Super Viewer", role_key="viewer", active=True, is_super=True,
+        )
+        super_user.set_password("Secret123!", increment_version=False)
+        # مالك الحساب: سوبر ضمنياً دون تفعيل العلم.
+        owner_user = CustomerUser(
+            customer_id=customer.id, username="acct-owner", email="ao@example.com",
+            full_name="Owner", role_key="owner", active=True,
+        )
+        owner_user.set_password("Secret123!", increment_version=False)
+        # مستخدم عادي بلا سوبر.
+        plain_user = CustomerUser(
+            customer_id=customer.id, username="plain-support", email="ps@example.com",
+            full_name="Support", role_key="support", active=True,
+        )
+        plain_user.set_password("Secret123!", increment_version=False)
+        db.session.add_all([super_user, owner_user, plain_user])
+        db.session.commit()
+        client = app.test_client()
+
+        res = client.post(
+            "/api/integration/hoberadius/identity-sync",
+            json=_signed_payload(lic.license_key, nonce="is-super"),
+            base_url="https://license-panel.test",
+        )
+        body = res.get_json()
+        assert res.status_code == 200
+        by_username = {u["username"]: u for u in body["users"]}
+        assert by_username["super-viewer"]["is_super"] is True
+        assert by_username["acct-owner"]["is_super"] is True
+        assert by_username["plain-support"]["is_super"] is False
+
+
+def test_customer_user_form_persists_explicit_is_super(client):
+    """نموذج لوحة التراخيص يخزّن العلم الصريح is_super على CustomerUser."""
+    _login(client)
+    customer, _lic = _customer_with_license()
+    created = client.post(f"/admin/customers/{customer.id}/users/new", data={
+        "username": "explicit-super",
+        "email": "es@example.com",
+        "full_name": "Explicit Super",
+        "role_key": "admin",
+        "is_super": "1",
+        "password": "Secret123!",
+        "active": "1",
+    }, follow_redirects=True)
+    assert created.status_code == 200
+    user = CustomerUser.query.filter_by(customer_id=customer.id, username="explicit-super").one()
+    assert user.is_super is True
+    assert user.is_effective_super is True
+
+
 def test_runtime_contract_includes_services_limits_and_user_version():
     app = _strict_app()
     with app.app_context():

@@ -122,7 +122,14 @@
         <tr>
           <td class="mono">{{ user.username }}</td>
           <td class="ltr-cell" style="text-align:start">{{ user.email or '—' }}</td>
-          <td>{{ user.role_key|role_label }}</td>
+          <td>
+            {{ user.role_key|role_label }}
+            {% if user.is_effective_super %}
+              <span class="badge {{ 'active'|badge_class }}" title="مشرف كامل (is_super_admin) على راديوس العميل عبر الجسر">
+                <i class="fa-solid fa-crown"></i> سوبر يوزر
+              </span>
+            {% endif %}
+          </td>
           <td>
             <span class="badge {{ ('active' if user.active else 'disabled')|badge_class }}">
               {{ 'مفعل' if user.active else 'معطل' }}
@@ -209,6 +216,9 @@
             {% if item.service_key == 'ip_change_vpn' %}
               <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_vpn_service', customer_id=customer.id) }}">
                 <i class="fa-solid fa-shield-halved"></i> إدارة الشبكة الخاصة
+              </a>
+              <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_vpn_tunnels', customer_id=customer.id) }}">
+                <i class="fa-solid fa-network-wired"></i> أنفاق CHR
               </a>
             {% endif %}
             <form method="post" action="{{ url_for('admin.customer_service_update', customer_id=customer.id, service_key=item.service_key) }}" class="cd-svc-form">

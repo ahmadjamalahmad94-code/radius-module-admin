@@ -170,6 +170,8 @@ def _fill_customer_user(customer_user: CustomerUser, *, require_password: bool) 
     customer_user.email = email
     customer_user.full_name = (request.form.get("full_name") or "").strip()[:160]
     customer_user.role_key = clean_role_key(request.form.get("role_key") or "owner")
+    # سوبر يوزر صريح: يضمن صلاحية كاملة على راديوس العميل عبر الجسر دائماً.
+    customer_user.is_super = bool(request.form.get("is_super"))
     customer_user.active = bool(request.form.get("active"))
     password = request.form.get("password") or ""
     if require_password and not password:
@@ -817,7 +819,7 @@ def customer_user_create(customer_id: int):
         entity_type="customer_user",
         entity_id=str(customer_user.id),
         summary=f"تم إنشاء مستخدم العميل {customer_user.username} لـ {customer.company_name}",
-        metadata={"customer_id": customer.id, "role_key": customer_user.role_key},
+        metadata={"customer_id": customer.id, "role_key": customer_user.role_key, "is_super": customer_user.is_effective_super},
     )
     db.session.commit()
     flash("تم إنشاء مستخدم العميل. كلمة المرور ستصل للريدياس كنسخة مشفرة فقط عند مزامنة الهوية.", "success")
@@ -848,7 +850,7 @@ def customer_user_update(customer_id: int, user_id: int):
         entity_type="customer_user",
         entity_id=str(customer_user.id),
         summary=f"تم تحديث مستخدم العميل {customer_user.username}",
-        metadata={"customer_id": customer.id, "password_version": customer_user.password_version},
+        metadata={"customer_id": customer.id, "password_version": customer_user.password_version, "is_super": customer_user.is_effective_super},
     )
     db.session.commit()
     flash("تم تحديث مستخدم العميل.", "success")
@@ -1089,6 +1091,133 @@ def _fill_customer_vpn_entitlement(customer: Customer, entitlement: CustomerVpnE
             entitlement.enabled = False
 
     validate_customer_vpn_entitlement(entitlement)
+
+
+# ── Central CHR tunnels for a customer (Customer 360) ──────────────────────
+@bp.get("/customers/<int:customer_id>/vpn-tunnels")
+@login_required
+def customer_vpn_tunnels(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    return _render_customer_vpn_tunnels(customer)
+
+
+@bp.post("/customers/<int:customer_id>/vpn-tunnels")
+@login_required
+def customer_vpn_tunnel_create(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import vpn_tunnels as vt
+
+    tunnel_type = (request.form.get("tunnel_type") or "").strip().lower()
+    if tunnel_type not in vt.MANUAL_TYPES:
+        flash("نوع النفق غير مدعوم.", "error")
+        return _render_customer_vpn_tunnels(customer), 400
+    license_obj = find_best_customer_license(customer)
+    try:
+        max_connections = int(request.form.get("max_connections") or 1)
+    except (TypeError, ValueError):
+        max_connections = 1
+    try:
+        tunnel = vt.provision_tunnel(
+            customer,
+            license_obj,
+            tunnel_type=tunnel_type,
+            profile=request.form.get("profile") or "",
+            max_connections=max_connections,
+            source="admin_manual",
+            created_by_admin_id=session.get("admin_id"),
+            notes=request.form.get("notes") or "",
+        )
+    except vt.VpnTunnelError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _render_customer_vpn_tunnels(customer), 400
+    audit(
+        "customer_vpn_tunnel_provisioned",
+        "customer_vpn_tunnel",
+        str(tunnel.id),
+        f"تزويد نفق {tunnel.tunnel_type} يدويًا للعميل {customer.company_name}",
+        {"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username},
+    )
+    db.session.commit()
+    flash(f"تم إنشاء النفق {tunnel.username} ({tunnel.tunnel_type}). يُسلَّم للعميل عبر الجسر.", "success")
+    return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/vpn-tunnels/<int:tunnel_id>/revoke")
+@login_required
+def customer_vpn_tunnel_revoke(customer_id: int, tunnel_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    from ..models import CustomerVpnTunnel
+    from ..services import vpn_tunnels as vt
+
+    tunnel = CustomerVpnTunnel.query.filter_by(id=tunnel_id, customer_id=customer.id).first()
+    if not tunnel:
+        flash("لم يتم العثور على النفق.", "error")
+        return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+    try:
+        vt.revoke_tunnel(tunnel)
+    except vt.VpnTunnelError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+    audit(
+        "customer_vpn_tunnel_revoked",
+        "customer_vpn_tunnel",
+        str(tunnel.id),
+        f"إلغاء نفق {tunnel.username} للعميل {customer.company_name}",
+        {"customer_id": customer.id, "username": tunnel.username},
+    )
+    db.session.commit()
+    flash("تم إلغاء النفق وحذفه من CHR.", "success")
+    return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/vpn-tunnels/<int:tunnel_id>/status")
+@login_required
+def customer_vpn_tunnel_status(customer_id: int, tunnel_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    from ..models import CustomerVpnTunnel
+    from ..services import vpn_tunnels as vt
+
+    tunnel = CustomerVpnTunnel.query.filter_by(id=tunnel_id, customer_id=customer.id).first()
+    if not tunnel:
+        flash("لم يتم العثور على النفق.", "error")
+        return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+    target = (request.form.get("status") or "").strip().lower()
+    try:
+        vt.set_tunnel_status(tunnel, target)
+    except vt.VpnTunnelError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+    audit(
+        "customer_vpn_tunnel_status_changed",
+        "customer_vpn_tunnel",
+        str(tunnel.id),
+        f"تغيير حالة نفق {tunnel.username} إلى {tunnel.status}",
+        {"customer_id": customer.id, "username": tunnel.username, "status": tunnel.status},
+    )
+    db.session.commit()
+    flash("تم تحديث حالة النفق.", "success")
+    return redirect(url_for("admin.customer_vpn_tunnels", customer_id=customer.id))
+
+
+def _render_customer_vpn_tunnels(customer: Customer):
+    from ..services import chr_settings as chr_svc
+    from ..services import vpn_tunnels as vt
+
+    tunnels = vt.list_tunnels(customer)
+    return render_template(
+        "admin/customer_vpn_tunnels.html",
+        customer=customer,
+        tunnels=tunnels,
+        chr_enabled=chr_svc.enabled(),
+        chr_configured=(chr_svc.get_state().get("configured") if chr_svc.enabled() else False),
+        allowance=vt.effective_connection_allowance(customer),
+        active_count=vt.count_active_tunnels(customer),
+        manual_types=sorted(vt.MANUAL_TYPES),
+        type_labels=vt.TUNNEL_TYPE_LABELS,
+    )
 
 
 def _should_apply_vpn_plan_defaults() -> bool:
@@ -1585,12 +1714,15 @@ def audit_logs():
 @login_required
 def settings_page():
     from ..services.whatsapp import cloud_settings as wac
+    from ..services import chr_settings as chr_svc
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     return render_template(
         "admin/settings.html",
         settings=settings,
         wac_enabled=wac.enabled(),
         wac_state=wac.get_state() if wac.enabled() else None,
+        chr_enabled=chr_svc.enabled(),
+        chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
     )
 
 
@@ -1727,6 +1859,78 @@ def whatsapp_cloud_templates():
     except wac.CloudSettingsError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 400
     return jsonify(result)
+
+
+# ── MikroTik CHR connection settings (owner-managed, encrypted) ────────────
+def _chr_redirect():
+    return redirect(url_for("admin.settings_page") + "#chr-settings")
+
+
+def _chr_guard():
+    """Return None if enabled; else a redirect (feature flag off)."""
+    from ..services import chr_settings as chr_svc
+    if not chr_svc.enabled():
+        flash("تزويد CHR غير مُفعّل.", "error")
+        return _chr_redirect()
+    return None
+
+
+@bp.post("/settings/chr")
+@login_required
+def chr_settings_save():
+    from ..services import chr_settings as chr_svc
+    blocked = _chr_guard()
+    if blocked:
+        return blocked
+    try:
+        chr_svc.validate_and_save(request.form, actor_audit=audit)
+    except chr_svc.ChrSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _chr_redirect()
+    db.session.commit()
+    flash("تم حفظ بيانات اتصال CHR بنجاح.", "success")
+    return _chr_redirect()
+
+
+@bp.post("/settings/chr/test")
+@login_required
+def chr_settings_test():
+    from ..services import chr_settings as chr_svc
+    blocked = _chr_guard()
+    if blocked:
+        return blocked
+    try:
+        result = chr_svc.test_connection(actor_audit=audit)
+    except chr_svc.ChrSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _chr_redirect()
+    db.session.commit()
+    if result.get("ok"):
+        flash(
+            f"نجح الاتصال بـ CHR ✅ — {result.get('identity') or '—'} (RouterOS {result.get('version') or '—'}).",
+            "success",
+        )
+    else:
+        flash("فشل الاتصال بـ CHR: " + (result.get("message") or "تحقّق من البيانات."), "error")
+    return _chr_redirect()
+
+
+@bp.post("/settings/chr/reveal")
+@super_admin_required
+def chr_settings_reveal():
+    """Temporarily reveal the stored CHR password (super-admin only, audited)."""
+    from ..services import chr_settings as chr_svc
+    if not chr_svc.enabled():
+        return jsonify({"ok": False, "message": "القسم غير مُفعّل."}), 403
+    try:
+        value = chr_svc.reveal(actor_audit=audit)
+    except chr_svc.ChrSettingsError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "value": value})
 
 
 def _payment_error(message: str, status_code: int = 400):
