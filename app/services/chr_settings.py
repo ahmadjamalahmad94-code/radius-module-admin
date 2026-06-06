@@ -85,7 +85,11 @@ def enabled() -> bool:
 
 
 def _default_port() -> int:
-    return 443
+    # منفذ REST عبر HTTPS (خدمة www-ssl على RouterOS). نتعمّد ألّا يكون 443 لأن
+    # 443 مشغول بخدمة SSTP في هذا النشر؛ لذا REST على منفذ بديل (افتراضيًا 8443).
+    # هذا منفذ الإدارة فقط — منفذ SSTP الذي يتصل به العميل يبقى 443 في
+    # SERVICE_PORT_DEFAULTS، وهما مختلفان عمدًا.
+    return int(current_app.config.get("CHR_REST_DEFAULT_PORT", 8443))
 
 
 def _http_timeout() -> int:

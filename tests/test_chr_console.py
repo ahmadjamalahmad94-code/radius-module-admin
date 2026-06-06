@@ -194,6 +194,20 @@ def test_explicit_lock_unlock(app):
     assert chr_settings.is_locked() is False
 
 
+# ───────────────────────── transport: REST/www-ssl default port ─────────────────────────
+
+def test_rest_default_port_is_8443_not_443(app):
+    """443 محجوز لـ SSTP؛ منفذ REST (www-ssl) الإداري يجب أن يكون 8443 افتراضيًا."""
+    chr_settings.validate_and_save(
+        {"host": "h", "username": "admin", "password": "p", "use_tls": "1"},
+        actor_audit=lambda *a, **k: None,
+    )
+    db.session.commit()
+    assert chr_settings.resolved()["port"] == 8443
+    # منفذ SSTP الذي يتصل به العميل يبقى 443 منفصلًا عن منفذ الإدارة.
+    assert chr_settings.SERVICE_PORT_DEFAULTS["sstp"] == 443
+
+
 # ───────────────────────── bridge: no CHR admin secret/host leak ─────────────────────────
 
 def _signed_body(app, customer, **extra):

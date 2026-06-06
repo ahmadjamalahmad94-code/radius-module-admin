@@ -123,9 +123,20 @@ class Config:
     # — never hardcoded. Env vars below are only operational toggles/defaults,
     # not credentials.
     CHR_PROVISIONING_ENABLED = _env_bool("CHR_PROVISIONING_ENABLED", True)
-    # RouterOS REST API runs over HTTPS; CHR ships a self-signed cert, so TLS
-    # verification defaults OFF. Set CHR_TLS_VERIFY=1 once a trusted cert exists.
+    # RouterOS REST runs over HTTPS via the www-ssl service (NOT the binary API on
+    # 8728/8729). Default REST port is 8443 — NOT 443 — because 443 is occupied by
+    # the SSTP service in this deployment. This is only the default applied when the
+    # owner leaves the port field blank; they can override it in panel settings.
+    CHR_REST_DEFAULT_PORT = _env_int("CHR_REST_DEFAULT_PORT", 8443)
+    # CHR ships a self-signed cert by default, so TLS verification defaults OFF. Set
+    # CHR_TLS_VERIFY=1 when a trusted cert exists (e.g. the real CHR now has a valid
+    # Let's Encrypt cert on its domain — verification can be safely enabled).
     CHR_TLS_VERIFY = _env_bool("CHR_TLS_VERIFY", False)
+    # NOTE: restricting which IP may control the CHR REST endpoint is enforced on the
+    # RouterOS side (the www-ssl service `address=` allow-list and/or firewall), NOT
+    # by this app. The panel server's IP must be the only one allowed there; the app
+    # itself just connects outbound. This value is documentation-only (unused here).
+    CHR_API_ALLOWED_IP = os.environ.get("CHR_API_ALLOWED_IP", "")
     CHR_HTTP_TIMEOUT_SECONDS = _env_int("CHR_HTTP_TIMEOUT_SECONDS", 15)
     # Fallback ceiling for how many simultaneous tunnel accounts one customer may
     # hold when their VPN entitlement does not specify max_vpn_users.
