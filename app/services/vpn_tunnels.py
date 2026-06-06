@@ -358,8 +358,11 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         "profile": tunnel.profile,
         "status": tunnel.status,
         "max_connections": tunnel.max_connections,
-        "chr_host": tunnel.chr_host,
-        # العنوان العام والمنفذ اللذان يتصل بهما عميلُ العميل لهذه الخدمة.
+        # العنوان العام والمنفذ اللذان يتصل بهما عميلُ العميل لهذه الخدمة. نتعمّد عدم
+        # تسريب مضيف REST الإداري (``tunnel.chr_host``) عبر الجسر: لوحة العميل لا
+        # تملك ولا تحتاج نقطة إدارة CHR — فقط العنوان العام للاتصال. للتوافق نُبقي
+        # مفتاح ``chr_host`` لكن نملؤه بالعنوان العام نفسه (لا المضيف الإداري).
+        "chr_host": endpoint["public_host"],
         "chr_public_host": endpoint["public_host"],
         "service_port": endpoint["ports"].get(tunnel.tunnel_type),
         "chr_provisioned": bool(tunnel.chr_provisioned),

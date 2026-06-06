@@ -58,6 +58,38 @@ def super_admin_required(view):
     return wrapped
 
 
+def chr_console_required(view):
+    """يحرس وحدة تحكّم CHR المركزية بالصلاحية ``chr_console``.
+
+    المشروع لا يملك أدوارًا دقيقة للمدراء (فقط ``Admin.is_super_admin``)، لذا تُمنح
+    هذه الصلاحية حاليًا للمسؤول العام دائمًا — وهي المصدر الوحيد لحراسة الوحدة كلها،
+    فإن أُضيف محرّر أدوار لاحقًا يكفي توسيع هذا الموضع. الرفض يُدقَّق ويُرجِع JSON 403
+    للطلبات اللاإمتزامنة أو flash+redirect لغيرها."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        admin = current_admin()
+        if not admin or not admin.active:
+            session.clear()
+            flash("سجل الدخول للمتابعة.", "warning")
+            return redirect(url_for("auth.login", next=request.path))
+        if not getattr(admin, "is_super_admin", False):
+            from flask import jsonify
+            audit("chr_console_permission_denied", "chr_console", "",
+                  f"رُفض وصول {admin.username} لوحدة تحكّم CHR (يتطلب صلاحية chr_console)",
+                  {"path": request.path})
+            db.session.commit()
+            wants_json = (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                          or "application/json" in (request.headers.get("Accept") or ""))
+            if wants_json:
+                return jsonify({"ok": False, "error": "forbidden",
+                                "message": "وحدة تحكّم CHR تتطلب صلاحية مسؤول عام."}), 403
+            flash("وحدة تحكّم CHR تتطلب صلاحية مسؤول عام (super admin).", "error")
+            return redirect(request.referrer or url_for("admin.dashboard"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def audit(action: str, entity_type: str, entity_id: str = "", summary: str = "", metadata=None) -> None:
     admin_id = session.get("admin_id")
     row = AuditLog(

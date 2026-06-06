@@ -123,6 +123,36 @@
     {% if not chr_state.encryption_available %}<b style="color:#b91c1c">— تنبيه: مفتاح التشفير غير مضبوط (CUSTOMER_VAULT_ENCRYPTION_KEY)، لا يمكن حفظ كلمة المرور.</b>{% endif %}
   </p>
 
+  {# ── حالة القفل: يحمي الاتصال من الكتابة بالخطأ بعد التحقق ── #}
+  {% set lk = chr_state.lock %}
+  <div style="margin:0 0 16px;padding:11px 14px;border-radius:10px;
+              {% if lk.locked %}background:#fef3c7;border:1px solid #fcd34d;color:#92400e
+              {% else %}background:#f1f5f9;border:1px solid #e2e8f0;color:#475569{% endif %}">
+    {% if lk.locked %}
+      <i class="fa-solid fa-lock"></i> <b>الاتصال مقفل.</b>
+      لا يمكن الكتابة فوقه إلا بتأكيد صريح من مسؤول عام.
+      {% if lk.locked_at %}<span class="hub-field-hint" style="display:block;margin-top:3px">قُفل في {{ lk.locked_at }}{% if lk.locked_by %} بواسطة {{ lk.locked_by }}{% endif %}.</span>{% endif %}
+    {% else %}
+      <i class="fa-solid fa-lock-open"></i> الاتصال غير مقفل — سيُقفل تلقائيًا عند أول اختبار اتصال ناجح.
+    {% endif %}
+    {% if lk.verified_at %}<span class="hub-field-hint" style="display:block;margin-top:3px">آخر تحقق ناجح: {{ lk.verified_at }}.</span>{% endif %}
+    {% if is_super_admin %}
+    <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+      {% if lk.locked %}
+      <form method="post" action="{{ url_for('admin.chr_settings_unlock') }}" style="display:inline">
+        {{ csrf_input() }}
+        <button class="hub-btn hub-btn--ghost" type="submit"><i class="fa-solid fa-lock-open"></i> فكّ القفل</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('admin.chr_settings_lock') }}" style="display:inline">
+        {{ csrf_input() }}
+        <button class="hub-btn hub-btn--ghost" type="submit" {% if not chr_state.configured %}disabled{% endif %}><i class="fa-solid fa-lock"></i> قفل الاتصال</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
   <form method="post" action="{{ url_for('admin.chr_settings_save') }}">
     {{ csrf_input() }}
     <div class="hub-form-grid">
@@ -201,6 +231,21 @@
         {% endfor %}
       </div>
     </div>
+
+    {% if chr_state.lock.locked %}
+    <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #e2e8f0">
+      {% if is_super_admin %}
+      <label class="hub-check-item" style="color:#92400e">
+        <input type="checkbox" name="confirm_locked_change" value="1">
+        <span><i class="fa-solid fa-triangle-exclamation"></i> تأكيد تغيير اتصال مقفل — أؤكّد الكتابة فوق بيانات CHR المقفلة.</span>
+      </label>
+      {% else %}
+      <p class="hub-field-hint" style="color:#b91c1c;margin:0">
+        <i class="fa-solid fa-lock"></i> الاتصال مقفل. تغييره يتطلّب صلاحية مسؤول عام.
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
 
     <div class="hub-form-foot" style="padding-top:14px">
       <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ بيانات CHR</button>

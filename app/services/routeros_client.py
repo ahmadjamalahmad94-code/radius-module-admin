@@ -384,3 +384,53 @@ class RouterOSClient:
             body["certificate"] = certificate
         created = self._request("PUT", "ip/ipsec/identity", body=body)
         return created if isinstance(created, dict) else {"peer": peer}
+
+    # ───────────────────────── console read helpers ─────────────────────────
+    # قراءات فقط لوحدة تحكّم CHR (لا تغيّر شيئًا). كلها تعيد قائمة (أو dict للهوية/
+    # المورد)؛ تُبقي الأخطاء كـ RouterOSError كي تعالجها طبقة الخدمة برسالة عربية.
+
+    @staticmethod
+    def _as_list(result: Any) -> list[dict[str, Any]]:
+        if isinstance(result, list):
+            return [r for r in result if isinstance(r, dict)]
+        if isinstance(result, dict):
+            return [result]
+        return []
+
+    @staticmethod
+    def _as_dict(result: Any) -> dict[str, Any]:
+        if isinstance(result, list):
+            result = result[0] if result else {}
+        return result if isinstance(result, dict) else {}
+
+    def system_resource(self) -> dict[str, Any]:
+        return self._as_dict(self._request("GET", "system/resource"))
+
+    def system_identity(self) -> dict[str, Any]:
+        return self._as_dict(self._request("GET", "system/identity"))
+
+    def list_ppp_active(self) -> list[dict[str, Any]]:
+        """الجلسات النشطة حاليًا (PPP) — مَن متصل الآن."""
+        return self._as_list(self._request("GET", "ppp/active"))
+
+    def list_ipsec_users(self) -> list[dict[str, Any]]:
+        return self._as_list(self._request("GET", "ip/ipsec/user"))
+
+    def list_ipsec_identities(self) -> list[dict[str, Any]]:
+        return self._as_list(self._request("GET", "ip/ipsec/identity"))
+
+    def list_ipsec_peers(self) -> list[dict[str, Any]]:
+        return self._as_list(self._request("GET", "ip/ipsec/peer"))
+
+    def list_ipsec_active_peers(self) -> list[dict[str, Any]]:
+        """نظراء IPsec النشطون (جلسات IKEv2 الحالية)."""
+        return self._as_list(self._request("GET", "ip/ipsec/active-peers"))
+
+    def list_interfaces(self) -> list[dict[str, Any]]:
+        return self._as_list(self._request("GET", "interface"))
+
+    # ───────────────────────── admin action (destructive) ─────────────────────────
+
+    def reboot(self) -> None:
+        """يعيد تشغيل CHR. إجراء حسّاس — تحصره طبقة المسار بمسؤول عام + تأكيد + تدقيق."""
+        self._request("POST", "system/reboot")

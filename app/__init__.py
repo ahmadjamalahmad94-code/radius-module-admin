@@ -42,6 +42,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
     from .admin.vault_routes import bp as admin_vault_bp
+    from .admin.chr_console_routes import bp as admin_chr_bp
     from .admin.landing_routes import bp as admin_landing_bp
     from .api.routes import bp as api_bp
     from .public.routes import bp as public_bp
@@ -49,6 +50,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_vault_bp)
+    app.register_blueprint(admin_chr_bp)
     app.register_blueprint(admin_landing_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(public_bp)
