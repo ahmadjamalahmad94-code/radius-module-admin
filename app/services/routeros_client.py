@@ -504,6 +504,41 @@ class RouterOSClient:
         """الجلسات النشطة حاليًا (PPP) — مَن متصل الآن."""
         return self._as_list(self._request("GET", "ppp/active"))
 
+    def find_ppp_active(self, name: str) -> dict[str, Any] | None:
+        """جلسة PPP النشطة لمستخدمٍ معيّن (إن كان متصلًا الآن) — تحوي
+        ``bytes-in``/``bytes-out`` للجلسة الحالية (تُصفَّر عند إعادة الاتصال)."""
+        res = self._request("GET", "ppp/active", params={"name": name})
+        if isinstance(res, list) and res:
+            first = res[0]
+            return first if isinstance(first, dict) else None
+        if isinstance(res, dict):
+            return res
+        return None
+
+    def set_secret_profile(self, secret_id: str, profile: str) -> None:
+        """يغيّر ``/ppp/profile`` المُسنَد لحساب ``/ppp/secret`` (للتخفيض/الاستعادة).
+
+        يطبّق فعليًا عند إعادة الاتصال — استخدم ``remove_ppp_active`` لفصل الجلسة
+        الحالية كي تُعاد بالبروفايل الجديد فورًا."""
+        if not secret_id or not profile:
+            return
+        self._request(
+            "PATCH", "ppp/secret/" + urllib.parse.quote(secret_id, safe=""),
+            body={"profile": profile},
+        )
+
+    def remove_ppp_active(self, active_id: str) -> None:
+        """يفصل جلسة PPP نشطة بمعرّفها (تُعاد فورًا بالبروفايل المُحدَّث).
+        يتجاهل 404 (انفصلت مسبقًا)."""
+        if not active_id:
+            return
+        try:
+            self._request("DELETE", "ppp/active/" + urllib.parse.quote(active_id, safe=""))
+        except RouterOSError as exc:
+            if exc.code == "not_found":
+                return
+            raise
+
     def list_ipsec_users(self) -> list[dict[str, Any]]:
         return self._as_list(self._request("GET", "ip/ipsec/user"))
 

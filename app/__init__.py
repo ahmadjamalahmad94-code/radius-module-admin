@@ -576,6 +576,25 @@ def _register_cli_commands(app: Flask) -> None:
             f"skipped={summary['skipped']}"
         )
 
+    @app.cli.command("vpn-quota-sync")
+    def vpn_quota_sync_command():
+        """Sample CHR VPN-tunnel usage; throttle tunnels over their monthly GB
+        quota and restore/reset at month start. Run by a systemd timer every few
+        minutes (the panel has no resident worker).
+        """
+        from .services.vpn_quota import run_once
+
+        with app.app_context():
+            summary = run_once()
+        click.echo(
+            "vpn-quota-sync: "
+            f"checked={summary.get('checked', 0)} "
+            f"throttled={summary.get('throttled', 0)} "
+            f"restored={summary.get('restored', 0)} "
+            f"errors={summary.get('errors', 0)}"
+            + (f" fatal={summary['fatal']}" if summary.get("fatal") else "")
+        )
+
 
 def _install_csrf(app: Flask) -> None:
     def csrf_token() -> str:

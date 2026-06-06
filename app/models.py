@@ -598,6 +598,23 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
     download_mbps = db.Column(db.Integer, nullable=True)
     upload_mbps = db.Column(db.Integer, nullable=True)
     rate_limit = db.Column(db.String(80), default="", nullable=False)
+    # ── Monthly traffic quota with THROTTLE-on-exhaust (IP-change tunnels carry
+    # high bandwidth; the owner caps GB/month). NULL/0 quota = unlimited. When the
+    # month's usage reaches the quota the tunnel is moved to a low throttle speed
+    # (NOT disconnected); the monthly worker resets usage at the start of each
+    # month and restores full speed. Usage is sampled by polling the live CHR
+    # session (accurate for an always-on tunnel).
+    monthly_quota_gb = db.Column(db.Integer, nullable=True)
+    throttle_down_mbps = db.Column(db.Integer, nullable=True)
+    throttle_up_mbps = db.Column(db.Integer, nullable=True)
+    # Usage accounting (best-effort, sampled): YYYY-MM period + bytes this period.
+    quota_period = db.Column(db.String(7), default="", nullable=False)
+    quota_bytes_used = db.Column(db.BigInteger, default=0, nullable=False)
+    # Live-sample baseline: bytes of the current CHR session already counted, so
+    # re-polling the same session doesn't double-count (session counters reset on
+    # reconnect, so we add deltas).
+    quota_sample_bytes = db.Column(db.BigInteger, default=0, nullable=False)
+    is_throttled = db.Column(db.Boolean, default=False, nullable=False)
     # pending | active | suspended | revoked | failed
     status = db.Column(db.String(20), default="pending", nullable=False, index=True)
     # auto (bridge SSTP) | manual (admin PPTP/IPsec)

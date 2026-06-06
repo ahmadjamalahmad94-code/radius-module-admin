@@ -68,6 +68,20 @@
         <label>عدد الاتصالات المتزامنة</label>
         <input class="hub-input" name="max_connections" type="number" min="1" value="1">
       </div>
+      <div class="hub-field">
+        <label>الكوتة الشهرية (GB)</label>
+        <input class="hub-input" name="monthly_quota_gb" type="number" min="0" max="1000000" placeholder="فارغ = بلا حد">
+        <div class="hub-field-hint">سقف الاستهلاك الشهري لنفق تغيير الـIP. عند بلوغه تُخفَّض السرعة (لا فصل)، ويُصفَّر أول كل شهر تلقائيًا.</div>
+      </div>
+      <div class="hub-field">
+        <label>سرعة التخفيض — تنزيل (Mbps)</label>
+        <input class="hub-input" name="throttle_down_mbps" type="number" min="1" max="100000" placeholder="مثال: 1">
+      </div>
+      <div class="hub-field">
+        <label>سرعة التخفيض — رفع (Mbps)</label>
+        <input class="hub-input" name="throttle_up_mbps" type="number" min="1" max="100000" placeholder="مثال: 1">
+        <div class="hub-field-hint">السرعة المنخفضة المطبَّقة بعد نفاد الكوتة حتى بداية الشهر التالي.</div>
+      </div>
       <div class="hub-field full">
         <label>ملاحظات داخلية</label>
         <input class="hub-input" name="notes" placeholder="مثال: نفق احتياطي للموقع الثاني">
@@ -109,6 +123,13 @@
               <span class="mono" title="{{ t.rate_limit }}">{{ t.download_mbps }}↓/{{ t.upload_mbps }}↑</span>
               {% if t.tunnel_type == 'ipsec' %}<span class="badge badge-gray" title="IPsec: مسجَّلة فقط، غير مُشكَّلة آليًا">سجل</span>{% endif %}
             {% else %}<span class="badge badge-gray">افتراضي</span>{% endif %}
+            {% if t.monthly_quota_gb %}
+              {% set _used_gb = (t.quota_bytes_used or 0) / 1000000000.0 %}
+              <span class="badge {{ 'badge-red' if t.is_throttled else 'badge-gray' }}"
+                    title="استهلاك هذا الشهر مقابل الكوتة">
+                {{ '%.1f'|format(_used_gb) }}/{{ t.monthly_quota_gb }}GB{% if t.is_throttled %} • مخفّض{% endif %}
+              </span>
+            {% endif %}
           </td>
           <td><span class="badge {{ t.status|badge_class }}">{{ t.status|status_label }}</span></td>
           <td>
