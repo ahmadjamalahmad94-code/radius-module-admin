@@ -1,0 +1,116 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}بروفايلات السرعة{% endblock %}
+{% block page_title %}بروفايلات السرعة (CHR){% endblock %}
+{% block page_subtitle %}سرعات مركزية تُطابَق إلى /ppp/profile على CHR عبر rate-limit — يختارها المدير عند إنشاء النفق{% endblock %}
+
+{% block content %}
+{% if not chr_enabled %}
+  <div class="hub-flash hub-flash--warning">تزويد CHR غير مُفعّل — يمكنك تعريف البروفايلات لكن لن تُطبَّق على CHR حتى يُفعَّل.</div>
+{% endif %}
+
+{% call hub.section("إضافة بروفايل سرعة", icon="gauge-high") %}
+  <form method="post" action="{{ url_for('admin.chr_speed_profile_create') }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>الاسم</label>
+        <input class="hub-input" name="name" placeholder="مثال: باقة 50 ميجابت" required>
+      </div>
+      <div class="hub-field">
+        <label>الرمز (code)</label>
+        <input class="hub-input mono ltr" name="code" placeholder="50m (يُشتق من الاسم إن تُرك فارغًا)">
+        <div class="hub-field-hint">يُستعمل في اسم بروفايل CHR: <span class="mono ltr">hob-&lt;code&gt;</span>.</div>
+      </div>
+      <div class="hub-field">
+        <label>سرعة التنزيل (Mbps)</label>
+        <input class="hub-input" name="download_mbps" type="number" min="1" max="100000" required>
+      </div>
+      <div class="hub-field">
+        <label>سرعة الرفع (Mbps)</label>
+        <input class="hub-input" name="upload_mbps" type="number" min="1" max="100000" required>
+      </div>
+      <div class="hub-field">
+        <label>حدّ الجلسات (اختياري)</label>
+        <input class="hub-input" name="max_sessions" type="number" min="1" placeholder="بدون حد">
+      </div>
+      <div class="hub-field full">
+        <label>ملاحظة</label>
+        <input class="hub-input" name="notes" placeholder="وصف داخلي اختياري">
+      </div>
+    </div>
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-plus"></i> إضافة البروفايل</button>
+    </div>
+    <p class="hub-field-hint" style="margin-top:10px">
+      السرعة تُترجَم إلى <span class="mono ltr">rate-limit = upload/download</span> على CHR (منظور الراوتر rx/tx).
+    </p>
+  </form>
+{% endcall %}
+
+{% call hub.section("البروفايلات", icon="list") %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الاسم</th><th>الرمز</th><th>تنزيل</th><th>رفع</th>
+          <th class="mono">rate-limit</th><th class="mono">بروفايل CHR</th><th>الحالة</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in profiles %}
+        <tr>
+          <td>{{ p.name }}</td>
+          <td class="mono">{{ p.code }}</td>
+          <td>{{ p.download_mbps }} Mbps</td>
+          <td>{{ p.upload_mbps }} Mbps</td>
+          <td class="mono ltr">{{ rate_limit_string(p.download_mbps, p.upload_mbps) }}</td>
+          <td class="mono ltr">{{ p.effective_chr_profile_name }}</td>
+          <td>{% if p.active %}<span class="badge badge-green">مفعّل</span>{% else %}<span class="badge badge-gray">معطّل</span>{% endif %}</td>
+          <td>
+            <div class="hub-actions">
+              <button type="button" class="hub-btn hub-btn--secondary hub-btn--sm"
+                      data-edit-profile="{{ p.id }}"><i class="fa-solid fa-pen"></i> تعديل</button>
+              <form method="post" action="{{ url_for('admin.chr_speed_profile_sync', profile_id=p.id) }}" style="display:inline">
+                {{ csrf_input() }}
+                <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit" {% if not chr_enabled %}disabled{% endif %}><i class="fa-solid fa-rotate"></i> مزامنة CHR</button>
+              </form>
+              <form method="post" id="sp-del-{{ p.id }}" action="{{ url_for('admin.chr_speed_profile_delete', profile_id=p.id) }}" style="display:inline">
+                {{ csrf_input() }}
+              </form>
+              <button type="button" class="hub-btn hub-btn--danger hub-btn--sm"
+                      data-confirm-form="sp-del-{{ p.id }}"
+                      data-confirm-title="حذف بروفايل السرعة"
+                      data-confirm-msg="سيُحذف البروفايل (أو يُعطَّل إن كان مستخدمًا في أنفاق). متابعة؟"
+                      data-confirm-ok="حذف"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            {# نموذج التعديل المخفي #}
+            <form method="post" action="{{ url_for('admin.chr_speed_profile_edit', profile_id=p.id) }}"
+                  id="edit-profile-{{ p.id }}" hidden style="margin-top:10px;padding:10px;border:1px dashed #cbd5e1;border-radius:8px">
+              {{ csrf_input() }}
+              <div class="hub-form-grid">
+                <div class="hub-field"><label>الاسم</label><input class="hub-input" name="name" value="{{ p.name }}" required></div>
+                <div class="hub-field"><label>تنزيل (Mbps)</label><input class="hub-input" name="download_mbps" type="number" min="1" value="{{ p.download_mbps }}" required></div>
+                <div class="hub-field"><label>رفع (Mbps)</label><input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ p.upload_mbps }}" required></div>
+                <div class="hub-field"><label>حدّ الجلسات</label><input class="hub-input" name="max_sessions" type="number" min="1" value="{{ p.max_sessions or '' }}"></div>
+                <div class="hub-field"><label>اسم بروفايل CHR (اختياري)</label><input class="hub-input mono ltr" name="chr_profile_name" value="{{ p.chr_profile_name }}" placeholder="hob-{{ p.code }}"></div>
+                <div class="hub-field"><label class="hub-check-item"><input type="checkbox" name="active" value="1" {% if p.active %}checked{% endif %}><span>مفعّل</span></label></div>
+                <div class="hub-field full"><label>ملاحظة</label><input class="hub-input" name="notes" value="{{ p.notes }}"></div>
+              </div>
+              <div class="hub-form-foot" style="padding-top:10px">
+                <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ التعديل</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ hub.empty("لا توجد بروفايلات سرعة بعد.", sub="أضف بروفايلًا أعلاه ليظهر عند إنشاء الأنفاق.", icon="gauge-high") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endcall %}
+
+<div data-speed-profiles-js hidden></div>
+<script src="{{ url_for('static', filename='js/speed_profiles.js') }}" defer></script>
+{% endblock %}

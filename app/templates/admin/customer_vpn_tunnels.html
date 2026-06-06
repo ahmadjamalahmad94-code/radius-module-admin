@@ -41,9 +41,28 @@
         <div class="hub-field-hint">SSTP/PPTP/L2TP تُنشأ فعليًا على CHR. IPsec يُسجَّل فقط (يُضبط على CHR يدويًا).</div>
       </div>
       <div class="hub-field">
-        <label>بروفايل PPP</label>
+        <label>بروفايل السرعة</label>
+        <select class="hub-select" name="speed_profile_id">
+          <option value="">— سرعة مخصّصة / بلا تشكيل —</option>
+          {% for sp in speed_profiles %}
+            <option value="{{ sp.id }}">{{ sp.name }} ({{ sp.download_mbps }}↓/{{ sp.upload_mbps }}↑ Mbps)</option>
+          {% endfor %}
+        </select>
+        <div class="hub-field-hint">اختر بروفايلًا جاهزًا، أو اتركه واملأ السرعة المخصّصة بالأسفل. <a href="{{ url_for('admin.chr_speed_profiles') }}">إدارة البروفايلات</a>.</div>
+      </div>
+      <div class="hub-field">
+        <label>تنزيل مخصّص (Mbps)</label>
+        <input class="hub-input" name="download_mbps" type="number" min="1" max="100000" placeholder="يُتجاهَل إن اخترت بروفايلًا">
+      </div>
+      <div class="hub-field">
+        <label>رفع مخصّص (Mbps)</label>
+        <input class="hub-input" name="upload_mbps" type="number" min="1" max="100000" placeholder="يُتجاهَل إن اخترت بروفايلًا">
+        <div class="hub-field-hint">السرعة تُطبَّق على CHR كـ rate-limit على /ppp/profile (SSTP/PPTP/L2TP). IPsec: تُسجَّل فقط.</div>
+      </div>
+      <div class="hub-field">
+        <label>بروفايل PPP (متقدّم)</label>
         <input class="hub-input mono ltr" name="profile" placeholder="default">
-        <div class="hub-field-hint">اسم /ppp/profile على CHR (افتراضي default).</div>
+        <div class="hub-field-hint">يُستخدم فقط حين لا تُحدَّد سرعة (اسم /ppp/profile جاهز على CHR).</div>
       </div>
       <div class="hub-field">
         <label>عدد الاتصالات المتزامنة</label>
@@ -72,6 +91,7 @@
         <tr>
           <th>اسم المستخدم</th>
           <th>النوع</th>
+          <th>السرعة</th>
           <th>الحالة</th>
           <th>التسليم</th>
           <th>CHR</th>
@@ -84,6 +104,12 @@
         <tr>
           <td class="mono">{{ t.username }}</td>
           <td>{{ type_labels.get(t.tunnel_type, t.tunnel_type) }}</td>
+          <td>
+            {% if t.download_mbps and t.upload_mbps %}
+              <span class="mono" title="{{ t.rate_limit }}">{{ t.download_mbps }}↓/{{ t.upload_mbps }}↑</span>
+              {% if t.tunnel_type == 'ipsec' %}<span class="badge badge-gray" title="IPsec: مسجَّلة فقط، غير مُشكَّلة آليًا">سجل</span>{% endif %}
+            {% else %}<span class="badge badge-gray">افتراضي</span>{% endif %}
+          </td>
           <td><span class="badge {{ t.status|badge_class }}">{{ t.status|status_label }}</span></td>
           <td>
             {% if t.delivery_status == 'delivered' %}
@@ -129,7 +155,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="7">{{ hub.empty("لا توجد أنفاق بعد.", sub="أنشئ نفقًا يدويًا، أو سيطلب ريدياس العميل نفق SSTP تلقائيًا عبر الجسر.", icon="network-wired") }}</td></tr>
+        <tr><td colspan="8">{{ hub.empty("لا توجد أنفاق بعد.", sub="أنشئ نفقًا يدويًا، أو سيطلب ريدياس العميل نفق SSTP تلقائيًا عبر الجسر.", icon="network-wired") }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

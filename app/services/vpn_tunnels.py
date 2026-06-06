@@ -25,8 +25,9 @@ import string
 from flask import current_app
 
 from ..extensions import db
-from ..models import Customer, CustomerVpnTunnel, License, utcnow
+from ..models import ChrSpeedProfile, Customer, CustomerVpnTunnel, License, utcnow
 from . import chr_settings
+from . import speed_profiles
 from .customer_vault_crypto import decrypt_secret, encrypt_secret, mask_secret
 from .routeros_client import RouterOSError
 from .vpn_entitlements import get_customer_vpn_entitlement
@@ -81,6 +82,45 @@ def _generate_password(length: int = 20) -> str:
     return "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
 
 
+# ───────────────────────── speed resolution ─────────────────────────
+
+def _resolve_speed(speed_profile_id, download_mbps, upload_mbps) -> dict:
+    """يحلّ السرعة المطلوبة: بروفايل محفوظ يفوز، وإلا سرعة مخصّصة، وإلا بلا تشكيل.
+
+    يعيد dict موحّداً: ``profile_id`` و``download_mbps`` و``upload_mbps`` و
+    ``chr_profile_name`` (اسم /ppp/profile على CHR، فارغ ⇒ استخدم الافتراضي) و
+    ``rate_limit`` (سلسلة RouterOS، فارغة ⇒ بلا تشكيل)."""
+    blank = {"profile_id": None, "download_mbps": None, "upload_mbps": None,
+             "chr_profile_name": "", "rate_limit": ""}
+    if speed_profile_id:
+        profile = speed_profiles.get(speed_profile_id)
+        if not profile or not profile.active:
+            raise VpnTunnelError("invalid_speed_profile", "بروفايل السرعة غير موجود أو معطّل.")
+        return {
+            "profile_id": profile.id,
+            "download_mbps": profile.download_mbps,
+            "upload_mbps": profile.upload_mbps,
+            "chr_profile_name": profile.effective_chr_profile_name,
+            "rate_limit": speed_profiles.rate_limit_string(profile.download_mbps, profile.upload_mbps),
+        }
+    try:
+        down = int(download_mbps) if download_mbps not in (None, "") else 0
+        up = int(upload_mbps) if upload_mbps not in (None, "") else 0
+    except (TypeError, ValueError):
+        raise VpnTunnelError("invalid_speed", "السرعة يجب أن تكون أرقامًا صحيحة (Mbps).")
+    if down < 0 or up < 0:
+        raise VpnTunnelError("invalid_speed", "السرعة لا يمكن أن تكون سالبة.")
+    if not (down and up):
+        return blank  # لم تُطلب سرعة صريحة → بلا تشكيل (البروفايل الافتراضي)
+    return {
+        "profile_id": None,
+        "download_mbps": down,
+        "upload_mbps": up,
+        "chr_profile_name": speed_profiles.custom_profile_name(down, up),
+        "rate_limit": speed_profiles.rate_limit_string(down, up),
+    }
+
+
 def set_tunnel_password(tunnel: CustomerVpnTunnel, plaintext: str) -> None:
     tunnel.password_encrypted = encrypt_secret(plaintext)
     tunnel.password_hint = mask_secret(plaintext)
@@ -124,6 +164,9 @@ def provision_tunnel(
     tunnel_type: str = "sstp",
     profile: str = "",
     max_connections: int | None = None,
+    speed_profile_id: int | None = None,
+    download_mbps: int | None = None,
+    upload_mbps: int | None = None,
     source: str = "bridge_request",
     requested_by_user_id: int | None = None,
     created_by_admin_id: int | None = None,
@@ -133,8 +176,13 @@ def provision_tunnel(
     """يولّد بيانات اعتماد فريدة، يحترم حدّ العضو، ينشئ الحساب على CHR (لأنواع
     PPP)، يحفظ السجل ويعيده. يرفع :class:`VpnTunnelError` عند أي فشل.
 
-    لا يُنفّذ ``commit`` — يترك ذلك للمستدعي (المسار) كي تبقى العملية ذرّية مع
-    التدقيق المرافق.
+    التحكّم بالسرعة: مرّر ``speed_profile_id`` (بروفايل سرعة محفوظ) أو
+    ``download_mbps``/``upload_mbps`` (سرعة مخصّصة). للأنواع PPP تُهيَّأ
+    ``/ppp/profile`` بالـ``rate-limit`` المناسب على CHR ويُسنَد للحساب، فيعمل
+    الاتصال بالسرعة المختارة لا الافتراضية. IPsec لا يدعم rate-limit عبر PPP —
+    تُسجَّل السرعة فقط (انظر الملاحظة) دون تشكيل آلي.
+
+    لا يُنفّذ ``commit`` — يترك ذلك للمستدعي.
     """
     ttype = (tunnel_type or "sstp").strip().lower()
     if ttype not in TUNNEL_TYPES:
@@ -148,9 +196,14 @@ def provision_tunnel(
                 f"بلغ العميل الحدّ المسموح من الأنفاق ({allowance}). علّق أو احذف نفقًا أولًا.",
             )
 
+    # حلّ السرعة: بروفايل محفوظ يفوز، وإلا سرعة مخصّصة، وإلا بلا تشكيل.
+    speed = _resolve_speed(speed_profile_id, download_mbps, upload_mbps)
+
     username = _generate_username(customer)
     password = _generate_password()
-    profile = (profile or current_app.config.get("CHR_DEFAULT_PPP_PROFILE", "default")).strip() or "default"
+    default_profile = (profile or current_app.config.get("CHR_DEFAULT_PPP_PROFILE", "default")).strip() or "default"
+    # عند وجود سرعة، اسم البروفايل على CHR هو بروفايل السرعة؛ وإلا الافتراضي.
+    profile = speed["chr_profile_name"] or default_profile
     per_conn = int(max_connections) if max_connections else 1
     chr_host = ""
     chr_secret_id = ""
@@ -166,6 +219,15 @@ def provision_tunnel(
             client = chr_settings.build_client()
         except chr_settings.ChrSettingsError as exc:
             raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+        # هيّئ بروفايل السرعة على CHR (idempotent) قبل إنشاء الحساب، كي يعمل
+        # الاتصال بالـrate-limit المطلوب لا الافتراضي.
+        if speed["rate_limit"]:
+            try:
+                client.ensure_ppp_profile(name=profile, rate_limit=speed["rate_limit"])
+            except RouterOSError as exc:
+                raise VpnTunnelError(
+                    "chr_profile_failed", "تعذّر تهيئة بروفايل السرعة على CHR: " + exc.message
+                ) from exc
         try:
             created = client.create_ppp_secret(
                 name=username,
@@ -198,6 +260,10 @@ def provision_tunnel(
             # الأتمتة معطّلة (أو CHR غير مُفعّل): سجل فقط — يُضبط على CHR يدويًا.
             record_only = True
 
+    # IPsec لا يُشكَّل عبر rate-limit الخاص بـ PPP؛ نُبقي السرعة مسجَّلة فقط ولا نضع
+    # rate_limit مُطبَّقًا، مع ملاحظة صريحة بدل تجاهل صامت.
+    applied_rate_limit = speed["rate_limit"] if ttype in PPP_SERVICES else ""
+
     tunnel = CustomerVpnTunnel(
         customer_id=customer.id,
         license_id=license_obj.id if license_obj else None,
@@ -205,6 +271,10 @@ def provision_tunnel(
         username=username,
         profile=profile,
         max_connections=per_conn,
+        speed_profile_id=speed["profile_id"],
+        download_mbps=speed["download_mbps"],
+        upload_mbps=speed["upload_mbps"],
+        rate_limit=applied_rate_limit,
         status="active",
         provisioning="auto" if source == "bridge_request" else "manual",
         source=source,
@@ -218,6 +288,12 @@ def provision_tunnel(
     )
     if record_only:
         note = "نفق IPsec: سجل فقط (الأتمتة معطّلة) — اضبط mode-config/peer/identity ومستخدم IPsec على CHR يدويًا."
+        tunnel.notes = (tunnel.notes + ("\n" if tunnel.notes else "") + note)[:2000]
+    if ttype in IPSEC_TYPES and (speed["download_mbps"] or speed["upload_mbps"]):
+        note = (
+            f"السرعة المطلوبة ({speed['download_mbps']}↓/{speed['upload_mbps']}↑ Mbps) مسجَّلة فقط — "
+            "IPsec لا يُشكَّل عبر rate-limit الخاص بـ PPP؛ طبّق طابورًا (simple queue) على CHR إن لزم."
+        )
         tunnel.notes = (tunnel.notes + ("\n" if tunnel.notes else "") + note)[:2000]
     set_tunnel_password(tunnel, password)
     db.session.add(tunnel)
@@ -363,6 +439,9 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         "profile": tunnel.profile,
         "status": tunnel.status,
         "max_connections": tunnel.max_connections,
+        # السرعة المطبَّقة (معلومة لا سرّ) كي يعرضها العميل/الواجهة.
+        "download_mbps": tunnel.download_mbps,
+        "upload_mbps": tunnel.upload_mbps,
         # العنوان العام والمنفذ اللذان يتصل بهما عميلُ العميل لهذه الخدمة. نتعمّد عدم
         # تسريب مضيف REST الإداري (``tunnel.chr_host``) عبر الجسر: لوحة العميل لا
         # تملك ولا تحتاج نقطة إدارة CHR — فقط العنوان العام للاتصال. للتوافق نُبقي

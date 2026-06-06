@@ -264,6 +264,47 @@ class RouterOSClient:
             body={"disabled": "yes" if disabled else "no"},
         )
 
+    # ───────────────────────── PPP profiles (speed / rate-limit) ─────────────────────────
+    # السرعة على PPP تُطبَّق عبر ``rate-limit`` على ``/ppp/profile`` ثم يُسنَد البروفايل
+    # إلى ``/ppp/secret``. صيغة rate-limit على RouterOS: ``rx/tx`` من منظور الراوتر —
+    # rx = ما يستقبله الراوتر من العميل (رفع العميل)، tx = ما يرسله للعميل (تنزيله).
+
+    def list_ppp_profiles(self) -> list[dict[str, Any]]:
+        result = self._request("GET", "ppp/profile")
+        return result if isinstance(result, list) else ([result] if isinstance(result, dict) else [])
+
+    def find_ppp_profile(self, name: str) -> dict[str, Any] | None:
+        result = self._request("GET", "ppp/profile", params={"name": name})
+        if isinstance(result, list) and result:
+            return result[0]
+        if isinstance(result, dict):
+            return result
+        return None
+
+    def ensure_ppp_profile(self, *, name: str, rate_limit: str = "") -> dict[str, Any]:
+        """يضمن وجود ``/ppp/profile`` باسمٍ ثابت وبسرعة ``rate_limit`` (idempotent).
+
+        إن وُجد البروفايل وكانت سرعته مختلفة عن المطلوبة حدّثها (PATCH)؛ وإلا أنشأه.
+        يعيد البروفايل (أو على الأقل اسمه) دون رفع إن نجح."""
+        existing = self.find_ppp_profile(name)
+        if existing:
+            pid = str(existing.get(".id") or existing.get("id") or "")
+            current = str(existing.get("rate-limit") or "")
+            if rate_limit and pid and current != rate_limit:
+                self._request(
+                    "PATCH", "ppp/profile/" + urllib.parse.quote(pid, safe=""),
+                    body={"rate-limit": rate_limit},
+                )
+                existing["rate-limit"] = rate_limit
+            return existing
+        body: dict[str, Any] = {"name": name}
+        if rate_limit:
+            body["rate-limit"] = rate_limit
+        created = self._request("PUT", "ppp/profile", body=body)
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        return created if isinstance(created, dict) else {"name": name}
+
     # ───────────────────────── IPsec (IKEv2) helpers ─────────────────────────
     # IPsec على RouterOS نظام مستقل عن ``/ppp/secret``. لمستخدمي IKEv2 بكلمة مرور
     # (EAP-MSCHAPv2) تُخزَّن بيانات الاعتماد في ``/ip/ipsec/user``، وتُهيَّأ البنية

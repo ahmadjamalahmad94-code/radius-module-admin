@@ -66,6 +66,9 @@
         <a class="{{ 'active' if ep.startswith('admin_landing.') else '' }}" href="{{ url_for('admin_landing.overview') }}">
           <i class="fa-solid fa-window-maximize"></i><span>إدارة الصفحة الرئيسية</span>
         </a>
+        <a class="{{ 'active' if ep.startswith('admin.chr_speed_profile') else '' }}" href="{{ url_for('admin.chr_speed_profiles') }}">
+          <i class="fa-solid fa-gauge-high"></i><span>بروفايلات السرعة</span>
+        </a>
         {% if is_super_admin %}
         <a class="{{ 'active' if ep.startswith('admin_chr.') else '' }}" href="{{ url_for('admin_chr.console') }}">
           <i class="fa-solid fa-server"></i><span>وحدة تحكّم CHR</span>
