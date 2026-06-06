@@ -1,0 +1,186 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}وحدة تحكّم CHR{% endblock %}
+{% block page_title %}وحدة تحكّم CHR المركزية{% endblock %}
+{% block page_subtitle %}تحكّم كامل في راوتر CHR المملوك مركزيًا: المستخدمون، الجلسات، الواجهات، وإجراءات إدارية. (مسؤول عام){% endblock %}
+
+{% block content %}
+<style>
+  .chrc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+  .chrc-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; }
+  .chrc-card .v { font-size:22px; font-weight:800; color:#0f172a; }
+  .chrc-card .l { font-size:12px; color:#64748b; margin-top:2px; }
+  .chrc-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .chrc-table th, .chrc-table td { padding:8px 10px; border-bottom:1px solid #eef0f6; text-align:start; }
+  .chrc-table th { color:#475569; font-weight:700; background:#f8fafc; }
+  .chrc-table td.mono, .chrc-table th.mono { font-family:ui-monospace,monospace; direction:ltr; }
+  .chrc-actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .chrc-badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+  .chrc-badge--on { background:#dcfce7; color:#166534; }
+  .chrc-badge--off { background:#fee2e2; color:#991b1b; }
+  .chrc-danger { background:#b91c1c; color:#fff; }
+</style>
+
+{% if not data.ok %}
+  {% call hub.section("حالة الاتصال", icon="triangle-exclamation") %}
+    <div style="padding:14px 16px;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;color:#991b1b">
+      <i class="fa-solid fa-plug-circle-xmark"></i>
+      <b>تعذّر الوصول إلى CHR.</b>
+      {{ data.message or "تحقّق من بيانات الاتصال في الإعدادات وأن REST مفعّل." }}
+      <div style="margin-top:10px">
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings"><i class="fa-solid fa-gear"></i> إعدادات CHR</a>
+      </div>
+    </div>
+  {% endcall %}
+{% else %}
+
+  {# ── لقطة النظام ── #}
+  {% call hub.section("نظام CHR", icon="microchip") %}
+    <div class="chrc-grid">
+      <div class="chrc-card"><div class="v">{{ data.system.identity or "—" }}</div><div class="l">الهوية</div></div>
+      <div class="chrc-card"><div class="v">{{ data.system.version or "—" }}</div><div class="l">إصدار RouterOS</div></div>
+      <div class="chrc-card"><div class="v">{{ data.system.uptime or "—" }}</div><div class="l">مدة التشغيل</div></div>
+      <div class="chrc-card"><div class="v">{{ data.system.cpu_load or "—" }}%</div><div class="l">حمل المعالج</div></div>
+      <div class="chrc-card"><div class="v">{{ data.counts.ppp_active }}</div><div class="l">جلسات نشطة (PPP)</div></div>
+      <div class="chrc-card"><div class="v">{{ data.counts.ipsec_active }}</div><div class="l">جلسات IPsec نشطة</div></div>
+    </div>
+  {% endcall %}
+
+  {# ── مستخدمو الأنفاق (PPP secrets) ── #}
+  {% call hub.section("مستخدمو الأنفاق (PPP)", icon="user-shield", meta=data.counts.ppp_secrets ~ " حساب") %}
+    {% if data.ppp_secrets %}
+    <div style="overflow-x:auto">
+      <table class="chrc-table">
+        <thead><tr><th>الاسم</th><th>الخدمة</th><th>البروفايل</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          {% for s in data.ppp_secrets %}
+          {% set sid = s['.id'] or s.get('id') %}
+          {% set disabled = (s.get('disabled') in ['true','yes',true]) %}
+          <tr>
+            <td class="mono">{{ s.get('name') or '—' }}</td>
+            <td class="mono">{{ s.get('service') or '—' }}</td>
+            <td class="mono">{{ s.get('profile') or '—' }}</td>
+            <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
+            <td>
+              <div class="chrc-actions">
+                <form method="post" action="{{ url_for('admin_chr.ppp_toggle') }}">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="secret_id" value="{{ sid }}">
+                  <input type="hidden" name="name" value="{{ s.get('name') or '' }}">
+                  <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
+                  <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_chr.ppp_remove') }}"
+                      onsubmit="return confirm('حذف الحساب {{ s.get('name') or sid }} نهائيًا من CHR؟');">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="secret_id" value="{{ sid }}">
+                  <input type="hidden" name="name" value="{{ s.get('name') or '' }}">
+                  <input type="hidden" name="confirm" value="yes">
+                  <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-trash"></i></button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ hub.empty("لا توجد حسابات PPP على CHR.") }}{% endif %}
+  {% endcall %}
+
+  {# ── مستخدمو IPsec ── #}
+  {% call hub.section("مستخدمو IPsec (IKEv2)", icon="key", meta=data.counts.ipsec_users ~ " مستخدم") %}
+    {% if data.ipsec_users %}
+    <div style="overflow-x:auto">
+      <table class="chrc-table">
+        <thead><tr><th>الاسم</th><th>الحالة</th><th>تعليق</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          {% for u in data.ipsec_users %}
+          {% set uid = u['.id'] or u.get('id') %}
+          {% set disabled = (u.get('disabled') in ['true','yes',true]) %}
+          <tr>
+            <td class="mono">{{ u.get('name') or '—' }}</td>
+            <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
+            <td>{{ u.get('comment') or '—' }}</td>
+            <td>
+              <div class="chrc-actions">
+                <form method="post" action="{{ url_for('admin_chr.ipsec_toggle') }}">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="user_id" value="{{ uid }}">
+                  <input type="hidden" name="name" value="{{ u.get('name') or '' }}">
+                  <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
+                  <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
+                </form>
+                <form method="post" action="{{ url_for('admin_chr.ipsec_remove') }}"
+                      onsubmit="return confirm('حذف مستخدم IPsec {{ u.get('name') or uid }} نهائيًا من CHR؟');">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="user_id" value="{{ uid }}">
+                  <input type="hidden" name="name" value="{{ u.get('name') or '' }}">
+                  <input type="hidden" name="confirm" value="yes">
+                  <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-trash"></i></button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ hub.empty("لا يوجد مستخدمو IPsec على CHR.") }}{% endif %}
+  {% endcall %}
+
+  {# ── الجلسات النشطة ── #}
+  {% call hub.section("الجلسات النشطة", icon="bolt", meta=data.counts.ppp_active ~ " PPP") %}
+    {% if data.ppp_active %}
+    <div style="overflow-x:auto">
+      <table class="chrc-table">
+        <thead><tr><th>الاسم</th><th>الخدمة</th><th class="mono">العنوان</th><th>مدة الاتصال</th></tr></thead>
+        <tbody>
+          {% for a in data.ppp_active %}
+          <tr>
+            <td class="mono">{{ a.get('name') or '—' }}</td>
+            <td class="mono">{{ a.get('service') or '—' }}</td>
+            <td class="mono">{{ a.get('address') or '—' }}</td>
+            <td class="mono">{{ a.get('uptime') or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ hub.empty("لا توجد جلسات PPP نشطة حاليًا.") }}{% endif %}
+  {% endcall %}
+
+  {# ── الواجهات ── #}
+  {% call hub.section("الواجهات", icon="network-wired", meta=data.counts.interfaces ~ " واجهة") %}
+    {% if data.interfaces %}
+    <div style="overflow-x:auto">
+      <table class="chrc-table">
+        <thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th></tr></thead>
+        <tbody>
+          {% for i in data.interfaces %}
+          {% set running = (i.get('running') in ['true','yes',true]) %}
+          <tr>
+            <td class="mono">{{ i.get('name') or '—' }}</td>
+            <td class="mono">{{ i.get('type') or '—' }}</td>
+            <td>{% if running %}<span class="chrc-badge chrc-badge--on">يعمل</span>{% else %}<span class="chrc-badge chrc-badge--off">متوقف</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}{{ hub.empty("لا توجد واجهات.") }}{% endif %}
+  {% endcall %}
+
+  {# ── إجراءات إدارية حسّاسة ── #}
+  {% call hub.section("إجراءات إدارية", icon="triangle-exclamation") %}
+    <p class="hub-field-hint" style="margin:0 0 12px">إجراءات غير قابلة للتراجع — تتطلّب تأكيدًا.</p>
+    <form method="post" action="{{ url_for('admin_chr.reboot') }}"
+          onsubmit="return confirm('إعادة تشغيل CHR الآن؟ سينقطع كل الاتصالات مؤقتًا.');">
+      {{ csrf_input() }}
+      <input type="hidden" name="confirm" value="yes">
+      <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-power-off"></i> إعادة تشغيل CHR</button>
+    </form>
+  {% endcall %}
+
+{% endif %}
+{% endblock %}

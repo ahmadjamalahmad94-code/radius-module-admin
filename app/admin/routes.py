@@ -1917,14 +1917,60 @@ def chr_settings_save():
     blocked = _chr_guard()
     if blocked:
         return blocked
+    # تغيير اتصال مقفل يتطلّب: مسؤول عام + تأكيد صريح في النموذج. غير المسؤول العام
+    # لا يستطيع تجاوز القفل مهما أرسل من حقول.
+    admin = current_admin()
+    is_super = bool(getattr(admin, "is_super_admin", False))
+    confirmed = (request.form.get("confirm_locked_change") or "").strip().lower() in {"1", "yes", "on", "true"}
+    allow_locked_change = is_super and confirmed
     try:
-        chr_svc.validate_and_save(request.form, actor_audit=audit)
+        chr_svc.validate_and_save(request.form, actor_audit=audit, allow_locked_change=allow_locked_change)
     except chr_svc.ChrSettingsError as exc:
         db.session.rollback()
         flash(str(exc), "error")
         return _chr_redirect()
     db.session.commit()
     flash("تم حفظ بيانات اتصال CHR بنجاح.", "success")
+    return _chr_redirect()
+
+
+@bp.post("/settings/chr/lock")
+@super_admin_required
+def chr_settings_lock():
+    """يقفل اتصال CHR صراحةً (مسؤول عام فقط، مُدقَّق)."""
+    from ..services import chr_settings as chr_svc
+    blocked = _chr_guard()
+    if blocked:
+        return blocked
+    admin = current_admin()
+    try:
+        chr_svc.lock(actor_audit=audit, actor_label=(admin.username if admin else ""))
+    except chr_svc.ChrSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _chr_redirect()
+    db.session.commit()
+    flash("تم قفل اتصال CHR. لن يُداس إلا بتأكيد صريح.", "success")
+    return _chr_redirect()
+
+
+@bp.post("/settings/chr/unlock")
+@super_admin_required
+def chr_settings_unlock():
+    """يفكّ قفل اتصال CHR صراحةً (مسؤول عام فقط، مُدقَّق)."""
+    from ..services import chr_settings as chr_svc
+    blocked = _chr_guard()
+    if blocked:
+        return blocked
+    admin = current_admin()
+    try:
+        chr_svc.unlock(actor_audit=audit, actor_label=(admin.username if admin else ""))
+    except chr_svc.ChrSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _chr_redirect()
+    db.session.commit()
+    flash("تم فكّ قفل اتصال CHR — أصبح قابلًا للتعديل.", "success")
     return _chr_redirect()
 
 

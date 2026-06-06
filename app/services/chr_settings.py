@@ -16,7 +16,7 @@ from __future__ import annotations
 from flask import current_app
 
 from ..extensions import db
-from ..models import Setting
+from ..models import Setting, utcnow
 from .customer_vault_crypto import (
     VaultCryptoError,
     decrypt_secret,
@@ -51,6 +51,15 @@ FIELDS: dict[str, tuple[str, bool, bool, bool]] = {
 }
 SECRET_FIELDS = {name for name, f in FIELDS.items() if f[1]}
 BOOL_FIELDS = {"use_tls", "verify_tls"}
+
+# ── قفل اتصال CHR ──────────────────────────────────────────────────────────
+# بمجرد ضبط الاتصال والتحقق منه يُقفَل كي لا يُداس بصمت؛ تغييره بعدها يتطلّب تأكيدًا
+# صريحًا من مسؤول عام (super-admin) ويُسجَّل في التدقيق. هذه مفاتيح وصفية منفصلة عن
+# حقول الاتصال نفسها (FIELDS) فلا تخضع لتشفير ولا تظهر للعميل أبدًا.
+LOCK_KEY = _SETTING_PREFIX + "locked"
+LOCK_AT_KEY = _SETTING_PREFIX + "locked_at"
+LOCK_BY_KEY = _SETTING_PREFIX + "locked_by"
+VERIFIED_AT_KEY = _SETTING_PREFIX + "verified_at"
 # المنافذ الافتراضية لكل خدمة (تُستخدم حين لا يضبطها المالك). IPsec/IKEv2 على UDP 4500.
 SERVICE_PORT_DEFAULTS = {"sstp": 443, "pptp": 1723, "l2tp": 1701, "ovpn": 1194, "ipsec": 4500}
 
@@ -119,6 +128,57 @@ def _resolve_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# ───────────────────────── lock state ─────────────────────────
+
+def is_locked() -> bool:
+    """هل اتصال CHR مقفل (لا يُداس إلا بتأكيد صريح من مسؤول عام)."""
+    return _db_value(LOCK_KEY).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def lock_state() -> dict:
+    """حالة القفل للعرض: مقفل؟ ومتى/مَن، ووقت آخر تحقق ناجح."""
+    return {
+        "locked": is_locked(),
+        "locked_at": _db_value(LOCK_AT_KEY),
+        "locked_by": _db_value(LOCK_BY_KEY),
+        "verified_at": _db_value(VERIFIED_AT_KEY),
+    }
+
+
+def lock(*, actor_audit, actor_label: str = "") -> None:
+    """يقفل اتصال CHR صراحةً. يُسجَّل في التدقيق. (المسار يحصره بالمسؤول العام.)"""
+    if not bool(_resolve("host") and _resolve("username") and _resolve("password")):
+        raise ChrSettingsError("أكمل بيانات اتصال CHR قبل قفله.")
+    _set_db_value(LOCK_KEY, "1")
+    _set_db_value(LOCK_AT_KEY, utcnow().replace(microsecond=0).isoformat() + "Z")
+    _set_db_value(LOCK_BY_KEY, (actor_label or "")[:120])
+    actor_audit(
+        "chr_connection_locked", "chr_settings", "global",
+        "قفل اتصال CHR (يتطلّب تأكيدًا صريحًا لتغييره)", {"by": actor_label},
+    )
+
+
+def unlock(*, actor_audit, actor_label: str = "") -> None:
+    """يفكّ قفل اتصال CHR صراحةً (لإتاحة تعديله). يُسجَّل في التدقيق."""
+    if not is_locked():
+        raise ChrSettingsError("اتصال CHR غير مقفل أصلًا.")
+    _set_db_value(LOCK_KEY, "0")
+    actor_audit(
+        "chr_connection_unlocked", "chr_settings", "global",
+        "فكّ قفل اتصال CHR (أصبح قابلًا للتعديل)", {"by": actor_label},
+    )
+
+
+def _mark_verified() -> None:
+    """يسجّل وقت آخر تحقق ناجح، ويقفل الاتصال تلقائيًا أول مرة يكتمل فيها ويُتحقق منه."""
+    _set_db_value(VERIFIED_AT_KEY, utcnow().replace(microsecond=0).isoformat() + "Z")
+    configured = bool(_resolve("host") and _resolve("username") and _resolve("password"))
+    if configured and not is_locked():
+        _set_db_value(LOCK_KEY, "1")
+        _set_db_value(LOCK_AT_KEY, utcnow().replace(microsecond=0).isoformat() + "Z")
+        _set_db_value(LOCK_BY_KEY, "auto-verify")
+
+
 # ───────────────────────── public read API ─────────────────────────
 
 def get_state() -> dict:
@@ -154,6 +214,7 @@ def get_state() -> dict:
         "configured": bool(host and username and password),
         "encryption_available": encryption_available(),
         "service_port_defaults": SERVICE_PORT_DEFAULTS,
+        "lock": lock_state(),
     }
 
 
@@ -201,9 +262,19 @@ def build_client() -> RouterOSClient:
 
 # ───────────────────────── validation + save ─────────────────────────
 
-def validate_and_save(form, *, actor_audit) -> None:
+def validate_and_save(form, *, actor_audit, allow_locked_change: bool = False) -> None:
     """يتحقق من النموذج المُرسَل ويحفظ. كلمة المرور للكتابة فقط: إرسالها فارغة يُبقي
-    القيمة المحفوظة. ``actor_audit`` هي دالة auth.audit. يرفع :class:`ChrSettingsError`."""
+    القيمة المحفوظة. ``actor_audit`` هي دالة auth.audit. يرفع :class:`ChrSettingsError`.
+
+    إن كان الاتصال مقفلًا (:func:`is_locked`) يُرفض الحفظ ما لم يُمرَّر
+    ``allow_locked_change=True`` — وهذا تقرّره طبقة المسار بعد التأكد من أن الفاعل
+    مسؤول عام وأرسل تأكيدًا صريحًا. أي تعديل لاتصال مقفل يُسجَّل بإجراء مميَّز.
+    """
+    if is_locked() and not allow_locked_change:
+        raise ChrSettingsError(
+            "اتصال CHR مقفل لحمايته من الكتابة بالخطأ. لتغييره فعّل «تأكيد تغيير اتصال مقفل» "
+            "(يتطلّب صلاحية مسؤول عام)."
+        )
     host = (form.get("host") or "").strip()[:255]
     port = (form.get("port") or "").strip()
     username = (form.get("username") or "").strip()[:80]
@@ -252,10 +323,12 @@ def validate_and_save(form, *, actor_audit) -> None:
         _set_db_value(FIELDS["port_" + svc][0], value)
 
     actor_audit(
-        "chr_settings_saved", "chr_settings", "global",
-        "حفظ بيانات اتصال CHR",
+        "chr_settings_overwritten_while_locked" if (allow_locked_change and is_locked()) else "chr_settings_saved",
+        "chr_settings", "global",
+        "تغيير اتصال CHR مقفل بتأكيد صريح" if (allow_locked_change and is_locked()) else "حفظ بيانات اتصال CHR",
         {"host": host, "port": port or _default_port(), "use_tls": use_tls, "verify_tls": verify_tls,
-         "public_host": public_host, "password_changed": bool(password)},
+         "public_host": public_host, "password_changed": bool(password),
+         "locked_change": bool(allow_locked_change and is_locked())},
     )
 
 
@@ -285,9 +358,13 @@ def test_connection(*, actor_audit) -> dict:
             "فشل اختبار اتصال CHR", {"code": exc.code},
         )
         return {"ok": False, "code": exc.code, "message": exc.message}
+    # نجاح التحقق ⇒ نسجّل وقته ونقفل الاتصال تلقائيًا أول مرة (حماية من الكتابة بالخطأ).
+    was_locked = is_locked()
+    _mark_verified()
     actor_audit(
         "chr_test_success", "chr_settings", "global",
         "نجاح اختبار اتصال CHR",
-        {"identity": info.get("identity"), "version": info.get("version")},
+        {"identity": info.get("identity"), "version": info.get("version"),
+         "auto_locked": bool(is_locked() and not was_locked)},
     )
-    return {"ok": True, **info}
+    return {"ok": True, "locked": is_locked(), **info}

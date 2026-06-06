@@ -132,6 +132,10 @@ class Config:
     CHR_DEFAULT_MAX_TUNNELS = _env_int("CHR_DEFAULT_MAX_TUNNELS", 5)
     # Default RouterOS /ppp/profile applied to provisioned secrets.
     CHR_DEFAULT_PPP_PROFILE = os.environ.get("CHR_DEFAULT_PPP_PROFILE", "default")
+    # CHR management console (admin page giving full control over the central CHR
+    # via the RouterOS REST client). Super-admin only; can be turned off here
+    # without affecting tunnel provisioning. No credentials — operational toggle.
+    CHR_CONSOLE_ENABLED = _env_bool("CHR_CONSOLE_ENABLED", True)
 
     # ── IPsec / IKEv2 automation on the CHR (/ip/ipsec, NOT /ppp/secret) ──────
     # IPsec users authenticate with username/password over IKEv2 EAP-MSCHAPv2; the
