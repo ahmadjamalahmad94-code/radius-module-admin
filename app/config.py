@@ -114,6 +114,25 @@ class Config:
     # safely; the callback still enforces state whenever the frontend supplies it.
     META_EMBEDDED_REQUIRE_STATE = _env_bool("META_EMBEDDED_REQUIRE_STATE", False)
 
+    # ── MikroTik CHR central tunnel provisioning (SSTP/PPTP/L2TP) ──────────
+    # The owner connects ONE central CHR (RouterOS v7) here; the panel creates
+    # /ppp/secret accounts on it via the RouterOS REST API and delivers the
+    # credentials to customer panels over the signed bridge. The CHR host/port/
+    # user/password are entered by the OWNER in panel settings (stored in the
+    # `settings` table; the password ENCRYPTED via CUSTOMER_VAULT_ENCRYPTION_KEY)
+    # — never hardcoded. Env vars below are only operational toggles/defaults,
+    # not credentials.
+    CHR_PROVISIONING_ENABLED = _env_bool("CHR_PROVISIONING_ENABLED", True)
+    # RouterOS REST API runs over HTTPS; CHR ships a self-signed cert, so TLS
+    # verification defaults OFF. Set CHR_TLS_VERIFY=1 once a trusted cert exists.
+    CHR_TLS_VERIFY = _env_bool("CHR_TLS_VERIFY", False)
+    CHR_HTTP_TIMEOUT_SECONDS = _env_int("CHR_HTTP_TIMEOUT_SECONDS", 15)
+    # Fallback ceiling for how many simultaneous tunnel accounts one customer may
+    # hold when their VPN entitlement does not specify max_vpn_users.
+    CHR_DEFAULT_MAX_TUNNELS = _env_int("CHR_DEFAULT_MAX_TUNNELS", 5)
+    # Default RouterOS /ppp/profile applied to provisioned secrets.
+    CHR_DEFAULT_PPP_PROFILE = os.environ.get("CHR_DEFAULT_PPP_PROFILE", "default")
+
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the
     # panel settings (encrypted) instead of editing env. When disabled, the

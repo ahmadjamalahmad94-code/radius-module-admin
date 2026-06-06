@@ -1,0 +1,146 @@
+{% extends "admin/base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}أنفاق {{ customer.company_name }}{% endblock %}
+{% block page_title %}أنفاق VPN المركزية — {{ customer.company_name }}{% endblock %}
+{% block page_subtitle %}إنشاء وإدارة حسابات SSTP/PPTP/L2TP على CHR المركزي، وتسليمها للعميل عبر الجسر{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "أنفاق VPN المركزية",
+  subtitle="الحسابات تُنشأ على CHR المركزي للمالك وتُسلَّم للعميل عبر الجسر — لا يملك العميل وصول CHR.",
+  icon="network-wired"
+) }}
+
+<div class="hub-kpi-grid">
+  {{ hub.kpi("الأنفاق النشطة", active_count, icon="plug-circle-check", variant="green") }}
+  {{ hub.kpi("الحدّ المسموح", allowance, icon="gauge", variant="violet") }}
+  {{ hub.kpi("الإجمالي", tunnels|length, icon="list", variant="grey") }}
+</div>
+
+{% if not chr_enabled %}
+  <div class="hub-flash hub-flash--warning">تزويد CHR غير مُفعّل (CHR_PROVISIONING_ENABLED). لا يمكن إنشاء أنفاق PPP.</div>
+{% elif not chr_configured %}
+  <div class="hub-flash hub-flash--warning">
+    لم تكتمل بيانات اتصال CHR بعد. أكملها من
+    <a href="{{ url_for('admin.settings_page') }}#chr-settings">الإعدادات ← MikroTik CHR</a> قبل إنشاء أنفاق SSTP/PPTP/L2TP.
+  </div>
+{% endif %}
+
+{# ── إنشاء نفق يدوي (PPTP/IPsec بقرار المدير) ── #}
+{% call hub.section("إنشاء نفق يدوي (بقرار المدير)", icon="plus") %}
+  <form method="post" action="{{ url_for('admin.customer_vpn_tunnel_create', customer_id=customer.id) }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>نوع النفق</label>
+        <select class="hub-select" name="tunnel_type">
+          {% for t in manual_types %}
+            <option value="{{ t }}" {% if t == 'pptp' %}selected{% endif %}>{{ type_labels.get(t, t) }}</option>
+          {% endfor %}
+        </select>
+        <div class="hub-field-hint">SSTP/PPTP/L2TP تُنشأ فعليًا على CHR. IPsec يُسجَّل فقط (يُضبط على CHR يدويًا).</div>
+      </div>
+      <div class="hub-field">
+        <label>بروفايل PPP</label>
+        <input class="hub-input mono ltr" name="profile" placeholder="default">
+        <div class="hub-field-hint">اسم /ppp/profile على CHR (افتراضي default).</div>
+      </div>
+      <div class="hub-field">
+        <label>عدد الاتصالات المتزامنة</label>
+        <input class="hub-input" name="max_connections" type="number" min="1" value="1">
+      </div>
+      <div class="hub-field full">
+        <label>ملاحظات داخلية</label>
+        <input class="hub-input" name="notes" placeholder="مثال: نفق احتياطي للموقع الثاني">
+      </div>
+    </div>
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-bolt"></i> إنشاء وتزويد على CHR</button>
+    </div>
+    <p class="hub-field-hint" style="margin-top:10px">
+      يُولَّد اسم المستخدم وكلمة المرور تلقائيًا (كلمة المرور مشفّرة عندنا)، ويُنشأ الحساب على CHR،
+      ثم يسحبه العميل عبر الجسر ويحقنه في ريدياسه. تُحترم حدود العميل ({{ allowance }} نفق).
+    </p>
+  </form>
+{% endcall %}
+
+{# ── قائمة الأنفاق ── #}
+{% call hub.section("أنفاق هذا العميل", icon="list") %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>اسم المستخدم</th>
+          <th>النوع</th>
+          <th>الحالة</th>
+          <th>التسليم</th>
+          <th>CHR</th>
+          <th class="date">أُنشئ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in tunnels %}
+        <tr>
+          <td class="mono">{{ t.username }}</td>
+          <td>{{ type_labels.get(t.tunnel_type, t.tunnel_type) }}</td>
+          <td><span class="badge {{ t.status|badge_class }}">{{ t.status|status_label }}</span></td>
+          <td>
+            {% if t.delivery_status == 'delivered' %}
+              <span class="badge badge-green">سُلِّم</span>
+            {% else %}
+              <span class="badge badge-amber">بانتظار السحب</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.chr_provisioned %}
+              <span class="badge badge-blue" title="{{ t.chr_host }}">مُنشأ على CHR</span>
+            {% else %}
+              <span class="badge badge-gray">سجل فقط</span>
+            {% endif %}
+          </td>
+          <td class="date">{{ t.created_at|dt }}</td>
+          <td>
+            <div class="hub-actions">
+              {% if t.status == 'active' %}
+                <form method="post" action="{{ url_for('admin.customer_vpn_tunnel_status', customer_id=customer.id, tunnel_id=t.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="status" value="suspended">
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-pause"></i> تعليق</button>
+                </form>
+              {% elif t.status == 'suspended' %}
+                <form method="post" action="{{ url_for('admin.customer_vpn_tunnel_status', customer_id=customer.id, tunnel_id=t.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                  <input type="hidden" name="status" value="active">
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> تفعيل</button>
+                </form>
+              {% endif %}
+              {% if t.status != 'revoked' %}
+                <form method="post" id="tunnel-revoke-{{ t.id }}" action="{{ url_for('admin.customer_vpn_tunnel_revoke', customer_id=customer.id, tunnel_id=t.id) }}" style="display:inline">
+                  {{ csrf_input() }}
+                </form>
+                <button type="button" class="hub-btn hub-btn--danger hub-btn--sm"
+                        data-confirm-form="tunnel-revoke-{{ t.id }}"
+                        data-confirm-title="إلغاء النفق"
+                        data-confirm-msg="سيُحذف الحساب من CHR ولن يعمل النفق. متابعة؟"
+                        data-confirm-ok="إلغاء النفق"><i class="fa-solid fa-trash"></i> إلغاء</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">{{ hub.empty("لا توجد أنفاق بعد.", sub="أنشئ نفقًا يدويًا، أو سيطلب ريدياس العميل نفق SSTP تلقائيًا عبر الجسر.", icon="network-wired") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hub-field-hint" style="margin-top:12px">
+    <i class="fa-solid fa-shield-halved"></i>
+    كلمة المرور لا تُعرض هنا أبدًا — تُسلَّم مشفّرة عبر الجسر لمرة واحدة حتى يؤكّد ريدياس العميل استلامها.
+  </p>
+{% endcall %}
+
+<a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">
+  <i class="fa-solid fa-arrow-right"></i> رجوع لملف العميل 360
+</a>
+{% endblock %}
