@@ -11,6 +11,7 @@ from ..auth.routes import audit, current_admin, login_required, super_admin_requ
 from ..extensions import db
 from ..models import (
     AuditLog,
+    ChrSpeedProfile,
     Customer,
     CustomerRadiusAdmin,
     CustomerServiceEntitlement,
@@ -1151,6 +1152,11 @@ def customer_vpn_tunnel_create(customer_id: int):
         max_connections = int(request.form.get("max_connections") or 1)
     except (TypeError, ValueError):
         max_connections = 1
+    # السرعة: بروفايل محفوظ أو سرعة مخصّصة (يحلّها vt.provision_tunnel).
+    try:
+        speed_profile_id = int(request.form.get("speed_profile_id") or 0) or None
+    except (TypeError, ValueError):
+        speed_profile_id = None
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -1158,6 +1164,9 @@ def customer_vpn_tunnel_create(customer_id: int):
             tunnel_type=tunnel_type,
             profile=request.form.get("profile") or "",
             max_connections=max_connections,
+            speed_profile_id=speed_profile_id,
+            download_mbps=request.form.get("download_mbps") or None,
+            upload_mbps=request.form.get("upload_mbps") or None,
             source="admin_manual",
             created_by_admin_id=session.get("admin_id"),
             notes=request.form.get("notes") or "",
@@ -1239,6 +1248,7 @@ def customer_vpn_tunnel_status(customer_id: int, tunnel_id: int):
 
 def _render_customer_vpn_tunnels(customer: Customer):
     from ..services import chr_settings as chr_svc
+    from ..services import speed_profiles as sp
     from ..services import vpn_tunnels as vt
 
     tunnels = vt.list_tunnels(customer)
@@ -1252,7 +1262,101 @@ def _render_customer_vpn_tunnels(customer: Customer):
         active_count=vt.count_active_tunnels(customer),
         manual_types=sorted(vt.MANUAL_TYPES),
         type_labels=vt.TUNNEL_TYPE_LABELS,
+        speed_profiles=sp.list_profiles(active_only=True),
     )
+
+
+# ── CHR speed profiles (central, mapped to /ppp/profile rate-limit) ─────────
+@bp.get("/chr/speed-profiles")
+@login_required
+def chr_speed_profiles():
+    from ..services import speed_profiles as sp
+    from ..services import chr_settings as chr_svc
+    return render_template(
+        "admin/chr_speed_profiles.html",
+        profiles=sp.list_profiles(),
+        rate_limit_string=sp.rate_limit_string,
+        chr_enabled=chr_svc.enabled(),
+    )
+
+
+@bp.post("/chr/speed-profiles")
+@login_required
+def chr_speed_profile_create():
+    from ..services import speed_profiles as sp
+    try:
+        profile = sp.create_profile(request.form)
+    except sp.SpeedProfileError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.chr_speed_profiles"))
+    audit("chr_speed_profile_created", "chr_speed_profile", str(profile.id),
+          f"إنشاء بروفايل سرعة {profile.name} ({profile.download_mbps}↓/{profile.upload_mbps}↑)",
+          {"code": profile.code, "download_mbps": profile.download_mbps, "upload_mbps": profile.upload_mbps})
+    db.session.commit()
+    flash(f"تم إنشاء بروفايل السرعة «{profile.name}».", "success")
+    return redirect(url_for("admin.chr_speed_profiles"))
+
+
+@bp.post("/chr/speed-profiles/<int:profile_id>/edit")
+@login_required
+def chr_speed_profile_edit(profile_id: int):
+    from ..services import speed_profiles as sp
+    profile = db.get_or_404(ChrSpeedProfile, profile_id)
+    try:
+        sp.update_profile(profile, request.form)
+    except sp.SpeedProfileError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.chr_speed_profiles"))
+    audit("chr_speed_profile_updated", "chr_speed_profile", str(profile.id),
+          f"تعديل بروفايل سرعة {profile.name}",
+          {"download_mbps": profile.download_mbps, "upload_mbps": profile.upload_mbps, "active": profile.active})
+    db.session.commit()
+    flash(f"تم تحديث بروفايل السرعة «{profile.name}».", "success")
+    return redirect(url_for("admin.chr_speed_profiles"))
+
+
+@bp.post("/chr/speed-profiles/<int:profile_id>/delete")
+@login_required
+def chr_speed_profile_delete(profile_id: int):
+    from ..services import speed_profiles as sp
+    profile = db.get_or_404(ChrSpeedProfile, profile_id)
+    name = profile.name
+    try:
+        sp.delete_profile(profile)
+    except sp.SpeedProfileError as exc:
+        db.session.commit()  # delete_profile may have deactivated it
+        flash(str(exc), "warning")
+        return redirect(url_for("admin.chr_speed_profiles"))
+    audit("chr_speed_profile_deleted", "chr_speed_profile", str(profile_id), f"حذف بروفايل سرعة {name}", {})
+    db.session.commit()
+    flash(f"تم حذف بروفايل السرعة «{name}».", "success")
+    return redirect(url_for("admin.chr_speed_profiles"))
+
+
+@bp.post("/chr/speed-profiles/<int:profile_id>/sync")
+@login_required
+def chr_speed_profile_sync(profile_id: int):
+    """يهيّئ /ppp/profile المقابل على CHR بالـrate-limit (للتحقق اليدوي)."""
+    from ..services import speed_profiles as sp
+    from ..services import chr_settings as chr_svc
+    from ..services.routeros_client import RouterOSError
+    profile = db.get_or_404(ChrSpeedProfile, profile_id)
+    try:
+        sp.ensure_on_chr(profile)
+    except chr_svc.ChrSettingsError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.chr_speed_profiles"))
+    except RouterOSError as exc:
+        flash("تعذّرت المزامنة مع CHR: " + exc.message, "error")
+        return redirect(url_for("admin.chr_speed_profiles"))
+    audit("chr_speed_profile_synced", "chr_speed_profile", str(profile.id),
+          f"مزامنة بروفايل سرعة {profile.name} مع CHR", {"chr_profile": profile.effective_chr_profile_name})
+    db.session.commit()
+    flash(f"تمت تهيئة «{profile.effective_chr_profile_name}» على CHR بسرعة "
+          f"{profile.download_mbps}↓/{profile.upload_mbps}↑ Mbps.", "success")
+    return redirect(url_for("admin.chr_speed_profiles"))
 
 
 def _should_apply_vpn_plan_defaults() -> bool:

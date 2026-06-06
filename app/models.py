@@ -525,6 +525,37 @@ class CustomerVpnEntitlement(TimestampMixin, db.Model):
     updated_by = db.relationship("Admin")
 
 
+class ChrSpeedProfile(TimestampMixin, db.Model):
+    """بروفايل سرعة مركزي يديره المالك ويُطابَق إلى ``/ppp/profile`` على CHR.
+
+    جوهر المنتج هو التحكّم بالسرعة: لكل بروفايل سرعةُ تنزيل/رفع (Mbps) تُترجَم إلى
+    ``rate-limit`` على بروفايل PPP على CHR (idempotent). يختار المدير عند إنشاء النفق
+    بروفايلًا جاهزًا أو يُدخل سرعة مخصّصة. هذه إعدادات مركزية لا تُرسَل لأي لوحة عميل.
+    """
+    __tablename__ = "chr_speed_profiles"
+    __table_args__ = (
+        db.Index("ix_chr_speed_profiles_active_code", "active", "code"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(140), nullable=False)
+    code = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    download_mbps = db.Column(db.Integer, nullable=False)
+    upload_mbps = db.Column(db.Integer, nullable=False)
+    # حدّ الجلسات المتزامنة الافتراضي لهذا البروفايل (اختياري؛ النفق قد يتجاوزه).
+    max_sessions = db.Column(db.Integer, nullable=True)
+    # اسم /ppp/profile المقابل على CHR (يُشتق إن تُرك فارغًا: hob-<code>).
+    chr_profile_name = db.Column(db.String(80), default="", nullable=False)
+    active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    notes = db.Column(db.String(255), default="", nullable=False)
+
+    tunnels = db.relationship("CustomerVpnTunnel", back_populates="speed_profile", lazy="dynamic")
+
+    @property
+    def effective_chr_profile_name(self) -> str:
+        return (self.chr_profile_name or f"hob-{self.code}").strip()
+
+
 class CustomerVpnTunnel(TimestampMixin, db.Model):
     """A concrete VPN tunnel account provisioned CENTRALLY on the owner's CHR.
 
@@ -560,6 +591,13 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
     profile = db.Column(db.String(80), default="default", nullable=False)
     # How many simultaneous connections this account is allowed (member's quota).
     max_connections = db.Column(db.Integer, default=1, nullable=False)
+    # Speed control (the core of the product). The chosen down/up (Mbps) and the
+    # RouterOS rate-limit string actually applied on the CHR /ppp/profile. NULL/empty
+    # means "no explicit speed" (default profile, unshaped).
+    speed_profile_id = db.Column(db.Integer, db.ForeignKey("chr_speed_profiles.id"), nullable=True, index=True)
+    download_mbps = db.Column(db.Integer, nullable=True)
+    upload_mbps = db.Column(db.Integer, nullable=True)
+    rate_limit = db.Column(db.String(80), default="", nullable=False)
     # pending | active | suspended | revoked | failed
     status = db.Column(db.String(20), default="pending", nullable=False, index=True)
     # auto (bridge SSTP) | manual (admin PPTP/IPsec)
@@ -581,6 +619,7 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
 
     customer = db.relationship("Customer")
     license = db.relationship("License")
+    speed_profile = db.relationship("ChrSpeedProfile", back_populates="tunnels")
 
 
 class CustomerBackupArtifact(TimestampMixin, db.Model):

@@ -83,12 +83,18 @@ class _FakeClient:
     ipsec_removed: list[str] = []
     ipsec_disabled: list[tuple] = []
     infra_calls: dict[str, int] = {}
+    # PPP profiles ensured (name, rate_limit) for speed-control assertions.
+    profiles_ensured: list[tuple] = []
 
     def __init__(self, *a, **k):
         pass
 
     def test_connection(self):
         return {"identity": "CHR-Test", "version": "7.15", "board_name": "CHR", "uptime": "1d"}
+
+    def ensure_ppp_profile(self, *, name, rate_limit=""):
+        _FakeClient.profiles_ensured.append((name, rate_limit))
+        return {".id": "*p", "name": name, "rate-limit": rate_limit}
 
     def create_ppp_secret(self, **kwargs):
         if _FakeClient.raise_on_create:
@@ -144,6 +150,7 @@ def fake_chr(app, monkeypatch):
     _FakeClient.ipsec_removed = []
     _FakeClient.ipsec_disabled = []
     _FakeClient.infra_calls = {}
+    _FakeClient.profiles_ensured = []
     monkeypatch.setattr(chr_settings, "build_client", lambda: _FakeClient())
     return _FakeClient
 

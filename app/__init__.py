@@ -325,6 +325,11 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "password_hint": "VARCHAR(40) NOT NULL DEFAULT ''",
             "profile": "VARCHAR(80) NOT NULL DEFAULT 'default'",
             "max_connections": "INTEGER NOT NULL DEFAULT 1",
+            # Speed control columns (feat/chr-speed-profiles).
+            "speed_profile_id": "INTEGER",
+            "download_mbps": "INTEGER",
+            "upload_mbps": "INTEGER",
+            "rate_limit": "VARCHAR(80) NOT NULL DEFAULT ''",
             "provisioning": "VARCHAR(20) NOT NULL DEFAULT 'auto'",
             "source": "VARCHAR(30) NOT NULL DEFAULT 'bridge_request'",
             "chr_provisioned": bool_default_false,
@@ -487,6 +492,20 @@ def seed_defaults(app: Flask) -> None:
             max_locations=locations,
             price_monthly=price,
             is_active=True,
+        ))
+
+    # CHR speed profiles (central rate-limit presets). Idempotent by code.
+    from .models import ChrSpeedProfile as _ChrSpeedProfile
+    speed_presets = [
+        ("سرعة 10 ميجابت", "10m", 10, 10),
+        ("سرعة 50 ميجابت", "50m", 50, 50),
+        ("سرعة 100 ميجابت", "100m", 100, 100),
+    ]
+    for sp_name, sp_code, sp_down, sp_up in speed_presets:
+        if _ChrSpeedProfile.query.filter_by(code=sp_code).first():
+            continue
+        db.session.add(_ChrSpeedProfile(
+            name=sp_name, code=sp_code, download_mbps=sp_down, upload_mbps=sp_up, active=True,
         ))
 
     defaults = {
