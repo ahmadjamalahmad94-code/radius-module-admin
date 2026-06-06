@@ -69,48 +69,53 @@ class _FakeConsoleClient:
     removed_calls: list = []
     rebooted = False
 
+    # أسماء دوال القراءة التي يجب أن ترفع 400 (لمحاكاة رفض CHR لمسار واحد).
+    bad_400 = set()
+
     def __init__(self, *a, **k):
         pass
 
-    def _guard(self):
+    def _guard(self, name=""):
         if _FakeConsoleClient.raise_all:
             raise RouterOSError("connect_failed", "تعذّر الاتصال بمضيف CHR.", retryable=True)
+        if name and name in _FakeConsoleClient.bad_400:
+            raise RouterOSError("request_invalid", "طلب غير مقبول من CHR — Bad Request", http_status=400)
 
     def test_connection(self):
-        self._guard()
+        self._guard("test_connection")
         return {"identity": "CHR-Console", "version": "7.15", "board_name": "CHR", "uptime": "2d"}
 
     def system_resource(self):
-        self._guard()
+        self._guard("system_resource")
         return {"version": "7.15", "board-name": "CHR", "uptime": "2d", "cpu-load": "3",
                 "free-memory": "100", "total-memory": "256"}
 
     def system_identity(self):
-        self._guard()
+        self._guard("system_identity")
         return {"name": "CHR-Console"}
 
     def list_ppp_secrets(self, **k):
-        self._guard()
+        self._guard("list_ppp_secrets")
         return [{".id": "*1", "name": "c1-aaaa", "service": "sstp", "profile": "default", "disabled": "false"}]
 
     def list_ppp_active(self):
-        self._guard()
+        self._guard("list_ppp_active")
         return [{".id": "*A", "name": "c1-aaaa", "service": "sstp", "address": "10.0.0.2", "uptime": "1h"}]
 
     def list_ipsec_users(self):
-        self._guard()
+        self._guard("list_ipsec_users")
         return [{".id": "*u1", "name": "c1-bbbb", "disabled": "false", "comment": "hoberadius"}]
 
     def list_ipsec_identities(self):
-        self._guard()
+        self._guard("list_ipsec_identities")
         return [{".id": "*id", "peer": "hoberadius"}]
 
     def list_ipsec_active_peers(self):
-        self._guard()
+        self._guard("list_ipsec_active_peers")
         return [{".id": "*ap", "remote-address": "203.0.113.5"}]
 
     def list_interfaces(self):
-        self._guard()
+        self._guard("list_interfaces")
         return [{".id": "*if", "name": "ether1", "type": "ether", "running": "true"}]
 
     def create_ppp_secret(self, **kwargs):
@@ -141,6 +146,7 @@ class _FakeConsoleClient:
 @pytest.fixture()
 def fake_console(app, monkeypatch):
     _FakeConsoleClient.raise_all = False
+    _FakeConsoleClient.bad_400 = set()
     _FakeConsoleClient.disabled_calls = []
     _FakeConsoleClient.removed_calls = []
     _FakeConsoleClient.rebooted = False
@@ -261,19 +267,38 @@ def test_console_overview_lists_everything(app, fake_console):
     _configure_chr()
     data = chr_console.overview()
     assert data["ok"] is True
+    assert data["reachable"] is True
+    assert data["system"]["available"] is True
     assert data["system"]["identity"] == "CHR-Console"
     assert data["counts"]["ppp_secrets"] == 1
     assert data["counts"]["ipsec_users"] == 1
     assert data["counts"]["ppp_active"] == 1
-    assert data["ppp_secrets"][0]["name"] == "c1-aaaa"
+    assert data["sections"]["ppp_secrets"]["available"] is True
+    assert data["sections"]["ppp_secrets"]["rows"][0]["name"] == "c1-aaaa"
 
 
 def test_console_overview_never_crashes_when_unreachable(app, fake_console):
     _configure_chr()
     fake_console.raise_all = True
     data = chr_console.overview()
-    assert data["ok"] is False
-    assert data.get("message")
+    # العميل مضبوط (ok=True) لكن لا شيء يستجيب ⇒ reachable=False، دون انهيار.
+    assert data["ok"] is True
+    assert data["reachable"] is False
+    assert data["system"]["available"] is False
+
+
+def test_console_one_section_400_others_still_render(app, fake_console):
+    """رفض CHR لمسار واحد (400) يبقى محصورًا في قسمه ولا يُسقط بقية الوحدة."""
+    _configure_chr()
+    fake_console.bad_400 = {"list_ipsec_active_peers"}
+    data = chr_console.overview()
+    assert data["ok"] is True and data["reachable"] is True
+    # القسم المرفوض «غير متاح» برسالته، وبقية الأقسام تعمل.
+    assert data["sections"]["ipsec_active"]["available"] is False
+    assert "Bad Request" in data["sections"]["ipsec_active"]["error"]
+    assert data["sections"]["ppp_secrets"]["available"] is True
+    assert data["sections"]["interfaces"]["available"] is True
+    assert data["system"]["available"] is True
 
 
 def test_console_mutations(app, fake_console):
@@ -304,6 +329,20 @@ def test_console_page_renders_for_super_admin(app, client, fake_console):
     assert resp.status_code == 200
     assert "وحدة تحكّم CHR".encode() in resp.data
     assert "CHR-Console".encode() in resp.data
+
+
+def test_console_page_renders_despite_one_section_400(app, client, fake_console):
+    """تكرار الخلل الحيّ: مسار واحد يرجع 400 — الصفحة تظل تُحمَّل ببقية الأقسام
+    وتُظهر «غير متاح» للقسم المرفوض بدل فشل الوحدة كلها بـ Bad Request."""
+    _configure_chr()
+    fake_console.bad_400 = {"list_ipsec_active_peers"}
+    _login(client)
+    resp = client.get("/admin/chr/console")
+    assert resp.status_code == 200
+    # بقية الأقسام ظهرت (نظام/واجهات)، والقسم المرفوض «غير متاح».
+    assert "CHR-Console".encode() in resp.data
+    assert "ether1".encode() in resp.data
+    assert "غير متاح".encode() in resp.data
 
 
 def test_console_blocked_for_non_super_admin(app, client, fake_console):
