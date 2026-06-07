@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the HobeRadius VPN tunnel quota sampler every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+# If the box was off at a scheduled time, run once on next boot (so a month
+# rollover that happened while down still triggers the reset/restore).
+Persistent=true
+Unit=hoberadius-license-panel-vpn-quota-sync.service
+
+[Install]
+WantedBy=timers.target

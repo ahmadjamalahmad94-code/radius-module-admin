@@ -1,0 +1,24 @@
+[Unit]
+# Samples live CHR VPN-tunnel usage, throttles tunnels over their monthly GB
+# quota (down to the tunnel's throttle speed — never disconnect), and resets +
+# restores full speed at the start of each month. Oneshot, driven by the .timer.
+Description=HobeRadius License Panel - VPN tunnel quota sampler (oneshot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=licensepanel
+Group=licensepanel
+WorkingDirectory=/opt/hoberadius-license-panel
+EnvironmentFile=/etc/hoberadius-license-panel/license-panel.env
+ExecStart=/opt/hoberadius-license-panel/.venv/bin/flask --app wsgi vpn-quota-sync
+# Don't pile runs up if the CHR is slow/unreachable; one run must finish first.
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/hoberadius-license-panel/instance
+
+[Install]
+WantedBy=multi-user.target
