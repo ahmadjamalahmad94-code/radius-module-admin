@@ -475,4 +475,107 @@
      data-templates-url="{{ url_for('admin.whatsapp_cloud_templates') }}" hidden></div>
 <script src="{{ url_for('static', filename='js/whatsapp_cloud_settings.js') }}" defer></script>
 {% endif %}
+
+{% if wae_state %}
+{# ════════ ربط واتساب التلقائي (Embedded Signup) — يُدار من اللوحة ════════ #}
+<style>
+  .wae-src { display:inline-block; margin-inline-start:8px; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; vertical-align:middle; }
+  .wae-src--panel { background:#dcfce7; color:#166534; }
+  .wae-src--env   { background:#e0edff; color:#1e40af; }
+  .wae-src--unset { background:#eef0f6; color:#64748b; }
+  .wae-reveal-box { margin-top:6px; display:flex; gap:8px; align-items:center; }
+  .wae-reveal-box code { background:#0f172a; color:#e2e8f0; padding:4px 9px; border-radius:7px; font-size:12px; word-break:break-all; flex:1; }
+  .wae-toggle { display:flex; gap:10px; align-items:flex-start; padding:12px 14px; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; margin-bottom:14px; }
+  .wae-toggle input { margin-top:3px; width:18px; height:18px; }
+  .wae-warn { margin:0 0 14px; font-size:12.5px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:9px 12px; }
+  .wae-hint-link { color:#2563eb; }
+</style>
+{% macro wae_src(field) %}
+  {% if field.source == 'panel' %}<span class="wae-src wae-src--panel">محفوظ في إعدادات اللوحة</span>
+  {% elif field.source == 'env' %}<span class="wae-src wae-src--env">مُحمّل من البيئة</span>
+  {% else %}<span class="wae-src wae-src--unset">غير مضبوط</span>{% endif %}
+{% endmacro %}
+
+{% call hub.section("ربط واتساب التلقائي (Embedded Signup)", icon="whatsapp") %}
+  <div id="whatsapp-embedded"></div>
+  <p class="hub-field-hint" style="margin:0 0 14px">
+    فعّل تسجيل العملاء الذاتي عبر نافذة Meta (Embedded Signup) وأدخل بيانات تطبيق Meta هنا (مشفّرة) —
+    <b>دون أي حاجة للطرفية أو متغيّرات البيئة</b>. القيم المحفوظة تتجاوز قيم البيئة.
+    {% if wae_state.available %}<b style="color:#166534">— مُفعّل ومكتمل: زر «ربط واتساب» يظهر للعملاء.</b>
+    {% elif wae_state.enabled %}<b style="color:#b45309">— مُفعّل لكن البيانات غير مكتملة (App ID/Secret/Config ID).</b>{% endif %}
+  </p>
+
+  {% if not wae_state.encryption_ready %}
+  <p class="wae-warn">
+    ⚠️ مفتاح التشفير الرئيسي (<span class="mono">WHATSAPP_FERNET_KEY</span>) غير مضبوط في البيئة، لذا
+    لا يمكن حفظ App Secret. اضبطه في بيئة الخادم أولًا (يبقى المفتاح الرئيسي في البيئة حصرًا ولا يُحفظ في اللوحة).
+  </p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.whatsapp_embedded_save') }}">
+    {{ csrf_input() }}
+
+    <label class="wae-toggle">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if wae_state.enabled else '' }}>
+      <span>
+        <b>تفعيل الربط التلقائي (Embedded Signup)</b> {{ wae_src({'source': wae_state.enabled_source}) }}
+        <div class="hub-field-hint" style="margin-top:4px">
+          عند التفعيل واكتمال البيانات يظهر زر «ربط واتساب» في بوّابة العميل ليربط حسابه بنفسه.
+          عند الإيقاف أو نقص البيانات يبقى المسار اليدوي متاحًا.
+        </div>
+      </span>
+    </label>
+
+    <div class="hub-form-grid">
+      {% set f = wae_state.fields.app_id %}
+      <div class="hub-field">
+        <label>App ID {{ wae_src(f) }}</label>
+        <input class="hub-input mono ltr" name="app_id" value="{{ f.value }}" placeholder="رقمي فقط">
+        <div class="hub-field-hint">من Meta: <b>App settings → Basic</b> (App ID).</div>
+      </div>
+
+      {% set f = wae_state.fields.config_id %}
+      <div class="hub-field">
+        <label>Config ID {{ wae_src(f) }}</label>
+        <input class="hub-input mono ltr" name="config_id" value="{{ f.value }}" placeholder="رقمي فقط">
+        <div class="hub-field-hint">من Meta: <b>Facebook Login for Business → Configurations</b>.</div>
+      </div>
+
+      {% set f = wae_state.fields.app_secret %}
+      <div class="hub-field full">
+        <label>App Secret {{ wae_src(f) }}</label>
+        <input class="hub-input mono ltr" name="app_secret" type="password" autocomplete="new-password"
+               value="" placeholder="{{ 'محفوظ — اتركه فارغًا للإبقاء عليه' if f.present else 'الصق App Secret' }}">
+        <div class="hub-field-hint">
+          {% if f.present %}محفوظ مشفّرًا: <span class="mono">{{ f.masked }}</span> — لا يُعرض أبدًا. اتركه فارغًا للإبقاء أو أدخل قيمة جديدة لاستبداله.
+          {% else %}يُخزَّن مشفّرًا ولا يُعرض أبدًا بعد الحفظ.{% endif %}
+          من Meta: <b>App settings → Basic → App Secret</b>.
+        </div>
+        {% if is_super_admin and f.present %}
+        <div class="wae-reveal-box">
+          <button type="button" class="hub-btn hub-btn--ghost" data-wae-reveal="app_secret"><i class="fa-solid fa-eye"></i> إظهار مؤقت</button>
+          <code data-wae-secret="app_secret" hidden></code>
+        </div>
+        {% endif %}
+      </div>
+
+      {% set f = wae_state.fields.graph_version %}
+      <div class="hub-field">
+        <label>Graph API version <span class="hub-field-hint" style="display:inline">(اختياري)</span> {{ wae_src(f) }}</label>
+        <input class="hub-input mono ltr" name="graph_version" value="{{ f.value }}" placeholder="v21.0">
+        <div class="hub-field-hint">اتركه فارغًا لاستخدام الافتراضي ({{ wae_state.graph_version }}).</div>
+      </div>
+    </div>
+
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات</button>
+    </div>
+  </form>
+{% endcall %}
+
+{# CSP is `script-src 'self'` (no inline JS) → reveal behaviour lives in an
+   external file; the route URL is passed via a data-* attribute. #}
+<div data-wae-js data-reveal-url="{{ url_for('admin.whatsapp_embedded_reveal') }}" hidden></div>
+<script src="{{ url_for('static', filename='js/whatsapp_embedded_settings.js') }}" defer></script>
+{% endif %}
 {% endblock %}
