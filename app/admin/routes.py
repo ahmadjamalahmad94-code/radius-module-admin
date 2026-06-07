@@ -1856,6 +1856,7 @@ def audit_logs():
 @login_required
 def settings_page():
     from ..services.whatsapp import cloud_settings as wac
+    from ..services.whatsapp import embedded_settings as wae
     from ..services import chr_settings as chr_svc
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     return render_template(
@@ -1863,6 +1864,10 @@ def settings_page():
         settings=settings,
         wac_enabled=wac.enabled(),
         wac_state=wac.get_state() if wac.enabled() else None,
+        # Embedded Signup config is ALWAYS manageable from the UI (zero-terminal):
+        # the section shows regardless of any env flag so the owner can enable it
+        # right here. The toggle inside the form drives availability.
+        wae_state=wae.get_state(),
         chr_enabled=chr_svc.enabled(),
         chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
     )
@@ -2001,6 +2006,41 @@ def whatsapp_cloud_templates():
     except wac.CloudSettingsError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 400
     return jsonify(result)
+
+
+# ── WhatsApp Embedded Signup settings (panel-managed, zero-terminal) ───────
+def _wae_redirect():
+    return redirect(url_for("admin.settings_page") + "#whatsapp-embedded")
+
+
+@bp.post("/settings/whatsapp-embedded")
+@login_required
+def whatsapp_embedded_save():
+    from ..services.whatsapp import embedded_settings as wae
+    try:
+        wae.validate_and_save(request.form, actor_audit=audit)
+    except wae.EmbeddedSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _wae_redirect()
+    db.session.commit()
+    flash("تم حفظ إعدادات الربط التلقائي (Embedded Signup) بنجاح.", "success")
+    return _wae_redirect()
+
+
+@bp.post("/settings/whatsapp-embedded/reveal")
+@super_admin_required
+def whatsapp_embedded_reveal():
+    """Temporarily reveal the stored App Secret (super-admin only, audited, JSON)."""
+    from ..services.whatsapp import embedded_settings as wae
+    field = (request.form.get("field") or "").strip()
+    try:
+        value = wae.reveal(field, actor_audit=audit)
+    except wae.EmbeddedSettingsError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "value": value})
 
 
 # ── MikroTik CHR connection settings (owner-managed, encrypted) ────────────

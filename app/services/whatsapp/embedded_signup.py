@@ -20,9 +20,10 @@ Design rules (mirrors ``providers.py``):
 * Secrets (app secret, access token, code) are NEVER logged, never placed in
   exception messages. Surfaced errors are :class:`EmbeddedSignupError` with a
   stable ``code`` and a non-technical Arabic ``message``.
-* All config comes from the environment via ``current_app.config`` — never
-  hardcoded. When unconfigured, :func:`embedded_signup_available` is ``False``
-  and the UI hides the CTA (manual path still works).
+* Config resolves **panel DB settings → env var → default** (see
+  :mod:`embedded_settings`) — never hardcoded. When unconfigured,
+  :func:`embedded_signup_available` is ``False`` and the UI hides the CTA
+  (manual path still works).
 """
 from __future__ import annotations
 
@@ -229,19 +230,33 @@ def _finalize_attempt(attempt, *, status: str, error_code: str | None = None,
 # ───────────────────────────── config ─────────────────────────────
 
 def _cfg() -> dict[str, str]:
+    """Effective config — resolved **DB setting (panel UI) → env var → default**.
+
+    The credentials now live in the panel's encrypted settings (see
+    :mod:`embedded_settings`) so the owner can enable + configure Embedded
+    Signup with ZERO terminal. Env vars remain a fallback for existing
+    deployments. ``base`` stays env/default only (operational, not a credential).
+    """
+    from . import embedded_settings as es_settings
     c = current_app.config
+    eff = es_settings.resolved_config()
     return {
-        "app_id": (c.get("META_APP_ID") or "").strip(),
-        "app_secret": (c.get("META_APP_SECRET") or "").strip(),
-        "config_id": (c.get("META_CONFIG_ID") or "").strip(),
-        "version": (c.get("META_GRAPH_VERSION") or c.get("WHATSAPP_GRAPH_API_VERSION") or "v21.0").strip("/"),
+        "app_id": (eff.get("app_id") or "").strip(),
+        "app_secret": (eff.get("app_secret") or "").strip(),
+        "config_id": (eff.get("config_id") or "").strip(),
+        "version": (eff.get("graph_version") or "v21.0").strip("/"),
         "base": (c.get("WHATSAPP_GRAPH_BASE") or "https://graph.facebook.com").rstrip("/"),
     }
 
 
 def embedded_signup_available() -> bool:
-    """True iff embedded signup is enabled AND the minimum creds are present."""
-    if not current_app.config.get("META_EMBEDDED_SIGNUP_ENABLED", False):
+    """True iff embedded signup is enabled AND the minimum creds are present.
+
+    Enabled and creds both resolve **DB (panel) → env → default**, so the panel
+    UI can fully drive availability while env deployments keep working.
+    """
+    from . import embedded_settings as es_settings
+    if not es_settings.is_enabled():
         return False
     cfg = _cfg()
     return bool(cfg["app_id"] and cfg["app_secret"] and cfg["config_id"])
