@@ -359,6 +359,49 @@
   </div>
 {% endcall %}
 
+{# ── بنية CHR الجديدة — روابط سريعة ── #}
+{% call hub.section("البنية التحتية — CHR والخدمات", icon="network-wired", meta='
+  <a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin_infra.customer_service_allocations', customer_id=customer.id) ~ '">
+    <i class="fa-solid fa-list-check"></i> تخصيصات الخدمة
+  </a>
+  <a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin_infra.radius_instance_for_customer', customer_id=customer.id) ~ '" style="margin-right:6px">
+    <i class="fa-solid fa-database"></i> RADIUS Instance
+  </a>') %}
+  {% set ri = customer.radius_instance %}
+  {% set allocs = customer.service_allocations.filter_by(status="active").all() %}
+  <div class="hub-detail-list">
+    <div>
+      <span>RADIUS Instance</span>
+      <strong>
+        {% if ri %}
+          <span class="mono ltr">@{{ ri.realm }}</span>
+          — {{ ri.radius_auth_ip or 'IP غير مضبوط' }}
+          {% if ri.status == 'online' %}<span class="badge badge-green" style="margin-right:4px">متصل</span>
+          {% elif ri.status == 'offline' %}<span class="badge badge-red" style="margin-right:4px">غير متصل</span>
+          {% else %}<span class="badge badge-gray" style="margin-right:4px">{{ ri.status }}</span>{% endif %}
+        {% else %}
+          <span style="color:#ef4444">غير مسجّل</span>
+          <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=customer.id) }}"
+             style="font-size:12px;margin-right:6px">سجّل الآن</a>
+        {% endif %}
+      </strong>
+    </div>
+    <div>
+      <span>الخدمات النشطة</span>
+      <strong>
+        {% if allocs %}
+          {% for a in allocs %}
+            <span class="badge badge-blue mono" style="margin:2px">{{ a.service_type }}</span>
+            <span style="font-size:11px;color:var(--hub-muted)">{{ a.speed_limit_mbps }}M</span>
+          {% endfor %}
+        {% else %}
+          <span style="color:var(--hub-muted)">لا توجد خدمات نشطة</span>
+        {% endif %}
+      </strong>
+    </div>
+  </div>
+{% endcall %}
+
 {# ── VPN + notes ── #}
 <div class="hub-grid-2">
   {% call hub.section("خدمة تغيير العنوان والشبكة الخاصة", icon="shield-halved", meta='<a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin.customer_vpn_service', customer_id=customer.id) ~ '"><i class="fa-solid fa-gauge"></i> إدارة السرعة والحدود</a>') %}

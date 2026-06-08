@@ -1,0 +1,211 @@
+{% extends "admin/base.html" %}
+{% block title %}عقد CHR المخصّصة{% endblock %}
+{% block page_title %}عقد CHR المخصّصة{% endblock %}
+{% block page_subtitle %}سجل عقد MikroTik CHR التي تحمل ترافيك VPN الثقيل — SSTP / L2TP / IPsec / تغيير IP{% endblock %}
+
+{% block content %}
+
+{# ── إنشاء عقدة جديدة ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-plus"></i> إضافة عقدة CHR جديدة</h2>
+  </div>
+  <form method="post" action="{{ url_for('admin_infra.chr_node_create') }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>الاسم <span class="hub-required">*</span></label>
+        <input class="hub-input mono ltr" name="name" placeholder="chr-exit-01" required>
+      </div>
+      <div class="hub-field">
+        <label>الـ IP العام <span class="hub-required">*</span></label>
+        <input class="hub-input mono ltr" name="public_ip" placeholder="x.x.x.x" required>
+      </div>
+      <div class="hub-field">
+        <label>IP الإدارة (WireGuard mgmt)</label>
+        <input class="hub-input mono ltr" name="management_ip" placeholder="10.250.0.x">
+      </div>
+      <div class="hub-field">
+        <label>الدومين</label>
+        <input class="hub-input ltr" name="domain" placeholder="chr1.hoberadius.com">
+      </div>
+      <div class="hub-field">
+        <label>الموقع الجغرافي</label>
+        <input class="hub-input" name="location" placeholder="Frankfurt, DE">
+      </div>
+      <div class="hub-field">
+        <label>السعة الفعلية (Mbps) <span class="hub-required">*</span></label>
+        <input class="hub-input" name="capacity_mbps" type="number" min="1" value="1000" required>
+      </div>
+      <div class="hub-field">
+        <label>أقصى سعة محجوزة (Mbps)</label>
+        <input class="hub-input" name="max_reserved_mbps" type="number" min="1" value="850">
+        <div class="hub-field-hint">85% من السعة = حد الحجز الآمن</div>
+      </div>
+      <div class="hub-field">
+        <label>أقصى جلسات متزامنة</label>
+        <input class="hub-input" name="max_active_sessions" type="number" min="1" placeholder="بدون حد">
+      </div>
+      <div class="hub-field">
+        <label>أقصى عملاء</label>
+        <input class="hub-input" name="max_customers" type="number" min="1" placeholder="بدون حد">
+      </div>
+      <div class="hub-field">
+        <label>RouterOS Host</label>
+        <input class="hub-input mono ltr" name="routeros_host" placeholder="10.250.0.x أو IP مباشر">
+      </div>
+      <div class="hub-field">
+        <label>RouterOS User</label>
+        <input class="hub-input mono ltr" name="routeros_user" placeholder="admin">
+      </div>
+      <div class="hub-field">
+        <label>RouterOS Port</label>
+        <input class="hub-input" name="routeros_port" type="number" value="443">
+      </div>
+      <div class="hub-field">
+        <label>RouterOS Password</label>
+        <input class="hub-input mono ltr" name="routeros_password" type="password" autocomplete="new-password"
+               placeholder="كلمة مرور REST API">
+      </div>
+      <div class="hub-field full">
+        <label>الخدمات المتاحة على هذه العقدة</label>
+        <div class="hub-checkgroup">
+          {% for svc in service_choices %}
+          <label class="hub-check">
+            <input type="checkbox" name="enabled_services" value="{{ svc }}"
+              {% if svc == 'sstp' %}checked{% endif %}>
+            <span class="mono ltr">{{ svc }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="hub-field full">
+        <label>ملاحظات داخلية</label>
+        <textarea class="hub-input" name="notes" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-plus"></i> إضافة العقدة
+      </button>
+    </div>
+  </form>
+</section>
+
+{# ── قائمة العقد ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-network-wired"></i> العقد المسجّلة ({{ node_stats|length }})</h2>
+    <form method="post" action="{{ url_for('admin_infra.chr_nodes_poll_all') }}">
+      {{ csrf_input() }}
+      <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
+        <i class="fa-solid fa-satellite-dish"></i> استطلاع الكل
+      </button>
+    </form>
+  </div>
+
+  {% if not node_stats %}
+    <p class="hub-empty">لا توجد عقد CHR مسجّلة بعد.</p>
+  {% else %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الاسم</th>
+          <th>IP / دومين</th>
+          <th>الموقع</th>
+          <th>السعة</th>
+          <th>المحجوز</th>
+          <th>المتاح</th>
+          <th>الخدمات</th>
+          <th>الحالة</th>
+          <th>آخر ظهور</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in node_stats %}
+      {% set n = s.node %}
+        <tr>
+          <td class="mono"><strong>{{ n.name }}</strong></td>
+          <td class="mono ltr" style="font-size:12px">
+            {{ n.public_ip }}
+            {% if n.domain %}<br><span style="color:var(--hub-muted)">{{ n.domain }}</span>{% endif %}
+          </td>
+          <td>{{ n.location or '—' }}</td>
+          <td>{{ n.capacity_mbps }} Mbps</td>
+          <td>
+            <span class="mono">{{ s.reserved_mbps }} Mbps</span>
+          </td>
+          <td>
+            {% if s.capacity_badge == 'full' %}
+              <span class="badge badge-red">{{ s.available_mbps }} Mbps — ممتلئ</span>
+            {% elif s.capacity_badge == 'warning' %}
+              <span class="badge badge-yellow">{{ s.available_mbps }} Mbps — تحذير</span>
+            {% else %}
+              <span class="badge badge-green">{{ s.available_mbps }} Mbps</span>
+            {% endif %}
+          </td>
+          <td style="font-size:11px">
+            {% for svc in n.enabled_services %}
+              <span class="badge badge-blue mono" style="margin:1px">{{ svc }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if n.status == 'active' %}<span class="badge badge-green">نشط</span>
+            {% elif n.status == 'maintenance' %}<span class="badge badge-yellow">صيانة</span>
+            {% elif n.status == 'decommissioned' %}<span class="badge badge-red">مُوقف</span>
+            {% else %}<span class="badge badge-gray">{{ n.status }}</span>{% endif %}
+          </td>
+          <td style="font-size:12px">
+            {% if n.last_seen_at %}
+              <span style="color:var(--hub-muted)">{{ n.last_seen_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              {% if s.is_stale %}<br><span class="badge badge-red" style="font-size:10px">متأخّر</span>{% endif %}
+            {% else %}
+              <span style="color:var(--hub-muted)">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('admin_infra.chr_node_detail', node_id=n.id) }}"
+               class="hub-btn hub-btn--secondary hub-btn--sm">
+              <i class="fa-solid fa-eye"></i> تفاصيل
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{# ── رابط نظرة عامة على الصحة ── #}
+<div style="margin-bottom:16px;text-align:left">
+  <a href="{{ url_for('admin_infra.health_overview') }}"
+     class="hub-btn hub-btn--secondary">
+    <i class="fa-solid fa-stethoscope"></i> نظرة عامة على صحة خدمات العملاء
+  </a>
+</div>
+
+{# ── قاعدة السعات ── #}
+<section class="hub-section" style="background:var(--hub-card-bg);border:1px solid var(--hub-border);border-radius:10px;padding:16px 20px">
+  <h3 style="margin:0 0 10px;font-size:14px;color:var(--hub-muted)">
+    <i class="fa-solid fa-circle-info"></i> قاعدة إدارة السعات
+  </h3>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:13px">
+    <div style="padding:10px;border-radius:8px;background:#d1fae5;color:#065f46;text-align:center">
+      <div style="font-size:18px;font-weight:700">&lt; 70%</div>
+      <div>مفتوح — يُسمح بإضافة خدمات</div>
+    </div>
+    <div style="padding:10px;border-radius:8px;background:#fef3c7;color:#92400e;text-align:center">
+      <div style="font-size:18px;font-weight:700">70–85%</div>
+      <div>تحذير — أضف بحذر</div>
+    </div>
+    <div style="padding:10px;border-radius:8px;background:#fee2e2;color:#991b1b;text-align:center">
+      <div style="font-size:18px;font-weight:700">&gt; 85%</div>
+      <div>ممتلئ — لا تضف خدمات</div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

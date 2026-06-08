@@ -276,6 +276,30 @@ def reveal_secret(secret_id: int, customer_id: int, actor_id, reason: str = ""):
     return sec, plaintext
 
 
+def get_secret_by_ref(customer_id: int, label_ref: str) -> str:
+    """Decrypt and return secret value for machine-to-machine use (proxy API).
+
+    Looks up a secret by customer_id + label (the secret_vault_ref stored in
+    CustomerRadiusInstance / ProxyRealmRoute). Does NOT write an audit log row
+    because this is an internal system call, not an admin reveal action.
+    Returns empty string if not found or decryption fails.
+    """
+    if not label_ref:
+        return ""
+    _require_crypto()
+    sec = (
+        CustomerSecret.query
+        .filter_by(customer_id=customer_id, label=label_ref, status="active")
+        .first()
+    )
+    if not sec:
+        return ""
+    try:
+        return crypto.decrypt_secret(sec.encrypted_secret) or ""
+    except Exception:
+        return ""
+
+
 def archive_secret(secret_id: int, customer_id: int, actor_id):
     sec = CustomerSecret.query.filter_by(id=secret_id, customer_id=customer_id).first()
     if not sec:

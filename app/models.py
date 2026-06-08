@@ -83,6 +83,9 @@ class Customer(TimestampMixin, db.Model):
     users = db.relationship("CustomerUser", back_populates="customer", lazy="dynamic")
     service_entitlements = db.relationship("CustomerServiceEntitlement", back_populates="customer", lazy="dynamic")
     service_requests = db.relationship("CustomerServiceRequest", back_populates="customer", lazy="dynamic")
+    # Multi-CHR infrastructure
+    radius_instance = db.relationship("CustomerRadiusInstance", back_populates="customer", uselist=False)
+    service_allocations = db.relationship("ServiceAllocation", back_populates="customer", lazy="dynamic")
 
 
 class CustomerUser(TimestampMixin, db.Model):
@@ -1363,6 +1366,289 @@ class CustomerVaultAuditLog(db.Model):
     @meta.setter
     def meta(self, value: dict) -> None:
         self.metadata_json = json_dumps(value or {})
+# ─────────────────────────────────────────────────────────────────────────
+# Multi-CHR Infrastructure Layer
+# Three-tier architecture: License Panel → Customer RADIUS → Dedicated CHR
+#
+# ChrNode          : dedicated MikroTik CHR servers carrying heavy VPN traffic
+# CustomerRadiusInstance : each customer's own RADIUS VPS registration
+# ServiceAllocation : per-customer VPN/data service allocation (what/where/how much)
+# ServiceUsageSnapshot : high-level usage metrics pushed from customer RADIUS
+# ProxyRealmRoute  : Central RADIUS Proxy routing table (realm → target RADIUS)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Service type choices (shared constant for all allocation models)
+SERVICE_TYPE_CHOICES = (
+    "sstp", "pptp", "l2tp_ipsec", "ikev2_ipsec",
+    "ip_change", "site_exit", "wireguard_data",
+)
+
+
+class ChrNode(TimestampMixin, db.Model):
+    """Dedicated MikroTik CHR node that carries heavy VPN/exit traffic.
+
+    The license panel owns the registry. A node can serve multiple customers
+    simultaneously within its reserved capacity. It does NOT store customer
+    RADIUS secrets — it points to the Central RADIUS Proxy.
+
+    Capacity policy: warn at 70 %, block new allocations at 85 %.
+    """
+    __tablename__ = "chr_nodes"
+    __table_args__ = (
+        db.UniqueConstraint("name", name="uq_chr_nodes_name"),
+        db.Index("ix_chr_nodes_status_location", "status", "location"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)          # chr-exit-01
+    public_ip = db.Column(db.String(64), nullable=False)
+    management_ip = db.Column(db.String(64), default="", nullable=False)  # mgmt WG IP
+    domain = db.Column(db.String(255), default="", nullable=False)        # chr1.hoberadius.com
+    location = db.Column(db.String(100), default="", nullable=False)
+    # Physical link and soft allocation ceiling
+    capacity_mbps = db.Column(db.Integer, nullable=False)
+    max_reserved_mbps = db.Column(db.Integer, nullable=False)
+    max_active_sessions = db.Column(db.Integer, nullable=True)
+    max_customers = db.Column(db.Integer, nullable=True)
+    # Services offered on this node (JSON list of SERVICE_TYPE_CHOICES values)
+    enabled_services_json = db.Column(db.Text, default='["sstp"]', nullable=False)
+    # RouterOS REST access for metrics polling and admin console
+    routeros_host = db.Column(db.String(255), default="", nullable=False)
+    routeros_user = db.Column(db.String(80), default="", nullable=False)
+    routeros_port = db.Column(db.Integer, default=443, nullable=False)
+    # Fernet-encrypted RouterOS REST password (same key as customer vault)
+    routeros_password_enc = db.Column(db.Text, default="", nullable=False)
+    # pending | active | maintenance | decommissioned
+    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    notes = db.Column(db.Text, default="", nullable=False)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
+
+    metrics = db.relationship(
+        "ChrNodeMetric", back_populates="chr_node",
+        lazy="dynamic", cascade="all, delete-orphan",
+    )
+    allocations = db.relationship(
+        "ServiceAllocation", back_populates="chr_node", lazy="dynamic",
+    )
+
+    @property
+    def enabled_services(self) -> list:
+        return json_loads(self.enabled_services_json, ["sstp"])
+
+    @enabled_services.setter
+    def enabled_services(self, value: list) -> None:
+        self.enabled_services_json = json_dumps(value or [])
+
+
+class ChrNodeMetric(db.Model):
+    """Point-in-time performance snapshot pushed by the CHR metrics agent."""
+    __tablename__ = "chr_node_metrics"
+    __table_args__ = (
+        db.Index("ix_chr_node_metrics_node_time", "chr_node_id", "measured_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    chr_node_id = db.Column(db.Integer, db.ForeignKey("chr_nodes.id"), nullable=False, index=True)
+    measured_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+    current_rx_mbps = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    current_tx_mbps = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    active_sessions = db.Column(db.Integer, default=0, nullable=False)
+    cpu_percent = db.Column(db.Numeric(5, 2), nullable=True)
+    memory_percent = db.Column(db.Numeric(5, 2), nullable=True)
+    traffic_today_bytes = db.Column(db.BigInteger, default=0, nullable=False)
+    traffic_month_bytes = db.Column(db.BigInteger, default=0, nullable=False)
+
+    chr_node = db.relationship("ChrNode", back_populates="metrics")
+
+
+class CustomerRadiusInstance(TimestampMixin, db.Model):
+    """Registration record for a customer's own RADIUS VPS.
+
+    Stores only connection metadata — IP addresses, ports, realm, and a
+    *reference* to the shared secret stored in the customer vault. Private
+    keys and raw secrets never live in this table.
+
+    The management WireGuard tunnel uses ``mgmt_wg_ip`` for API/telemetry
+    between the license panel and the customer agent. It must NEVER be used
+    to forward customer data traffic.
+    """
+    __tablename__ = "customer_radius_instances"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", name="uq_cri_customer"),
+        db.UniqueConstraint("realm", name="uq_cri_realm"),
+        db.Index("ix_cri_status", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    instance_name = db.Column(db.String(80), default="", nullable=False)     # client5-radius
+    # Network endpoints
+    mgmt_wg_ip = db.Column(db.String(64), default="", nullable=False)        # 10.250.x.x mgmt tunnel
+    radius_auth_ip = db.Column(db.String(64), default="", nullable=False)    # reachable via WG
+    radius_auth_port = db.Column(db.Integer, default=1812, nullable=False)
+    radius_acct_port = db.Column(db.Integer, default=1813, nullable=False)
+    # Realm used for proxy routing: user@client5 → realm = "client5"
+    realm = db.Column(db.String(80), nullable=False, index=True)
+    # Reference to vault secret (key name only; actual secret lives in CustomerSecret)
+    secret_vault_ref = db.Column(db.String(120), default="", nullable=False)
+    # online | offline | unknown | suspended
+    status = db.Column(db.String(20), default="unknown", nullable=False, index=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, default="", nullable=False)
+
+    customer = db.relationship("Customer", back_populates="radius_instance")
+    proxy_realm_route = db.relationship(
+        "ProxyRealmRoute", back_populates="radius_instance",
+        uselist=False, cascade="all, delete-orphan",
+    )
+    service_allocations = db.relationship(
+        "ServiceAllocation", back_populates="radius_instance", lazy="dynamic",
+    )
+
+
+class ServiceAllocation(TimestampMixin, db.Model):
+    """A VPN or data-connectivity service allocated to a specific customer.
+
+    The license panel admin creates this record manually after agreeing on
+    commercial terms. The customer NEVER creates or modifies allocations
+    directly — they only consume the limits pushed from this record.
+
+    ``chr_node_id`` is NULL for wireguard_data that runs on the customer's
+    own VPS (no central CHR involved).
+    """
+    __tablename__ = "service_allocations"
+    __table_args__ = (
+        db.Index("ix_sa_customer_type_status", "customer_id", "service_type", "status"),
+        db.Index("ix_sa_chr_node_status", "chr_node_id", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    radius_instance_id = db.Column(
+        db.Integer, db.ForeignKey("customer_radius_instances.id"), nullable=True, index=True,
+    )
+    # sstp | pptp | l2tp_ipsec | ikev2_ipsec | ip_change | site_exit | wireguard_data
+    service_type = db.Column(db.String(30), nullable=False, index=True)
+    # pending | active | suspended | expired | cancelled
+    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    # Which CHR node handles this service (NULL for customer-local wireguard_data)
+    chr_node_id = db.Column(db.Integer, db.ForeignKey("chr_nodes.id"), nullable=True, index=True)
+    # Speed and quota
+    speed_limit_mbps = db.Column(db.Integer, nullable=False)
+    transfer_limit_bytes = db.Column(db.BigInteger, nullable=True)   # NULL = unlimited
+    # Account/peer caps
+    max_accounts = db.Column(db.Integer, default=0, nullable=False)  # VPN user accounts
+    max_peers = db.Column(db.Integer, default=0, nullable=False)     # WG peers
+    # Billing period
+    starts_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    # Admin notes (internal / commercial details)
+    commercial_notes = db.Column(db.Text, default="", nullable=False)
+    created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+    customer = db.relationship("Customer", back_populates="service_allocations")
+    chr_node = db.relationship("ChrNode", back_populates="allocations")
+    radius_instance = db.relationship("CustomerRadiusInstance", back_populates="service_allocations")
+    created_by = db.relationship("Admin", foreign_keys=[created_by_admin_id])
+    usage_snapshots = db.relationship(
+        "ServiceUsageSnapshot", back_populates="allocation",
+        lazy="dynamic", cascade="all, delete-orphan",
+        order_by="ServiceUsageSnapshot.measured_at.desc()",
+    )
+
+    @property
+    def service_label_ar(self) -> str:
+        labels = {
+            "sstp": "SSTP",
+            "pptp": "PPTP",
+            "l2tp_ipsec": "L2TP/IPsec",
+            "ikev2_ipsec": "IKEv2/IPsec",
+            "ip_change": "تغيير IP",
+            "site_exit": "خروج موقع",
+            "wireguard_data": "WireGuard بيانات",
+        }
+        return labels.get(self.service_type, self.service_type)
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "active"
+
+    @property
+    def runs_on_customer_vps(self) -> bool:
+        return self.service_type == "wireguard_data" and self.chr_node_id is None
+
+
+class ServiceUsageSnapshot(db.Model):
+    """High-level usage snapshot pushed by the customer RADIUS agent.
+
+    The license panel only receives aggregate numbers — not individual
+    subscriber/card data, which stays inside each customer's radius-module.
+    """
+    __tablename__ = "service_usage_snapshots"
+    __table_args__ = (
+        db.Index("ix_sus_allocation_time", "service_allocation_id", "measured_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    service_allocation_id = db.Column(
+        db.Integer, db.ForeignKey("service_allocations.id"), nullable=False, index=True,
+    )
+    measured_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+    current_mbps = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    used_transfer_bytes = db.Column(db.BigInteger, default=0, nullable=False)
+    active_accounts = db.Column(db.Integer, default=0, nullable=False)
+    active_peers = db.Column(db.Integer, default=0, nullable=False)
+    # ok | warning | critical | unknown
+    health_status = db.Column(db.String(20), default="unknown", nullable=False)
+
+    allocation = db.relationship("ServiceAllocation", back_populates="usage_snapshots")
+
+
+class ProxyRealmRoute(TimestampMixin, db.Model):
+    """Routing entry in the Central RADIUS Proxy.
+
+    Maps a RADIUS realm suffix (e.g. "client5") to the target customer
+    RADIUS VPS. The proxy uses this table to forward auth/accounting
+    requests from CHR nodes to the correct customer instance.
+
+    CHR nodes only know the proxy IP — they never know individual customer
+    RADIUS addresses.
+    """
+    __tablename__ = "proxy_realm_routes"
+    __table_args__ = (
+        db.UniqueConstraint("realm", name="uq_prr_realm"),
+        db.Index("ix_prr_customer_status", "customer_id", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    realm = db.Column(db.String(80), nullable=False, index=True)    # "client5"
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    radius_instance_id = db.Column(
+        db.Integer, db.ForeignKey("customer_radius_instances.id"), nullable=False, index=True,
+    )
+    target_radius_ip = db.Column(db.String(64), nullable=False)
+    target_auth_port = db.Column(db.Integer, default=1812, nullable=False)
+    target_acct_port = db.Column(db.Integer, default=1813, nullable=False)
+    # Vault reference for shared RADIUS secret (actual value lives in CustomerSecret)
+    secret_vault_ref = db.Column(db.String(120), default="", nullable=False)
+    # JSON list of ChrNode IDs allowed to route through this entry (empty = all)
+    allowed_chr_node_ids_json = db.Column(db.Text, default="[]", nullable=False)
+    # active | suspended | draft
+    status = db.Column(db.String(20), default="draft", nullable=False, index=True)
+
+    customer = db.relationship("Customer")
+    radius_instance = db.relationship("CustomerRadiusInstance", back_populates="proxy_realm_route")
+
+    @property
+    def allowed_chr_node_ids(self) -> list:
+        return json_loads(self.allowed_chr_node_ids_json, [])
+
+    @allowed_chr_node_ids.setter
+    def allowed_chr_node_ids(self, value: list) -> None:
+        self.allowed_chr_node_ids_json = json_dumps(value or [])
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Landing Page CMS — admin-editable public landing content
 # All visible marketing content is driven from these tables (not hardcoded).
 # JSON is stored as Text + property accessors (project convention). The name

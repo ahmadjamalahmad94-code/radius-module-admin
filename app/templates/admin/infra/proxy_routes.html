@@ -1,0 +1,185 @@
+{% extends "admin/base.html" %}
+{% block title %}وكيل RADIUS المركزي{% endblock %}
+{% block page_title %}وكيل RADIUS المركزي — مسارات الـ Realm{% endblock %}
+{% block page_subtitle %}يوجّه طلبات Auth من عقد CHR إلى RADIUS VPS العميل الصحيح بناءً على لاحقة username@realm{% endblock %}
+
+{% block content %}
+
+{# ── تدفق الاتصال ── #}
+<section class="hub-section" style="background:var(--hub-card-bg);border:1px solid var(--hub-border);border-radius:10px;padding:14px 20px;margin-bottom:20px">
+  <h3 style="margin:0 0 10px;font-size:13px;color:var(--hub-muted)">
+    <i class="fa-solid fa-diagram-project"></i> تدفق طلب RADIUS
+  </h3>
+  <div style="display:flex;align-items:center;gap:6px;font-size:13px;flex-wrap:wrap">
+    <span class="flow-box">مشترك يتصل</span><span class="flow-arr">→</span>
+    <span class="flow-box flow-box--blue">عقدة CHR</span><span class="flow-arr">→</span>
+    <span class="flow-box flow-box--purple">وكيل RADIUS المركزي</span><span class="flow-arr">→</span>
+    <span class="flow-box flow-box--green">RADIUS VPS العميل</span><span class="flow-arr">→</span>
+    <span class="flow-box">Accept / Reject</span>
+  </div>
+  <p style="margin:10px 0 0;font-size:12px;color:var(--hub-muted)">
+    الوكيل يقرأ لاحقة <span class="mono ltr">@realm</span> من اسم المستخدم ويُعيد توجيه الطلب.
+    عقد CHR لا تعرف عناوين RADIUS العملاء — تعرف الوكيل فقط.
+  </p>
+</section>
+
+{# ── إنشاء مسار جديد ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-plus"></i> إضافة مسار Realm</h2>
+  </div>
+
+  <form method="post" action="{{ url_for('admin_infra.proxy_route_create') }}">
+    {{ csrf_input() }}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>الـ Realm <span class="hub-required">*</span></label>
+        <input class="hub-input mono ltr" name="realm" placeholder="client5" required>
+        <div class="hub-field-hint">
+          اللاحقة في <span class="mono ltr">username@realm</span> — يجب أن يطابق realm الـ RADIUS Instance.
+        </div>
+      </div>
+
+      <div class="hub-field">
+        <label>RADIUS Instance <span class="hub-required">*</span></label>
+        <select class="hub-input" name="radius_instance_id" required>
+          <option value="">— اختر —</option>
+          {% for inst in instances %}
+          <option value="{{ inst.id }}">
+            {{ inst.customer.company_name }} (@{{ inst.realm }}) — {{ inst.radius_auth_ip or 'IP غير محدد' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="hub-field">
+        <label>Target RADIUS IP</label>
+        <input class="hub-input mono ltr" name="target_radius_ip"
+               placeholder="يُملأ تلقائيًا من Instance إن تُرك فارغًا">
+      </div>
+
+      <div class="hub-field">
+        <label>Auth Port</label>
+        <input class="hub-input" name="target_auth_port" type="number" value="1812">
+      </div>
+
+      <div class="hub-field">
+        <label>Acct Port</label>
+        <input class="hub-input" name="target_acct_port" type="number" value="1813">
+      </div>
+
+      <div class="hub-field">
+        <label>Vault Ref (سر الـ Proxy)</label>
+        <input class="hub-input mono ltr" name="secret_vault_ref"
+               placeholder="proxy_secret_client5">
+      </div>
+
+      <div class="hub-field full">
+        <label>عقد CHR المسموح لها بالتوجيه (فارغ = كل العقد)</label>
+        <div class="hub-checkgroup">
+          {% for n in chr_nodes %}
+          <label class="hub-check">
+            <input type="checkbox" name="allowed_chr_node_ids" value="{{ n.id }}">
+            <span class="mono">{{ n.name }}</span>
+            <span style="font-size:11px;color:var(--hub-muted);margin-right:4px">{{ n.public_ip }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-plus"></i> إضافة مسار
+      </button>
+    </div>
+  </form>
+</section>
+
+{# ── جدول المسارات ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-arrows-split-up-and-left"></i> المسارات المعرّفة ({{ routes|length }})</h2>
+  </div>
+
+  {% if not routes %}
+    <p class="hub-empty">لا توجد مسارات. أضف مسارًا لكل عميل يملك RADIUS Instance.</p>
+  {% else %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>Realm</th>
+          <th>العميل</th>
+          <th>Target IP</th>
+          <th>Auth:Acct</th>
+          <th>Vault Ref</th>
+          <th>عقد CHR المسموحة</th>
+          <th>الحالة</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in routes %}
+        <tr>
+          <td><span class="badge badge-blue mono ltr">@{{ r.realm }}</span></td>
+          <td>{{ r.customer.company_name }}</td>
+          <td class="mono ltr" style="font-size:12px">{{ r.target_radius_ip }}</td>
+          <td class="mono ltr" style="font-size:12px">
+            {{ r.target_auth_port }} / {{ r.target_acct_port }}
+          </td>
+          <td class="mono" style="font-size:11px;color:var(--hub-muted)">
+            {{ r.secret_vault_ref or '—' }}
+          </td>
+          <td style="font-size:11px">
+            {% if not r.allowed_chr_node_ids %}
+              <span style="color:var(--hub-muted)">كل العقد</span>
+            {% else %}
+              {% for nid in r.allowed_chr_node_ids %}
+                {% set n = chr_nodes|selectattr('id','eq',nid)|first %}
+                {% if n %}<span class="badge badge-gray mono" style="margin:1px">{{ n.name }}</span>{% endif %}
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            {% if r.status == 'active' %}<span class="badge badge-green">نشط</span>
+            {% elif r.status == 'suspended' %}<span class="badge badge-yellow">موقوف</span>
+            {% else %}<span class="badge badge-gray">مسودة</span>{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              {% for st, label in [('active','تفعيل'),('suspended','إيقاف'),('draft','مسودة')] %}
+              {% if r.status != st %}
+              <form method="post"
+                    action="{{ url_for('admin_infra.proxy_route_set_status', route_id=r.id) }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <input type="hidden" name="status" value="{{ st }}">
+                <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">{{ label }}</button>
+              </form>
+              {% endif %}
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<style>
+.flow-box {
+  padding: 5px 12px;
+  border: 1px solid var(--hub-border);
+  border-radius: 6px;
+  background: var(--hub-card-bg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.flow-box--blue   { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+.flow-box--purple { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+.flow-box--green  { background: #dcfce7; border-color: #86efac; color: #166534; }
+.flow-arr { color: var(--hub-muted); font-size: 16px; }
+</style>
+{% endblock %}

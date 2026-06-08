@@ -1,0 +1,97 @@
+{% extends "admin/base.html" %}
+{% block title %}تخصيصات الخدمات{% endblock %}
+{% block page_title %}تخصيصات الخدمات — كل العملاء{% endblock %}
+{% block page_subtitle %}نظرة إجمالية على جميع خدمات SSTP / L2TP / IPsec / WireGuard المخصّصة{% endblock %}
+
+{% block content %}
+
+{# ── ملخص بالأرقام ── #}
+{% set active_count = allocations|selectattr('status','eq','active')|list|length %}
+{% set pending_count = allocations|selectattr('status','eq','pending')|list|length %}
+{% set suspended_count = allocations|selectattr('status','eq','suspended')|list|length %}
+<section class="hub-section">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px">
+    <div class="hub-kpi-card">
+      <div class="hub-kpi-label">إجمالي التخصيصات</div>
+      <div class="hub-kpi-value">{{ allocations|length }}</div>
+    </div>
+    <div class="hub-kpi-card">
+      <div class="hub-kpi-label">نشطة</div>
+      <div class="hub-kpi-value" style="color:#22c55e">{{ active_count }}</div>
+    </div>
+    <div class="hub-kpi-card">
+      <div class="hub-kpi-label">معلّقة</div>
+      <div class="hub-kpi-value" style="color:#94a3b8">{{ pending_count }}</div>
+    </div>
+    <div class="hub-kpi-card">
+      <div class="hub-kpi-label">موقوفة</div>
+      <div class="hub-kpi-value" style="color:#f59e0b">{{ suspended_count }}</div>
+    </div>
+  </div>
+</section>
+
+{# ── الجدول ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-list-check"></i> جميع التخصيصات</h2>
+  </div>
+
+  {% if not allocations %}
+    <p class="hub-empty">لا توجد تخصيصات خدمات بعد.</p>
+  {% else %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>العميل</th>
+          <th>الخدمة</th>
+          <th>عقدة CHR</th>
+          <th>السرعة</th>
+          <th>الحسابات</th>
+          <th>النقل</th>
+          <th>ينتهي</th>
+          <th>الحالة</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for a in allocations %}
+        <tr>
+          <td><a href="{{ url_for('admin_infra.customer_service_allocations', customer_id=a.customer_id) }}">
+            {{ a.customer.company_name }}
+          </a></td>
+          <td><span class="badge badge-blue mono">{{ a.service_type }}</span></td>
+          <td class="mono" style="font-size:12px">
+            {{ a.chr_node.name if a.chr_node else ('VPS العميل' if a.runs_on_customer_vps else '—') }}
+          </td>
+          <td>{{ a.speed_limit_mbps }} Mbps</td>
+          <td>{{ a.max_accounts or '—' }}</td>
+          <td style="font-size:12px">
+            {{ (a.transfer_limit_bytes // (1024**3))|string + ' GB' if a.transfer_limit_bytes else '∞' }}
+          </td>
+          <td style="font-size:12px;color:var(--hub-muted)">
+            {{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}
+          </td>
+          <td>
+            {% if a.status == 'active' %}<span class="badge badge-green">نشط</span>
+            {% elif a.status == 'pending' %}<span class="badge badge-gray">معلّق</span>
+            {% elif a.status == 'suspended' %}<span class="badge badge-yellow">موقوف</span>
+            {% elif a.status == 'expired' %}<span class="badge badge-red">منتهي</span>
+            {% elif a.status == 'cancelled' %}<span class="badge badge-red">ملغى</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('admin_infra.customer_service_allocations', customer_id=a.customer_id) }}"
+               class="hub-btn hub-btn--secondary hub-btn--sm">
+              <i class="fa-solid fa-arrow-left"></i>
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

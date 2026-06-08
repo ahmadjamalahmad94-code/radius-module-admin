@@ -189,6 +189,14 @@ class Config:
     CHR_IPSEC_DNS = os.environ.get("CHR_IPSEC_DNS", "")
     CHR_IPSEC_CERTIFICATE = os.environ.get("CHR_IPSEC_CERTIFICATE", "")
 
+    # ── Central RADIUS Proxy ──────────────────────────────────────────────────
+    # Shared secret between the admin panel and the radius-proxy agent.
+    # The proxy uses HMAC-SHA256(timestamp:nonce, secret) in X-Proxy-Token header.
+    # Must be at least 32 random characters in production.
+    RADIUS_PROXY_SHARED_SECRET = os.environ.get("RADIUS_PROXY_SHARED_SECRET", "")
+    # How long (seconds) a proxy heartbeat token remains valid (clock skew window).
+    RADIUS_PROXY_TOKEN_TTL = _env_int("RADIUS_PROXY_TOKEN_TTL", 60)
+
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the
     # panel settings (encrypted) instead of editing env. When disabled, the

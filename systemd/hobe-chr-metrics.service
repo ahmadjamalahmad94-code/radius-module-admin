@@ -1,0 +1,23 @@
+[Unit]
+Description=HobeRadius — جمع مقاييس عقد CHR
+Documentation=https://github.com/hoberadius/radius-module-admin
+After=network.target
+
+[Service]
+Type=oneshot
+User=hoberadius
+Group=hoberadius
+WorkingDirectory=/opt/hobe-radius-admin
+ExecStart=/opt/hobe-radius-admin/venv/bin/flask collect-chr-metrics
+EnvironmentFile=/etc/hobe-radius-admin/env
+
+# أمان
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/hobe-radius-admin
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hobe-chr-metrics

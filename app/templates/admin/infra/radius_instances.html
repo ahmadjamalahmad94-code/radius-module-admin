@@ -1,0 +1,95 @@
+{% extends "admin/base.html" %}
+{% block title %}نسخ RADIUS العملاء{% endblock %}
+{% block page_title %}نسخ RADIUS العملاء{% endblock %}
+{% block page_subtitle %}تسجيل بيانات الاتصال لكل VPS راديوس عميل — IP / Port / Realm / WireGuard إدارة{% endblock %}
+
+{% block content %}
+
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-database"></i> النسخ المسجّلة ({{ instances|length }})</h2>
+    <a href="{{ url_for('admin.customers_list') }}" class="hub-btn hub-btn--secondary hub-btn--sm">
+      <i class="fa-solid fa-users"></i> قائمة العملاء
+    </a>
+  </div>
+
+  {% if not instances %}
+    <div class="hub-empty">
+      <p>لا توجد نسخ RADIUS مسجّلة.</p>
+      <p style="font-size:13px;color:var(--hub-muted)">
+        لإضافة نسخة: اذهب إلى ملف العميل ← ثم اضغط «تسجيل RADIUS Instance».
+      </p>
+    </div>
+  {% else %}
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>العميل</th>
+          <th>الاسم</th>
+          <th>Realm</th>
+          <th>IP الإدارة (WG)</th>
+          <th>RADIUS IP:Port</th>
+          <th>Vault Ref</th>
+          <th>الحالة</th>
+          <th>آخر ظهور</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for inst in instances %}
+        <tr>
+          <td><strong>{{ inst.customer.company_name }}</strong></td>
+          <td class="mono">{{ inst.instance_name or '—' }}</td>
+          <td>
+            <span class="badge badge-blue mono ltr">@{{ inst.realm }}</span>
+          </td>
+          <td class="mono ltr" style="font-size:12px">{{ inst.mgmt_wg_ip or '—' }}</td>
+          <td class="mono ltr" style="font-size:12px">
+            {{ inst.radius_auth_ip or '—' }}:{{ inst.radius_auth_port }}/{{ inst.radius_acct_port }}
+          </td>
+          <td class="mono" style="font-size:11px;color:var(--hub-muted)">
+            {{ inst.secret_vault_ref or '—' }}
+          </td>
+          <td>
+            {% if inst.status == 'online' %}<span class="badge badge-green">متصل</span>
+            {% elif inst.status == 'offline' %}<span class="badge badge-red">غير متصل</span>
+            {% elif inst.status == 'suspended' %}<span class="badge badge-yellow">موقوف</span>
+            {% else %}<span class="badge badge-gray">غير معروف</span>{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--hub-muted)">
+            {{ inst.last_seen_at.strftime('%Y-%m-%d %H:%M') if inst.last_seen_at else '—' }}
+          </td>
+          <td>
+            <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=inst.customer_id) }}"
+               class="hub-btn hub-btn--secondary hub-btn--sm">
+              <i class="fa-solid fa-pen"></i> تعديل
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{# ── تذكير: قواعد WireGuard الإداري ── #}
+<section class="hub-section" style="background:var(--hub-card-bg);border:1px solid var(--hub-border);border-radius:10px;padding:16px 20px">
+  <h3 style="margin:0 0 12px;font-size:14px">
+    <i class="fa-solid fa-shield-halved"></i> قواعد نفق WireGuard الإداري (wg-mgmt)
+  </h3>
+  <ul style="margin:0;padding-right:18px;font-size:13px;line-height:2;color:var(--hub-text)">
+    <li>سرعة محدودة: 1–2 Mbps فقط (للبيانات الخفيفة)</li>
+    <li>لا Default Route — لا يمر عبره أي ترافيك إنترنت</li>
+    <li>لا NAT — لا Forward</li>
+    <li>AllowedIPs: عناوين الإدارة فقط (لا 0.0.0.0/0)</li>
+    <li>Firewall: يسمح منافذ API و Telemetry فقط</li>
+    <li><strong style="color:#ef4444">لا يُستخدم أبدًا لنقل بيانات العملاء</strong></li>
+  </ul>
+  <p style="margin:12px 0 0;font-size:12px;color:var(--hub-muted)">
+    خدمة WireGuard البيانات (wg-data) تُنشأ كـ interface/service منفصل مع عداداته وحدوده المستقلة.
+  </p>
+</section>
+
+{% endblock %}

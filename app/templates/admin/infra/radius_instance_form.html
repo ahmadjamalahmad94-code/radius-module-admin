@@ -1,0 +1,109 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'تعديل' if instance else 'إضافة' }} RADIUS Instance — {{ customer.company_name }}{% endblock %}
+{% block page_title %}{{ 'تعديل' if instance else 'تسجيل' }} RADIUS Instance{% endblock %}
+{% block page_subtitle %}{{ customer.company_name }}{% endblock %}
+
+{% block content %}
+
+<section class="hub-section">
+  <form method="post" action="{{ url_for('admin_infra.radius_instance_save', customer_id=customer.id) }}">
+    {{ csrf_input() }}
+
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>اسم النسخة (اختياري)</label>
+        <input class="hub-input mono ltr" name="instance_name"
+               value="{{ instance.instance_name if instance else '' }}"
+               placeholder="client5-radius">
+      </div>
+
+      <div class="hub-field">
+        <label>الـ Realm <span class="hub-required">*</span></label>
+        <input class="hub-input mono ltr" name="realm"
+               value="{{ instance.realm if instance else '' }}"
+               placeholder="client5" required>
+        <div class="hub-field-hint">
+          يُستخدم في توجيه RADIUS: <span class="mono ltr">user@client5</span> →
+          يُرسَل لهذا العميل. يجب أن يكون فريدًا.
+        </div>
+      </div>
+
+      <div class="hub-field">
+        <label>IP إدارة WireGuard (mgmt)</label>
+        <input class="hub-input mono ltr" name="mgmt_wg_ip"
+               value="{{ instance.mgmt_wg_ip if instance else '' }}"
+               placeholder="10.250.5.2">
+        <div class="hub-field-hint">عنوان WG الإداري — للـ API والتلمتري فقط، ليس للبيانات.</div>
+      </div>
+
+      <div class="hub-field">
+        <label>RADIUS Auth IP</label>
+        <input class="hub-input mono ltr" name="radius_auth_ip"
+               value="{{ instance.radius_auth_ip if instance else '' }}"
+               placeholder="10.200.5.2">
+        <div class="hub-field-hint">يجب أن يكون متاحًا عبر نفق WireGuard الإداري فقط — لا يُفتح للعالم.</div>
+      </div>
+
+      <div class="hub-field">
+        <label>Auth Port</label>
+        <input class="hub-input" name="radius_auth_port" type="number"
+               value="{{ instance.radius_auth_port if instance else 1812 }}">
+      </div>
+
+      <div class="hub-field">
+        <label>Acct Port</label>
+        <input class="hub-input" name="radius_acct_port" type="number"
+               value="{{ instance.radius_acct_port if instance else 1813 }}">
+      </div>
+
+      <div class="hub-field full">
+        <label>Vault Ref (مرجع سر RADIUS)</label>
+        <input class="hub-input mono ltr" name="secret_vault_ref"
+               value="{{ instance.secret_vault_ref if instance else '' }}"
+               placeholder="radius_secret_client5">
+        <div class="hub-field-hint">
+          اسم المفتاح في خزنة العميل — السر الفعلي لا يُحفظ هنا.
+          المرجع يُستخدم فقط لتحديد السر عند الحاجة.
+        </div>
+      </div>
+
+      <div class="hub-field">
+        <label>الحالة</label>
+        <select class="hub-input" name="status">
+          {% for st, label in [('unknown','غير معروف'),('online','متصل'),('offline','غير متصل'),('suspended','موقوف')] %}
+          <option value="{{ st }}" {% if instance and instance.status==st %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="hub-field full">
+        <label>ملاحظات</label>
+        <textarea class="hub-input" name="notes" rows="2">{{ instance.notes if instance else '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-save"></i> {{ 'حفظ التعديلات' if instance else 'تسجيل Instance' }}
+      </button>
+      <a href="{{ url_for('admin_infra.radius_instances_list') }}" class="hub-btn hub-btn--secondary">
+        إلغاء
+      </a>
+    </div>
+  </form>
+</section>
+
+<section class="hub-section" style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:14px 18px">
+  <h3 style="margin:0 0 8px;font-size:13px;color:#92400e">
+    <i class="fa-solid fa-triangle-exclamation"></i> تذكير أمني
+  </h3>
+  <ul style="margin:0;padding-right:16px;font-size:12px;color:#78350f;line-height:1.9">
+    <li>منافذ RADIUS (1812/1813) لا تُفتح للإنترنت أبدًا</li>
+    <li>الاتصال يكون عبر WireGuard الإداري فقط</li>
+    <li>كل عميل له Secret مختلف — لا تشارك الأسرار بين العملاء</li>
+    <li>Private keys لا تُحفظ في لوحة التراخيص — استخدم الـ Vault Ref فقط</li>
+    <li>نفق wg-mgmt لا يُستخدم لنقل بيانات العملاء أو الإنترنت</li>
+  </ul>
+</section>
+
+{% endblock %}

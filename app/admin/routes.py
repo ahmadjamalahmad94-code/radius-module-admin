@@ -1858,6 +1858,7 @@ def settings_page():
     from ..services.whatsapp import cloud_settings as wac
     from ..services.whatsapp import embedded_settings as wae
     from ..services import chr_settings as chr_svc
+    from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     return render_template(
         "admin/settings.html",
@@ -1870,6 +1871,7 @@ def settings_page():
         wae_state=wae.get_state(),
         chr_enabled=chr_svc.enabled(),
         chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
+        proxy_route_count=ProxyRealmRoute.query.filter_by(status="active").count(),
     )
 
 

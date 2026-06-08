@@ -1,0 +1,389 @@
+{% extends "admin/base.html" %}
+{% block title %}خدمات {{ customer.company_name }}{% endblock %}
+{% block page_title %}تخصيصات الخدمة — {{ customer.company_name }}{% endblock %}
+{% block page_subtitle %}إدارة خدمات SSTP / L2TP / IPsec / WireGuard المخصّصة لهذا العميل{% endblock %}
+
+{% block content %}
+
+{# ── تحذير: لا RADIUS Instance ── #}
+{% if not radius_instance %}
+<div class="hub-flash hub-flash--warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  هذا العميل لا يملك <strong>RADIUS Instance</strong> مسجّلًا بعد.
+  <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=customer.id) }}"
+     style="color:inherit;font-weight:700;margin-right:6px">سجّل الآن</a>
+  قبل تفعيل الخدمات.
+</div>
+{% endif %}
+
+{# ── إنشاء تخصيص جديد ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-plus"></i> إضافة تخصيص خدمة</h2>
+  </div>
+
+  <form method="post"
+        action="{{ url_for('admin_infra.service_allocation_create', customer_id=customer.id) }}">
+    {{ csrf_input() }}
+
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>نوع الخدمة <span class="hub-required">*</span></label>
+        <select class="hub-input" name="service_type" id="svc-type-sel" required>
+          <option value="">— اختر —</option>
+          {% set svc_labels = {
+            'sstp': 'SSTP',
+            'pptp': 'PPTP',
+            'l2tp_ipsec': 'L2TP/IPsec',
+            'ikev2_ipsec': 'IKEv2/IPsec',
+            'ip_change': 'تغيير IP (IP Change)',
+            'site_exit': 'خروج موقع (Site Exit)',
+            'wireguard_data': 'WireGuard بيانات (محلي)'
+          } %}
+          {% for svc in service_choices %}
+          <option value="{{ svc }}">{{ svc_labels.get(svc, svc) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="hub-field" id="chr-node-field">
+        <label>عقدة CHR <span class="hub-required">*</span></label>
+        <select class="hub-input" name="chr_node_id">
+          <option value="">— اختر عقدة —</option>
+          {% for n in chr_nodes %}
+          {% set ns = node_stats.get(n.id, {}) %}
+          {% set badge = ns.get('badge','ok') %}
+          <option value="{{ n.id }}"
+            {% if badge == 'full' %}disabled{% endif %}>
+            {{ n.name }} — {{ n.location or '' }}
+            (متاح: {{ n.max_reserved_mbps - ns.get('reserved',0) }} Mbps)
+            {% if badge == 'full' %} ⛔ ممتلئ{% elif badge == 'warning' %} ⚠️ تحذير{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="hub-field-hint" id="wg-local-note" style="display:none;color:#7c3aed">
+          WireGuard البيانات يعمل على VPS العميل مباشرةً — لا تحتاج عقدة CHR.
+        </div>
+      </div>
+
+      <div class="hub-field">
+        <label>سرعة الخدمة (Mbps) <span class="hub-required">*</span></label>
+        <input class="hub-input" name="speed_limit_mbps" type="number" min="1" required
+               placeholder="مثال: 200">
+      </div>
+
+      <div class="hub-field">
+        <label>أقصى حسابات VPN</label>
+        <input class="hub-input" name="max_accounts" type="number" min="0" value="0">
+        <div class="hub-field-hint">عدد حسابات SSTP/L2TP المسموحة — 0 يعني لا حد</div>
+      </div>
+
+      <div class="hub-field">
+        <label>أقصى WireGuard Peers</label>
+        <input class="hub-input" name="max_peers" type="number" min="0" value="0">
+      </div>
+
+      <div class="hub-field">
+        <label>حد النقل الشهري (GB)</label>
+        <input class="hub-input" name="transfer_limit_gb" type="number" min="0"
+               placeholder="فارغ = بلا حد">
+      </div>
+
+      <div class="hub-field">
+        <label>تاريخ البدء</label>
+        <input class="hub-input" name="starts_at" type="datetime-local">
+      </div>
+
+      <div class="hub-field">
+        <label>تاريخ الانتهاء</label>
+        <input class="hub-input" name="expires_at" type="datetime-local">
+      </div>
+
+      <div class="hub-field full">
+        <label>ملاحظات تجارية</label>
+        <textarea class="hub-input" name="commercial_notes" rows="2"
+                  placeholder="السعر المتفق عليه، المدة، الشروط..."></textarea>
+      </div>
+    </div>
+
+    <div class="hub-form-foot" style="padding-top:14px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-plus"></i> إنشاء التخصيص
+      </button>
+    </div>
+  </form>
+</section>
+
+{# ── التخصيصات الحالية ── #}
+<section class="hub-section">
+  <div class="hub-section-head">
+    <h2><i class="fa-solid fa-list-check"></i> التخصيصات الحالية ({{ allocations|length }})</h2>
+  </div>
+
+  {% if not allocations %}
+    <p class="hub-empty">لا توجد تخصيصات خدمة لهذا العميل بعد.</p>
+  {% else %}
+  {% for a in allocations %}
+  <div class="alloc-card {% if a.status == 'active' %}alloc-card--active{% elif a.status == 'suspended' %}alloc-card--warn{% elif a.status in ('expired','cancelled') %}alloc-card--dead{% endif %}">
+    <div class="alloc-card__head">
+      <div>
+        <span class="badge badge-blue mono" style="font-size:13px">{{ a.service_type }}</span>
+        <strong style="margin-right:8px">{{ a.service_label_ar }}</strong>
+        {% if a.chr_node %}
+          <span style="font-size:12px;color:var(--hub-muted)">
+            على <span class="mono">{{ a.chr_node.name }}</span>
+          </span>
+        {% elif a.runs_on_customer_vps %}
+          <span style="font-size:12px;color:#7c3aed">يعمل على VPS العميل</span>
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        {% if a.status == 'active' %}<span class="badge badge-green">نشط</span>
+        {% elif a.status == 'pending' %}<span class="badge badge-gray">معلّق</span>
+        {% elif a.status == 'suspended' %}<span class="badge badge-yellow">موقوف</span>
+        {% elif a.status == 'expired' %}<span class="badge badge-red">منتهي</span>
+        {% elif a.status == 'cancelled' %}<span class="badge badge-red">ملغى</span>{% endif %}
+
+        <button class="hub-btn hub-btn--secondary hub-btn--sm" type="button"
+                onclick="toggleEdit('alloc-edit-{{ a.id }}')">
+          <i class="fa-solid fa-pen"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="alloc-card__body">
+      <div class="alloc-kv"><span>السرعة</span><strong>{{ a.speed_limit_mbps }} Mbps</strong></div>
+      <div class="alloc-kv"><span>الحسابات</span><strong>{{ a.max_accounts or '—' }}</strong></div>
+      <div class="alloc-kv"><span>Peers</span><strong>{{ a.max_peers or '—' }}</strong></div>
+      <div class="alloc-kv"><span>النقل</span>
+        <strong>{{ (a.transfer_limit_bytes // (1024**3))|string + ' GB' if a.transfer_limit_bytes else 'بلا حد' }}</strong>
+      </div>
+      <div class="alloc-kv"><span>البدء</span>
+        <strong>{{ a.starts_at.strftime('%Y-%m-%d') if a.starts_at else '—' }}</strong>
+      </div>
+      <div class="alloc-kv"><span>الانتهاء</span>
+        <strong>{{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}</strong>
+      </div>
+    </div>
+
+    {# ── لوحة الاستخدام الحي (من آخر snapshot) ── #}
+    {% set snap = latest_snapshots.get(a.id) %}
+    {% if snap %}
+    {% set acc_health = usage_health(snap.active_accounts, a.max_accounts) %}
+    {% set peer_health = usage_health(snap.active_peers, a.max_peers) %}
+    <div style="padding:10px 14px;border-top:1px solid var(--hub-border);background:var(--hub-bg)">
+      <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center">
+
+        {# حسابات VPN #}
+        {% if a.max_accounts > 0 %}
+        <div style="min-width:150px;flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+            <span style="color:var(--hub-muted)">حسابات VPN</span>
+            <span>{{ snap.active_accounts }} / {{ a.max_accounts }}</span>
+          </div>
+          <div style="height:6px;border-radius:3px;background:var(--hub-border);overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:{{ [(snap.active_accounts / a.max_accounts * 100)|round|int, 100]|min }}%;
+                        background:{% if acc_health == 'critical' %}#ef4444{% elif acc_health == 'warning' %}#f59e0b{% else %}#22c55e{% endif %}">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# WireGuard Peers #}
+        {% if a.max_peers > 0 %}
+        <div style="min-width:150px;flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+            <span style="color:var(--hub-muted)">WG Peers</span>
+            <span>{{ snap.active_peers }} / {{ a.max_peers }}</span>
+          </div>
+          <div style="height:6px;border-radius:3px;background:var(--hub-border);overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:{{ [(snap.active_peers / a.max_peers * 100)|round|int, 100]|min }}%;
+                        background:{% if peer_health == 'critical' %}#ef4444{% elif peer_health == 'warning' %}#f59e0b{% else %}#22c55e{% endif %}">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# كوتا النقل #}
+        {% if a.transfer_limit_bytes and a.transfer_limit_bytes > 0 %}
+        {% set tx_pct = [(snap.used_transfer_bytes / a.transfer_limit_bytes * 100)|round|int, 100]|min %}
+        {% set tx_health = usage_health(snap.used_transfer_bytes, a.transfer_limit_bytes) %}
+        <div style="min-width:150px;flex:1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+            <span style="color:var(--hub-muted)">النقل</span>
+            <span>{{ (snap.used_transfer_bytes // (1024**3)) }} / {{ (a.transfer_limit_bytes // (1024**3)) }} GB</span>
+          </div>
+          <div style="height:6px;border-radius:3px;background:var(--hub-border);overflow:hidden">
+            <div style="height:100%;border-radius:3px;width:{{ tx_pct }}%;
+                        background:{% if tx_health == 'critical' %}#ef4444{% elif tx_health == 'warning' %}#f59e0b{% else %}#22c55e{% endif %}">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# شارة الصحة + رابط التاريخ #}
+        <div style="display:flex;align-items:center;gap:8px;margin-right:auto">
+          {% if snap.health_status == 'ok' %}
+            <span class="badge badge-green">سليم</span>
+          {% elif snap.health_status == 'warning' %}
+            <span class="badge badge-yellow">تحذير</span>
+          {% elif snap.health_status == 'critical' %}
+            <span class="badge badge-red">حرج</span>
+          {% else %}
+            <span class="badge badge-gray">{{ snap.health_status }}</span>
+          {% endif %}
+          <a href="{{ url_for('admin_infra.allocation_snapshots', alloc_id=a.id) }}"
+             class="hub-btn hub-btn--secondary hub-btn--sm" title="سجل الاستخدام">
+            <i class="fa-solid fa-chart-line"></i>
+          </a>
+          <span style="font-size:10px;color:var(--hub-muted)">
+            {{ snap.measured_at.strftime('%H:%M') if snap.measured_at else '' }}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if a.commercial_notes %}
+    <div style="padding:6px 14px;font-size:12px;color:var(--hub-muted);border-top:1px solid var(--hub-border)">
+      {{ a.commercial_notes }}
+    </div>
+    {% endif %}
+
+    {# تغيير الحالة #}
+    <div class="alloc-card__foot">
+      {% for st, label, cls in [
+        ('active','تفعيل','hub-btn--primary'),
+        ('suspended','إيقاف','hub-btn--secondary'),
+        ('expired','تحديد كمنتهي','hub-btn--secondary'),
+        ('cancelled','إلغاء','hub-btn--secondary')
+      ] %}
+      {% if a.status != st %}
+      <form method="post"
+            action="{{ url_for('admin_infra.service_allocation_set_status', alloc_id=a.id) }}"
+            style="display:inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="status" value="{{ st }}">
+        <button class="hub-btn {{ cls }} hub-btn--sm" type="submit">{{ label }}</button>
+      </form>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    {# نموذج التعديل ── مخفي #}
+    <form id="alloc-edit-{{ a.id }}" class="hidden alloc-edit-form" method="post"
+          action="{{ url_for('admin_infra.service_allocation_edit', alloc_id=a.id) }}">
+      {{ csrf_input() }}
+      <div class="hub-form-grid" style="padding:12px 14px">
+        <div class="hub-field">
+          <label>السرعة (Mbps)</label>
+          <input class="hub-input" name="speed_limit_mbps" type="number" value="{{ a.speed_limit_mbps }}">
+        </div>
+        <div class="hub-field">
+          <label>أقصى حسابات</label>
+          <input class="hub-input" name="max_accounts" type="number" value="{{ a.max_accounts }}">
+        </div>
+        <div class="hub-field">
+          <label>أقصى Peers</label>
+          <input class="hub-input" name="max_peers" type="number" value="{{ a.max_peers }}">
+        </div>
+        <div class="hub-field">
+          <label>حد النقل (GB)</label>
+          <input class="hub-input" name="transfer_limit_gb" type="number"
+                 value="{{ (a.transfer_limit_bytes // (1024**3)) if a.transfer_limit_bytes else '' }}"
+                 placeholder="فارغ = بلا حد">
+        </div>
+        <div class="hub-field">
+          <label>انتهاء</label>
+          <input class="hub-input" name="expires_at" type="datetime-local"
+                 value="{{ a.expires_at.strftime('%Y-%m-%dT%H:%M') if a.expires_at else '' }}">
+        </div>
+        <div class="hub-field full">
+          <label>ملاحظات</label>
+          <textarea class="hub-input" name="commercial_notes" rows="2">{{ a.commercial_notes }}</textarea>
+        </div>
+      </div>
+      <div class="hub-form-foot" style="padding:0 14px 12px">
+        <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
+          <i class="fa-solid fa-save"></i> حفظ
+        </button>
+        <button class="hub-btn hub-btn--secondary hub-btn--sm" type="button"
+                onclick="toggleEdit('alloc-edit-{{ a.id }}')">إلغاء</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+
+<style>
+.alloc-card {
+  border: 1px solid var(--hub-border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: var(--hub-card-bg);
+}
+.alloc-card--active { border-color: #22c55e; }
+.alloc-card--warn   { border-color: #f59e0b; }
+.alloc-card--dead   { opacity: .65; }
+.alloc-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--hub-section-head-bg, rgba(0,0,0,.03));
+  border-bottom: 1px solid var(--hub-border);
+}
+.alloc-card__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 8px 0;
+}
+.alloc-kv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 18px;
+  border-left: 1px solid var(--hub-border);
+  font-size: 13px;
+  min-width: 90px;
+}
+.alloc-kv span { color: var(--hub-muted); font-size: 11px; }
+.alloc-card__foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--hub-border);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.alloc-edit-form {
+  border-top: 1px dashed var(--hub-border);
+  background: var(--hub-bg);
+}
+.hidden { display: none !important; }
+</style>
+
+<script>
+function toggleEdit(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+
+// إخفاء حقل CHR لـ wireguard_data
+document.getElementById('svc-type-sel').addEventListener('change', function() {
+  const isWg = this.value === 'wireguard_data';
+  const chrField = document.getElementById('chr-node-field');
+  const note = document.getElementById('wg-local-note');
+  const sel = chrField.querySelector('select');
+  if (isWg) {
+    note.style.display = 'block';
+    sel.required = false;
+  } else {
+    note.style.display = 'none';
+    sel.required = true;
+  }
+});
+</script>
+{% endblock %}

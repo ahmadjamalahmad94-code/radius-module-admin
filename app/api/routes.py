@@ -793,6 +793,171 @@ def hoberadius_vpn_tunnels_ack():
     return jsonify({"ok": True, "acknowledged": count})
 
 
+@bp.post("/integration/hoberadius/service-activations/poll")
+def hoberadius_service_activations_poll():
+    """يُعيد نسخة الترخيص + تخصيصات الخدمة النشطة للوحة العميل لتزامنها محليًا."""
+    body = request.get_json(silent=True) or {}
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status}), 404
+
+    from ..models import ServiceAllocation
+    lic = result.license
+    plan = lic.plan
+
+    snapshot = {
+        "remote_license_id": lic.id,
+        "plan_name": plan.name if plan else "",
+        "max_subscribers": (plan.max_subscribers if plan else 0) or 0,
+        "max_cards": (plan.max_cards if plan else 0) or 0,
+        "max_active_users": (plan.max_active_users if plan else 0) or 0,
+        "max_routers": (plan.max_routers if plan else 0) or 0,
+        "license_status": result.status,
+        "starts_at": lic.starts_at.isoformat() + "Z" if lic.starts_at else None,
+        "expires_at": lic.expires_at.isoformat() + "Z" if lic.expires_at else None,
+    }
+
+    allocs = ServiceAllocation.query.filter(
+        ServiceAllocation.customer_id == lic.customer_id,
+        ServiceAllocation.status.in_(["active", "pending"]),
+    ).all()
+
+    alloc_list = []
+    for a in allocs:
+        node = a.chr_node
+        alloc_list.append({
+            "id": a.id,
+            "service_type": a.service_type,
+            "status": a.status,
+            "chr_node_name": node.name if node else "",
+            "chr_node_public_ip": node.public_ip if node else "",
+            "speed_limit_mbps": a.speed_limit_mbps or 0,
+            "max_accounts": a.max_accounts or 0,
+            "max_peers": a.max_peers or 0,
+            "transfer_limit_bytes": a.transfer_limit_bytes,
+            "expires_at": a.expires_at.isoformat() + "Z" if a.expires_at else None,
+        })
+
+    return jsonify({
+        "ok": True,
+        "status": result.status,
+        "license_snapshot": snapshot,
+        "allocations": alloc_list,
+    })
+
+
+@bp.post("/integration/hoberadius/instance-ops/heartbeat")
+def hoberadius_instance_heartbeat():
+    """لوحة العميل تُرسل نبضة حياة — يُحدَّث last_seen_at لـ CustomerRadiusInstance."""
+    from datetime import datetime, timezone
+    from ..models import CustomerRadiusInstance
+
+    body = request.get_json(silent=True) or {}
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status}), 404
+
+    instance = CustomerRadiusInstance.query.filter_by(
+        customer_id=result.license.customer_id
+    ).first()
+    if instance:
+        instance.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        if result.active and instance.status != "active":
+            instance.status = "active"
+        db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "status": "recorded",
+        "license_status": result.status,
+        "instance_found": instance is not None,
+    })
+
+
+@bp.post("/integration/hoberadius/usage-snapshot/push")
+def hoberadius_usage_snapshot_push():
+    """لوحة العميل تُرسل ملخّص استخدام الخدمات — يُحفظ في ServiceUsageSnapshot.
+
+    Payload من لوحة العميل:
+    {
+        "license_key": "...", "server_fingerprint": "...",
+        "allocations": [
+            {
+                "remote_allocation_id": 5,
+                "service_type": "sstp",
+                "active_accounts": 3,
+                "active_peers": 0,
+                "used_transfer_bytes": 0,
+                "current_mbps": 0.0,
+                "health_status": "ok"
+            }
+        ],
+        "overall_health": "ok"
+    }
+    """
+    from datetime import datetime, timezone
+    from ..models import ServiceAllocation, ServiceUsageSnapshot
+
+    body = request.get_json(silent=True) or {}
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status}), 404
+
+    allocations_data = body.get("allocations") or []
+    overall_health   = str(body.get("overall_health") or "unknown")[:20]
+    now              = datetime.now(timezone.utc).replace(tzinfo=None)
+    saved            = 0
+
+    for item in allocations_data:
+        remote_id = item.get("remote_allocation_id")
+        if not remote_id:
+            continue
+        alloc = ServiceAllocation.query.filter_by(
+            id=remote_id,
+            customer_id=result.license.customer_id,
+        ).first()
+        if not alloc:
+            continue
+
+        hs = str(item.get("health_status") or "unknown")[:20]
+        snap = ServiceUsageSnapshot(
+            service_allocation_id=alloc.id,
+            measured_at=now,
+            current_mbps=float(item.get("current_mbps") or 0),
+            used_transfer_bytes=int(item.get("used_transfer_bytes") or 0),
+            active_accounts=int(item.get("active_accounts") or 0),
+            active_peers=int(item.get("active_peers") or 0),
+            health_status=hs,
+        )
+        db.session.add(snap)
+        saved += 1
+
+    if saved:
+        db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "status": "recorded",
+        "snapshots_saved": saved,
+        "overall_health": overall_health,
+    })
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # WhatsApp Meta Cloud webhook (called by Meta, NOT by the radius runtime)
 #

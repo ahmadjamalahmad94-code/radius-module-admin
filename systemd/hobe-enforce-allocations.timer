@@ -1,0 +1,11 @@
+[Unit]
+Description=HobeRadius Admin — Service Allocation Expiry Enforcer Timer
+Requires=hobe-enforce-allocations.service
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

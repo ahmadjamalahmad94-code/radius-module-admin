@@ -1,0 +1,14 @@
+[Unit]
+Description=HobeRadius — تشغيل جمع مقاييس CHR كل 5 دقائق
+Requires=hobe-chr-metrics.service
+
+[Timer]
+# يشتغل بعد دقيقتين من إقلاع النظام ثم كل 5 دقائق
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=hobe-chr-metrics.service
+# يعوّض التشغيلات الفائتة (مثلاً بعد sleep)
+Persistent=true
+
+[Install]
+WantedBy=timers.target

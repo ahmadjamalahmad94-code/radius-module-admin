@@ -74,6 +74,15 @@
           <i class="fa-solid fa-server"></i><span>وحدة تحكّم CHR</span>
         </a>
         {% endif %}
+        <a class="{{ 'active' if ep.startswith('admin_infra.chr_node') else '' }}" href="{{ url_for('admin_infra.chr_nodes_list') }}">
+          <i class="fa-solid fa-network-wired"></i><span>عقد CHR المخصّصة</span>
+        </a>
+        <a class="{{ 'active' if ep.startswith('admin_infra.radius_instance') else '' }}" href="{{ url_for('admin_infra.radius_instances_list') }}">
+          <i class="fa-solid fa-database"></i><span>نسخ RADIUS العملاء</span>
+        </a>
+        <a class="{{ 'active' if ep.startswith('admin_infra.proxy_route') else '' }}" href="{{ url_for('admin_infra.proxy_routes_list') }}">
+          <i class="fa-solid fa-arrows-split-up-and-left"></i><span>وكيل RADIUS المركزي</span>
+        </a>
         <a class="{{ 'active' if ep == 'admin.settings_page' else '' }}" href="{{ url_for('admin.settings_page') }}">
           <i class="fa-solid fa-gear"></i><span>الإعدادات</span>
         </a>
