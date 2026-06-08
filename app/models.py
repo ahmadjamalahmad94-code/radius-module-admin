@@ -1819,3 +1819,69 @@ class LandingRevision(db.Model):
     @snapshot.setter
     def snapshot(self, value: dict) -> None:
         self.snapshot_json = json_dumps(value or {})
+
+
+# ── Instance Activation Tokens ───────────────────────────────────────────────
+import hashlib as _hashlib
+import secrets as _secrets
+from datetime import timezone as _timezone
+
+
+class InstanceActivationToken(db.Model):
+    """Single-use, expiring token that lets a radius-module instance activate the
+    Admin Bridge without manual `.env` configuration.
+
+    Security rules:
+    - The raw token is returned ONCE to the super-admin who generated it.
+    - Only the SHA-256 hash is stored here — never the plaintext.
+    - ``used_at`` is set on first consumption; subsequent uses are rejected.
+    - Tokens expire after ``ACTIVATION_TOKEN_TTL_MINUTES`` (default 30 min).
+    """
+
+    __tablename__ = "instance_activation_tokens"
+
+    ACTIVATION_TOKEN_TTL_MINUTES = 30
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(
+        db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True
+    )
+    # SHA-256 hex digest of the raw activation code — no plaintext stored.
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    # Server fingerprint supplied by the radius-module during activation.
+    used_fingerprint = db.Column(db.String(255), nullable=False, default="")
+    created_by_admin_id = db.Column(
+        db.Integer, db.ForeignKey("admins.id"), nullable=True
+    )
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+
+    customer = db.relationship("Customer", backref=db.backref("activation_tokens", lazy="dynamic"))
+    created_by = db.relationship("Admin", foreign_keys=[created_by_admin_id])
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @property
+    def is_valid(self) -> bool:
+        """True only if the token has not been used and has not expired."""
+        if self.used_at is not None:
+            return False
+        now = datetime.now(_timezone.utc).replace(tzinfo=None)
+        return self.expires_at > now
+
+    @staticmethod
+    def hash_code(raw_code: str) -> str:
+        """Return the SHA-256 hex digest of *raw_code* (dashes stripped)."""
+        normalised = raw_code.replace("-", "").upper()
+        return _hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def generate() -> str:
+        """Return a fresh raw activation code in ``XXXXXXXX-XXXXXXXX-XXXXXXXX`` format.
+
+        The caller is responsible for storing only ``hash_code(raw)`` in the DB.
+        The plaintext must be delivered to the admin and then discarded.
+        """
+        raw = _secrets.token_hex(12)  # 24 hex chars
+        return f"{raw[:8].upper()}-{raw[8:16].upper()}-{raw[16:].upper()}"

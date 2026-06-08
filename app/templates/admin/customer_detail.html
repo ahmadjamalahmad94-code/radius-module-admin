@@ -419,6 +419,79 @@
   {% endcall %}
 </div>
 
+{# ── Admin Bridge Activation Token ── #}
+{% call hub.section("ربط الريدياس — Admin Bridge", icon="plug", meta='<span class="hub-pill hub-pill--violet">مسؤول عام فقط</span>') %}
+  <p class="hub-hint" style="margin-bottom:1rem">
+    يتيح هذا الكود للنسخة المُثبَّتة لدى العميل الاتصال تلقائياً بلوحة التراخيص دون الحاجة لإدخال
+    مفاتيح يدوياً في ملف <code>.env</code>. الكود يُستخدم مرة واحدة فقط ومدته
+    {{ 30 }} دقيقة.
+  </p>
+  <div id="activation-token-area">
+    <button type="button"
+            class="hub-btn hub-btn--primary"
+            id="btn-gen-token"
+            data-customer-id="{{ customer.id }}"
+            onclick="generateActivationToken(this)">
+      <i class="fa-solid fa-key"></i> إنشاء كود تفعيل جديد
+    </button>
+    <div id="activation-token-result" style="display:none; margin-top:1rem">
+      <div class="hub-alert hub-alert--warning" style="margin-bottom:.75rem">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <strong>احفظ الكود الآن</strong> — لن يُعرض مجدداً بعد مغادرة هذه الصفحة.
+      </div>
+      <div style="display:flex; align-items:center; gap:.5rem; flex-wrap:wrap">
+        <code id="activation-token-display"
+              style="font-size:1.1rem; letter-spacing:.08em; background:var(--hub-surface-2,#f4f4f8);
+                     padding:.4rem .8rem; border-radius:6px; direction:ltr; user-select:all">
+        </code>
+        <button type="button"
+                class="hub-btn hub-btn--secondary hub-btn--sm"
+                onclick="copyActivationToken()">
+          <i class="fa-regular fa-copy"></i> نسخ
+        </button>
+      </div>
+      <p id="activation-token-expiry" class="hub-hint" style="margin-top:.4rem"></p>
+    </div>
+  </div>
+  <script>
+  (function () {
+    function generateActivationToken(btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جارٍ الإنشاء…';
+      var customerId = btn.dataset.customerId;
+      fetch('/customers/' + customerId + '/activation-token/generate', {
+        method: 'POST',
+        headers: {'X-CSRFToken': (document.cookie.match(/csrf_token=([^;]+)/) || ['',''])[1]},
+        credentials: 'same-origin',
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (!data.ok) {
+          alert('خطأ: ' + (data.message || 'تعذّر إنشاء الكود'));
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-key"></i> إنشاء كود تفعيل جديد';
+          return;
+        }
+        document.getElementById('activation-token-display').textContent = data.token;
+        var expiry = new Date(data.expires_at + 'Z');
+        document.getElementById('activation-token-expiry').textContent =
+          'ينتهي في: ' + expiry.toLocaleTimeString('ar-SA') + ' (' + data.ttl_minutes + ' دقيقة)';
+        document.getElementById('activation-token-result').style.display = 'block';
+        btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> إنشاء كود جديد';
+        btn.disabled = false;
+      })
+      .catch(function(){ alert('فشل الاتصال بالخادم.'); btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-key"></i> إنشاء كود تفعيل جديد'; });
+    }
+    function copyActivationToken() {
+      var code = document.getElementById('activation-token-display').textContent.trim();
+      navigator.clipboard.writeText(code).then(function(){ alert('تم نسخ الكود ✓'); });
+    }
+    window.generateActivationToken = generateActivationToken;
+    window.copyActivationToken = copyActivationToken;
+  })();
+  </script>
+{% endcall %}
+
 {# ── Licenses ── #}
 {% call hub.section("تراخيص العميل", icon="key", meta='<a class="hub-btn hub-btn--primary hub-btn--sm" href="' ~ url_for('admin.license_new') ~ '"><i class="fa-solid fa-plus"></i> ترخيص جديد</a>') %}
   <div class="hub-table-wrap">

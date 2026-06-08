@@ -416,6 +416,16 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "routeros_password_enc": "TEXT NOT NULL DEFAULT ''",
         })
 
+    # Instance Activation Tokens — single-use Admin Bridge bootstrap tokens.
+    # The table itself is created fresh by db.create_all() on new DBs.
+    # On live DBs the table may pre-exist; guard to heal any additive columns.
+    if "instance_activation_tokens" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("instance_activation_tokens", {
+            "used_fingerprint": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "used_at": datetime_type,
+        })
+
 
 def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
     inspector = inspect(db.engine)

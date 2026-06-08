@@ -19,6 +19,7 @@ from ..models import (
     CustomerServiceRequestMessage,
     CustomerUser,
     CustomerVpnEntitlement,
+    InstanceActivationToken,
     License,
     LicenseCheck,
     LicensePaymentProof,
@@ -2922,3 +2923,58 @@ def customer_whatsapp_test(customer_id: int):
         db.session.rollback()
     flash("تمت جدولة رسالة التجربة وتشغيل التصريف. تابع حالتها في آخر الرسائل.", "success")
     return redirect(url_for("admin.customer_whatsapp", customer_id=customer.id))
+
+
+# ── Admin Bridge Activation Tokens ───────────────────────────────────────────
+
+@bp.post("/customers/<int:customer_id>/activation-token/generate")
+@super_admin_required
+def generate_activation_token(customer_id: int):
+    """Generate a single-use Admin Bridge activation token for a customer.
+
+    Super-admin only. Returns JSON ``{ok, token, expires_at}`` where ``token``
+    is the plaintext activation code in ``XXXXXXXX-XXXXXXXX-XXXXXXXX`` format.
+    The plaintext is shown ONCE and is not stored — only its SHA-256 hash is
+    persisted in the database.
+    """
+    from datetime import timezone as _tz
+
+    customer = db.get_or_404(Customer, customer_id)
+    admin = current_admin()
+
+    raw_token = InstanceActivationToken.generate()
+    token_hash = InstanceActivationToken.hash_code(raw_token)
+
+    now = utcnow()
+    expires_at = now + timedelta(minutes=InstanceActivationToken.ACTIVATION_TOKEN_TTL_MINUTES)
+
+    record = InstanceActivationToken(
+        customer_id=customer.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        created_by_admin_id=admin.id if admin else None,
+    )
+    db.session.add(record)
+    db.session.flush()
+
+    audit_customer_control(
+        actor_admin_id=admin.id if admin else None,
+        action="activation_token_generated",
+        entity_type="customer",
+        entity_id=str(customer.id),
+        summary=f"تم إنشاء كود تفعيل Admin Bridge للعميل {customer.company_name} (token_id={record.id})",
+        metadata={
+            "token_id": record.id,
+            "expires_at": expires_at.isoformat(),
+            "ttl_minutes": InstanceActivationToken.ACTIVATION_TOKEN_TTL_MINUTES,
+        },
+    )
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "token": raw_token,
+        "token_id": record.id,
+        "expires_at": expires_at.isoformat(),
+        "ttl_minutes": InstanceActivationToken.ACTIVATION_TOKEN_TTL_MINUTES,
+    })

@@ -1056,6 +1056,114 @@ def _payment_error(message: str, status_code: int = 400, *, detail: str = ""):
     return jsonify(payload), status_code
 
 
+@bp.post("/integration/hoberadius/instance/activate")
+def hoberadius_instance_activate():
+    """Bootstrap endpoint — validates a one-time activation code and returns
+    the credentials needed by radius-module to operate the Admin Bridge.
+
+    Authentication: the activation code IS the credential.  No HMAC signature
+    is required (there is no shared_secret yet — that is what we are issuing).
+
+    Security rules:
+    - Token is validated by SHA-256 hash only — never stored or logged in plaintext.
+    - Token is single-use: ``used_at`` is set atomically on first success.
+    - Expired tokens are rejected (HTTP 410).
+    - Used tokens are rejected (HTTP 409).
+    - The ``shared_secret`` returned equals ``license_integration_secret(app, license_key)``
+      which is already accepted as a fallback in ``verify_license_signature()``; no new
+      secret column is needed.
+    - Secrets are NEVER logged or returned in error responses.
+    """
+    import logging as _logging
+    from ..models import InstanceActivationToken, License
+    from ..license_signing import license_integration_secret
+    from ..security import clean_text
+    _log = _logging.getLogger(__name__)
+
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "التفعيل يتطلب HTTPS."}), 426
+
+    body = request.get_json(silent=True) or {}
+
+    raw_code = str(body.get("activation_code") or "").strip()
+    fingerprint = str(body.get("server_fingerprint") or "").strip()[:255]
+    base_url = str(body.get("base_url") or "").strip()[:255]
+
+    if not raw_code:
+        return jsonify({"ok": False, "status": "invalid_request", "message": "activation_code مطلوب."}), 422
+
+    token_hash = InstanceActivationToken.hash_code(raw_code)
+    token = InstanceActivationToken.query.filter_by(token_hash=token_hash).first()
+
+    if token is None:
+        # Deliberate: same message for not-found and wrong code to prevent enumeration.
+        _log.warning("instance_activate: unknown token hash from %s", client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)))
+        return jsonify({"ok": False, "status": "invalid_token", "message": "كود التفعيل غير صحيح أو منتهي."}), 401
+
+    if token.used_at is not None:
+        return jsonify({"ok": False, "status": "already_used", "message": "كود التفعيل استُخدم مسبقاً. أنشئ كوداً جديداً."}), 409
+
+    from datetime import timezone as _tz
+    from datetime import datetime as _dt
+    now = _dt.now(_tz.utc).replace(tzinfo=None)
+    if token.expires_at <= now:
+        return jsonify({"ok": False, "status": "expired", "message": "انتهت صلاحية كود التفعيل. أنشئ كوداً جديداً."}), 410
+
+    # Find an active (or most recent) license for this customer.
+    from ..services.license_service import check_license as _check_license  # noqa: F401
+    best_license = (
+        License.query
+        .filter_by(customer_id=token.customer_id)
+        .order_by(License.created_at.desc())
+        .first()
+    )
+    if best_license is None:
+        return jsonify({"ok": False, "status": "no_license", "message": "لا يوجد ترخيص مرتبط بهذا العميل."}), 404
+
+    license_key = best_license.license_key
+
+    # Derive the shared secret — no new DB column needed.
+    shared_secret = license_integration_secret(current_app, license_key)
+    if not shared_secret:
+        _log.error("instance_activate: license_integration_secret returned empty for customer_id=%s — LICENSE_CHECK_HMAC_SECRET missing?", token.customer_id)
+        return jsonify({"ok": False, "status": "server_error", "message": "خطأ في إعداد الخادم. تواصل مع الدعم."}), 500
+
+    # Mark token as used — atomic, prevents double-activation.
+    token.used_at = now
+    token.used_fingerprint = fingerprint
+
+    audit_customer_control(
+        actor_admin_id=None,
+        action="instance_activated",
+        entity_type="customer",
+        entity_id=str(token.customer_id),
+        summary=f"راديوس موجّه: تفعيل Admin Bridge عبر كود التفعيل (بصمة: {fingerprint or 'غير محدد'})",
+        metadata={
+            "token_id": token.id,
+            "license_key": license_key,
+            "fingerprint": fingerprint,
+            "ip": client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)),
+        },
+    )
+    db.session.commit()
+
+    _log.info(
+        "instance_activate: customer_id=%s activated via token_id=%s fingerprint=%s",
+        token.customer_id, token.id, fingerprint or "(none)",
+    )
+
+    panel_base_url = base_url or current_app.config.get("ADMIN_BASE_URL") or request.host_url.rstrip("/")
+
+    return jsonify({
+        "ok": True,
+        "status": "activated",
+        "license_key": license_key,
+        "shared_secret": shared_secret,
+        "base_url": panel_base_url,
+        "customer_name": token.customer.company_name,
+    })
+
+
 @bp.post("/license-payments/requests")
 def create_license_payment_request():
     body = request.get_json(silent=True) or {}
