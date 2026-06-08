@@ -44,7 +44,9 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .admin.vault_routes import bp as admin_vault_bp
     from .admin.chr_console_routes import bp as admin_chr_bp
     from .admin.landing_routes import bp as admin_landing_bp
+    from .admin.infra_routes import bp as admin_infra_bp
     from .api.routes import bp as api_bp
+    from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
 
     app.register_blueprint(auth_bp)
@@ -52,7 +54,9 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(admin_vault_bp)
     app.register_blueprint(admin_chr_bp)
     app.register_blueprint(admin_landing_bp)
+    app.register_blueprint(admin_infra_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(proxy_api_bp)
     app.register_blueprint(public_bp)
 
     @app.get("/")
@@ -406,6 +410,11 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "expires_at": datetime_type,
             "completed_at": datetime_type,
         })
+    # CHR Nodes — encrypted RouterOS password column (Phase 5).
+    if "chr_nodes" in tables:
+        _add_columns_if_missing("chr_nodes", {
+            "routeros_password_enc": "TEXT NOT NULL DEFAULT ''",
+        })
 
 
 def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:
@@ -602,6 +611,67 @@ def _register_cli_commands(app: Flask) -> None:
             f"errors={summary.get('errors', 0)}"
             + (f" fatal={summary['fatal']}" if summary.get("fatal") else "")
         )
+
+    @app.cli.command("collect-chr-metrics")
+    def collect_chr_metrics_command():
+        """Poll all active CHR nodes via RouterOS REST and record ChrNodeMetric rows.
+        Run by a systemd timer every 5 minutes.
+        """
+        from .services.chr_metrics import collect_all_nodes
+
+        with app.app_context():
+            summary = collect_all_nodes()
+        click.echo(
+            "collect-chr-metrics: "
+            f"polled={summary.get('polled', 0)} "
+            f"ok={summary.get('ok', 0)} "
+            f"skipped={summary.get('skipped', 0)} "
+            f"errors={summary.get('errors', 0)}"
+        )
+
+    @app.cli.command("enforce-allocations")
+    @click.option(
+        "--dry-run/--apply",
+        default=True,
+        help=(
+            "--dry-run (default): اقرأ فقط — اعرض ما سيتغيّر دون كتابة. "
+            "--apply: طبِّق التغييرات فعليًا."
+        ),
+    )
+    @click.option(
+        "--customer-id",
+        default=None,
+        type=int,
+        help="حدِّد النطاق لعميل واحد فقط (للمراجعة أو الإصلاح اليدوي).",
+    )
+    def enforce_allocations_command(
+        dry_run: bool = True,
+        customer_id: int | None = None,
+    ) -> None:
+        """يُعيَّر ServiceAllocations المنتهية تلقائيًا ويُدقّق كل تغيير.
+
+        الافتراضي: dry-run (لا يكتب شيئًا).
+        شغّله مع --apply عبر systemd timer كل 15 دقيقة.
+        """
+        from .services.allocation_enforcer import run
+
+        with app.app_context():
+            result = run(dry_run=dry_run, customer_id=customer_id)
+
+        mode = "DRY-RUN" if dry_run else "APPLY"
+        if "error" in result:
+            click.echo(
+                f"enforce-allocations [{mode}] ERROR: {result['error']} | "
+                f"expired={result.get('allocations_expired', 0)}",
+                err=True,
+            )
+        else:
+            scope = f" customer_id={customer_id}" if customer_id is not None else ""
+            click.echo(
+                f"enforce-allocations [{mode}] OK: "
+                f"allocations_expired={result.get('allocations_expired', 0)}"
+                f"{scope}"
+            )
 
 
 def _install_csrf(app: Flask) -> None:

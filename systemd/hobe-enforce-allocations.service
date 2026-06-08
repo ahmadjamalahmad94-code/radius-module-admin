@@ -1,0 +1,18 @@
+[Unit]
+Description=HobeRadius Admin — Service Allocation Expiry Enforcer
+After=network.target
+
+[Service]
+Type=oneshot
+User=hoberadius
+WorkingDirectory=/opt/hoberadius-admin
+EnvironmentFile=/opt/hoberadius-admin/.env
+ExecStart=/opt/hoberadius-admin/venv/bin/flask enforce-allocations --apply
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hobe-enforce-allocations
+
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hoberadius-admin
+PrivateTmp=true
+NoNewPrivileges=true
