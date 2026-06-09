@@ -372,19 +372,32 @@ def directives_for(node: FleetChrNode, sample: TelemetrySample) -> dict[str, boo
 
 
 def health_for(node: FleetChrNode, sample: TelemetrySample) -> str:
-    """Best-effort post-sample health string.
+    """Post-sample health string for the §1 telemetry response.
 
-    Phase-4 task B (this module) does not own the hysteresis state machine —
-    task A (``fleet.health.health_state``) does. Until that lands we return
-    the cheapest sensible answer:
+    The hysteresis state machine is owned by task A (``fleet.health.monitor``),
+    which is the single source of truth for up/down (it flap-damps). This helper
+    defers to ``monitor.state_of(name)`` for the authoritative DOWN verdict, then
+    overlays the instantaneous ``shed`` directive from the just-arrived sample:
 
-    * "shedding" if the directives say shed.
-    * "down" if the node row is already disabled.
-    * "up" otherwise.
+    * monitor says "down"  → "down"  (hysteresis owns it; one fresh sample must
+      not flip a flap-damped node back up).
+    * admin disabled the node → "down".
+    * else if the sample trips the shed threshold → "shedding".
+    * else → "up".
 
-    When task A merges, this helper will defer to its ``state_of(name)`` API.
+    Safe fallback: if no health row exists yet (node never probed) ``state_of``
+    returns None and we use the sample-based answer.
     """
     if not node.enabled:
+        return "down"
+    # Defer to the monitor's authoritative, flap-damped state when available.
+    try:
+        from fleet.health.monitor import state_of
+
+        authoritative = state_of(node.name)
+    except Exception:  # monitor unavailable for any reason → best-effort fallback
+        authoritative = None
+    if authoritative == "down":
         return "down"
     if directives_for(node, sample)["shed"]:
         return "shedding"

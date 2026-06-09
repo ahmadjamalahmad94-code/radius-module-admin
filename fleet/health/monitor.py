@@ -558,6 +558,31 @@ def _is_currently_down(chr_id: int) -> bool:
     return bool(row is not None and row.state == "down")
 
 
+def state_for_chr(chr_id: int) -> str | None:
+    """Authoritative hysteresis state for a node id.
+
+    Returns one of ``'unknown' | 'up' | 'degraded' | 'down'`` (FleetChrHealth.state),
+    or ``None`` if no health row exists yet (node never probed).
+    """
+    row = db.session.get(FleetChrHealth, chr_id)
+    return row.state if row is not None else None
+
+
+def state_of(name: str) -> str | None:
+    """Authoritative hysteresis state for the node named ``name``.
+
+    ``name`` is the registry node name that telemetry/placement key by. This is
+    the public seam other modules (e.g. telemetry ingest) read so the monitor's
+    flap-damped state is the single source of truth for up/down. Returns the
+    state string, or ``None`` if the node or its health row does not exist yet
+    (callers should fall back to their own best-effort signal).
+    """
+    node = FleetChrNode.query.filter_by(name=name).one_or_none()
+    if node is None:
+        return None
+    return state_for_chr(node.id)
+
+
 def _safe_ping(pinger: Pinger, target: PingTarget) -> PingResult:
     """Pinger faults are treated as a failed probe, never a service crash.
 
@@ -644,6 +669,8 @@ __all__ = [
     "evaluate_transition",
     "run_once",
     "check_now",
+    "state_of",
+    "state_for_chr",
 ]
 
 

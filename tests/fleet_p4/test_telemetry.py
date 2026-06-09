@@ -291,6 +291,44 @@ class TestHappyPath:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Health seam — telemetry defers to the monitor's authoritative hysteresis state
+# (Phase-4 gate: fleet.health.monitor.state_of(name) is the single source of truth)
+# ════════════════════════════════════════════════════════════════════════════
+class TestHealthSeam:
+    def test_health_reflects_monitor_down_state(self, configured_app, client, enrolled_node):
+        """A healthy sample must NOT report 'up' when the monitor has the node
+        flap-damped to 'down' — telemetry defers to monitor.state_of()."""
+        from fleet.health.models_health import FleetChrHealth
+
+        db.session.add(FleetChrHealth(chr_id=enrolled_node.id, state="down"))
+        db.session.commit()
+
+        # Low CPU → telemetry's own logic would say 'up'; the monitor overrides.
+        r = client.post(TELEMETRY_URL, json=_valid_payload(cpu=0.10),
+                        headers={"X-Proxy-Token": _sign_token(nonce="seam-down")})
+        assert r.status_code == 200
+        assert r.get_json()["health"] == "down"
+
+    def test_health_up_when_monitor_says_up(self, configured_app, client, enrolled_node):
+        from fleet.health.models_health import FleetChrHealth
+
+        db.session.add(FleetChrHealth(chr_id=enrolled_node.id, state="up"))
+        db.session.commit()
+        r = client.post(TELEMETRY_URL, json=_valid_payload(cpu=0.10),
+                        headers={"X-Proxy-Token": _sign_token(nonce="seam-up")})
+        assert r.status_code == 200
+        assert r.get_json()["health"] == "up"
+
+    def test_health_falls_back_when_no_monitor_row(self, configured_app, client, enrolled_node):
+        """No FleetChrHealth row yet (node never probed) → state_of() is None and
+        telemetry uses its own best-effort sample-based answer."""
+        r = client.post(TELEMETRY_URL, json=_valid_payload(cpu=0.10),
+                        headers={"X-Proxy-Token": _sign_token(nonce="seam-fallback")})
+        assert r.status_code == 200
+        assert r.get_json()["health"] == "up"
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Query helpers — dashboard + scoring brain
 # ════════════════════════════════════════════════════════════════════════════
 class TestQueryHelpers:

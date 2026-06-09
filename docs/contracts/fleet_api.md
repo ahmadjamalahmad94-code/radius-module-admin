@@ -279,7 +279,54 @@ def on_capacity_alert(node: str, kind: str, detail: str) -> None: ...
 
 ---
 
+## 5. Routing table — `GET /api/proxy/routing-table`
+
+The proxy pulls its full routing table from the panel (auth: `X-Proxy-Token`, §0).
+Implemented in `app/api/proxy_api.py`.
+
+### Response
+
+```json
+{
+  "ok": true,
+  "generated_at": "2026-06-09T19:40:00Z",
+  "route_count": 1,
+  "routes": [
+    {
+      "realm": "client5",
+      "customer_id": 3,
+      "target_ip": "10.200.5.2",
+      "auth_port": 1812,
+      "acct_port": 1813,
+      "secret": "<actual radius shared secret>",
+      "allowed_chr_ips": ["x.x.x.x"]      // empty = all CHR nodes
+    }
+  ],
+  "chr_nodes": [
+    {
+      "name": "chr-exit-01",              // registry node NAME — telemetry/placement key by this
+      "public_ip": "x.x.x.x",
+      "management_ip": "10.99.0.11",
+      "status": "active",
+      "enabled_services": ["sstp"]
+    }
+  ]
+}
+```
+
+> **`chr_nodes[].name` (contract gap #1, Phase-4):** each entry MUST carry the
+> registry node `name`. Telemetry (`POST /api/proxy/telemetry`, §1) and placement
+> (`POST /api/proxy/placement`, §2) key by node name, so the proxy needs the name
+> here to correlate a routing-table CHR with the node it reports telemetry for.
+> `name` is **additive** — `public_ip` and the other fields are unchanged.
+
+---
+
 ## Change log
 
 - **Phase 1** — initial freeze: telemetry ingest, placement ingest, CoA/Disconnect
   intent, and the six `fleet/*` interface signatures. Auth reuses `X-Proxy-Token`.
+- **Phase 4** — documented `GET /api/proxy/routing-table` (§5); froze
+  `chr_nodes[].name` (gap #1) so the proxy can correlate routing-table CHRs with
+  telemetry/placement (which key by node name). Telemetry's `health` field now
+  defers to the monitor's authoritative hysteresis state (`monitor.state_of`).
