@@ -97,9 +97,14 @@ class ScriptRenderer(Protocol):
 
 @runtime_checkable
 class BootstrapPusher(Protocol):
-    """P3-T4 fleet.registry.bootstrap_push — delivers+runs the script once."""
+    """P3-T4 fleet.registry.bootstrap_push — delivers+runs the script once.
 
-    def push(self, reach: dict[str, Any], script: str) -> PushResult: ...
+    The real implementation (bootstrap_push.push_to_chr) also advances the job's
+    status to 'pushed'/'failed' and commits; OnboardingService.push tolerates that
+    via a conditional advance.
+    """
+
+    def push(self, job: "OnboardingJob", reach: dict[str, Any], script: str) -> PushResult: ...
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -144,9 +149,18 @@ class WizardForm:
                 raise OnboardingError(f"الحقل «{key}» يجب أن يكون موجباً.")
             return val
 
+        # Node-level cost model allows 'inherit' (use the provider's) in addition
+        # to open/metered — matches FleetChrNode.cost_model and the wizard UI,
+        # which defaults the node to 'inherit'.
         cost_model = _req_str("cost_model").lower()
-        if cost_model not in ("open", "metered"):
-            raise OnboardingError("نموذج التكلفة يجب أن يكون open أو metered.")
+        if cost_model not in ("inherit", "open", "metered"):
+            raise OnboardingError("نموذج التكلفة يجب أن يكون inherit أو open أو metered.")
+
+        # The wizard JS sends the node bandwidth cap as 'bandwidth_cap_tb'; accept
+        # it as an alias for monthly_cap_tb.
+        cap = data.get("monthly_cap_tb")
+        if cap is None:
+            cap = data.get("bandwidth_cap_tb")
 
         return cls(
             provider=_req_str("provider"),
@@ -156,7 +170,7 @@ class WizardForm:
             max_sessions=_req_int("max_sessions"),
             link_speed_mbps=_req_int("link_speed_mbps"),
             public_ipv6=(str(data.get("public_ipv6")).strip() or None) if data.get("public_ipv6") else None,
-            monthly_cap_tb=data.get("monthly_cap_tb"),
+            monthly_cap_tb=cap,
             overage_allowed=bool(data.get("overage_allowed", False)),
             price_per_tb=data.get("price_per_tb"),
             weight=float(data.get("weight") or 1.0),
@@ -202,35 +216,54 @@ def _lazy(module_path: str, attr: str, what: str):
 class _DefaultKeyProvider:
     def generate_keypair(self) -> WgKeyPair:
         gen = _lazy("fleet.registry.wg_keys", "generate_keypair", "مولّد مفاتيح WireGuard")
-        priv, pub = gen()
-        return WgKeyPair(private_key=priv, public_key=pub)
+        kp = gen()  # fleet.registry.wg_keys.WgKeypair (frozen, .private_key/.public_key)
+        return WgKeyPair(private_key=kp.private_key, public_key=kp.public_key)
 
 
 class _DefaultVault:
     def store_secret(self, hint: str, secret: str) -> str:
+        # Real API is keyword-only store_secret(owner, purpose, plaintext, kind)
+        # returning a VaultRef; we surface its opaque string for the VARCHAR ref.
         store = _lazy("fleet.registry.secrets_vault", "store_secret", "خزنة الأسرار")
-        return store(hint, secret)
+        ref = store(owner=hint, purpose="onboarding", plaintext=secret, kind="wg_privkey")
+        return str(ref)
 
     def fetch_secret(self, ref: str) -> str:
-        fetch = _lazy("fleet.registry.secrets_vault", "fetch_secret", "خزنة الأسرار")
-        return fetch(ref)
+        # Real API names the read 'retrieve_secret'.
+        retrieve = _lazy("fleet.registry.secrets_vault", "retrieve_secret", "خزنة الأسرار")
+        return retrieve(ref)
 
 
 class _DefaultRenderer:
     def render(self, bindings: dict[str, Any]) -> str:
-        render = _lazy("fleet.registry.script_render", "render", "مُولّد سكربت RouterOS")
+        # Real API is render_from_bindings(bindings); its Jinja env uses
+        # StrictUndefined, so _build_bindings must supply every template var (it does).
+        render = _lazy("fleet.registry.script_render", "render_from_bindings", "مُولّد سكربت RouterOS")
         return render(bindings)
 
 
 class _DefaultPusher:
-    def push(self, reach: dict[str, Any], script: str) -> PushResult:
-        push = _lazy("fleet.registry.bootstrap_push", "push", "ناقل الإقلاع")
-        res = push(reach, script)
-        # Tolerate either a PushResult or a (ok, detail) tuple from the real impl.
-        if isinstance(res, PushResult):
-            return res
-        ok, detail = (res if isinstance(res, tuple) else (bool(res), ""))
-        return PushResult(ok=bool(ok), detail=str(detail))
+    def push(self, job: OnboardingJob, reach: dict[str, Any], script: str) -> PushResult:
+        # Real API is push_to_chr(job, BootstrapTarget, script). It ALSO advances
+        # the job to pushed/failed and commits; OnboardingService.push tolerates
+        # that with a conditional advance.
+        push_to_chr = _lazy("fleet.registry.bootstrap_push", "push_to_chr", "ناقل الإقلاع")
+        target_cls = _lazy("fleet.registry.bootstrap_push", "BootstrapTarget", "هدف الإقلاع")
+        reach = reach or {}
+        if not reach.get("host"):
+            raise OnboardingError("دفع السكربت يتطلب عنوان الوصول (host) للعقدة.")
+        target = target_cls(
+            host=str(reach["host"]),
+            port=int(reach.get("port", 8729)),
+            username=str(reach.get("username", "admin")),
+            password=str(reach.get("password", "")),
+            transport_kind=str(reach.get("transport_kind", "api")),
+        )
+        res = push_to_chr(job, target, script)
+        return PushResult(
+            ok=bool(res.ok),
+            detail=(getattr(res, "error", "") or getattr(res, "raw_output", "")),
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -257,6 +290,8 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
 # Pool the wg-mgmt control-plane addresses are allocated from (§6.3).
 _WG_MGMT_POOL_PREFIX = "10.99.0."
 _WG_MGMT_POOL_START = 11  # .1 is the panel; nodes start at .11
+# wg-data addresses parallel the wg-mgmt pool (same host octet) in 10.98.0.0/24.
+_WG_DATA_POOL_PREFIX = "10.98.0."
 
 
 @dataclass
@@ -290,10 +325,14 @@ class OnboardingService:
         """Submit the wizard form → a ``draft`` job. Resolves/creates the provider."""
         if isinstance(form, dict):
             form = WizardForm.from_dict(form)
-        # Resolve or create the provider (the "select/new" field, §6.1).
+        # Resolve or create the provider (the "select/new" field, §6.1). A node
+        # cost_model of 'inherit' is not a valid PROVIDER model, so when we have
+        # to create a brand-new provider we default it to 'open'; an existing
+        # provider (the common case — picked from the dropdown) is returned as-is.
+        provider_cost_model = form.cost_model if form.cost_model in ("open", "metered") else "open"
         provider_service.upsert_provider_by_name(
             form.provider,
-            cost_model=form.cost_model,
+            cost_model=provider_cost_model,
             price_per_tb=form.price_per_tb or 0,
             monthly_cap_tb=form.monthly_cap_tb,
             overage_allowed=form.overage_allowed,
@@ -377,11 +416,14 @@ class OnboardingService:
         self._require(job, "pushed")
         if script is None:
             script = self.renderer.render(self._build_bindings(job))
-        result = self.pusher.push(reach, script)
+        result = self.pusher.push(job, reach, script)
         if not result.ok:
             self.mark_failed(job, result.detail or "فشل دفع السكربت إلى العقدة.")
             raise OnboardingError(result.detail or "فشل دفع السكربت إلى العقدة.")
-        job.advance("pushed")
+        # The real pusher (bootstrap_push.push_to_chr) advances+commits the job
+        # itself; only advance here if it hasn't already (e.g. injected test fakes).
+        if job.status != "pushed":
+            job.advance("pushed")
         db.session.commit()
         return job
 
@@ -438,6 +480,10 @@ class OnboardingService:
         mgmt_priv = self.vault.fetch_secret(refs["mgmt_privkey_ref"]) if refs.get("mgmt_privkey_ref") else ""
         data_priv = self.vault.fetch_secret(refs["data_privkey_ref"]) if refs.get("data_privkey_ref") else ""
 
+        # wg-data address mirrors the mgmt host octet in the data pool (10.98.0.X),
+        # parallel to the wg-mgmt pool (10.99.0.X) — see 06 §6.3. The script_render
+        # template (StrictUndefined) requires WG_DATA_ADDR + WG_DATA_ADDR_IP.
+        data_ip = f"{_WG_DATA_POOL_PREFIX}{node.wg_mgmt_ip.rsplit('.', 1)[-1]}"
         bindings: dict[str, Any] = {
             # per-CHR (the only values that differ between CHRs)
             "ROUTER_IDENTITY": node.name,
@@ -445,6 +491,8 @@ class OnboardingService:
             "WG_MGMT_PRIVKEY": mgmt_priv,
             "WG_MGMT_ADDR": f"{node.wg_mgmt_ip}/32",
             "WG_DATA_PRIVKEY": data_priv,
+            "WG_DATA_ADDR": f"{data_ip}/32",
+            "WG_DATA_ADDR_IP": data_ip,
         }
         # fleet-constant
         for key in _FLEET_CONST_DEFAULTS:

@@ -49,10 +49,16 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
-    # CHR Fleet (Phase 3, group D): registry CRUD API + admin UI for the wizard.
+    # CHR Fleet (Phase 3): registry/onboarding/provider APIs + admin UI.
     # Importing the modules also pulls in their ORM models so the fleet tables
-    # land in db.metadata for db.create_all().
+    # land in db.metadata for db.create_all(). The P3-gate integrator wires all
+    # four sub-teams here: routes_chr (T5 CHR-node CRUD), routes_provider (T6),
+    # routes_onboarding (T1 wizard API), fleet.ui (T5 pages). secrets_vault is
+    # imported so its ChrSecret model (fleet_chr_secrets) is created.
+    from fleet.registry import secrets_vault as _fleet_secrets_vault  # noqa: F401 (model registration)
     from fleet.registry.routes_chr import bp as fleet_registry_api_bp
+    from fleet.registry.routes_onboarding import bp as fleet_onboarding_bp
+    from fleet.registry.routes_provider import bp as fleet_provider_bp
     from fleet.ui.routes import bp as fleet_ui_bp
 
     app.register_blueprint(auth_bp)
@@ -66,6 +72,8 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(proxy_api_bp)
     app.register_blueprint(public_bp)
     app.register_blueprint(fleet_registry_api_bp)
+    app.register_blueprint(fleet_provider_bp)
+    app.register_blueprint(fleet_onboarding_bp)
     app.register_blueprint(fleet_ui_bp)
 
     @app.get("/")

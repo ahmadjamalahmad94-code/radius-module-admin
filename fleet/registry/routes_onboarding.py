@@ -65,9 +65,11 @@ def _run(job_id: int, fn, action: str, summary: str):
     return jsonify({"ok": True, "job": job_to_dict(job), **(result or {})})
 
 
-@bp.post("")
+@bp.post("/jobs")
 @login_required
 def create_draft():
+    # URL is /admin/fleet/onboarding/jobs — the address the wizard UI (P3-T5)
+    # posts the form to (data-onboarding-url default).
     service = build_service()
     try:
         job = service.create_draft(_body())

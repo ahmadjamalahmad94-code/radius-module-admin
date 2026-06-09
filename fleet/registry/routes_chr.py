@@ -427,68 +427,12 @@ def disable_chr_node(node_id: int):
 # ────────────────────────────────────────────────────────────────────────────
 
 
-@bp.get("/providers")
-@login_required
-def list_providers():
-    providers = FleetProvider.query.order_by(FleetProvider.name.asc()).all()
-    return jsonify({
-        "ok": True,
-        "count": len(providers),
-        "items": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "cost_model": p.cost_model,
-                "price_per_tb": _dec(p.price_per_tb),
-                "monthly_cap_tb": _dec(p.monthly_cap_tb),
-                "overage_allowed": bool(p.overage_allowed),
-                "overage_price_per_tb": _dec(p.overage_price_per_tb),
-                "billing_cycle_day": p.billing_cycle_day,
-            }
-            for p in providers
-        ],
-    })
-
-
-@bp.post("/providers")
-@login_required
-def create_provider():
-    """Create a provider row (wizard "new provider" path)."""
-    body = _read_request_body()
-    name = str(body.get("name") or "").strip()[:120]
-    if not name:
-        return _err("bad_request", 400, "name is required")
-    cost_model = (body.get("cost_model") or "open").strip().lower()
-    if cost_model not in {"open", "metered"}:
-        return _err("bad_request", 400, "cost_model must be open|metered")
-    try:
-        price = _to_dec(body.get("price_per_tb")) or Decimal("0")
-        cap = _to_dec(body.get("monthly_cap_tb"))
-    except ValueError as exc:
-        return _err("bad_request", 400, str(exc))
-    if cost_model == "metered" and cap is None:
-        return _err("bad_request", 400, "metered providers require monthly_cap_tb")
-    provider = FleetProvider(
-        name=name,
-        cost_model=cost_model,
-        price_per_tb=price,
-        monthly_cap_tb=cap,
-        overage_allowed=bool(_to_bool(body.get("overage_allowed"), default=False)),
-    )
-    db.session.add(provider)
-    try:
-        db.session.flush()
-    except IntegrityError as exc:
-        db.session.rollback()
-        return _err("conflict", 409, _shorten_db_error(str(exc.orig)))
-    audit(
-        "fleet_provider_created",
-        "fleet_provider",
-        str(provider.id),
-        f"تم إنشاء مزود استضافة {provider.name}",
-    )
-    db.session.commit()
-    return jsonify({"ok": True, "item": {"id": provider.id, "name": provider.name}}), 201
+# NOTE (Phase-3 gate): provider CRUD endpoints used to live here too, but they
+# duplicated P3-T6's canonical provider API (fleet.registry.routes_provider,
+# blueprint ``admin_fleet_provider``) at the SAME ``/admin/fleet/providers`` URL.
+# To avoid a route collision + two divergent response shapes, the integrator
+# dropped them here; this blueprint now owns CHR-NODE CRUD only. The wizard's
+# "new provider" panel posts to the T6 endpoint, which returns the fuller shape.
 
 
 def _shorten_db_error(text: str) -> str:

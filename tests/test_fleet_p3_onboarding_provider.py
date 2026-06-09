@@ -31,11 +31,8 @@ def app():
     app = create_app(TestingConfig)
     # The phase-gate integrator registers these in app/__init__.py; tests wire
     # them onto a throwaway app so we never touch that shared file here.
-    from fleet.registry.routes_onboarding import bp as onboarding_bp
-    from fleet.registry.routes_provider import bp as provider_bp
-
-    app.register_blueprint(provider_bp)
-    app.register_blueprint(onboarding_bp)
+    # Post Phase-3 gate, create_app() already registers the fleet blueprints
+    # (admin_fleet_provider, admin_fleet_onboarding, …) — no manual wiring here.
     with app.app_context():
         db.create_all()
         seed_defaults(app)
@@ -93,8 +90,8 @@ class FakePusher:
         self.detail = detail
         self.calls: list = []
 
-    def push(self, reach: dict, script: str) -> PushResult:
-        self.calls.append((reach, script))
+    def push(self, job, reach: dict, script: str) -> PushResult:
+        self.calls.append((job, reach, script))
         return PushResult(ok=self.ok, detail=self.detail)
 
 
@@ -290,26 +287,27 @@ def test_onboarding_provision_pipeline(app):
 
 # ════════════════════════════ onboarding routes ══════════════════════════════
 def test_onboarding_draft_route(auth_client):
-    r = auth_client.post("/admin/fleet/onboarding", json=FORM)
+    r = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM)
     assert r.status_code == 201, r.get_data(as_text=True)
     body = r.get_json()
     assert body["job"]["status"] == "draft"
 
 
-def test_onboarding_generate_keys_without_dependency_is_503(auth_client):
-    r = auth_client.post("/admin/fleet/onboarding", json=FORM)
+def test_onboarding_generate_keys_with_real_dependencies(auth_client):
+    # Post the Phase-3 gate, the real wg_keys + secrets_vault modules are merged,
+    # so generate-keys runs the real flow (no 503). Proves the dependency wiring.
+    r = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM)
     jid = r.get_json()["job"]["id"]
-    # build_service() returns the real defaults → wg_keys module missing → 503
     r = auth_client.post(f"/admin/fleet/onboarding/{jid}/generate-keys")
-    assert r.status_code == 503
-    assert r.get_json()["error"] == "dependency_unavailable"
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["job"]["status"] == "keys_generated"
 
 
 def test_onboarding_routes_full_flow_with_injected_fakes(auth_client, monkeypatch):
     shared = _service()
     monkeypatch.setattr("fleet.registry.routes_onboarding.build_service", lambda: shared)
 
-    jid = auth_client.post("/admin/fleet/onboarding", json=FORM).get_json()["job"]["id"]
+    jid = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM).get_json()["job"]["id"]
 
     r = auth_client.post(f"/admin/fleet/onboarding/{jid}/generate-keys")
     assert r.status_code == 200 and r.get_json()["job"]["status"] == "keys_generated"

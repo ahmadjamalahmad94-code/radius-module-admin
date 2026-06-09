@@ -231,9 +231,11 @@
         return;
       }
       // Inject the new option, select it, hide the inline panel.
+      // T6 provider API (admin_fleet_provider) returns the row under `provider`.
+      const created = body.provider || body.item;
       const opt = document.createElement("option");
-      opt.value = String(body.item.id);
-      opt.textContent = body.item.name + " (جديد)";
+      opt.value = String(created.id);
+      opt.textContent = created.name + " (جديد)";
       opt.dataset.costModel = costModel;
       providerSelect.insertBefore(opt, providerSelect.querySelector('option[value="__new__"]'));
       providerSelect.value = String(body.item.id);
