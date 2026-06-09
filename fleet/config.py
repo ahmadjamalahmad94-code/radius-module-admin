@@ -23,10 +23,20 @@ from dataclasses import dataclass, field
 class ScoringWeights:
     """Relative weights combined into a single node score (higher = better pick).
 
-    The brain computes ``score = Σ(weight_i * normalised_metric_i)``. Weights are
-    intentionally unnormalised here; the brain normalises so they need not sum to 1.
-    Raise a weight to make that signal dominate placement.
+    The brain computes ``score = Σ(weight_i * factor_i)`` and then multiplies
+    by ``node.weight`` for an operator override knob. Weights are intentionally
+    unnormalised here; raising one makes that signal dominate placement.
+
+    Phase 5 adds ``health`` and ``capacity`` to the explicit weight set so the
+    Task-A scoring engine can document its full formula here, in ONE place.
+    Older fields stay unchanged so any caller already importing them keeps
+    working.
     """
+
+    health: float = 2.0
+    """Weight on the health factor (1.0 for 'up', 0.5 for 'degraded'/'unknown').
+    The biggest single weight so a barely-healthy node never beats a fully-up
+    one purely on cheap cost."""
 
     cpu_headroom: float = 1.0
     """Favour nodes with more spare CPU (1 - cpu_util). Primary load signal."""
@@ -34,11 +44,16 @@ class ScoringWeights:
     latency: float = 0.8
     """Favour nodes with lower measured RADIUS/round-trip latency to the proxy."""
 
-    session_headroom: float = 0.6
-    """Favour nodes carrying fewer active sessions vs their declared capacity."""
+    capacity: float = 0.8
+    """Favour nodes with more free sessions vs their declared ``max_sessions``."""
 
-    cost: float = 0.4
-    """Penalise more expensive nodes (see CostModel). Keeps cheap capacity preferred."""
+    session_headroom: float = 0.6
+    """Favour nodes carrying fewer active sessions vs their declared capacity.
+    (Phase-1 alias kept for compatibility; ``capacity`` is the post-P5 name.)"""
+
+    cost: float = 0.7
+    """Weight on the bandwidth-cost factor. Pulled up from the Phase-1 default
+    of 0.4 so the "fill unlimited first" preference holds at typical load."""
 
     stickiness: float = 0.3
     """Bias toward a user's CURRENT node to avoid needless churn (hysteresis)."""
@@ -142,6 +157,97 @@ class CostModel:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Brain — scoring thresholds + movement hysteresis (fleet.brain)
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class BrainConfig:
+    """Thresholds the Phase-5 scoring engine reads directly.
+
+    Two clusters of knobs:
+
+    1. **Scoring shape** — how each per-factor curve scales between 0.0 and 1.0,
+       plus the CPU-shed escalation. These are floats kept here (NOT in
+       ``ScoringWeights``) so the weights remain pure multipliers.
+
+    2. **Movement hysteresis** — the rebalance-side ``should_move`` helper
+       only signals a move when a user has been over-threshold for at least
+       ``move_sustain_seconds`` AND no move has fired for that user within
+       the last ``move_cooldown_seconds``. Together they make ping-pong
+       impossible: a flap that drops back under the threshold within the
+       sustain window never triggers a move at all.
+    """
+
+    # ── CPU penalty / shedding ──────────────────────────────────────────
+    cpu_shed_threshold_pct: float = 70.0
+    """Mirrors :attr:`HealthConfig.cpu_shed_threshold_pct` so the brain can be
+    tuned without coupling the two configs. At/above this CPU% the node is
+    SHEDDING — its CPU factor drops by ``cpu_shed_penalty`` so it stops
+    attracting new placements (it stays eligible; it just falls in rank)."""
+
+    cpu_shed_penalty: float = 0.85
+    """Multiplicative penalty applied to the CPU factor once cpu_pct meets
+    or exceeds ``cpu_shed_threshold_pct``. 0.85 ≈ "heavy" — a CPU-shedding
+    node's CPU factor collapses by this fraction, dropping its overall score
+    well below a similarly-loaded healthy peer's."""
+
+    # ── Cost / bandwidth-cap curve ──────────────────────────────────────
+    cost_open_score: float = 1.0
+    """Cost factor for ``open`` / unlimited providers. Always the ceiling."""
+
+    cost_metered_score_at_zero: float = 0.75
+    """Cost factor for a metered provider with 0 GB used. Strictly less than
+    ``cost_open_score`` so any healthy unlimited node out-scores a brand-new
+    metered one on the cost axis (drives "fill unlimited first")."""
+
+    cost_metered_warn_ratio: float = 0.5
+    cost_metered_score_at_warn: float = 0.4
+    """At 50% of the metered cap the cost factor is already deeply penalised."""
+
+    cost_metered_alarm_ratio: float = 0.8
+    cost_metered_score_at_alarm: float = 0.15
+    """At 80% of the metered cap the cost factor is near zero — the brain
+    will only place here when no unlimited node is eligible."""
+
+    cost_metered_drain_ratio: float = 1.0
+    """At ≥ this fraction of the metered cap the node is treated as DRAIN
+    (eligible=False) — see :meth:`NodeScore.eligible`. ``overage_allowed``
+    on the provider does NOT change this; an opt-in overage policy is a
+    Phase-6+ concern."""
+
+    cost_metered_score_at_drain: float = 0.0
+    """Cost factor at the drain boundary. Reported for explainability even
+    though the node is filtered out before its score is consumed."""
+
+    # ── Fill-unlimited-first preference ─────────────────────────────────
+    fill_unlimited_first: bool = True
+    """When True, ``rank()`` uses a TWO-TIER ordering: any unlimited node
+    with ≥ ``fill_spill_headroom_pct`` of session capacity free sits in
+    Tier 0; everything else (including unlimited nodes that are NEARLY full
+    and ALL metered nodes) drops to Tier 1. Within each tier, sort by
+    score desc. Result: metered nodes never out-rank an unlimited node
+    that still has room."""
+
+    fill_spill_headroom_pct: float = 30.0
+    """An unlimited node "still has room" iff its free-sessions ratio
+    (``1 - active/max_sessions``) is ≥ this percentage. Below it, the
+    unlimited node falls into Tier 1 alongside metered nodes — i.e. we
+    "spill" only when the entire unlimited fleet is near-full."""
+
+    # ── Movement hysteresis (for the rebalance path) ────────────────────
+    move_sustain_seconds: int = 180
+    """A user must stay over-threshold for this long (default 3 min) BEFORE
+    a move is signalled. A flap that drops back under threshold within this
+    window is suppressed entirely. The :func:`should_move` helper enforces
+    this from a per-user state dataclass; new placements ignore it (they
+    just pick best eligible)."""
+
+    move_cooldown_seconds: int = 600
+    """After a user is moved, no further move for that user can be signalled
+    until this much time has passed (default 10 min). Caps ping-pong even
+    if a flapping node keeps tripping the sustain window."""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Aggregate
 # ──────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -157,6 +263,7 @@ class FleetConfig:
     placement: PlacementConfig = field(default_factory=PlacementConfig)
     dns: DnsConfig = field(default_factory=DnsConfig)
     cost: CostModel = field(default_factory=CostModel)
+    brain: BrainConfig = field(default_factory=BrainConfig)
 
 
 # Canonical default instance. Import this; do not mutate (frozen).
