@@ -74,7 +74,7 @@ class Event(db.Model):
     expected to know the shape for the kinds it cares about.
     """
 
-    __tablename__ = "events"
+    __tablename__ = "fleet_events"
     __table_args__ = (
         db.Index("idx_events_chr_ts", "chr_id", "ts"),
         db.Index("idx_events_kind",   "kind", "ts"),
@@ -88,7 +88,7 @@ class Event(db.Model):
     ts = db.Column(db.DateTime, nullable=False, default=db.func.now())
     chr_id = db.Column(
         db.Integer,
-        db.ForeignKey("chr_nodes.id"),
+        db.ForeignKey("fleet_chr_nodes.id"),
         nullable=True,
     )
     kind = db.Column(db.String(40), nullable=False)
@@ -124,7 +124,7 @@ class Alert(db.Model):
     yields the same key across the storm.
     """
 
-    __tablename__ = "alerts"
+    __tablename__ = "fleet_alerts"
     __table_args__ = (
         # Storm guard: partial-unique on dedupe_key over (queued, sent).
         # SQLAlchemy threads ``sqlite_where`` / ``postgresql_where`` into
@@ -152,7 +152,7 @@ class Alert(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     event_id = db.Column(
         db.Integer,
-        db.ForeignKey("events.id"),
+        db.ForeignKey("fleet_events.id"),
         nullable=True,
     )
     created_at = db.Column(db.DateTime, nullable=False, default=db.func.now())

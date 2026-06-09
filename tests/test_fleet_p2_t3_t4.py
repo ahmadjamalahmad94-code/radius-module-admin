@@ -7,8 +7,8 @@ Covers:
   matching ``CREATE INDEX`` set. Static check — no DB engine required.
 * Importing :mod:`fleet.brain.models_session` and
   :mod:`fleet.notify.models_alert` registers the five new tables
-  (``users_fleet``, ``sessions``, ``placement_decisions``, ``events``,
-  ``alerts``) on the shared ``db.metadata`` and ``db.create_all()``
+  (``fleet_users``, ``fleet_sessions``, ``fleet_placement_decisions``,
+  ``fleet_events``, ``fleet_alerts``) on the shared ``db.metadata`` and ``db.create_all()``
   produces them on the test SQLite DB.
 * CRUD smoke-tests for each new model.
 * The brain's two single-survivor invariants are enforced at the DB
@@ -60,7 +60,7 @@ def test_migration_003_is_idempotent_and_complete():
         "non-idempotent CREATE TABLE in 003_users_sessions.sql"
     )
     # The three Phase-2-T3 tables must exist in the file.
-    for table in ("users_fleet", "sessions", "placement_decisions"):
+    for table in ("fleet_users", "fleet_sessions", "fleet_placement_decisions"):
         assert f"create table if not exists {table}" in text, (
             f"missing CREATE TABLE for {table} in 003_users_sessions.sql"
         )
@@ -78,7 +78,7 @@ def test_migration_004_is_idempotent_and_complete():
     assert text.count("create table ") == text.count("create table if not exists "), (
         "non-idempotent CREATE TABLE in 004_events_alerts.sql"
     )
-    for table in ("events", "alerts"):
+    for table in ("fleet_events", "fleet_alerts"):
         assert f"create table if not exists {table}" in text, (
             f"missing CREATE TABLE for {table} in 004_events_alerts.sql"
         )
@@ -93,11 +93,11 @@ def test_create_all_emits_p2_t3_t4_tables(app):
     imported."""
     tables = set(inspect(db.engine).get_table_names())
     assert {
-        "users_fleet",
-        "sessions",
-        "placement_decisions",
-        "events",
-        "alerts",
+        "fleet_users",
+        "fleet_sessions",
+        "fleet_placement_decisions",
+        "fleet_events",
+        "fleet_alerts",
     }.issubset(tables)
 
 
@@ -106,29 +106,44 @@ def test_p2_t3_t4_indexes_exist(app):
     partial-unique indexes. Verify they were emitted by SQLAlchemy."""
     insp = inspect(db.engine)
 
-    sessions_idx = {ix["name"] for ix in insp.get_indexes("sessions")}
+    sessions_idx = {ix["name"] for ix in insp.get_indexes("fleet_sessions")}
     assert "uq_active_session_per_user" in sessions_idx
     assert "uq_active_ip" in sessions_idx
 
-    alerts_idx = {ix["name"] for ix in insp.get_indexes("alerts")}
+    alerts_idx = {ix["name"] for ix in insp.get_indexes("fleet_alerts")}
     assert "uq_alert_dedupe" in alerts_idx
 
-    users_idx = {ix["name"] for ix in insp.get_indexes("users_fleet")}
+    users_idx = {ix["name"] for ix in insp.get_indexes("fleet_users")}
     assert "idx_users_movable" in users_idx
 
 
 # ───────────────────────── CRUD smoke tests ────────────────────────────────
 
 def _make_chr_node(name: str) -> int:
-    """Insert a minimal ChrNode row and return its id (needed for FKs)."""
-    from app.models import ChrNode
+    """Insert a minimal FleetChrNode and return its id.
 
-    node = ChrNode(
+    The session/placement/event FKs target ``fleet_chr_nodes`` (the fleet
+    registry node table), NOT the legacy CHR-console ``chr_nodes``. Each node
+    needs a parent provider and unique public/mgmt IPs.
+    """
+    from fleet.registry.models_chr import FleetChrNode, FleetProvider
+
+    prov = FleetProvider.query.filter_by(name="test-provider").one_or_none()
+    if prov is None:
+        prov = FleetProvider(name="test-provider", cost_model="open")
+        db.session.add(prov)
+        db.session.commit()
+
+    _make_chr_node._seq = getattr(_make_chr_node, "_seq", 0) + 1
+    n = _make_chr_node._seq
+    node = FleetChrNode(
+        provider_id=prov.id,
         name=name,
-        public_ip="203.0.113.1",
-        capacity_mbps=1000,
-        max_reserved_mbps=800,
-        status="active",
+        public_ip=f"203.0.113.{n}",
+        wg_mgmt_ip=f"10.99.0.{n}",
+        wg_mgmt_pubkey=f"pubkey-{n}",
+        max_sessions=1000,
+        link_speed_mbps=1000,
     )
     db.session.add(node)
     db.session.commit()

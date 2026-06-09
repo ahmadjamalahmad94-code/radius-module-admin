@@ -66,7 +66,7 @@ class DnsRecordState(TimestampMixin, db.Model):
     guard, enforced by the controller, not the schema).
     """
 
-    __tablename__ = "dns_records_state"
+    __tablename__ = "fleet_dns_records_state"
     __table_args__ = (
         db.UniqueConstraint("fqdn", "record_type", name="uq_dns_fqdn_type"),
     )

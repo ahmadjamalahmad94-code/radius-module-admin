@@ -1,7 +1,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 004_events_alerts.sql — CHR Fleet Phase 2, task T4
 --
--- Tables: events, alerts.
+-- Tables: fleet_events, fleet_alerts.
 -- Schema source: docs/chr_fleet/02_DATA_MODEL.md §2.9 (Postgres dialect).
 --
 -- Idempotent: every CREATE uses IF NOT EXISTS so this script may be re-run
@@ -23,19 +23,19 @@ BEGIN;
 -- `kind` is intentionally a free-form TEXT — the catalog of known values
 -- is enumerated in the docstring of fleet/notify/models_alert.py so the
 -- catalog evolves with the code, not the schema.
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE IF NOT EXISTS fleet_events (
   id        BIGSERIAL PRIMARY KEY,
   ts        TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- chr_id NULL is allowed for fleet-wide events (e.g. 'dns_update',
   -- 'cap_warn' aggregated across providers).
-  chr_id    BIGINT      REFERENCES chr_nodes(id),
+  chr_id    BIGINT      REFERENCES fleet_chr_nodes(id),
   kind      TEXT        NOT NULL,
   severity  TEXT        NOT NULL DEFAULT 'info'
             CHECK (severity IN ('info','warn','crit')),
   detail    JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE INDEX IF NOT EXISTS idx_events_chr_ts ON events (chr_id, ts DESC);
-CREATE INDEX IF NOT EXISTS idx_events_kind   ON events (kind, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_chr_ts ON fleet_events (chr_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_kind   ON fleet_events (kind, ts DESC);
 
 
 -- ──────────────────────────── 2.9 alerts ────────────────────────────
@@ -43,9 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_events_kind   ON events (kind, ts DESC);
 -- unique index implement alert-storm suppression (one "CHR-7 down"
 -- message, not 50). The notifier (built in radius-module-admin's
 -- messaging layer) consumes queued rows.
-CREATE TABLE IF NOT EXISTS alerts (
+CREATE TABLE IF NOT EXISTS fleet_alerts (
   id         BIGSERIAL PRIMARY KEY,
-  event_id   BIGINT      REFERENCES events(id),
+  event_id   BIGINT      REFERENCES fleet_events(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   channel    TEXT        NOT NULL
              CHECK (channel IN ('sms','whatsapp','telegram')),
@@ -62,10 +62,10 @@ CREATE TABLE IF NOT EXISTS alerts (
 -- Storm suppression: while a queued/sent row with the same dedupe_key
 -- exists, no second row for the same key can be created.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_dedupe
-  ON alerts (dedupe_key) WHERE status IN ('queued','sent');
+  ON fleet_alerts (dedupe_key) WHERE status IN ('queued','sent');
 CREATE INDEX IF NOT EXISTS idx_alerts_status_created
-  ON alerts (status, created_at);
+  ON fleet_alerts (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_alerts_channel_created
-  ON alerts (channel, created_at DESC);
+  ON fleet_alerts (channel, created_at DESC);
 
 COMMIT;

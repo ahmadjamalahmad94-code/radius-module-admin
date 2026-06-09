@@ -58,7 +58,7 @@ class UserFleet(TimestampMixin, db.Model):
     failover the brain MUST ignore it (see §05 §5.6).
     """
 
-    __tablename__ = "users_fleet"
+    __tablename__ = "fleet_users"
     __table_args__ = (
         db.UniqueConstraint("username", name="uq_users_fleet_username"),
         db.Index("idx_users_fleet_customer", "customer_id"),
@@ -81,7 +81,7 @@ class UserFleet(TimestampMixin, db.Model):
     # prefer this CHR for the user (still subject to scoring).
     pinned_chr_id = db.Column(
         db.Integer,
-        db.ForeignKey("chr_nodes.id"),
+        db.ForeignKey("fleet_chr_nodes.id"),
         nullable=True,
     )
 
@@ -105,7 +105,7 @@ class Session(db.Model):
     the new one (see §04 §4.4).
     """
 
-    __tablename__ = "sessions"
+    __tablename__ = "fleet_sessions"
     __table_args__ = (
         # Partial-unique indexes are emitted with a WHERE clause on the
         # Postgres dialect; on SQLite SQLAlchemy honours it as a partial
@@ -142,7 +142,7 @@ class Session(db.Model):
     realm = db.Column(db.String(255), nullable=False)
     chr_id = db.Column(
         db.Integer,
-        db.ForeignKey("chr_nodes.id"),
+        db.ForeignKey("fleet_chr_nodes.id"),
         nullable=False,
     )
     framed_ip = db.Column(db.String(45), nullable=False)
@@ -173,7 +173,7 @@ class PlacementDecision(db.Model):
     — preserves the same shape under SQLite).
     """
 
-    __tablename__ = "placement_decisions"
+    __tablename__ = "fleet_placement_decisions"
     __table_args__ = (
         db.Index("idx_pd_user", "username", "decided_at"),
         db.Index("idx_pd_kind_decided", "kind", "decided_at"),
@@ -193,12 +193,12 @@ class PlacementDecision(db.Model):
     kind = db.Column(db.String(20), nullable=False)
     from_chr_id = db.Column(
         db.Integer,
-        db.ForeignKey("chr_nodes.id"),
+        db.ForeignKey("fleet_chr_nodes.id"),
         nullable=True,
     )
     to_chr_id = db.Column(
         db.Integer,
-        db.ForeignKey("chr_nodes.id"),
+        db.ForeignKey("fleet_chr_nodes.id"),
         nullable=True,
     )
     # JSONB in Postgres → TEXT-JSON elsewhere. Access via :attr:`reason`.

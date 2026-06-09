@@ -28,6 +28,11 @@ from typing import Any
 from app.extensions import db
 from app.models import TimestampMixin, json_dumps, json_loads
 
+# Import the registry model so ``fleet_chr_nodes`` is registered on the shared
+# metadata before this module's FK resolves; also gives us the portable id type
+# so the FK column matches the referenced PK type exactly (BIGINT/INTEGER variant).
+from fleet.registry.models_chr import BigIntID
+
 
 #: Allowed transitions for ``OnboardingJob.status``. Pulled out of the model so
 #: the Phase-3 service layer can ``import`` it without instantiating SQLAlchemy.
@@ -72,7 +77,7 @@ class OnboardingJob(TimestampMixin, db.Model):
     nullable in the migration — see §2.10).
     """
 
-    __tablename__ = "onboarding_jobs"
+    __tablename__ = "fleet_onboarding_jobs"
     __table_args__ = (
         db.Index("idx_onboarding_jobs_status", "status"),
         db.Index("idx_onboarding_jobs_chr_id", "chr_id"),
@@ -82,11 +87,16 @@ class OnboardingJob(TimestampMixin, db.Model):
     # ROWID and autoincrements; Postgres production uses BIGSERIAL as declared
     # in the migration — both map cleanly to Python ``int`` either way.
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    # Nullable FK: set once the chr_nodes row is created (status >= 'pushed'
-    # typically). No SQLAlchemy ``relationship()`` is declared here — the
-    # ``chr_nodes`` model is owned by P2-T1 and may not yet be importable
-    # when this module loads.
-    chr_id = db.Column(db.Integer, nullable=True)
+    # Nullable FK: set once the fleet_chr_nodes row is created (status >=
+    # 'pushed' typically). The FK targets the fleet registry node table
+    # (fleet_chr_nodes), NOT the legacy CHR-console chr_nodes. ON DELETE SET
+    # NULL mirrors migrations/005_onboarding_dns.sql so a decommissioned node
+    # leaves the job row intact for audit.
+    chr_id = db.Column(
+        BigIntID,
+        db.ForeignKey("fleet_chr_nodes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     status = db.Column(
         db.String(40),
