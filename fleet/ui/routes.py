@@ -19,10 +19,11 @@ machine endpoint owned by the sibling agent
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, render_template
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from app.auth.routes import login_required
 from app.extensions import db
+from app.services.whatsapp.crypto import WhatsAppCryptoError
 from fleet.registry.models_chr import (
     NODE_COST_MODELS,
     FleetChrNode,
@@ -35,6 +36,19 @@ from fleet.ui.dashboard_data import (
     health_state_counts,
 )
 from fleet.ui.brain_view import brain_available, ranked_view_for
+from fleet.dns.settings_store import (
+    MODE_LABELS_AR,
+    MODE_VALUES,
+    clear_token,
+    load_view as load_frontdoor_view,
+    save_mode,
+    save_token,
+)
+from fleet.ui.dns_reconciler_view import (
+    preview as dns_preview,
+    reconcile_now as dns_reconcile_now,
+    reconciler_available,
+)
 
 
 bp = Blueprint(
@@ -190,6 +204,99 @@ def onboarding_wizard():
         ),
         providers_api_url="/admin/fleet/providers",
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 6 / task C — Front-door (Cloudflare DNS) settings page.
+#
+# SECURITY:
+#   * The Cloudflare API token is encrypted at rest with the existing
+#     WHATSAPP_FERNET_KEY (see fleet.dns.settings_store).
+#   * The plaintext token is ONLY accepted from the POST form; it is read into
+#     a local, handed to ``save_token`` (which encrypts and writes), and the
+#     reference is dropped on function return. It is NEVER:
+#       - logged (no current_app.logger calls in this path);
+#       - echoed in the response (the redirect target is the same form page,
+#         which re-renders from ``load_view`` and therefore only ever shows
+#         the masked ciphertext);
+#       - included in a URL (POST-redirect-GET pattern).
+#   * The "تغيير" flow does a clear-then-redirect so the operator's next view
+#     shows the empty input + the «لم يُضبط» banner.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+@bp.get("/dns/")
+@login_required
+def dns_frontdoor():
+    """Render the front-door settings page (masked token + mode switch)."""
+    view = load_frontdoor_view()
+    return render_template(
+        "admin/fleet/frontdoor.html",
+        view=view,
+        mode_choices=[(v, MODE_LABELS_AR[v]) for v in MODE_VALUES],
+        reconciler_imported=reconciler_available(),
+    )
+
+
+@bp.post("/dns/token")
+@login_required
+def dns_frontdoor_token_save():
+    """Accept a new token (POST-redirect-GET)."""
+    # We deliberately do NOT log request.form here, ever.
+    plaintext = (request.form.get("cloudflare_api_token") or "").strip()
+    if not plaintext:
+        flash("الرجاء لصق توكن Cloudflare قبل الحفظ.", "error")
+        return redirect(url_for("fleet_ui.dns_frontdoor"))
+    try:
+        save_token(plaintext)
+    except WhatsAppCryptoError:
+        flash("لم يُضبط مفتاح التشفير على الخادم — راجع إعداد WHATSAPP_FERNET_KEY.", "error")
+        return redirect(url_for("fleet_ui.dns_frontdoor"))
+    except Exception:  # noqa: BLE001 - never reveal what failed in token paths
+        flash("تعذّر حفظ التوكن — تحقق من اللوحة وأعد المحاولة.", "error")
+        return redirect(url_for("fleet_ui.dns_frontdoor"))
+    finally:
+        # Drop the local reference. CPython has no secure-erase primitive but
+        # keeping the binding alive after the redirect serves no purpose.
+        plaintext = ""
+    flash("تم حفظ توكن Cloudflare بشكل مُشفّر. لا يظهر النص الأصلي في أي مكان.", "success")
+    return redirect(url_for("fleet_ui.dns_frontdoor"))
+
+
+@bp.post("/dns/token/clear")
+@login_required
+def dns_frontdoor_token_clear():
+    """Wipe the stored token (used by the «تغيير» button)."""
+    clear_token()
+    flash("تم مسح التوكن. أدخِل توكناً جديداً للمتابعة.", "warning")
+    return redirect(url_for("fleet_ui.dns_frontdoor"))
+
+
+@bp.post("/dns/mode")
+@login_required
+def dns_frontdoor_mode_save():
+    """Persist the free/paid mode."""
+    mode = (request.form.get("mode") or "").strip().lower()
+    if mode not in MODE_VALUES:
+        flash("قيمة الوضع غير صحيحة.", "error")
+        return redirect(url_for("fleet_ui.dns_frontdoor"))
+    save_mode(mode)
+    flash(f"تم تعديل وضع التشغيل: {MODE_LABELS_AR[mode]}.", "success")
+    return redirect(url_for("fleet_ui.dns_frontdoor"))
+
+
+@bp.post("/dns/preview")
+@login_required
+def dns_frontdoor_preview():
+    """Dry-run — never touches Cloudflare. Returns JSON for the page JS."""
+    return jsonify({"ok": True, "preview": dns_preview()})
+
+
+@bp.post("/dns/apply")
+@login_required
+def dns_frontdoor_apply():
+    """Ask the reconciler to publish. Returns JSON for the page JS."""
+    return jsonify({"ok": True, "result": dns_reconcile_now()})
 
 
 __all__ = ["bp"]

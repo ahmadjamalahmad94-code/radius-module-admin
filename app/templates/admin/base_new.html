@@ -248,6 +248,10 @@
              class="adm-link {% if ep == 'fleet_ui.onboarding_wizard' %}is-active{% endif %}">
             معالج إضافة CHR
           </a>
+          <a href="{{ url_for('fleet_ui.dns_frontdoor') }}"
+             class="adm-link {% if ep == 'fleet_ui.dns_frontdoor' %}is-active{% endif %}">
+            الباب الأمامي (DNS)
+          </a>
         </div>
       </div>
       {% endif %}

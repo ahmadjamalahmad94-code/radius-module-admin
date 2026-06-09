@@ -1,0 +1,381 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}الباب الأمامي — إعدادات DNS{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <span class="ar-breadcrumb-item">الباب الأمامي (DNS)</span>
+{% endblock %}
+{% block page_breadcrumb %}الباب الأمامي{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ─── Page shell — same family as the dashboard for visual parity ─── */
+  .ff-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+    border-radius: 18px; padding: 22px 26px; color: #fff;
+    margin-block-end: 18px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .ff-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .ff-hero-body { flex: 1 1 220px; }
+  .ff-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .ff-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 760px; }
+
+  .ff-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 22px; margin-block-end: 18px;
+  }
+  .ff-card-head { display: flex; gap: 10px; align-items: center; margin-block-end: 14px; flex-wrap: wrap; }
+  .ff-card-title { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .ff-card-title i { color: #1e40af; }
+  .ff-card-spacer { flex: 1; }
+
+  .ff-grid-2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+  .ff-row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-block-end: 1px dashed #e5e7eb; font-size: 13px; }
+  .ff-row:last-child { border-block-end: none; }
+  .ff-row-key { color: #475569; font-weight: 600; }
+  .ff-row-val { color: #0f172a; font-weight: 700; text-align: end; max-width: 60%; word-break: break-all; }
+  .ff-row-val.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .ff-banner {
+    display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px;
+    font-size: 12.5px; margin-block-end: 14px; line-height: 1.65;
+  }
+  .ff-banner i { font-size: 14px; margin-top: 2px; }
+  .ff-banner--warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .ff-banner--warn i { color: #b45309; }
+  .ff-banner--info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+  .ff-banner--info i { color: #1e40af; }
+  .ff-banner--ok   { background: #ecfdf5; color: #047857; border: 1px solid #d1fae5; }
+  .ff-banner--ok i { color: #047857; }
+  .ff-banner--bad  { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .ff-banner--bad i { color: #b91c1c; }
+
+  .ff-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+    border: 1px solid transparent;
+  }
+  .ff-pill--ok    { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+  .ff-pill--warn  { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .ff-pill--bad   { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+  .ff-pill--info  { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+
+  .ff-field { display: flex; flex-direction: column; gap: 6px; }
+  .ff-field label { font-size: 12.5px; font-weight: 700; color: #0f172a; }
+  .ff-field input[type="password"], .ff-field input[type="text"] {
+    height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 10px;
+    font-size: 13px; background: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ff-field input:focus { outline: none; border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.12); }
+  .ff-hint { font-size: 11.5px; color: #6b7280; line-height: 1.6; }
+
+  .ff-btn {
+    height: 38px; padding-inline: 14px; border-radius: 10px;
+    font-weight: 700; font-size: 13px; cursor: pointer;
+    border: 1px solid #e5e7eb; background: #fff; color: #0f172a;
+    display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+  }
+  .ff-btn--primary { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .ff-btn--primary:hover { background: #1e3a8a; }
+  .ff-btn--warn { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
+  .ff-btn--warn:hover { background: #d97706; color: #fff; }
+  .ff-btn--ghost:hover { background: #f1f5f9; }
+  .ff-btn--danger { background: #fff; border-color: #fecaca; color: #b91c1c; }
+  .ff-btn--danger:hover { background: #fef2f2; }
+  .ff-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  /* Mode radio cards */
+  .ff-mode-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .ff-mode-card {
+    display: flex; gap: 10px; align-items: flex-start; padding: 14px;
+    border: 1.5px solid #e5e7eb; border-radius: 12px; cursor: pointer;
+    background: #fafbfc; transition: all .15s ease;
+  }
+  .ff-mode-card:hover { background: #f1f5f9; }
+  .ff-mode-card.is-selected { background: #eff6ff; border-color: #1e40af; }
+  .ff-mode-card input { margin-top: 2px; }
+  .ff-mode-title { font-weight: 800; font-size: 13.5px; color: #0f172a; }
+  .ff-mode-sub   { font-size: 11.5px; color: #475569; margin-top: 2px; line-height: 1.55; }
+
+  /* Preview/Apply results pane */
+  .ff-result {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 14px; margin-top: 12px; font-size: 12.5px; line-height: 1.6;
+  }
+  .ff-result.is-error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .ff-result-head { font-weight: 800; font-size: 13.5px; margin-block-end: 8px; }
+  .ff-tbl { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .ff-tbl th, .ff-tbl td { padding: 6px 8px; border-block-end: 1px solid #e5e7eb; text-align: start; }
+  .ff-tbl th { background: #f1f5f9; font-weight: 700; font-size: 12px; color: #334155; }
+  .ff-tbl .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ─── Toast host + confirm dialog (NO native alert/confirm) ─── */
+  .ff-toast-host {
+    position: fixed; inset-inline-end: 24px; bottom: 24px; z-index: 90;
+    display: flex; flex-direction: column; gap: 10px; max-width: 360px;
+  }
+  .ff-toast {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    box-shadow: 0 22px 40px -18px rgba(15, 23, 42, .32);
+    padding: 14px 16px; display: flex; gap: 10px; align-items: flex-start;
+    animation: ff-toast-in .18s ease-out;
+  }
+  @keyframes ff-toast-in { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform: translateY(0);} }
+  .ff-toast i.ff-toast-icon { font-size: 16px; margin-top: 2px; }
+  .ff-toast--info    i.ff-toast-icon { color: #0284c7; }
+  .ff-toast--success i.ff-toast-icon { color: #047857; }
+  .ff-toast--warn    i.ff-toast-icon { color: #b45309; }
+  .ff-toast--error   i.ff-toast-icon { color: #b91c1c; }
+  .ff-toast-msg { font-size: 13px; color: #0f172a; line-height: 1.55; flex: 1; }
+  .ff-toast-close { background: transparent; border: none; cursor: pointer; color: #6b7280; font-size: 14px; }
+
+  .ff-confirm { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(15,23,42,.32); }
+  .ff-confirm.is-open { display: flex; }
+  .ff-confirm-box {
+    background: #fff; border-radius: 16px; padding: 20px 22px; max-width: 460px; width: 92%;
+    box-shadow: 0 30px 60px -24px rgba(15, 23, 42, .45);
+  }
+  .ff-confirm-title { font-weight: 800; font-size: 15px; color: #0f172a; margin-block-end: 8px; display: flex; align-items: center; gap: 8px; }
+  .ff-confirm-title i { color: #b45309; }
+  .ff-confirm-msg { font-size: 13px; color: #1f2937; line-height: 1.6; margin-block-end: 16px; }
+  .ff-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="ff-hero">
+  <div class="ff-hero-icon"><i class="fa-solid fa-globe" aria-hidden="true"></i></div>
+  <div class="ff-hero-body">
+    <div class="ff-hero-title">إعدادات الباب الأمامي للأسطول</div>
+    <div class="ff-hero-sub">
+      هنا يُضبط توكن Cloudflare ووضع التشغيل (مجاني / مدفوع). التوكن سرّ — يُخزَّن مُشفّراً
+      ولا يظهر مجدداً في أي صفحة. تستطيع رؤية الحالة الحالية لـ DNS ومعاينة ما الذي
+      سيتغيّر قبل التطبيق.
+    </div>
+  </div>
+</div>
+
+{# ─── Banner: no token yet → preview-only ─── #}
+{% if not view.crypto_available %}
+  <div class="ff-banner ff-banner--bad">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <div>
+      مفتاح التشفير على الخادم غير مضبوط (<span class="mono">WHATSAPP_FERNET_KEY</span>).
+      لا يمكن حفظ التوكن. أبلغ مسؤول النظام قبل المتابعة.
+    </div>
+  </div>
+{% elif not view.token_present %}
+  <div class="ff-banner ff-banner--warn">
+    <i class="fa-solid fa-circle-exclamation"></i>
+    <div>
+      لم يُضبط توكن Cloudflare بعد — الوضع <strong>تجريبي/معاينة فقط</strong>. لن تُكتب
+      أي تغييرات على Cloudflare حتى تُحفظ التوكن.
+    </div>
+  </div>
+{% else %}
+  <div class="ff-banner ff-banner--ok">
+    <i class="fa-solid fa-shield-halved"></i>
+    <div>
+      توكن Cloudflare مُخزَّن ومُشفَّر. النص الأصلي غير قابل للقراءة من اللوحة. تستطيع
+      «تغيير» التوكن في أي وقت.
+    </div>
+  </div>
+{% endif %}
+
+{% if not reconciler_imported %}
+  <div class="ff-banner ff-banner--info">
+    <i class="fa-solid fa-flask"></i>
+    <div>
+      وحدة المُنسِّق الفعلي (<span class="mono">fleet.dns.reconciler</span>) لم تُربط
+      بعد. تعمل المعاينة والتطبيق ضمن وضع مؤقت داخل اللوحة فقط — لن تُكتب أي سجلات على Cloudflare.
+    </div>
+  </div>
+{% endif %}
+
+<div class="ff-grid-2">
+
+  {# ═══════ Identifiers (read-only) ═══════ #}
+  <div class="ff-card">
+    <div class="ff-card-head">
+      <div class="ff-card-title"><i class="fa-solid fa-fingerprint"></i> المعرّفات الثابتة</div>
+    </div>
+    <div class="ff-row">
+      <span class="ff-row-key">اسم النطاق (FQDN)</span>
+      <span class="ff-row-val mono">{{ view.frontdoor_fqdn }}</span>
+    </div>
+    <div class="ff-row">
+      <span class="ff-row-key">معرّف المنطقة (Zone)</span>
+      <span class="ff-row-val mono">{{ view.zone_id }}</span>
+    </div>
+    <div class="ff-row">
+      <span class="ff-row-key">معرّف الحساب (Account)</span>
+      <span class="ff-row-val mono">{{ view.account_id }}</span>
+    </div>
+    <div class="ff-hint" style="margin-top:10px">
+      هذه القيم ليست أسرار — تظهر هنا للمراجعة فقط. الأسرار محدودة بالتوكن أدناه.
+    </div>
+  </div>
+
+  {# ═══════ Token (the only secret) ═══════ #}
+  <div class="ff-card">
+    <div class="ff-card-head">
+      <div class="ff-card-title"><i class="fa-solid fa-key"></i> توكن Cloudflare</div>
+      <div class="ff-card-spacer"></div>
+      {% if view.token_present %}
+        <span class="ff-pill ff-pill--ok">
+          <i class="fa-solid fa-circle-check"></i> مُخزَّن ✓
+        </span>
+      {% else %}
+        <span class="ff-pill ff-pill--warn">
+          <i class="fa-solid fa-circle-exclamation"></i> غير مضبوط
+        </span>
+      {% endif %}
+    </div>
+
+    {% if view.token_present %}
+      <div class="ff-row">
+        <span class="ff-row-key">القيمة المُقنَّعة</span>
+        <span class="ff-row-val mono" id="ff-masked">{{ view.token_masked }}</span>
+      </div>
+      <div class="ff-hint" style="margin-top:8px">
+        النص الأصلي للتوكن لا يُعاد عرضه أبداً — حتى للمسؤول. لتعديله، اضغط «تغيير»
+        ثم الصِق توكناً جديداً.
+      </div>
+      <form method="post" action="{{ url_for('fleet_ui.dns_frontdoor_token_clear') }}"
+            class="ff-clear-form" style="margin-top:14px">
+        {{ csrf_input() }}
+        <button type="button" class="ff-btn ff-btn--danger" id="ff-token-clear-btn"
+                data-confirm="مسح توكن Cloudflare سيمنع التطبيق على DNS حتى تُدخِل توكناً جديداً. هل تريد المتابعة؟">
+          <i class="fa-solid fa-rotate-right"></i> تغيير التوكن
+        </button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('fleet_ui.dns_frontdoor_token_save') }}"
+            autocomplete="off" id="ff-token-form">
+        {{ csrf_input() }}
+        <div class="ff-field">
+          <label for="cloudflare_api_token">الصق توكن Cloudflare (سيُحفظ مُشفَّراً)</label>
+          <input type="password" id="cloudflare_api_token" name="cloudflare_api_token"
+                 autocomplete="off" spellcheck="false"
+                 placeholder="cf-…" required minlength="20"
+                 {% if not view.crypto_available %}disabled{% endif %}>
+          <div class="ff-hint">
+            لا تشاركه عبر البريد أو الدردشة. بعد الحفظ سيظهر فقط الجزء الأول والأخير منه،
+            ولن يظهر مجدداً.
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <button type="submit" class="ff-btn ff-btn--primary" {% if not view.crypto_available %}disabled{% endif %}>
+            <i class="fa-solid fa-lock"></i> حفظ مُشفَّر
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+</div>
+
+{# ═══════ Mode switch ═══════ #}
+<div class="ff-card">
+  <div class="ff-card-head">
+    <div class="ff-card-title"><i class="fa-solid fa-sliders"></i> وضع التشغيل</div>
+    <div class="ff-card-spacer"></div>
+    <span class="ff-pill ff-pill--info">الوضع الحالي: {{ view.mode_label_ar }}</span>
+  </div>
+  <div class="ff-hint" style="margin-block-end:14px">
+    «المجاني» يُسيِّر السجلات A بأوزان موزعة على CHRs الصحية مع استبعاد العقد المفصولة —
+    لا يستخدم Cloudflare Load Balancer. «المدفوع» يفوّض الموازنة إلى Cloudflare وتظل اللوحة
+    تُحدِّث مجموعة العقد الصحية.
+  </div>
+  <form method="post" action="{{ url_for('fleet_ui.dns_frontdoor_mode_save') }}">
+    {{ csrf_input() }}
+    <div class="ff-mode-grid">
+      {% for value, label in mode_choices %}
+        <label class="ff-mode-card {% if view.mode == value %}is-selected{% endif %}">
+          <input type="radio" name="mode" value="{{ value }}" {% if view.mode == value %}checked{% endif %}>
+          <span>
+            <span class="ff-mode-title">{{ label }}</span>
+            <span class="ff-mode-sub">
+              {% if value == 'free' %}
+                موزانة محلية: ترتيب CHR بحسب درجة المخّ، استبعاد المفصولة والمنزوحة، TTL منخفض.
+              {% else %}
+                يُترك القرار للحظة لـ Cloudflare Load Balancer؛ اللوحة فقط تُحدّث المجموعة الصحية.
+              {% endif %}
+            </span>
+          </span>
+        </label>
+      {% endfor %}
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="ff-btn ff-btn--primary">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ الوضع
+      </button>
+    </div>
+  </form>
+</div>
+
+{# ═══════ Preview + Apply ═══════ #}
+<div class="ff-card">
+  <div class="ff-card-head">
+    <div class="ff-card-title"><i class="fa-solid fa-eye"></i> معاينة وتطبيق</div>
+    <div class="ff-card-spacer"></div>
+    <button type="button" id="ff-preview-btn" class="ff-btn">
+      <i class="fa-solid fa-eye"></i>
+      <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
+      معاينة (بدون تطبيق)
+    </button>
+    <button type="button" id="ff-apply-btn" class="ff-btn ff-btn--warn"
+            data-confirm="سيُطلب من المُنسِّق نشر التغييرات الآن على Cloudflare. هل أنت متأكد؟">
+      <i class="fa-solid fa-cloud-arrow-up"></i>
+      <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
+      تطبيق الآن
+    </button>
+  </div>
+  <div class="ff-hint">
+    «معاينة» تُظهر CHRs التي ستُدرَج وأوزانها بدون أي تغيير فعلي على Cloudflare. «تطبيق»
+    يَطلب من المُنسِّق النشر فعلاً (مع احترام التحقق من الحد الأدنى للعقد الصحية).
+  </div>
+  <div class="ff-result" id="ff-result" style="display:none"></div>
+</div>
+
+{# ═══════ Current applied DNS state ═══════ #}
+<div class="ff-card">
+  <div class="ff-card-head">
+    <div class="ff-card-title"><i class="fa-solid fa-database"></i> حالة DNS الحالية (آخر نشر)</div>
+  </div>
+  <div id="ff-current-host">
+    <div class="ff-hint">اضغط «معاينة» لتحديث القراءة من اللوحة.</div>
+  </div>
+</div>
+
+<div id="ff-csrf-host" style="display:none">{{ csrf_input() }}</div>
+<div class="ff-toast-host" id="ff-toast-host" aria-live="polite" aria-atomic="true"></div>
+
+<div class="ff-confirm" id="ff-confirm" role="dialog" aria-modal="true">
+  <div class="ff-confirm-box">
+    <div class="ff-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> تأكيد</div>
+    <div class="ff-confirm-msg" id="ff-confirm-msg"></div>
+    <div class="ff-confirm-actions">
+      <button type="button" class="ff-btn ff-btn--ghost" id="ff-confirm-cancel">إلغاء</button>
+      <button type="button" class="ff-btn ff-btn--primary" id="ff-confirm-ok">متابعة</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/admin_fleet_frontdoor.js') }}"
+        data-preview-url="{{ url_for('fleet_ui.dns_frontdoor_preview') }}"
+        data-apply-url="{{ url_for('fleet_ui.dns_frontdoor_apply') }}" defer></script>
+
+{% endblock %}
