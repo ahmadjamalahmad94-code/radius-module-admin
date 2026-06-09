@@ -49,6 +49,11 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
+    # CHR Fleet (Phase 3, group D): registry CRUD API + admin UI for the wizard.
+    # Importing the modules also pulls in their ORM models so the fleet tables
+    # land in db.metadata for db.create_all().
+    from fleet.registry.routes_chr import bp as fleet_registry_api_bp
+    from fleet.ui.routes import bp as fleet_ui_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
@@ -60,6 +65,8 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(proxy_api_bp)
     app.register_blueprint(public_bp)
+    app.register_blueprint(fleet_registry_api_bp)
+    app.register_blueprint(fleet_ui_bp)
 
     @app.get("/")
     def root():

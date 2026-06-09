@@ -225,6 +225,33 @@
       </div>
       {% endif %}
 
+      {# ── ⑤b أسطول CHR ─────────────────────────────────────────────── #}
+      {% if 'fleet' not in hidden_sections %}
+      {% set _g5b = ep.startswith('fleet_ui.') or ep.startswith('fleet_registry_api.') %}
+      <div class="adm-group {% if _g5b %}is-active is-open{% endif %}" data-group="fleet">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="{{ 'true' if _g5b else 'false' }}"
+                aria-controls="grp-fleet">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-diagram-project"></i>
+          </span>
+          <span class="adm-group-label">أسطول CHR</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-fleet">
+          <a href="{{ url_for('fleet_ui.fleet_dashboard') }}"
+             class="adm-link {% if ep == 'fleet_ui.fleet_dashboard' %}is-active{% endif %}">
+            لوحة الأسطول
+          </a>
+          <a href="{{ url_for('fleet_ui.onboarding_wizard') }}"
+             class="adm-link {% if ep == 'fleet_ui.onboarding_wizard' %}is-active{% endif %}">
+            معالج إضافة CHR
+          </a>
+        </div>
+      </div>
+      {% endif %}
+
       {# ── ⑥ السجلات ───────────────────────────────────────────────── #}
       {% if 'logs' not in hidden_sections %}
       {% set _g6 = ep in ['admin.checks_list', 'admin.renewals_list', 'admin.audit_logs'] %}

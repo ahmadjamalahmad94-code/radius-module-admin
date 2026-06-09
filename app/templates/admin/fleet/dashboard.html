@@ -1,0 +1,198 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}لوحة الأسطول — CHR Fleet{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <span class="ar-breadcrumb-item">أسطول CHR</span>
+{% endblock %}
+{% block page_breadcrumb %}لوحة الأسطول{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fd-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+    border-radius: 18px; padding: 22px 26px; color: #fff;
+    margin-block-end: 18px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .fd-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .fd-hero-body { flex: 1 1 220px; }
+  .fd-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .fd-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 720px; }
+  .fd-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fd-btn {
+    height: 36px; padding-inline: 14px; border-radius: 10px;
+    font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1.5px solid rgba(255,255,255,.32); background: rgba(255,255,255,.16); color: #fff;
+  }
+  .fd-btn--primary { background: #fff; color: #0f172a; border-color: #fff; }
+
+  .fd-kpis {
+    display: grid; gap: 14px; margin-block-end: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .fd-kpi {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 14px 16px; display: flex; gap: 12px; align-items: center;
+  }
+  .fd-kpi-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    background: #eef2ff; color: #1e40af;
+  }
+  .fd-kpi-icon--up   { background: #ecfdf5; color: #047857; }
+  .fd-kpi-icon--deg  { background: #fef3c7; color: #b45309; }
+  .fd-kpi-icon--down { background: #fee2e2; color: #b91c1c; }
+  .fd-kpi-icon--off  { background: #f1f5f9; color: #475569; }
+  .fd-kpi-num { font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1; }
+  .fd-kpi-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+  .fd-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 18px; margin-block-end: 18px;
+  }
+  .fd-card-head { display: flex; gap: 8px; align-items: center; margin-block-end: 12px; }
+  .fd-card-title { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .fd-card-title i { color: #1e40af; }
+  .fd-card-spacer { flex: 1; }
+
+  .fd-tbl-wrap { overflow-x: auto; }
+  .fd-tbl { width: 100%; border-collapse: collapse; }
+  .fd-tbl th, .fd-tbl td { padding: 10px 12px; border-block-end: 1px solid #f1f5f9; font-size: 13px; vertical-align: middle; }
+  .fd-tbl th { background: #f8fafc; font-weight: 700; color: #374151; text-align: start; }
+  .fd-tbl tr:last-child td { border-block-end: none; }
+  .fd-tbl .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .fd-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  }
+  .fd-badge--up   { background: #ecfdf5; color: #047857; }
+  .fd-badge--deg  { background: #fef3c7; color: #92400e; }
+  .fd-badge--down { background: #fee2e2; color: #991b1b; }
+  .fd-badge--off  { background: #f1f5f9; color: #475569; }
+  .fd-badge--prov { background: #eef2ff; color: #4338ca; }
+
+  .fd-empty {
+    text-align: center; padding: 32px; color: #6b7280; font-size: 13px;
+    border: 1.5px dashed #e5e7eb; border-radius: 12px; background: #fafbfc;
+  }
+  .fd-empty i { font-size: 28px; color: #cbd5e1; margin-bottom: 8px; display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="fd-hero">
+  <div class="fd-hero-icon"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i></div>
+  <div class="fd-hero-body">
+    <div class="fd-hero-title">لوحة أسطول CHR</div>
+    <div class="fd-hero-sub">
+      كل عقد CHR في الأسطول — حالتها، الجلسات النشطة، النطاق المستهلَك، ودرجة المخّ.
+      المخّ يستخدم الدرجة لإعادة التوازن واختيار أفضل CHR في DNS الذكي.
+    </div>
+  </div>
+  <div class="fd-hero-actions">
+    <a class="fd-btn fd-btn--primary" href="{{ url_for('fleet_ui.onboarding_wizard') }}">
+      <i class="fa-solid fa-wand-magic-sparkles"></i> إضافة عقدة جديدة
+    </a>
+  </div>
+</div>
+
+<div class="fd-kpis">
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon"><i class="fa-solid fa-network-wired"></i></div>
+    <div><div class="fd-kpi-num">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
+  </div>
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon fd-kpi-icon--up"><i class="fa-solid fa-circle-check"></i></div>
+    <div><div class="fd-kpi-num">{{ by_status.get('up', 0) }}</div><div class="fd-kpi-label">جاهزة (up)</div></div>
+  </div>
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon fd-kpi-icon--deg"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <div><div class="fd-kpi-num">{{ by_status.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
+  </div>
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon fd-kpi-icon--down"><i class="fa-solid fa-circle-xmark"></i></div>
+    <div><div class="fd-kpi-num">{{ by_status.get('down', 0) }}</div><div class="fd-kpi-label">معطلة (down)</div></div>
+  </div>
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
+    <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
+  </div>
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon"><i class="fa-solid fa-building"></i></div>
+    <div><div class="fd-kpi-num">{{ total_providers }}</div><div class="fd-kpi-label">المزودون</div></div>
+  </div>
+</div>
+
+<div class="fd-card">
+  <div class="fd-card-head">
+    <div class="fd-card-title"><i class="fa-solid fa-list-ul"></i> عقد CHR</div>
+    <div class="fd-card-spacer"></div>
+    <a class="fd-btn" style="color:#1e40af;border-color:#1e40af;background:#fff" href="{{ url_for('fleet_ui.onboarding_wizard') }}">
+      <i class="fa-solid fa-plus"></i> إضافة عقدة
+    </a>
+  </div>
+
+  {% if nodes %}
+    <div class="fd-tbl-wrap">
+      <table class="fd-tbl">
+        <thead>
+          <tr>
+            <th>الاسم</th>
+            <th>المزود</th>
+            <th>IP العام</th>
+            <th>الحالة</th>
+            <th>سعة (جلسات)</th>
+            <th>السرعة</th>
+            <th>نموذج التكلفة</th>
+            <th>الدرجة</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for n in nodes %}
+            <tr>
+              <td class="mono"><strong>{{ n.name }}</strong></td>
+              <td>{{ n.provider.name if n.provider else '—' }}</td>
+              <td class="mono">{{ n.public_ip }}</td>
+              <td>
+                {% if n.status == 'up' %}
+                  <span class="fd-badge fd-badge--up">جاهزة</span>
+                {% elif n.status == 'degraded' %}
+                  <span class="fd-badge fd-badge--deg">متدهورة</span>
+                {% elif n.status == 'down' %}
+                  <span class="fd-badge fd-badge--down">معطلة</span>
+                {% elif n.status == 'disabled' %}
+                  <span class="fd-badge fd-badge--off">مُعطّلة يدوياً</span>
+                {% else %}
+                  <span class="fd-badge fd-badge--prov">{{ n.status }}</span>
+                {% endif %}
+                {% if n.drain %}
+                  <span class="fd-badge fd-badge--off" title="drain — لا تستقبل جلسات جديدة">drain</span>
+                {% endif %}
+              </td>
+              <td class="mono">{{ n.active_sessions or 0 }} / {{ n.max_sessions }}</td>
+              <td class="mono">{{ n.link_speed_mbps }} Mbps</td>
+              <td>{{ n.cost_model }}</td>
+              <td class="mono">{{ n.score if n.score is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="fd-empty">
+      <i class="fa-solid fa-server"></i>
+      لا توجد عقد CHR بعد. ابدأ بإضافة أول عقدة عبر «معالج إضافة CHR».
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}

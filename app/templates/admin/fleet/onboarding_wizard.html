@@ -1,0 +1,414 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+
+{% block title %}معالج إضافة CHR — أسطول CHR{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+{% endblock %}
+{% block page_breadcrumb %}معالج إضافة CHR{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ─── Wizard shell ───────────────────────────────────────────── */
+  .fw-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+    border-radius: 18px;
+    padding: 22px 26px;
+    color: #fff;
+    margin-block-end: 18px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .fw-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #fff;
+  }
+  .fw-hero-body { flex: 1 1 220px; }
+  .fw-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .fw-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 720px; }
+
+  /* ─── Stepper bar ────────────────────────────────────────────── */
+  .fw-stepper {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 14px 16px; margin-block-end: 18px;
+  }
+  .fw-step {
+    display: flex; align-items: center; gap: 10px; flex: 1 1 160px;
+    min-width: 160px; padding: 8px 10px; border-radius: 10px;
+    background: #f8fafc; color: #475569; font-size: 12.5px; font-weight: 700;
+    border: 1px solid #e5e7eb;
+  }
+  .fw-step.is-current { background: #1e40af; color: #fff; border-color: #1e40af; }
+  .fw-step.is-done    { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+  .fw-step-num {
+    width: 24px; height: 24px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.06); color: inherit; font-weight: 800; font-size: 12px;
+  }
+  .fw-step.is-current .fw-step-num { background: rgba(255,255,255,.22); color: #fff; }
+  .fw-step.is-done    .fw-step-num { background: #d1fae5; color: #065f46; }
+
+  /* ─── Step panels ────────────────────────────────────────────── */
+  .fw-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 22px; margin-block-end: 16px;
+  }
+  .fw-card-title {
+    font-size: 16px; font-weight: 800; color: #0f172a;
+    display: flex; align-items: center; gap: 8px; margin-block-end: 4px;
+  }
+  .fw-card-title i { color: #1e40af; }
+  .fw-card-sub { font-size: 12.5px; color: #475569; margin-block-end: 16px; }
+
+  .fw-panel { display: none; }
+  .fw-panel.is-active { display: block; }
+
+  .fw-grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .fw-field { display: flex; flex-direction: column; gap: 6px; }
+  .fw-field--wide { grid-column: 1 / -1; }
+  .fw-field label { font-size: 12.5px; font-weight: 700; color: #0f172a; }
+  .fw-field .fw-req { color: #b91c1c; margin-inline-start: 4px; }
+  .fw-field .fw-hint { font-size: 11.5px; color: #6b7280; }
+  .fw-field input, .fw-field select, .fw-field textarea {
+    height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 10px;
+    font-size: 13px; background: #fff; color: #0f172a; transition: border-color .15s ease;
+  }
+  .fw-field textarea { height: auto; padding: 10px 12px; min-height: 70px; resize: vertical; }
+  .fw-field input:focus, .fw-field select:focus, .fw-field textarea:focus {
+    outline: none; border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.12);
+  }
+  .fw-field.is-error input, .fw-field.is-error select { border-color: #b91c1c; }
+  .fw-field-err { font-size: 11.5px; color: #b91c1c; display: none; }
+  .fw-field.is-error .fw-field-err { display: block; }
+
+  .fw-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f172a; }
+  .fw-check input { width: 18px; height: 18px; }
+
+  .fw-row-radio {
+    display: grid; gap: 10px; grid-template-columns: 1fr 1fr;
+  }
+  .fw-radio-card {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 12px; cursor: pointer;
+    background: #fafbfc; transition: all .15s ease;
+  }
+  .fw-radio-card:hover { background: #f1f5f9; }
+  .fw-radio-card input { margin-top: 2px; }
+  .fw-radio-card.is-selected { background: #eff6ff; border-color: #1e40af; }
+  .fw-radio-title { font-weight: 800; font-size: 13.5px; color: #0f172a; }
+  .fw-radio-sub   { font-size: 11.5px; color: #475569; margin-top: 2px; }
+
+  .fw-foot {
+    display: flex; gap: 10px; justify-content: space-between;
+    padding-top: 16px; margin-top: 16px; border-top: 1px solid #f1f5f9;
+  }
+  .fw-btn {
+    height: 38px; padding-inline: 16px; border-radius: 10px; font-weight: 700; font-size: 13px;
+    border: 1px solid #e5e7eb; background: #fff; color: #0f172a;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .fw-btn--primary { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .fw-btn--primary:hover { background: #1e3a8a; }
+  .fw-btn--ghost:hover { background: #f1f5f9; }
+  .fw-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  .fw-review-row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 10px 12px; border-block-end: 1px dashed #e5e7eb; font-size: 13px;
+  }
+  .fw-review-row:last-child { border-block-end: none; }
+  .fw-review-key { color: #6b7280; font-weight: 600; }
+  .fw-review-val { color: #0f172a; font-weight: 700; max-width: 60%; word-break: break-word; text-align: end; }
+
+  .fw-banner {
+    display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px;
+    background: #f0f9ff; color: #075985; border: 1px solid #bae6fd; font-size: 12.5px;
+    margin-block-end: 12px;
+  }
+  .fw-banner i { color: #0284c7; margin-top: 2px; }
+
+  /* ─── Toast (replaces native alert/confirm) ──────────────────── */
+  .fw-toast-host {
+    position: fixed; inset-inline-end: 24px; bottom: 24px; z-index: 90;
+    display: flex; flex-direction: column; gap: 10px; max-width: 360px;
+  }
+  .fw-toast {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    box-shadow: 0 22px 40px -18px rgba(15, 23, 42, .32);
+    padding: 14px 16px; display: flex; gap: 10px; align-items: flex-start;
+    animation: fw-toast-in .18s ease-out;
+  }
+  .fw-toast i.fw-toast-icon { font-size: 16px; margin-top: 2px; }
+  .fw-toast--info    i.fw-toast-icon { color: #0284c7; }
+  .fw-toast--success i.fw-toast-icon { color: #047857; }
+  .fw-toast--warn    i.fw-toast-icon { color: #b45309; }
+  .fw-toast--error   i.fw-toast-icon { color: #b91c1c; }
+  .fw-toast-msg { font-size: 13px; color: #0f172a; line-height: 1.55; flex: 1; }
+  .fw-toast-close {
+    background: transparent; border: none; cursor: pointer; color: #6b7280; font-size: 14px;
+  }
+  @keyframes fw-toast-in { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+
+  /* Confirm dialog (styled toast that blocks until decision) */
+  .fw-confirm {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; background: rgba(15,23,42,.32);
+  }
+  .fw-confirm.is-open { display: flex; }
+  .fw-confirm-box {
+    background: #fff; border-radius: 16px; padding: 20px 22px; max-width: 420px; width: 92%;
+    box-shadow: 0 30px 60px -24px rgba(15, 23, 42, .45);
+  }
+  .fw-confirm-title { font-weight: 800; font-size: 15px; color: #0f172a; margin-block-end: 8px; display: flex; align-items: center; gap: 8px; }
+  .fw-confirm-title i { color: #b45309; }
+  .fw-confirm-msg { font-size: 13px; color: #1f2937; line-height: 1.6; margin-block-end: 16px; }
+  .fw-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="fw-hero">
+  <div class="fw-hero-icon"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></div>
+  <div class="fw-hero-body">
+    <div class="fw-hero-title">معالج إضافة عقدة CHR للأسطول</div>
+    <div class="fw-hero-sub">
+      أدخل بيانات العقدة الجديدة في الخطوات التالية، والباقي تولّده اللوحة تلقائياً:
+      مفاتيح WireGuard، سكربت RouterOS الموحّد، اختبار RADIUS، ثم الإضافة لـ DNS الذكي.
+      جميع العقد تشغّل نفس الإعدادات (PPTP / SSTP / IPsec) — يختلف بينها فقط معرّفات الربط.
+    </div>
+  </div>
+</div>
+
+{# ─── Stepper ─── #}
+<div class="fw-stepper" role="tablist" aria-label="خطوات معالج CHR">
+  <div class="fw-step is-current" data-step-tag="1"><span class="fw-step-num">1</span><span>المزود والاسم</span></div>
+  <div class="fw-step" data-step-tag="2"><span class="fw-step-num">2</span><span>السعة والشبكة</span></div>
+  <div class="fw-step" data-step-tag="3"><span class="fw-step-num">3</span><span>النموذج المادي للنطاق</span></div>
+  <div class="fw-step" data-step-tag="4"><span class="fw-step-num">4</span><span>مراجعة وإرسال</span></div>
+</div>
+
+{# ─── Wizard form (JS-driven step transitions) ─── #}
+<form id="fw-form" class="fw-card" novalidate
+      data-onboarding-url="{{ onboarding_api_url }}"
+      data-providers-url="{{ providers_api_url }}">
+  {{ csrf_input() }}
+
+  {# ─── Step 1 — provider + name + initial-reach ─── #}
+  <div class="fw-panel is-active" data-step="1">
+    <div class="fw-card-title"><i class="fa-solid fa-building"></i> الخطوة 1 — المزود واسم العقدة</div>
+    <div class="fw-card-sub">اختر المزود (Contabo, Hetzner…) واسم محلي مميّز للعقدة. لو المزود غير موجود اخترْ «إضافة مزود جديد».</div>
+    <div class="fw-grid">
+      <div class="fw-field">
+        <label for="provider_id">المزود <span class="fw-req">*</span></label>
+        <select id="provider_id" name="provider_id" required>
+          <option value="">— اختر —</option>
+          {% for p in providers %}
+            <option value="{{ p.id }}" data-cost-model="{{ p.cost_model }}">{{ p.name }} ({{ 'مفتوحة' if p.cost_model == 'open' else 'محدودة' }})</option>
+          {% endfor %}
+          <option value="__new__">+ إضافة مزود جديد…</option>
+        </select>
+        <div class="fw-field-err">اختر مزوداً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="name">اسم العقدة <span class="fw-req">*</span></label>
+        <input type="text" id="name" name="name" placeholder="contabo-de-01" required maxlength="120">
+        <div class="fw-hint">يطابق <code>chr_nodes.name</code> (وحيد لكل مزود).</div>
+        <div class="fw-field-err">اكتب اسماً صالحاً.</div>
+      </div>
+
+      {# Inline "new provider" panel — only visible when provider == __new__ #}
+      <div class="fw-field fw-field--wide" id="fw-new-provider" style="display:none">
+        <div class="fw-banner">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>سيُنشأ المزود فوراً بإعداداته الأساسية. تستطيع تعديلها لاحقاً من صفحة المزودين.</span>
+        </div>
+        <div class="fw-grid">
+          <div class="fw-field">
+            <label for="np_name">اسم المزود <span class="fw-req">*</span></label>
+            <input type="text" id="np_name" name="np_name" placeholder="Hetzner" maxlength="120">
+          </div>
+          <div class="fw-field">
+            <label for="np_cost_model">نموذج التكلفة الافتراضي</label>
+            <select id="np_cost_model" name="np_cost_model">
+              <option value="open">مفتوحة (open)</option>
+              <option value="metered">محدودة (metered)</option>
+            </select>
+          </div>
+          <div class="fw-field">
+            <label for="np_monthly_cap_tb">سقف شهري (TB)</label>
+            <input type="number" id="np_monthly_cap_tb" name="np_monthly_cap_tb" min="0" step="0.001" placeholder="مثلاً 30">
+            <div class="fw-hint">مطلوب لو المزود محدود.</div>
+          </div>
+          <div class="fw-field">
+            <label for="np_price_per_tb">سعر/TB ($)</label>
+            <input type="number" id="np_price_per_tb" name="np_price_per_tb" min="0" step="0.01" placeholder="5.00">
+          </div>
+          <div class="fw-field">
+            <label class="fw-check">
+              <input type="checkbox" id="np_overage_allowed" name="np_overage_allowed">
+              <span>السماح بالتجاوز الشهري المدفوع</span>
+            </label>
+          </div>
+        </div>
+        <div class="fw-foot" style="justify-content:flex-end;padding-top:0;border-top:none;margin-top:0">
+          <button type="button" class="fw-btn fw-btn--primary" id="fw-new-provider-save">
+            <i class="fa-solid fa-floppy-disk"></i> حفظ المزود
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="fw-foot">
+      <span></span>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  {# ─── Step 2 — capacity + network identity ─── #}
+  <div class="fw-panel" data-step="2">
+    <div class="fw-card-title"><i class="fa-solid fa-gauge-high"></i> الخطوة 2 — السعة والشبكة</div>
+    <div class="fw-card-sub">السعة (عدد الجلسات + سرعة الرابط) والـ IP العام. الباقي (مفاتيح WireGuard، عنوان wg-mgmt) يولّده النظام تلقائياً.</div>
+    <div class="fw-grid">
+      <div class="fw-field">
+        <label for="max_sessions">السعة القصوى (جلسات) <span class="fw-req">*</span></label>
+        <input type="number" id="max_sessions" name="max_sessions" min="1" placeholder="500" required>
+        <div class="fw-field-err">أدخل عدداً موجباً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="link_speed_mbps">سرعة الرابط (Mbps) <span class="fw-req">*</span></label>
+        <input type="number" id="link_speed_mbps" name="link_speed_mbps" min="1" placeholder="1000" required>
+        <div class="fw-field-err">أدخل عدداً موجباً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="public_ip">IP عام v4 <span class="fw-req">*</span></label>
+        <input type="text" id="public_ip" name="public_ip" placeholder="203.0.113.11" required
+               pattern="^(\d{1,3}\.){3}\d{1,3}$">
+        <div class="fw-field-err">صيغة IPv4 غير صحيحة.</div>
+      </div>
+      <div class="fw-field">
+        <label for="public_ipv6">IP عام v6 (اختياري)</label>
+        <input type="text" id="public_ipv6" name="public_ipv6" placeholder="2001:db8::11">
+      </div>
+      <div class="fw-field">
+        <label for="weight">وزن التفضيل اليدوي</label>
+        <input type="number" id="weight" name="weight" min="0" step="0.01" placeholder="1.0">
+        <div class="fw-hint">مضاعف يدوي على درجة المخّ — اتركه 1.0 افتراضياً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="bootstrap_endpoint">عنوان RouterOS الأولي (host:port)</label>
+        <input type="text" id="bootstrap_endpoint" name="bootstrap_endpoint" placeholder="203.0.113.11:8728">
+        <div class="fw-hint">يُستخدم مرة واحدة لزرع wg-mgmt. لا يُخزَّن كنص خام.</div>
+      </div>
+      <div class="fw-field">
+        <label for="bootstrap_user">مستخدم RouterOS الأولي</label>
+        <input type="text" id="bootstrap_user" name="bootstrap_user" placeholder="admin" autocomplete="off">
+      </div>
+      <div class="fw-field">
+        <label for="bootstrap_pass">كلمة المرور الأولية</label>
+        <input type="password" id="bootstrap_pass" name="bootstrap_pass" autocomplete="new-password">
+        <div class="fw-hint">تُستخدم مرة واحدة فقط لتنزيل السكربت، ثم تُلغى.</div>
+      </div>
+    </div>
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  {# ─── Step 3 — bandwidth model ─── #}
+  <div class="fw-panel" data-step="3">
+    <div class="fw-card-title"><i class="fa-solid fa-water"></i> الخطوة 3 — نموذج النطاق (Bandwidth)</div>
+    <div class="fw-card-sub">يحدد كيف يُحسب النطاق المسموح والسعر لكل تيرابايت. الافتراضي «وراثة من المزود».</div>
+    <div class="fw-row-radio" style="margin-block-end:14px">
+      <label class="fw-radio-card is-selected">
+        <input type="radio" name="cost_model" value="inherit" checked>
+        <span>
+          <span class="fw-radio-title">وراثة من المزود</span>
+          <span class="fw-radio-sub">استخدم نموذج التكلفة الذي حدّدته على المزود.</span>
+        </span>
+      </label>
+      <label class="fw-radio-card">
+        <input type="radio" name="cost_model" value="open">
+        <span>
+          <span class="fw-radio-title">مفتوحة (Open)</span>
+          <span class="fw-radio-sub">لا يوجد سقف شهري للنطاق.</span>
+        </span>
+      </label>
+      <label class="fw-radio-card">
+        <input type="radio" name="cost_model" value="metered">
+        <span>
+          <span class="fw-radio-title">محدودة (Metered)</span>
+          <span class="fw-radio-sub">سقف TB شهري + سعر/TB.</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="fw-grid">
+      <div class="fw-field" data-fw-metered>
+        <label for="bandwidth_cap_tb">السقف الشهري (TB)</label>
+        <input type="number" id="bandwidth_cap_tb" name="bandwidth_cap_tb" min="0" step="0.001" placeholder="30">
+        <div class="fw-hint">يُطبَّق على نموذج «محدودة» فقط.</div>
+      </div>
+      <div class="fw-field" data-fw-metered>
+        <label for="price_per_tb">سعر / TB ($)</label>
+        <input type="number" id="price_per_tb" name="price_per_tb" min="0" step="0.01" placeholder="5.00">
+      </div>
+      <div class="fw-field" data-fw-metered>
+        <label class="fw-check">
+          <input type="checkbox" id="overage_allowed" name="overage_allowed" value="1">
+          <span>السماح بالتجاوز المدفوع للسقف الشهري</span>
+        </label>
+        <div class="fw-hint">لو تجاوز هذا CHR سقفه، يستمر بالعمل ويُحاسَب على الزيادة.</div>
+      </div>
+    </div>
+
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  {# ─── Step 4 — review + submit ─── #}
+  <div class="fw-panel" data-step="4">
+    <div class="fw-card-title"><i class="fa-solid fa-check-double"></i> الخطوة 4 — مراجعة وإرسال</div>
+    <div class="fw-card-sub">راجع البيانات قبل الإرسال. عند الإرسال يُنشأ سجلٌّ في <code>onboarding_jobs</code> بحالة <code>draft</code>، وتبدأ آلة الحالة تلقائياً.</div>
+    <div id="fw-review" class="fw-card" style="background:#fafbfc;border-style:dashed;padding:10px"></div>
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" id="fw-submit">
+        <i class="fa-solid fa-paper-plane"></i> إرسال للأنبوردنغ
+      </button>
+    </div>
+  </div>
+</form>
+
+{# Floating toast host (info / success / warn / error) #}
+<div class="fw-toast-host" id="fw-toast-host" aria-live="polite" aria-atomic="true"></div>
+
+{# Confirm dialog (replaces native confirm()) #}
+<div class="fw-confirm" id="fw-confirm" role="dialog" aria-modal="true" aria-labelledby="fw-confirm-title">
+  <div class="fw-confirm-box">
+    <div class="fw-confirm-title" id="fw-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> تأكيد</div>
+    <div class="fw-confirm-msg" id="fw-confirm-msg"></div>
+    <div class="fw-confirm-actions">
+      <button type="button" class="fw-btn fw-btn--ghost" id="fw-confirm-cancel">إلغاء</button>
+      <button type="button" class="fw-btn fw-btn--primary" id="fw-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/admin_fleet_wizard.js') }}" defer></script>
+
+{% endblock %}
