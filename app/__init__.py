@@ -221,7 +221,12 @@ def _install_security_headers(app: Flask) -> None:
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
             "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
             "img-src 'self' data:; "
-            "script-src 'self'; "
+            # السكربتات المضمّنة (inline) ومعالِجات onclick في قوالب اللوحة المُعاد
+            # تصميمها كانت محجوبة بـ'self' فقط → السايدبار والأزرار لا تعمل. السماح
+            # بـ'unsafe-inline' للسكربتات يعيد تشغيل واجهة اللوحة (أداة إدارية خلف
+            # مصادقة، قوالبها كلها داخلية). الأنسب أمنيًا لاحقًا: نقل السكربتات لملفات
+            # خارجية أو استخدام nonce لكل <script> وإزالة onclick.
+            "script-src 'self' 'unsafe-inline'; "
             "frame-ancestors 'none'",
         )
         if app.config.get("SESSION_COOKIE_SECURE"):
