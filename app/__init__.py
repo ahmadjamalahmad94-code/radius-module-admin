@@ -60,6 +60,16 @@ def create_app(config_object=None, **overrides) -> Flask:
     from fleet.registry.routes_onboarding import bp as fleet_onboarding_bp
     from fleet.registry.routes_provider import bp as fleet_provider_bp
     from fleet.ui.routes import bp as fleet_ui_bp
+    # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
+    # ALL fleet tables. The route imports above only pull in the P3-referenced
+    # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
+    # modules carry the rest (metrics/health, users/sessions/placement,
+    # events/alerts, dns_records_state). Without this, a fresh prod DB would be
+    # missing those tables.
+    from fleet.health import models_health as _fleet_models_health    # noqa: F401
+    from fleet.brain import models_session as _fleet_models_session   # noqa: F401
+    from fleet.notify import models_alert as _fleet_models_alert      # noqa: F401
+    from fleet.dns import models_dns as _fleet_models_dns             # noqa: F401
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
