@@ -316,6 +316,14 @@
   /* عمود واحد مكدّس — الأقسام تحت بعض ومرتبة */
   .cd-grid-stack {
     grid-template-columns: 1fr;
+    gap: var(--cc-sp-10);
+  }
+  /* فصل بصري لطيف: كل قسم بطاقة خفيفة بإطار وخلفية وحشوة */
+  .cd-grid-stack > div {
+    background: var(--cc-bg-subtle, #F7F8FC);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    padding: var(--cc-sp-9) var(--cc-sp-10);
   }
 
   /* بطاقة المعلومات (قائمة المفتاح/القيمة) */
