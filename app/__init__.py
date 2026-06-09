@@ -833,6 +833,14 @@ def _install_template_helpers(app: Flask) -> None:
 
     app.jinja_env.filters = _FallbackFilterDict(app.jinja_env.filters)
 
+    # ── حل جذري (الجزء الثاني): متغيّر سياق مفقود يجب ألا يكسر الصفحة ──
+    # القوالب المُعاد تصميمها قد تشير لمتغيّر لا يمرّره الراوت (مثل `usage` في
+    # licenses/detail_new) → Jinja الافتراضي يرفع UndefinedError فتسقط الصفحة 500.
+    # ChainableUndefined يسمح بسلسلة الوصول (usage.users.foo) دون رفع، ويُعرَض فارغًا،
+    # و|default(x) يلتقطه فيعطي البديل. فالصفحة تفتح (بقيم فارغة/افتراضية) بدل الكسر.
+    from jinja2 import ChainableUndefined
+    app.jinja_env.undefined = ChainableUndefined
+
     @app.template_filter("request_type_label")
     def request_type_label_filter(value):
         from .services.customer_control import service_request_type_label
