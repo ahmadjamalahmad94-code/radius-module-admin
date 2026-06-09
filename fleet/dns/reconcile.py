@@ -96,7 +96,7 @@ class ReconcileConfig:
 
     fqdn: str = "vpn.hoberadius.com"
     record_type: str = "A"
-    mode: str = "WEIGHTED_ROUND_ROBIN"
+    mode: str = "free"  # Phase-6 gate: driver vocabulary "free" | "paid"
     dry_run: bool = False
     min_reapply_interval_seconds: int = 30
     weight_min: int = 1

@@ -56,6 +56,22 @@ def _reset_driver_calls(app):
 
 
 @pytest.fixture()
+def force_fake_driver(monkeypatch):
+    """Phase-6 gate: the real Cloudflare driver is now wired (fleet.dns.driver),
+    so the adapter resolves to it by default. These reconciler-logic tests pin
+    the reconciler against the in-process FAKE driver (spying via FAKE_CALLS),
+    so force the fake here. Backend-selection tests control the backend
+    themselves and don't use this fixture."""
+    import fleet.dns.driver_adapter as _da
+
+    def _force_fake():
+        _da.DRIVER_BACKEND = "fake"
+        return None
+
+    monkeypatch.setattr(_da, "_resolve_driver", _force_fake)
+
+
+@pytest.fixture()
 def fleet_three(app):
     """Three enrolled nodes with distinct public IPs."""
     prov = FleetProvider(name="Contabo", cost_model="open", price_per_tb=0)
@@ -261,7 +277,7 @@ class TestPreview:
 # reconcile_now — full apply path
 # ════════════════════════════════════════════════════════════════════════════
 class TestReconcileApply:
-    def test_first_reconcile_applies_and_persists(self, fleet_three):
+    def test_first_reconcile_applies_and_persists(self, fleet_three, force_fake_driver):
         ranking = [_scored("chr-eu-1", 0.91), _scored("chr-eu-2", 0.50)]
         result = reconcile_now(
             cfg=ReconcileConfig(fqdn="vpn.example.com"),
@@ -277,7 +293,7 @@ class TestReconcileApply:
         # Driver was called with the right shape
         assert len(driver_adapter.FAKE_CALLS) == 1
         call = driver_adapter.FAKE_CALLS[0]
-        assert call["mode"] == "WEIGHTED_ROUND_ROBIN"
+        assert call["mode"] == "free"
         assert call["dry_run"] is False
         assert call["published_ips"] == sorted(["203.0.113.11", "203.0.113.12"])
 
@@ -332,7 +348,7 @@ class TestFlapGuard:
         assert ev is not None
         assert ev.detail["reason"] == "set_unchanged_within_min_interval"
 
-    def test_changed_set_applies_even_within_window(self, fleet_three):
+    def test_changed_set_applies_even_within_window(self, fleet_three, force_fake_driver):
         # Previous publish = chr-eu-1 only; brain now wants both.
         self._seed_published(["203.0.113.11"], when=utcnow())
         ranking = [_scored("chr-eu-1", 0.91), _scored("chr-eu-2", 0.50)]
@@ -408,7 +424,7 @@ class TestEmptySetGuard:
 # Dry-run mode and per-call settings
 # ════════════════════════════════════════════════════════════════════════════
 class TestDryRun:
-    def test_dry_run_records_event_but_does_not_apply(self, fleet_three):
+    def test_dry_run_records_event_but_does_not_apply(self, fleet_three, force_fake_driver):
         ranking = [_scored("chr-eu-1", 0.9), _scored("chr-eu-2", 0.5)]
         result = reconcile_now(
             cfg=ReconcileConfig(fqdn="vpn.example.com", dry_run=True),
@@ -443,11 +459,11 @@ class TestDriverAdapter:
         with pytest.raises(ValueError):
             apply_desired_state([], mode="MADE_UP", dry_run=False)
 
-    def test_apply_with_fake_default(self, app):
+    def test_apply_with_fake_default(self, app, force_fake_driver):
         from fleet.dns.driver_adapter import apply_desired_state, DRIVER_BACKEND
         result = apply_desired_state(
             [NodeRecord("chr-a", "1.2.3.4", 50, True)],
-            mode="WEIGHTED_ROUND_ROBIN", dry_run=False,
+            mode="free", dry_run=False,
         )
         assert isinstance(result, ApplyResult)
         assert result.published_ips == ["1.2.3.4"]
@@ -473,7 +489,7 @@ class TestDriverAdapter:
         from fleet.dns import driver_adapter as da
         result = apply_desired_state(
             [NodeRecord("chr-a", "1.2.3.4", 100, True)],
-            mode="ROUND_ROBIN", dry_run=False,
+            mode="free", dry_run=False,
         )
         assert result.message == "real driver pretend"
         assert da.DRIVER_BACKEND == "real"

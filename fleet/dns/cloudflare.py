@@ -278,6 +278,24 @@ def _load_token(cfg: CloudflareDnsConfig) -> _RedactedToken:
     2. Empty token → ``_RedactedToken("")`` which evaluates falsy. The
        driver's apply path treats this as "DRY-RUN — never send".
     """
+    # Phase-6 gate (reconcile D): the front-door UI (task C) is the canonical
+    # place the operator saves the token — as a Fernet ciphertext under
+    # ``fleet.dns.cloudflare.api_token``. Read+decrypt that FIRST so the token
+    # the owner pastes in the UI is exactly what the driver sends. The plaintext
+    # is wrapped in _RedactedToken and never logged.
+    try:
+        from fleet.dns.settings_store import get_token_for_driver
+        plaintext = get_token_for_driver()
+        if plaintext:
+            return _RedactedToken(plaintext)
+    except Exception as exc:  # noqa: BLE001 - crypto/key may not be ready
+        logger.warning(
+            "fleet.dns.cloudflare: UI token unreadable (%s) — trying vault ref",
+            exc.__class__.__name__,
+        )
+
+    # Backward-compat fallback: a VaultRef under cfg.token_setting_key resolved
+    # through the secrets vault. Empty ⇒ _RedactedToken("") ⇒ DRY-RUN.
     row = db.session.get(Setting, cfg.token_setting_key)
     ref = (row.value or "").strip() if row is not None else ""
     if not ref:

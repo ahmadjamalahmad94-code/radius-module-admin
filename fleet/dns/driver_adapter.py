@@ -41,11 +41,11 @@ from typing import Any, Callable, Sequence
 # ─────────────────────────────────────────────────────────────────────────────
 # Frozen wire-facing types
 # ─────────────────────────────────────────────────────────────────────────────
-#: Modes the reconciler may request. The driver may choose to ignore
-#: ``weight`` for ``ROUND_ROBIN`` and only use the top-1 for ``FAILOVER``,
-#: but the reconciler always computes weights so the same desired-state
-#: works across modes.
-DRIVER_MODES: tuple[str, ...] = ("WEIGHTED_ROUND_ROBIN", "ROUND_ROBIN", "FAILOVER")
+#: Modes the reconciler may request. Phase-6 gate: canonicalised to the
+#: driver's vocabulary ("free" = weighted A-records / exclusion; "paid" =
+#: Cloudflare load-balancer). The reconciler always computes weights so the
+#: same desired-state works in either mode.
+DRIVER_MODES: tuple[str, ...] = ("free", "paid")
 
 
 @dataclass(frozen=True)
@@ -194,8 +194,66 @@ def apply_desired_state(
         )
     real = _resolve_driver()
     if real is not None:
-        return real(desired, mode=mode, dry_run=dry_run)
+        return _coerce_apply_result(
+            real(desired, mode=mode, dry_run=dry_run),
+            desired, mode=mode, dry_run=dry_run,
+        )
     return _fake_apply(desired, mode=mode, dry_run=dry_run)
+
+
+def _coerce_apply_result(
+    res: Any,
+    desired: Sequence[NodeRecord],
+    *,
+    mode: str,
+    dry_run: bool,
+) -> ApplyResult:
+    """Normalise whatever the real driver returned into this adapter's
+    ``ApplyResult`` (the shape the reconciler reads: ``applied`` / ``message`` /
+    ``published_ips`` …).
+
+    Phase-6 gate: task A's Cloudflare driver returns its OWN ApplyResult
+    (``mode``/``dry_run``/``changed``/``calls_planned``/``calls_executed``/
+    ``errors``/``snapshot``) which lacks ``applied``/``message``/``published_ips``.
+    Map it here so the reconciler binds to either backend.
+    """
+    if isinstance(res, ApplyResult):
+        return res
+    # A driver already exposing the adapter contract (a test double / future
+    # provider) → trust its fields.
+    if hasattr(res, "applied") and hasattr(res, "published_ips"):
+        return ApplyResult(
+            applied=bool(res.applied),
+            changed=bool(getattr(res, "changed", False)),
+            published_ips=list(getattr(res, "published_ips", []) or []),
+            message=str(getattr(res, "message", "") or ""),
+            mode=str(getattr(res, "mode", mode) or mode),
+            dry_run=bool(getattr(res, "dry_run", dry_run)),
+            raw=dict(getattr(res, "raw", {}) or {}),
+        )
+    # Cloudflare (task A) ApplyResult shape.
+    executed = list(getattr(res, "calls_executed", ()) or ())
+    planned = list(getattr(res, "calls_planned", ()) or ())
+    errors = list(getattr(res, "errors", ()) or ())
+    res_dry = bool(getattr(res, "dry_run", dry_run))
+    changed = bool(getattr(res, "changed", False))
+    applied = (not res_dry) and bool(executed) and not errors
+    published_ips = sorted({r.ip for r in desired if getattr(r, "included", True)})
+    if errors:
+        message = "; ".join(str(e) for e in errors)[:300]
+    elif res_dry:
+        message = f"dry-run ({len(planned)} call(s) planned)"
+    else:
+        message = f"applied {len(executed)} call(s)"
+    return ApplyResult(
+        applied=applied,
+        changed=changed,
+        published_ips=published_ips,
+        message=message,
+        mode=str(getattr(res, "mode", mode) or mode),
+        dry_run=res_dry,
+        raw=dict(getattr(res, "snapshot", {}) or {}),
+    )
 
 
 __all__ = [
