@@ -1943,7 +1943,6 @@ def renewals_list():
 @bp.get("/audit-logs")
 @login_required
 def audit_logs():
-    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(500).all()
     _now = utcnow()
     _today_start = _now.replace(hour=0, minute=0, second=0, microsecond=0)
     _week_start = _now - timedelta(days=7)
@@ -1954,14 +1953,31 @@ def audit_logs():
         "errors": AuditLog.query.filter(AuditLog.action.ilike("%error%") | AuditLog.action.ilike("%fail%")).count(),
     }
     _total = _audit_stats["total"]
-    _page = max(1, int(request.args.get("page") or 1))
     _per = 50
+    _total_pages = max(1, (_total + _per - 1) // _per)
+    _page = min(max(1, int(request.args.get("page") or 1)), _total_pages)
+    logs = (
+        AuditLog.query
+        .order_by(AuditLog.created_at.desc())
+        .offset((_page - 1) * _per)
+        .limit(_per)
+        .all()
+    )
+    # نافذة أرقام الصفحات مع '...' (مثل: 1 … 4 5 [6] 7 8 … 20)
+    _page_tokens, _prev = [], 0
+    for _n in range(1, _total_pages + 1):
+        if _n <= 2 or _n > _total_pages - 2 or abs(_n - _page) <= 1:
+            if _prev and _n - _prev > 1:
+                _page_tokens.append("...")
+            _page_tokens.append(_n)
+            _prev = _n
     _pagination = {
         "page": _page,
-        "from": min((_page - 1) * _per + 1, _total),
+        "from": (min((_page - 1) * _per + 1, _total) if _total else 0),
         "to": min(_page * _per, _total),
         "total": _total,
-        "pages": max(1, (_total + _per - 1) // _per),
+        "pages": _page_tokens,
+        "total_pages": _total_pages,
     }
     return render_template(
         "admin/logs/audit_new.html",

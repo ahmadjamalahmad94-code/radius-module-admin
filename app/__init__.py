@@ -841,6 +841,25 @@ def _install_template_helpers(app: Flask) -> None:
     from jinja2 import ChainableUndefined
     app.jinja_env.undefined = ChainableUndefined
 
+    # ── حل جذري (الجزء الثالث): url_for لـendpoint غير موجود يجب ألا يكسر الصفحة ──
+    # القوالب المُعاد تصميمها قد تشير إلى endpoint لم يُسجَّل بعد (مثل
+    # admin_infra.proxy_routes_reload) → Flask يرمي BuildError فتسقط الصفحة 500.
+    # نغلّف url_for في القوالب: عند فشل البناء نُعيد '#' (رابط آمن) + تحذير في السجل،
+    # فالصفحة تفتح ويظهر الزر/الرابط معطّلاً بدل أن تنكسر الصفحة كاملة.
+    from flask import url_for as _flask_url_for
+    from werkzeug.routing.exceptions import BuildError as _BuildError
+
+    def _safe_url_for(endpoint, **values):
+        try:
+            return _flask_url_for(endpoint, **values)
+        except _BuildError:
+            import logging
+            logging.getLogger(__name__).warning(
+                "url_for: endpoint '%s' غير موجود — رابط احتياطي '#'", endpoint)
+            return "#"
+
+    app.jinja_env.globals["url_for"] = _safe_url_for
+
     @app.template_filter("request_type_label")
     def request_type_label_filter(value):
         from .services.customer_control import service_request_type_label
