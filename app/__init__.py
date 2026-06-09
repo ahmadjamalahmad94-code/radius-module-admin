@@ -60,6 +60,10 @@ def create_app(config_object=None, **overrides) -> Flask:
     from fleet.registry.routes_onboarding import bp as fleet_onboarding_bp
     from fleet.registry.routes_provider import bp as fleet_provider_bp
     from fleet.ui.routes import bp as fleet_ui_bp
+    # P4-B: per-CHR telemetry ingest (POST /api/proxy/telemetry, see
+    # docs/contracts/fleet_api.md §1). Reuses the existing X-Proxy-Token
+    # HMAC; persists into fleet_chr_metrics.
+    from fleet.health.routes_telemetry import bp as fleet_telemetry_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -85,6 +89,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_provider_bp)
     app.register_blueprint(fleet_onboarding_bp)
     app.register_blueprint(fleet_ui_bp)
+    app.register_blueprint(fleet_telemetry_bp)
 
     @app.get("/")
     def root():
