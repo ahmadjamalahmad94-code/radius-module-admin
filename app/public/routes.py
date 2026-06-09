@@ -80,21 +80,190 @@ def payment_portal(request_id: int):
 
 @bp.post("/payments/requests/<int:request_id>/proofs")
 def payment_portal_submit_proof(request_id: int):
+    """Customer submits proof of a manual bank transfer.
+
+    A receipt image (jpg/png/webp/pdf, ≤ 5 MB) is REQUIRED — the owner can't
+    review a manual payment without it. Bare-text submissions are rejected
+    at the form level (see `public/payment_portal.html`); we also defend
+    here so the API can't be bypassed.
+    """
+    from ..services.payment_proofs import (
+        ReceiptValidationError,
+        submit_manual_proof_with_receipt,
+    )
+
     payment_request = _get_portal_request(request_id)
     token = request.form.get("token") or request.args.get("token") or ""
     if not payment_request:
         return render_template("public/payment_not_found.html"), 404
+    receipt = request.files.get("receipt")
     try:
-        LicensePaymentProofService().submit_manual_proof(
+        submit_manual_proof_with_receipt(
             payment_request=payment_request,
             reference_number=request.form.get("reference_number") or "",
             note=request.form.get("note") or "",
+            receipt=receipt,
         )
+    except ReceiptValidationError as exc:
+        flash(exc.message_ar, "error")
+        return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
     except LicensePaymentValidationError as exc:
         flash(payment_error_message(exc), "error")
         return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
-    flash("تم إرسال إثبات الدفع. بانتظار مراجعة الدفع من المدير.", "success")
+    flash("تم إرسال إثبات الدفع مع صورة الإيصال. بانتظار مراجعة المدير.", "success")
     return redirect(url_for("public.payment_portal", request_id=request_id, token=token))
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Customer-initiated payment submission (manual bank transfer + receipt OR
+# redirect to a configured API gateway). This complements the admin-created
+# payment request path: a logged-in customer can declare a payment they made
+# offline (bank transfer with a phone-camera receipt) and submit it in one go.
+# ───────────────────────────────────────────────────────────────────────────
+
+PAYMENT_METHODS_ORDER = ("manual_transfer", "jawalpay", "palpay", "bank_of_palestine")
+PAYMENT_METHOD_LABELS = {
+    "manual_transfer":   "تحويل بنكي يدوي + إيصال",
+    "jawalpay":          "جوال باي",
+    "palpay":            "بال باي",
+    "bank_of_palestine": "بنك فلسطين",
+}
+
+
+def _payment_methods_for_picker():
+    """Build the (key, label, enabled, configured) tuples for the picker.
+
+    Manual transfer is ALWAYS available (no API creds required). The three
+    API gateways appear with an "enabled" flag — if they're disabled or not
+    configured, the radio is rendered disabled with a friendly hint.
+    """
+    from ..services import payment_gateways as pg
+    out = [("manual_transfer", PAYMENT_METHOD_LABELS["manual_transfer"], True, True)]
+    for name in pg.GATEWAY_ORDER:
+        enabled = pg.adapter_enabled(name)
+        creds = pg.resolved_credentials(name)
+        configured = pg.get_adapter(name).configured(creds)
+        out.append((name, PAYMENT_METHOD_LABELS.get(name, name),
+                    enabled and configured, configured))
+    return out
+
+
+@bp.get("/portal/pay")
+def customer_portal_pay_new():
+    """Customer-facing payment-submission form."""
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+    return render_template(
+        "public/customer_portal_pay_new.html",
+        customer=user.customer,
+        customer_user=user,
+        methods=_payment_methods_for_picker(),
+        currencies=("USD", "ILS", "JOD", "EUR", "SAR", "AED", "EGP"),
+        default_currency=user.customer.currency or "USD",
+        purposes=(
+            ("renewal", "تجديد اشتراك"),
+            ("upgrade", "ترقية الخطة"),
+            ("capacity_increase", "زيادة سعة / إضافة خدمة"),
+            ("setup_fee", "رسم إعداد"),
+        ),
+        form=request.args,
+    )
+
+
+@bp.post("/portal/pay")
+def customer_portal_pay_submit():
+    """Create a new payment request from the customer side.
+
+    For ``manual_transfer``: also accept a receipt image and submit the proof
+    in one go (status ends at ``proof_submitted``, ready for owner review).
+
+    For ``jawalpay`` / ``palpay`` / ``bank_of_palestine``: open the gateway
+    session (single TODO seam returns an error until the owner supplies API
+    keys) and redirect the customer to the provider.
+    """
+    from decimal import Decimal, InvalidOperation
+    from ..services import payment_gateways as pg
+    from ..services.payment_gateways import CreatePaymentInput, NotConfiguredError
+    from ..services.payment_proofs import (
+        ReceiptValidationError,
+        submit_manual_proof_with_receipt,
+    )
+
+    user = _current_customer_user()
+    if not user:
+        return redirect(url_for("public.customer_portal_login"))
+
+    method = (request.form.get("method") or "manual_transfer").strip()
+    if method not in PAYMENT_METHODS_ORDER:
+        flash("طريقة دفع غير معروفة.", "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+
+    purpose = (request.form.get("purpose") or "renewal").strip()
+    amount_raw = (request.form.get("amount") or "").strip()
+    try:
+        amount = Decimal(amount_raw)
+        if amount <= 0:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
+        flash("المبلغ غير صحيح.", "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+
+    currency = (request.form.get("currency") or user.customer.currency or "USD").strip().upper()
+
+    # Create the LicensePaymentRequest row that anchors the rest of the flow.
+    try:
+        payment_request = LicensePaymentRequestService().create_request({
+            "customer_id": user.customer_id,
+            "purpose": purpose,
+            "amount": str(amount),
+            "currency": currency,
+        })
+    except LicensePaymentValidationError as exc:
+        flash(payment_error_message(exc), "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+
+    if method == "manual_transfer":
+        receipt = request.files.get("receipt")
+        try:
+            submit_manual_proof_with_receipt(
+                payment_request=payment_request,
+                reference_number=request.form.get("reference_number") or "",
+                note=request.form.get("note") or "",
+                receipt=receipt,
+            )
+        except ReceiptValidationError as exc:
+            flash(exc.message_ar, "error")
+            return redirect(url_for("public.customer_portal_pay_new"))
+        except LicensePaymentValidationError as exc:
+            flash(payment_error_message(exc), "error")
+            return redirect(url_for("public.customer_portal_pay_new"))
+        flash("تم استلام دفعتك مع صورة الإيصال. سيتم تفعيل الخدمة بعد مراجعة المدير.", "success")
+        return redirect(url_for("public.customer_portal_dashboard"))
+
+    # API gateway path — call the adapter to open a payment at the provider.
+    if not pg.adapter_enabled(method):
+        flash("هذه البوابة معطّلة حالياً. اختر تحويل بنكي يدوي أو تواصل مع الدعم.", "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+    adapter = pg.get_adapter(method)
+    creds = pg.resolved_credentials(method)
+    try:
+        result = adapter.create_payment(creds, CreatePaymentInput(
+            amount=amount,
+            currency=currency,
+            reference=payment_request.reference_code,
+            description=f"{purpose} - {user.customer.company_name}",
+            callback_url=url_for("public.customer_portal_dashboard", _external=True),
+            customer_phone=user.customer.phone or "",
+        ))
+    except NotConfiguredError:
+        flash("بيانات البوابة المختارة غير مكتملة. اختر تحويل بنكي يدوي.", "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+    if not result.ok or not result.redirect_url:
+        flash(result.message or "تعذّر فتح الدفع لدى البوابة.", "error")
+        return redirect(url_for("public.customer_portal_pay_new"))
+    flash("جاري تحويلك لإكمال الدفع لدى البوابة.", "info")
+    return redirect(result.redirect_url)
 
 
 @bp.get("/portal/sso")
