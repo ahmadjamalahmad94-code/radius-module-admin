@@ -77,8 +77,16 @@
         <div class="adm-group-links" id="grp-customers">
           {% if 'customers.list' not in hidden_sections %}
           <a href="{{ url_for('admin.customers_list') }}"
-             class="adm-link {% if ep in ['admin.customers_list','admin.customer_new','admin.customer_detail','admin.customer_edit','admin.customer_user_new','admin.customer_user_edit'] %}is-active{% endif %}">
+             class="adm-link {% if ep in ['admin.customers_list','admin.customer_new','admin.customer_detail','admin.customer_edit'] %}is-active{% endif %}">
             قائمة العملاء
+          </a>
+          {% endif %}
+          {# مستخدمو العميل — صفحة مستقلة سياقية لكل عميل (تظهر دائماً، تنشط ضمن سياق ملف العميل). #}
+          {% set _ctx_customer_id = (customer.id if customer is defined and customer else (request.view_args.customer_id if request.view_args and request.view_args.customer_id else None)) %}
+          {% if _ctx_customer_id %}
+          <a href="{{ url_for('admin.customer_users', customer_id=_ctx_customer_id) }}"
+             class="adm-link adm-link--sub {% if ep in ['admin.customer_users','admin.customer_user_new','admin.customer_user_edit'] %}is-active{% endif %}">
+            مستخدمو العميل
           </a>
           {% endif %}
           <a href="{{ url_for('admin.service_requests_list') }}"

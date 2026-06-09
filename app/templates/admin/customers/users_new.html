@@ -1,0 +1,461 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+
+{% block title %}{{ customer.company_name }} — مستخدمو العميل{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="ar-breadcrumb-item">{{ customer.company_name }}</a>
+{% endblock %}
+{% block page_breadcrumb %}مستخدمو العميل{% endblock %}
+
+{% block head_extra %}
+<style>
+  .cu-hero {
+    background: linear-gradient(135deg, #1f2c4d 0%, #3b54a3 100%);
+    border-radius: 16px;
+    padding: 22px 26px;
+    color: #fff;
+    margin-block-end: 22px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    box-shadow: 0 18px 32px -22px rgba(31,44,77,.55);
+  }
+  .cu-hero-avatar {
+    width: 52px; height: 52px; border-radius: 14px;
+    background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; color: #fff; text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .cu-hero-body { flex: 1 1 220px; }
+  .cu-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .cu-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; }
+  .cu-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cu-hero-btn {
+    height: 36px; display: inline-flex; align-items: center; gap: 8px;
+    padding-inline: 14px; border-radius: 10px;
+    background: rgba(255,255,255,.16); color: #fff; text-decoration: none;
+    border: 1.5px solid rgba(255,255,255,.32);
+    font-weight: 700; font-size: 13px; cursor: pointer;
+    transition: background .15s ease;
+  }
+  .cu-hero-btn:hover { background: rgba(255,255,255,.28); color: #fff; }
+  .cu-hero-btn--primary {
+    background: #fff; color: #1f2c4d; border-color: #fff;
+  }
+  .cu-hero-btn--primary:hover { background: #f0f3ff; color: #1f2c4d; }
+
+  .cu-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-block-end: 22px; }
+  .cu-kpi {
+    background: #fff; border: 1px solid var(--cc-line, #e5e7eb);
+    border-radius: 14px; padding: 14px 16px; display: flex; gap: 12px; align-items: center;
+  }
+  .cu-kpi-icon {
+    width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: #eef2ff; color: #4f46e5; font-size: 18px;
+  }
+  .cu-kpi-icon--users { background: #ecfeff; color: #0891b2; }
+  .cu-kpi-icon--radius { background: #fef3c7; color: #b45309; }
+  .cu-kpi-icon--super { background: #fce7f3; color: #be185d; }
+  .cu-kpi-num { font-size: 22px; font-weight: 800; color: var(--cc-text, #111827); line-height: 1; }
+  .cu-kpi-label { font-size: 12px; color: var(--cc-text-mute, #6b7280); margin-top: 4px; }
+
+  .cu-card { background: #fff; border: 1px solid var(--cc-line, #e5e7eb); border-radius: 16px; padding: 18px; margin-block-end: 18px; }
+  .cu-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-block-end: 14px; }
+  .cu-card-title { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .cu-card-title i { color: #4f46e5; }
+  .cu-card-sub { font-size: 12px; color: #6b7280; }
+  .cu-card-spacer { flex: 1; }
+
+  .cu-tbl-wrap { overflow-x: auto; }
+  .cu-tbl { width: 100%; border-collapse: collapse; }
+  .cu-tbl th, .cu-tbl td { padding: 10px 12px; border-block-end: 1px solid #f1f3f7; font-size: 13px; vertical-align: middle; }
+  .cu-tbl th { background: #f8fafc; font-weight: 700; color: #374151; text-align: start; }
+  .cu-tbl tr:last-child td { border-block-end: none; }
+  .cu-tbl .mono { font-family: var(--cc-font-mono, ui-monospace, monospace); }
+
+  .cu-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .cu-badge--ok    { background: #ecfdf5; color: #047857; }
+  .cu-badge--off   { background: #f1f5f9; color: #475569; }
+  .cu-badge--warn  { background: #fef3c7; color: #92400e; }
+  .cu-badge--super { background: #fce7f3; color: #be185d; }
+  .cu-badge--primary { background: #eff6ff; color: #1d4ed8; }
+  .cu-badge--dist  { background: #ede9fe; color: #5b21b6; }
+
+  .cu-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cu-btn {
+    height: 30px; padding-inline: 10px; border-radius: 8px; font-weight: 700; font-size: 12px;
+    border: 1px solid var(--cc-line, #e5e7eb); background: #fff; color: #1f2937;
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: none;
+  }
+  .cu-btn--primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .cu-btn--primary:hover { background: #4338ca; }
+  .cu-btn--danger { background: #fff; border-color: #fecaca; color: #b91c1c; }
+  .cu-btn--danger:hover { background: #fef2f2; }
+  .cu-btn--ghost { background: #fff; }
+  .cu-btn--ghost:hover { background: #f8fafc; }
+  .cu-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  .cu-popover { position: relative; display: inline-block; }
+  .cu-popover[open] > summary { background: #eef2ff; }
+  .cu-popover summary { list-style: none; }
+  .cu-popover summary::-webkit-details-marker { display: none; }
+  .cu-popover-body {
+    position: absolute; inset-inline-end: 0; top: 110%; z-index: 20;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px;
+    min-width: 280px; box-shadow: 0 18px 32px -12px rgba(17,24,39,.18);
+  }
+  .cu-popover-body label { font-size: 12px; font-weight: 700; color: #374151; display: block; margin-bottom: 4px; }
+  .cu-popover-body input[type=password] {
+    width: 100%; height: 32px; padding: 0 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px;
+    margin-bottom: 10px; background: #fff;
+  }
+  .cu-popover-body .cu-hint { font-size: 11px; color: #6b7280; margin-bottom: 8px; }
+
+  .cu-empty {
+    text-align: center; padding: 32px 16px; color: #6b7280; font-size: 13px;
+    border: 1.5px dashed #e5e7eb; border-radius: 12px; background: #fafbfc;
+  }
+  .cu-empty i { font-size: 28px; color: #cbd5e1; margin-bottom: 8px; display: block; }
+
+  .cu-note { background: #f0f9ff; border: 1px solid #bae6fd; color: #075985; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; margin-block-end: 12px; display: flex; gap: 8px; align-items: flex-start; }
+  .cu-note i { color: #0284c7; margin-top: 2px; }
+
+  .cu-source { font-size: 11px; color: #6b7280; }
+  .cu-source strong { color: #1f2937; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# Hero — peer of «المعلومات الأساسية» #}
+<div class="cu-hero">
+  <div class="cu-hero-avatar">{{ customer.company_name[0]|upper if customer.company_name else '؟' }}</div>
+  <div class="cu-hero-body">
+    <div class="cu-hero-title">
+      <i class="fa-solid fa-users-gear" aria-hidden="true"></i>
+      مستخدمو العميل — {{ customer.company_name }}
+    </div>
+    <div class="cu-hero-sub">
+      كل الحسابات التي يصل بها هذا العميل لخدمات الراديوس — مستخدمو البوابة الذين تنشئهم اللوحة،
+      وهويات أدمن/مدير/موزع التي يضيفها العميل في نظامه ثم ترفعها قناة الجسر إلى هنا.
+    </div>
+  </div>
+  <div class="cu-hero-actions">
+    <a class="cu-hero-btn cu-hero-btn--primary"
+       href="{{ url_for('admin.customer_user_new', customer_id=customer.id, return_to='users') }}">
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> إضافة مستخدم
+    </a>
+    <a class="cu-hero-btn"
+       href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">
+      <i class="fa-solid fa-id-card" aria-hidden="true"></i> المعلومات الأساسية
+    </a>
+  </div>
+</div>
+
+{# KPIs #}
+{% set _portal_count = customer_users|length %}
+{% set _radius_count = radius_admins|length %}
+{% set _super_count = (customer_users|selectattr('is_effective_super')|list|length)
+                    + (radius_admins|selectattr('is_effective_super')|list|length) %}
+{% set _dist_count = radius_admins|selectattr('role', 'equalto', 'distributor')|list|length %}
+<div class="cu-kpis">
+  <div class="cu-kpi">
+    <div class="cu-kpi-icon cu-kpi-icon--users"><i class="fa-solid fa-user-shield"></i></div>
+    <div>
+      <div class="cu-kpi-num">{{ _portal_count }}</div>
+      <div class="cu-kpi-label">مستخدمو البوابة (تُدار من اللوحة)</div>
+    </div>
+  </div>
+  <div class="cu-kpi">
+    <div class="cu-kpi-icon cu-kpi-icon--radius"><i class="fa-solid fa-arrow-up-from-bracket"></i></div>
+    <div>
+      <div class="cu-kpi-num">{{ _radius_count }}</div>
+      <div class="cu-kpi-label">هويات مزامنة من راديوس العميل</div>
+    </div>
+  </div>
+  <div class="cu-kpi">
+    <div class="cu-kpi-icon cu-kpi-icon--super"><i class="fa-solid fa-crown"></i></div>
+    <div>
+      <div class="cu-kpi-num">{{ _super_count }}</div>
+      <div class="cu-kpi-label">مشرفون كاملون (سوبر)</div>
+    </div>
+  </div>
+  <div class="cu-kpi">
+    <div class="cu-kpi-icon" style="background:#ede9fe;color:#5b21b6"><i class="fa-solid fa-handshake"></i></div>
+    <div>
+      <div class="cu-kpi-num">{{ _dist_count }}</div>
+      <div class="cu-kpi-label">موزعون مزامنة من الراديوس</div>
+    </div>
+  </div>
+</div>
+
+{# Section 1: Portal users (CustomerUser) — panel-managed #}
+<div class="cu-card">
+  <div class="cu-card-head">
+    <div class="cu-card-title">
+      <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+      مستخدمو البوابة
+      <span class="cu-card-sub">— حسابات أنشأتها لوحة التراخيص. كلمة المرور تصل لراديوس العميل كنسخة مشفرة عبر الجسر.</span>
+    </div>
+    <div class="cu-card-spacer"></div>
+    <a class="cu-btn cu-btn--primary"
+       href="{{ url_for('admin.customer_user_new', customer_id=customer.id, return_to='users') }}">
+      <i class="fa-solid fa-user-plus"></i> إضافة مستخدم
+    </a>
+  </div>
+
+  {% if customer_users %}
+    <div class="cu-tbl-wrap">
+      <table class="cu-tbl">
+        <thead>
+          <tr>
+            <th>المستخدم</th>
+            <th>البريد</th>
+            <th>الدور</th>
+            <th>الحالة</th>
+            <th>إصدار الدخول</th>
+            <th>آخر تغيير</th>
+            <th style="text-align:end">إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in customer_users %}
+            <tr>
+              <td class="mono">
+                {{ u.username }}
+                {% if u.is_effective_super %}
+                  <span class="cu-badge cu-badge--super" title="مشرف كامل (is_super_admin) على راديوس العميل عبر الجسر">
+                    <i class="fa-solid fa-crown"></i> سوبر
+                  </span>
+                {% endif %}
+              </td>
+              <td><span style="direction:ltr;unicode-bidi:embed">{{ u.email or '—' }}</span></td>
+              <td>{{ u.role_key|role_label if u.role_key else '—' }}</td>
+              <td>
+                {% if u.active %}
+                  <span class="cu-badge cu-badge--ok">مفعل</span>
+                {% else %}
+                  <span class="cu-badge cu-badge--off">معطل</span>
+                {% endif %}
+              </td>
+              <td class="mono">{{ u.password_version or '—' }}</td>
+              <td>{{ u.last_password_changed_at|dt if u.last_password_changed_at else '—' }}</td>
+              <td style="text-align:end">
+                <div class="cu-row-actions" style="justify-content:flex-end">
+                  <a class="cu-btn cu-btn--ghost"
+                     href="{{ url_for('admin.customer_user_edit', customer_id=customer.id, user_id=u.id, return_to='users') }}"
+                     title="تعديل البيانات وكلمة المرور">
+                    <i class="fa-solid fa-pen-to-square"></i> تعديل
+                  </a>
+                  <details class="cu-popover">
+                    <summary class="cu-btn cu-btn--ghost"><i class="fa-solid fa-key"></i> كلمة المرور</summary>
+                    <form method="post"
+                          action="{{ url_for('admin.customer_user_password_set', customer_id=customer.id, user_id=u.id) }}"
+                          class="cu-popover-body">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="return_to" value="users">
+                      <div class="cu-hint">تُحفظ نسخة مشفرة فقط ويزيد إصدار الدخول.</div>
+                      <label>كلمة مرور جديدة</label>
+                      <input type="password" name="password" minlength="8" required autocomplete="new-password">
+                      <label>تأكيد كلمة المرور</label>
+                      <input type="password" name="password_confirm" minlength="8" required autocomplete="new-password">
+                      <button class="cu-btn cu-btn--primary" type="submit">
+                        <i class="fa-solid fa-floppy-disk"></i> حفظ كلمة المرور
+                      </button>
+                    </form>
+                  </details>
+                  {% if u.active %}
+                    <form method="post"
+                          action="{{ url_for('admin.customer_user_disable', customer_id=customer.id, user_id=u.id) }}"
+                          style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="return_to" value="users">
+                      <button class="cu-btn cu-btn--danger" type="submit"
+                              data-cu-confirm="تعطيل دخول هذا المستخدم على البوابة؟ يبقى السجل محفوظاً، لكن لن يستطيع الدخول حتى يُعاد تفعيله.">
+                        <i class="fa-solid fa-pause"></i> تعطيل
+                      </button>
+                    </form>
+                  {% else %}
+                    <form method="post"
+                          action="{{ url_for('admin.customer_user_enable', customer_id=customer.id, user_id=u.id) }}"
+                          style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="return_to" value="users">
+                      <button class="cu-btn cu-btn--ghost" type="submit">
+                        <i class="fa-solid fa-play"></i> تفعيل
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="cu-empty">
+      <i class="fa-solid fa-user-slash"></i>
+      لا يوجد مستخدمو بوابة بعد لهذا العميل.<br>
+      ابدأ بإنشاء «مالك الحساب» — يصبح تلقائياً سوبر يوزر على راديوس العميل عند المزامنة.
+    </div>
+  {% endif %}
+</div>
+
+{# Section 2: Radius-synced identities (admins/managers/distributors) #}
+<div class="cu-card">
+  <div class="cu-card-head">
+    <div class="cu-card-title">
+      <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+      هويات مزامنة من راديوس العميل
+      <span class="cu-card-sub">— يضيفها العميل في نظامه (أدمن/مدير/موزع) ويبلّغ بها الجسرَ تلقائياً.</span>
+    </div>
+  </div>
+
+  <div class="cu-note">
+    <i class="fa-solid fa-circle-info"></i>
+    <span>
+      هذه لقطة <strong>قراءة فقط</strong> عن الحسابات الموجودة على راديوس العميل. تظهر فور أن يبلّغ راديوسه
+      عبر <span class="mono" dir="ltr">POST /api/integration/hoberadius/admins/report</span> بمزامنة دورية.
+      كلمات المرور لا تُخزَّن ولا تُعاد هنا أبداً. التحكم الوحيد المتاح من اللوحة هو
+      «فرض سوبر يوزر» — يضمن أن يكون هذا الأدمن مشرفاً كاملاً عند كل مزامنة دون كسر دخوله المحلي.
+    </span>
+  </div>
+
+  {% if radius_admins %}
+    <div class="cu-tbl-wrap">
+      <table class="cu-tbl">
+        <thead>
+          <tr>
+            <th>المستخدم</th>
+            <th>الدور</th>
+            <th>سوبر</th>
+            <th>الحالة</th>
+            <th>المصدر</th>
+            <th>آخر ظهور</th>
+            <th style="text-align:end">تحكم اللوحة</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ra in radius_admins %}
+            <tr>
+              <td class="mono">
+                {{ ra.username or ('#' ~ ra.radius_admin_id) }}
+                {% if ra.is_primary %}
+                  <span class="cu-badge cu-badge--primary" title="الأدمن الرئيسي المحلي لراديوس العميل">
+                    <i class="fa-solid fa-star"></i> رئيسي
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if ra.role == 'distributor' %}
+                  <span class="cu-badge cu-badge--dist"><i class="fa-solid fa-handshake"></i> موزع</span>
+                {% elif ra.role == 'manager' %}
+                  <span class="cu-badge cu-badge--primary">مدير</span>
+                {% elif ra.role == 'admin' %}
+                  <span class="cu-badge cu-badge--primary">أدمن</span>
+                {% elif ra.role %}
+                  {{ ra.role }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>
+                {% if ra.is_effective_super %}
+                  <span class="cu-badge cu-badge--super" title="{{ 'مفروض من اللوحة عبر الجسر' if ra.force_super else 'سوبر على الراديوس فعلاً' }}">
+                    <i class="fa-solid fa-crown"></i>
+                    سوبر{% if ra.force_super %} (مفروض){% endif %}
+                  </span>
+                {% else %}
+                  <span class="cu-badge cu-badge--off">عادي</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if ra.enabled %}
+                  <span class="cu-badge cu-badge--ok">مفعل</span>
+                {% else %}
+                  <span class="cu-badge cu-badge--off">معطل</span>
+                {% endif %}
+              </td>
+              <td class="cu-source">
+                {% if ra.managed_by_license_admin %}
+                  <strong>مُدار بالجسر</strong>{% if ra.external_identity_provider %} ({{ ra.external_identity_provider }}){% endif %}
+                {% else %}
+                  محلي على الراديوس
+                {% endif %}
+              </td>
+              <td>{{ ra.last_seen_at|dt if ra.last_seen_at else '—' }}</td>
+              <td style="text-align:end">
+                <div class="cu-row-actions" style="justify-content:flex-end">
+                  {% if ra.force_super %}
+                    <form method="post"
+                          action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}"
+                          style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="action" value="disable">
+                      <input type="hidden" name="return_to" value="users">
+                      <button class="cu-btn cu-btn--ghost" type="submit"
+                              data-cu-confirm="إلغاء فرض السوبر عن {{ ra.username or ('#' ~ ra.radius_admin_id) }}؟ سيعتمد على إعداده على الراديوس فقط.">
+                        <i class="fa-solid fa-crown"></i> إلغاء فرض السوبر
+                      </button>
+                    </form>
+                  {% else %}
+                    <form method="post"
+                          action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}"
+                          style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="action" value="enable">
+                      <input type="hidden" name="return_to" value="users">
+                      <button class="cu-btn cu-btn--primary" type="submit">
+                        <i class="fa-solid fa-crown"></i> اجعله سوبر يوزر
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="cu-empty">
+      <i class="fa-solid fa-arrow-up-from-bracket"></i>
+      لم تصل أي لقطة من راديوس العميل حتى الآن.<br>
+      تظهر هنا تلقائياً بعد أول بلاغ عبر قناة الجسر العكسية.
+    </div>
+  {% endif %}
+</div>
+
+{# Lightweight confirm-via-toast (no native confirm()). #}
+<div id="cu-confirm-toast" role="dialog" aria-modal="true"
+     style="position:fixed;inset-inline-end:24px;bottom:24px;z-index:80;max-width:360px;display:none;
+            background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 22px 40px -18px rgba(17,24,39,.32);
+            padding:16px 18px">
+  <div style="display:flex;gap:10px;align-items:flex-start">
+    <i class="fa-solid fa-triangle-exclamation" style="color:#d97706;font-size:18px;margin-top:2px"></i>
+    <div style="flex:1">
+      <div id="cu-confirm-toast-msg" style="font-size:13px;color:#1f2937;line-height:1.55"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button id="cu-confirm-toast-cancel" type="button"
+                style="height:32px;padding-inline:12px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:12px;cursor:pointer">
+          إلغاء
+        </button>
+        <button id="cu-confirm-toast-ok" type="button"
+                style="height:32px;padding-inline:12px;border-radius:8px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;font-weight:700;font-size:12px;cursor:pointer">
+          تأكيد
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/admin_customer_users.js') }}" defer></script>
+
+{% endblock %}
