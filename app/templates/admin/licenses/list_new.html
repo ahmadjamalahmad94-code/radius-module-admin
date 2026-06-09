@@ -1,0 +1,654 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}التراخيص{% endblock %}
+{% block page_title %}التراخيص{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ============================================================
+   licenses/list_new.html — قائمة التراخيص
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================ */
+
+/* ── Hero الإحصاءات ──────────────────────────────────────── */
+.lic-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-11);
+  position:      relative;
+  overflow:      hidden;
+}
+
+.lic-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-start: -60px;
+  inset-block-start:  -60px;
+  width:     200px;
+  height:    200px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
+
+.lic-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+
+.lic-hero-body { flex: 1; }
+
+.lic-hero-title {
+  font-size:        var(--cc-fs-h1);
+  font-weight:      var(--cc-fw-display);
+  margin-block-end: var(--cc-sp-2);
+}
+
+.lic-hero-sub {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  opacity:     0.85;
+}
+
+.lic-hero-btn {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  padding:       var(--cc-sp-3) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  text-decoration: none;
+  transition:    background var(--cc-anim-fast);
+}
+.lic-hero-btn:hover { background: rgba(255,255,255,.28); }
+
+/* ── بطاقات الإحصاءات ────────────────────────────────────── */
+.lic-stats-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+
+.lic-stat-card {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-tile);
+  box-shadow:    var(--cc-sh-card);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--cc-sp-5);
+  transition:    box-shadow var(--cc-anim-fast), transform var(--cc-anim-fast);
+}
+.lic-stat-card:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform:  translateY(-2px);
+}
+
+.lic-stat-icon {
+  width:         40px;
+  height:        40px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     16px;
+  flex-shrink:   0;
+}
+.lic-stat-icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.lic-stat-icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+.lic-stat-icon--red    { background: var(--tile-red-bg);    color: var(--tile-red-fg);    }
+.lic-stat-icon--amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg);  }
+
+.lic-stat-body {}
+.lic-stat-num {
+  font-size:   22px;
+  font-weight: var(--cc-fw-display);
+  color:       var(--cc-text);
+  line-height: 1;
+}
+.lic-stat-label {
+  font-size:   var(--cc-fs-small);
+  color:       var(--cc-text-mute);
+  margin-top:  var(--cc-sp-2);
+}
+
+/* ── قسم الفلاتر والجدول ─────────────────────────────────── */
+.lic-section {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  overflow:      hidden;
+}
+
+.lic-section-head {
+  display:         flex;
+  align-items:     center;
+  gap:             var(--cc-sp-5);
+  padding:         var(--cc-sp-7) var(--cc-sp-9);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.lic-section-icon {
+  width:         34px;
+  height:        34px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     14px;
+  flex-shrink:   0;
+}
+
+.lic-section-title {
+  flex:        1;
+  font-size:   var(--cc-fs-h3);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+
+.lic-section-meta {
+  font-size:   var(--cc-fs-small);
+  color:       var(--cc-text-mute);
+  background:  var(--hb-bg);
+  padding:     var(--cc-sp-1) var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+}
+
+.lic-section-body {
+  padding: var(--cc-sp-8) var(--cc-sp-9);
+}
+
+/* ── نموذج الفلاتر ───────────────────────────────────────── */
+.lic-filter-form {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       var(--cc-sp-5);
+  align-items: flex-end;
+}
+
+.lic-filter-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-sp-2);
+}
+
+.lic-filter-field label {
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-soft);
+}
+
+.lic-input {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast), background var(--cc-anim-fast);
+  outline:       none;
+  min-width:     200px;
+}
+.lic-input:focus {
+  border-color: var(--cc-brand);
+  background:   var(--cc-input-bg-focus);
+  box-shadow:   var(--cc-input-ring);
+}
+
+.lic-select {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  outline:       none;
+  cursor:        pointer;
+  min-width:     150px;
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.lic-select:focus {
+  border-color: var(--cc-brand);
+  box-shadow:   var(--cc-input-ring);
+}
+
+.lic-btn {
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-8);
+  border-radius: var(--cc-btn-radius);
+  border:        1px solid transparent;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  cursor:        pointer;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  text-decoration: none;
+  transition:    var(--cc-tr-fast);
+}
+.lic-btn--primary {
+  background: var(--cc-btn-primary-bg);
+  color:      #fff;
+}
+.lic-btn--primary:hover { background: var(--cc-btn-primary-hover); }
+
+.lic-btn--ghost {
+  background: transparent;
+  border-color: var(--cc-border-2);
+  color: var(--cc-text-soft);
+}
+.lic-btn--ghost:hover {
+  background: var(--hb-bg-hover);
+  color: var(--cc-text);
+}
+
+.lic-btn--sm {
+  height:   32px;
+  padding:  0 var(--cc-sp-6);
+  font-size: var(--cc-fs-small);
+}
+
+/* ── الجدول ──────────────────────────────────────────────── */
+.lic-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--cc-r);
+}
+
+.lic-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--cc-fs-body-s);
+}
+
+.lic-table thead tr {
+  background: var(--cc-table-head-bg);
+}
+
+.lic-table th {
+  padding:     var(--cc-sp-5) var(--cc-sp-6);
+  text-align:  start;
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-soft);
+  white-space: nowrap;
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.lic-table td {
+  padding:      var(--cc-sp-5) var(--cc-sp-6);
+  border-block-end: 1px solid var(--cc-border);
+  color:        var(--cc-text);
+  vertical-align: middle;
+}
+
+.lic-table tbody tr:hover { background: var(--cc-table-row-hover); }
+.lic-table tbody tr:last-child td { border-block-end: none; }
+
+/* صفوف التراخيص المنتهية قريباً */
+.lic-table tr.is-expiring-soon td:first-child {
+  border-inline-start: 3px solid var(--hr-orange);
+}
+
+.lic-table tr.is-expiring-soon {
+  background: rgba(243,156,18,.04);
+}
+
+/* ── pills الحالة ────────────────────────────────────────── */
+.lic-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       2px var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+  white-space:   nowrap;
+}
+.lic-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+.lic-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+.lic-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+.lic-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+.lic-pill--blue   { background: var(--pill-blue-bg);   color: var(--pill-blue-fg);   }
+.lic-pill--purple { background: var(--pill-purple-bg); color: var(--pill-purple-fg); }
+
+/* ── شارة "ينتهي قريباً" ─────────────────────────────────── */
+.lic-expiry-badge {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-1);
+  padding:       2px var(--cc-sp-3);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+  background:    var(--tile-amber-bg);
+  color:         var(--tile-amber-fg);
+}
+
+/* ── حالة فارغة ──────────────────────────────────────────── */
+.lic-empty {
+  text-align: center;
+  padding:    var(--cc-sp-13) var(--cc-sp-9);
+}
+.lic-empty-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     22px;
+  margin:        0 auto var(--cc-sp-6);
+}
+.lic-empty-title {
+  font-size:   var(--cc-fs-h3);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+  margin-block-end: var(--cc-sp-2);
+}
+.lic-empty-sub {
+  font-size: var(--cc-fs-body-s);
+  color:     var(--cc-text-mute);
+}
+
+/* ── تسمية عمود mono (مفتاح الترخيص) ───────────────────── */
+.lic-key {
+  font-family: var(--cc-font-mono);
+  font-size:   var(--cc-fs-small);
+  color:       var(--cc-text-soft);
+  letter-spacing: 0.03em;
+}
+
+/* ── شبكة الصفحة ─────────────────────────────────────────── */
+.lic-page {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-gap-section);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lic-page">
+
+  {# ── Hero ─────────────────────────────────────────────────────────── #}
+  <div class="lic-hero" role="banner">
+    <div class="lic-hero-icon" aria-hidden="true">
+      <i class="fa-solid fa-key"></i>
+    </div>
+    <div class="lic-hero-body">
+      <div class="lic-hero-title">التراخيص</div>
+      <div class="lic-hero-sub">كل ترخيص يعطي عميلاً صلاحية تشغيل النظام. يمكنك إضافة ترخيص جديد أو إيقاف ترخيص قائم من هنا.</div>
+    </div>
+    <a class="lic-hero-btn" href="{{ url_for('admin.license_new') }}">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      ترخيص جديد
+    </a>
+  </div>
+
+  {# ── بطاقات الإحصاءات ─────────────────────────────────────────────── #}
+  <div class="lic-stats-grid" aria-label="ملخص التراخيص">
+
+    <div class="lic-stat-card">
+      <div class="lic-stat-icon lic-stat-icon--purple" aria-hidden="true">
+        <i class="fa-solid fa-key"></i>
+      </div>
+      <div class="lic-stat-body">
+        <div class="lic-stat-num">{{ stats.total | default(licenses | length) }}</div>
+        <div class="lic-stat-label">إجمالي التراخيص</div>
+      </div>
+    </div>
+
+    <div class="lic-stat-card">
+      <div class="lic-stat-icon lic-stat-icon--green" aria-hidden="true">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+      <div class="lic-stat-body">
+        <div class="lic-stat-num">{{ stats.active | default(licenses | selectattr('status','equalto','active') | list | length) }}</div>
+        <div class="lic-stat-label">تراخيص نشطة</div>
+      </div>
+    </div>
+
+    <div class="lic-stat-card">
+      <div class="lic-stat-icon lic-stat-icon--red" aria-hidden="true">
+        <i class="fa-solid fa-circle-xmark"></i>
+      </div>
+      <div class="lic-stat-body">
+        <div class="lic-stat-num">{{ stats.expired | default(licenses | selectattr('status','equalto','expired') | list | length) }}</div>
+        <div class="lic-stat-label">تراخيص منتهية</div>
+      </div>
+    </div>
+
+    <div class="lic-stat-card">
+      <div class="lic-stat-icon lic-stat-icon--amber" aria-hidden="true">
+        <i class="fa-solid fa-hourglass-half"></i>
+      </div>
+      <div class="lic-stat-body">
+        <div class="lic-stat-num">{{ stats.expiring_soon | default(0) }}</div>
+        <div class="lic-stat-label">تنتهي خلال 30 يوم</div>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── فلاتر البحث ──────────────────────────────────────────────────── #}
+  <div class="lic-section" role="search" aria-label="فلترة التراخيص">
+    <div class="lic-section-head">
+      <div class="lic-section-icon" aria-hidden="true">
+        <i class="fa-solid fa-filter"></i>
+      </div>
+      <div class="lic-section-title">بحث وتصفية</div>
+    </div>
+    <div class="lic-section-body">
+      <form class="lic-filter-form" method="get" aria-label="نموذج الفلترة">
+
+        <div class="lic-filter-field" style="flex:1; min-width:220px">
+          <label for="lic-search">بحث</label>
+          <input
+            class="lic-input"
+            id="lic-search"
+            name="q"
+            type="search"
+            placeholder="اسم العميل أو مفتاح الترخيص أو اسم الباقة..."
+            value="{{ search | default('') }}"
+            aria-label="بحث في التراخيص"
+          >
+        </div>
+
+        <div class="lic-filter-field">
+          <label for="lic-status">الحالة</label>
+          <select class="lic-select" id="lic-status" name="status" aria-label="فلترة حسب الحالة">
+            <option value="">كل الحالات</option>
+            <option value="active"    {{ 'selected' if status == 'active'    }}>نشط ✓</option>
+            <option value="trial"     {{ 'selected' if status == 'trial'     }}>تجريبي</option>
+            <option value="expired"   {{ 'selected' if status == 'expired'   }}>منتهي</option>
+            <option value="suspended" {{ 'selected' if status == 'suspended' }}>موقوف</option>
+            <option value="revoked"   {{ 'selected' if status == 'revoked'   }}>ملغى</option>
+          </select>
+        </div>
+
+        <div class="lic-filter-field">
+          <label for="lic-expiry">تاريخ الانتهاء</label>
+          <select class="lic-select" id="lic-expiry" name="expiry" aria-label="فلترة حسب تاريخ الانتهاء">
+            <option value="">أي وقت</option>
+            <option value="this_month" {{ 'selected' if expiry == 'this_month' }}>ينتهي هذا الشهر</option>
+            <option value="3months"    {{ 'selected' if expiry == '3months'    }}>ينتهي خلال 3 أشهر</option>
+            <option value="expired"    {{ 'selected' if expiry == 'expired'    }}>منتهي بالفعل</option>
+          </select>
+        </div>
+
+        <div class="lic-filter-field" style="justify-content:flex-end">
+          <label style="visibility:hidden; user-select:none">بحث</label>
+          <button class="lic-btn lic-btn--primary" type="submit">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            بحث
+          </button>
+        </div>
+
+        {% if search or status or expiry %}
+        <div class="lic-filter-field" style="justify-content:flex-end">
+          <label style="visibility:hidden; user-select:none">مسح</label>
+          <a class="lic-btn lic-btn--ghost" href="{{ url_for('admin.licenses_list') }}" aria-label="مسح الفلاتر">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            مسح الفلاتر
+          </a>
+        </div>
+        {% endif %}
+
+      </form>
+    </div>
+  </div>
+
+  {# ── جدول التراخيص ────────────────────────────────────────────────── #}
+  <div class="lic-section">
+    <div class="lic-section-head">
+      <div class="lic-section-icon" aria-hidden="true">
+        <i class="fa-solid fa-list"></i>
+      </div>
+      <div class="lic-section-title">جميع التراخيص</div>
+      <div class="lic-section-meta" aria-live="polite">{{ licenses | length }} ترخيص</div>
+    </div>
+
+    <div class="cc-table-toolbar">
+      <span class="cc-table-count" id="tbl-licenses-info">{{ licenses|length }} ترخيص</span>
+      <div class="cc-rows-select">
+        <span>عدد الصفوف:</span>
+        <select class="cc-select cc-per-page"
+                data-table="#tbl-licenses"
+                data-info="#tbl-licenses-info"
+                aria-label="عدد الصفوف في الصفحة">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="lic-table-wrap">
+      <table class="lic-table" id="tbl-licenses" aria-label="قائمة التراخيص">
+        <thead>
+          <tr>
+            <th scope="col" class="cc-th-sort">اسم العميل</th>
+            <th scope="col" class="cc-th-sort">مفتاح الترخيص</th>
+            <th scope="col" class="cc-th-sort">الباقة</th>
+            <th scope="col" class="cc-th-sort">تاريخ الانتهاء</th>
+            <th scope="col" class="cc-th-sort">الحالة</th>
+            <th scope="col" class="cc-th-sort">آخر فحص</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lic in licenses %}
+            {#
+              is_expiring_soon = ينتهي خلال 30 يوم ولا يزال نشطاً
+              نحسبها بقدر ما تسمح Jinja2
+            #}
+            {% set _days = lic.days_remaining | default(99) | int %}
+            {% set _soon = (_days <= 30 and _days >= 0 and lic.status in ['active','trial']) %}
+
+            <tr class="{{ 'is-expiring-soon' if _soon else '' }}">
+
+              <td>
+                <strong>{{ lic.customer.company_name }}</strong>
+              </td>
+
+              <td>
+                <span class="lic-key" title="{{ lic.license_key }}">{{ lic.license_key }}</span>
+              </td>
+
+              <td>{{ lic.plan.name }}</td>
+
+              <td>
+                {{ lic.expires_at | date if lic.expires_at else '—' }}
+                {% if _soon %}
+                  <span class="lic-expiry-badge" aria-label="ينتهي خلال {{ _days }} يوم">
+                    <i class="fa-solid fa-hourglass-half fa-xs" aria-hidden="true"></i>
+                    {{ _days }} يوم
+                  </span>
+                {% endif %}
+              </td>
+
+              <td>
+                {% if lic.status == 'active' %}
+                  <span class="lic-pill lic-pill--green"><i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> نشط</span>
+                {% elif lic.status == 'trial' %}
+                  <span class="lic-pill lic-pill--blue"><i class="fa-solid fa-flask fa-xs" aria-hidden="true"></i> تجريبي</span>
+                {% elif lic.status == 'expired' %}
+                  <span class="lic-pill lic-pill--red"><i class="fa-solid fa-circle-xmark fa-xs" aria-hidden="true"></i> منتهي</span>
+                {% elif lic.status == 'suspended' %}
+                  <span class="lic-pill lic-pill--amber"><i class="fa-solid fa-pause fa-xs" aria-hidden="true"></i> موقوف</span>
+                {% elif lic.status == 'revoked' %}
+                  <span class="lic-pill lic-pill--grey"><i class="fa-solid fa-ban fa-xs" aria-hidden="true"></i> ملغى</span>
+                {% else %}
+                  <span class="lic-pill lic-pill--grey">{{ lic.status | status_label }}</span>
+                {% endif %}
+              </td>
+
+              <td style="color: var(--cc-text-mute); font-size: var(--cc-fs-small);">
+                {{ lic.last_check_at | dt if lic.last_check_at else '—' }}
+              </td>
+
+              <td>
+                <a class="lic-btn lic-btn--ghost lic-btn--sm"
+                   href="{{ url_for('admin.license_detail', license_id=lic.id) }}"
+                   aria-label="إدارة ترخيص {{ lic.customer.company_name }}">
+                  <i class="fa-solid fa-arrow-up-right-from-square fa-xs" aria-hidden="true"></i>
+                  إدارة
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="7">
+                <div class="lic-empty">
+                  <div class="lic-empty-icon" aria-hidden="true">
+                    <i class="fa-solid fa-key"></i>
+                  </div>
+                  <div class="lic-empty-title">لا توجد تراخيص بعد</div>
+                  <div class="lic-empty-sub">
+                    {% if search or status or expiry %}
+                      لا توجد نتائج تطابق الفلاتر الحالية — جرّب تغيير معايير البحث.
+                    {% else %}
+                      ابدأ بإنشاء أول ترخيص لربط عميل بالنظام.
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

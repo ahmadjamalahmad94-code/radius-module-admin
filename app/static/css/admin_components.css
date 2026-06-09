@@ -1,0 +1,419 @@
+/*
+ * admin_components.css — HobeRadius Admin Shared Components
+ * يُكمل admin_tokens.css — لا hex مباشرة هنا — المتغير أولاً دائماً
+ */
+
+/* ============================================================
+   1. BUTTONS — unified height
+   ============================================================ */
+.cc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+  height: var(--cc-btn-h, 38px);
+  padding: 0 var(--cc-sp-8);
+  border-radius: var(--cc-btn-radius);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: var(--cc-tr-fast);
+  flex-shrink: 0;
+}
+
+.cc-btn-sm {
+  height: var(--cc-btn-h-sm, 30px);
+  padding: 0 var(--cc-sp-5);
+  font-size: var(--cc-fs-small);
+}
+
+.cc-btn-lg {
+  height: var(--cc-btn-h-lg, 46px);
+  padding: 0 var(--cc-sp-9);
+  font-size: var(--cc-fs-body-l);
+}
+
+/* variants */
+.cc-btn--primary {
+  background: var(--cc-btn-primary-bg);
+  color: #fff;
+  box-shadow: var(--cc-sh-glow);
+}
+.cc-btn--primary:hover {
+  background: var(--cc-btn-primary-hover);
+  box-shadow: 0 4px 16px rgba(107, 90, 237, .45);
+  color: #fff;
+}
+
+.cc-btn--ghost {
+  background: var(--cc-card-bg);
+  color: var(--cc-text-soft);
+  border-color: var(--cc-border-2);
+}
+.cc-btn--ghost:hover {
+  background: var(--hb-bg-hover);
+  color: var(--cc-text);
+}
+
+/* ============================================================
+   2. INPUTS / SELECTS / TEXTAREA — unified form controls
+   ============================================================ */
+.cc-input,
+.cc-select,
+.cc-textarea {
+  height: var(--cc-input-h, 38px);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r);
+  padding: 0 var(--cc-sp-6);
+  background: var(--cc-input-bg);
+  color: var(--cc-text);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  outline: none;
+  transition: border-color 0.15s var(--cc-ease),
+              box-shadow    0.15s var(--cc-ease),
+              background    0.15s var(--cc-ease);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cc-textarea {
+  height: auto;
+  padding: var(--cc-sp-5) var(--cc-sp-6);
+  resize: vertical;
+}
+
+.cc-input:focus,
+.cc-select:focus {
+  border-color: var(--cc-brand);
+  box-shadow: 0 0 0 3px rgba(107, 90, 237, .15);
+  background: var(--cc-input-bg-focus);
+}
+
+/* ============================================================
+   3. SELECT — custom chevron arrow (RTL-aware)
+   ============================================================ */
+.cc-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236B5AED' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 10px center; /* RTL: arrow on the left */
+  padding-left: 32px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   4. TABLE — sortable header cells
+   ============================================================ */
+.cc-th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.cc-th-sort::after {
+  content: ' ⇅';
+  opacity: 0.4;
+  font-size: 0.75em;
+}
+
+.cc-th-sort.asc::after {
+  content: ' ↑';
+  opacity: 1;
+  color: var(--cc-brand);
+}
+
+.cc-th-sort.desc::after {
+  content: ' ↓';
+  opacity: 1;
+  color: var(--cc-brand);
+}
+
+/* ============================================================
+   5. TABLE TOOLBAR — rows-per-page + count
+   ============================================================ */
+.cc-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--cc-sp-5) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+  flex-wrap: wrap;
+  gap: var(--cc-sp-5);
+}
+
+.cc-table-count {
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  font-weight: var(--cc-fw-bold);
+}
+
+.cc-rows-select {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-4);
+  font-size: 0.85rem;
+  color: var(--cc-text-soft);
+}
+
+.cc-rows-select .cc-select {
+  width: auto;
+  min-width: 72px;
+  height: 30px;
+  font-size: var(--cc-fs-tiny);
+  padding-left: 26px;
+  padding-right: var(--cc-sp-4);
+  background-position: left 8px center;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Confirmation Modal — hub-confirm
+   يضمن الظهور الصحيح في صفحات الأدمن التي لا تحمّل app.css
+   ══════════════════════════════════════════════════════════════════════ */
+.hub-modal {
+  position:        fixed;
+  inset:           0;
+  z-index:         9999;
+  display:         none;
+  align-items:     center;
+  justify-content: center;
+  padding:         20px;
+  background:      rgba(15, 23, 42, .55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.hub-modal.is-open {
+  display: flex;
+}
+.hub-modal-card {
+  background:    var(--cc-card-bg, #fff);
+  border-radius: var(--cc-r-lg, 16px);
+  max-width:     440px;
+  width:         100%;
+  padding:       var(--cc-sp-8, 24px);
+  display:       grid;
+  gap:           var(--cc-sp-5, 12px);
+  text-align:    center;
+  box-shadow:    0 25px 60px rgba(15, 23, 42, .32);
+}
+.hub-modal-icon {
+  width:         56px;
+  height:        56px;
+  margin-inline: auto;
+  border-radius: 50%;
+  display:       grid;
+  place-items:   center;
+  background:    var(--tile-amber-bg, #FEF3C7);
+  color:         var(--tile-amber-fg, #D97706);
+  font-size:     22px;
+}
+.hub-modal-title {
+  font-weight: 800;
+  font-size:   17px;
+  color:       var(--cc-text, #0F172A);
+  margin:      0;
+}
+.hub-modal-msg {
+  color:       var(--cc-text-muted, #64748B);
+  font-size:   13.5px;
+  line-height: 1.7;
+  margin:      0;
+}
+.hub-modal-actions {
+  display:         flex;
+  gap:             var(--cc-sp-4, 8px);
+  justify-content: center;
+  padding-top:     4px;
+}
+.hub-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           6px;
+  padding:       8px 18px;
+  border-radius: var(--cc-r, 10px);
+  font-family:   var(--cc-font, inherit);
+  font-size:     13.5px;
+  font-weight:   600;
+  cursor:        pointer;
+  border:        1px solid transparent;
+  transition:    background var(--cc-anim-fast, 140ms), box-shadow var(--cc-anim-fast, 140ms);
+}
+.hub-btn--ghost {
+  background:  var(--cc-tint-bg, #F1F5F9);
+  color:       var(--cc-text-soft, #475569);
+  border-color: var(--cc-border, #E2E8F0);
+}
+.hub-btn--ghost:hover {
+  background: var(--cc-brand-softer, #EDE9FE);
+  color:      var(--cc-brand, #6B5AED);
+}
+.hub-btn--danger {
+  background:  transparent;
+  color:       var(--hb-red, #EF4444);
+  border-color: var(--hb-red, #EF4444);
+}
+.hub-btn--danger:hover {
+  background: var(--hb-red, #EF4444);
+  color:      #fff;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Tabs — cc-tabs
+   مستخدمة في صفحة الإعدادات وأي صفحة تحتاج تبويبات
+   ══════════════════════════════════════════════════════════════════════ */
+.cc-tabs {
+  display:       flex;
+  gap:           0;
+  border-bottom: 2px solid var(--cc-border);
+  margin-bottom: var(--cc-sp-6);
+}
+.cc-tab-btn {
+  padding:      var(--cc-sp-3) var(--cc-sp-5);
+  border:       none;
+  background:   none;
+  cursor:       pointer;
+  color:        var(--cc-text-muted, var(--cc-text-mute));
+  font-family:  var(--cc-font);
+  font-size:    0.95rem;
+  font-weight:  var(--cc-fw-medium);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition:   color var(--cc-anim-fast), border-color var(--cc-anim-fast);
+  display:      flex;
+  align-items:  center;
+  gap:          var(--cc-sp-3);
+}
+.cc-tab-btn:hover {
+  color: var(--cc-text);
+}
+.cc-tab-btn.active {
+  color:        var(--cc-primary, var(--cc-brand));
+  border-bottom-color: var(--cc-primary, var(--cc-brand));
+  font-weight:  600;
+}
+.cc-tab-pane {
+  display: none;
+}
+.cc-tab-pane.active {
+  display: block;
+}
+
+/* ============================================================
+   CONFIRM MODAL — hub-modal / hub-btn
+   ============================================================ */
+.hub-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cc-anim-med);
+}
+.hub-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.hub-modal-card {
+  background: var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  padding: var(--cc-sp-11) var(--cc-sp-11);
+  min-width: 320px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: var(--cc-sh-hero);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-sp-5);
+}
+.hub-modal-icon {
+  font-size: 2rem;
+  color: var(--cc-warning);
+}
+.hub-modal-title {
+  font-size: var(--cc-fs-h2);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  margin: 0;
+}
+.hub-modal-msg {
+  color: var(--cc-text-soft);
+  font-size: var(--cc-fs-body);
+  margin: 0;
+}
+.hub-modal-actions {
+  display: flex;
+  gap: var(--cc-sp-5);
+  justify-content: center;
+  margin-top: var(--cc-sp-3);
+}
+.hub-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-sp-3);
+  height: var(--cc-btn-h);
+  padding: 0 var(--cc-sp-9);
+  border-radius: var(--cc-r);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+  border: none;
+  transition: background var(--cc-anim-fast), opacity var(--cc-anim-fast);
+}
+.hub-btn--ghost {
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  color: var(--cc-text-soft);
+}
+.hub-btn--ghost:hover { background: var(--cc-border); }
+.hub-btn--danger {
+  background: var(--cc-danger);
+  color: #fff;
+}
+.hub-btn--danger:hover { opacity: .88; }
+
+/* ============================================================
+   TABS — cc-tabs / cc-tab-btn / cc-tab-pane
+   ============================================================ */
+.cc-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--cc-border);
+  margin-bottom: var(--cc-sp-8);
+}
+.cc-tab-btn {
+  padding: var(--cc-sp-4) var(--cc-sp-8);
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--cc-text-muted, var(--cc-text-soft));
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-medium);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color var(--cc-anim-fast), border-color var(--cc-anim-fast);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+}
+.cc-tab-btn:hover { color: var(--cc-text); }
+.cc-tab-btn.active {
+  color: var(--cc-primary);
+  border-bottom-color: var(--cc-primary);
+  font-weight: var(--cc-fw-bold);
+}
+.cc-tab-pane { display: none; }
+.cc-tab-pane.active { display: block; }

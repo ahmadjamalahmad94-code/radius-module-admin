@@ -1,0 +1,505 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}سجل العمليات{% endblock %}
+{% block page_title %}سجل العمليات{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   logs/audit_new.html — سجل العمليات
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero stats ──────────────────────────────────────── */
+.al-hero {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  margin-block-end:      var(--cc-gap-section);
+}
+.al-stat {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-tile);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-6);
+  transition:    box-shadow var(--cc-anim-fast);
+}
+.al-stat:hover { box-shadow: var(--cc-sh-card2); }
+.al-stat-icon {
+  width: 40px; height: 40px;
+  border-radius: var(--cc-r-lg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h3);
+  flex-shrink:   0;
+}
+.al-stat-icon.purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.al-stat-icon.blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.al-stat-icon.green  { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.al-stat-icon.amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg); }
+.al-stat-val  { font-size: var(--cc-fs-display); font-weight: var(--cc-fw-display); color: var(--cc-text); line-height: var(--cc-lh-tight); font-variant-numeric: tabular-nums; }
+.al-stat-label{ font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold); color: var(--cc-text-mute); margin-block-start: var(--cc-sp-1); }
+
+/* ── بطاقة الفلاتر ───────────────────────────────────── */
+.al-filter-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-lg);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  padding:       var(--cc-sp-6) var(--cc-sp-8);
+  margin-block-end: var(--cc-gap-section);
+  display:       flex;
+  align-items:   flex-end;
+  gap:           var(--cc-sp-6);
+  flex-wrap:     wrap;
+}
+.al-filter-group { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.al-filter-label {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text-soft); text-transform: uppercase; letter-spacing: .4px;
+}
+.al-filter-input, .al-filter-select {
+  height: 36px;
+  padding: 0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border: 1px solid var(--cc-input-border);
+  background: var(--cc-input-bg);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+  min-width: 160px;
+  outline: none;
+  transition: border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.al-filter-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394A3B8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: left 8px center; padding-inline-end: var(--cc-sp-9); }
+.al-filter-input:focus, .al-filter-select:focus { background: var(--cc-input-bg-focus); border-color: var(--cc-brand); box-shadow: var(--cc-input-ring); }
+
+.al-filter-actions { display: flex; gap: var(--cc-sp-4); align-items: flex-end; }
+.al-btn-filter {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  height: 36px; padding: 0 var(--cc-sp-8);
+  border-radius: var(--cc-r);
+  background: var(--cc-btn-primary-bg); color: #fff;
+  font-family: var(--cc-font); font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold);
+  border: none; cursor: pointer; transition: background var(--cc-anim-fast);
+}
+.al-btn-filter:hover { background: var(--cc-btn-primary-hover); }
+.al-btn-reset {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  height: 36px; padding: 0 var(--cc-sp-7);
+  border-radius: var(--cc-r);
+  background: var(--cc-brand-softer); color: var(--cc-brand);
+  font-family: var(--cc-font); font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold);
+  border: 1px solid var(--cc-border-2); cursor: pointer; text-decoration: none;
+  transition: background var(--cc-anim-fast);
+}
+.al-btn-reset:hover { background: var(--cc-brand-soft2); }
+
+/* ── بطاقة الجدول ────────────────────────────────────── */
+.al-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  overflow:      hidden;
+}
+.al-card-head {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+.al-card-head-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--cc-r-sm);
+  background: var(--tile-purple-bg); color: var(--tile-purple-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); flex-shrink: 0;
+}
+.al-card-head-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.al-card-head-count {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  padding: 2px 10px; border-radius: var(--cc-r-pill);
+  background: var(--cc-brand-soft); color: var(--cc-brand-ink);
+}
+
+/* ── الجدول ──────────────────────────────────────────── */
+.al-table-wrap { overflow-x: auto; }
+.al-table { width: 100%; border-collapse: collapse; font-size: var(--cc-fs-body-s); }
+.al-table thead tr { background: var(--hb-bg); border-block-end: 2px solid var(--cc-border-2); }
+.al-table th {
+  padding: var(--cc-sp-4) var(--cc-sp-7); text-align: start;
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text-mute); text-transform: uppercase; letter-spacing: .4px;
+  white-space: nowrap;
+}
+.al-table td {
+  padding: var(--cc-sp-5) var(--cc-sp-7);
+  border-block-end: 1px solid var(--cc-border);
+  color: var(--cc-text);
+  vertical-align: middle;
+}
+.al-table tr:last-child td { border-block-end: none; }
+.al-table tbody tr:hover { background: var(--cc-brand-softer); }
+
+/* ── نوع العملية — pill ملوّن ────────────────────────── */
+.al-op {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  white-space: nowrap;
+}
+.al-op.create  { background: var(--tile-green-bg); color: var(--tile-green-fg); }
+.al-op.edit    { background: var(--tile-blue-bg);  color: var(--tile-blue-fg);  }
+.al-op.delete  { background: var(--tile-red-bg);   color: var(--tile-red-fg);   }
+.al-op.error   { background: var(--tile-amber-bg); color: var(--tile-amber-fg); }
+.al-op.login   { background: var(--tile-purple-bg);color: var(--tile-purple-fg);}
+.al-op.view    { background: var(--tile-grey-bg);  color: var(--tile-grey-fg);  }
+
+/* ── حالة الطلب ──────────────────────────────────────── */
+.al-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+}
+.al-status.ok  { color: var(--tile-green-fg); }
+.al-status.err { color: var(--tile-red-fg); }
+.al-status::before {
+  content: ''; width: 7px; height: 7px; border-radius: var(--cc-r-pill);
+}
+.al-status.ok::before  { background: var(--hb-green); }
+.al-status.err::before { background: var(--hb-red); }
+
+/* ── خلية IP/mono ──────────────────────────────────────── */
+.al-mono {
+  font-family:  var(--cc-font-mono);
+  font-size:    var(--cc-fs-tiny);
+  color:        var(--cc-text-soft);
+  direction:    ltr;
+  text-align:   start;
+}
+
+/* ── كيان متأثر ──────────────────────────────────────── */
+.al-entity {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+}
+.al-entity-type {
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+}
+
+/* ── صفوف توسيع التفاصيل ─────────────────────────────── */
+.al-detail-row td {
+  background:    var(--cc-tint-bg);
+  padding:       var(--cc-sp-5) var(--cc-sp-7) var(--cc-sp-5) var(--cc-sp-13);
+  font-size:     var(--cc-fs-tiny);
+  color:         var(--cc-text-soft);
+}
+.al-detail-row { display: none; }
+.al-detail-row.is-open { display: table-row; }
+
+.al-expand-btn {
+  width: 22px; height: 22px;
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--cc-border-2);
+  background: transparent;
+  color: var(--cc-text-mute);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 9px;
+  transition: background var(--cc-anim-fast), color var(--cc-anim-fast);
+}
+.al-expand-btn:hover     { background: var(--cc-brand-softer); color: var(--cc-brand); }
+.al-expand-btn.is-open   { background: var(--cc-brand-softer); color: var(--cc-brand); }
+.al-expand-btn.is-open i { transform: rotate(90deg); }
+.al-expand-btn i         { transition: transform var(--cc-anim-fast); }
+
+/* ── paginación ──────────────────────────────────────── */
+.al-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-block-start: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+  flex-wrap: wrap; gap: var(--cc-sp-6);
+}
+.al-foot-info { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); font-weight: var(--cc-fw-bold); }
+.al-pagination { display: flex; gap: var(--cc-sp-3); align-items: center; }
+.al-page-btn {
+  display: inline-flex; align-items: center;
+  height: 30px; padding: 0 var(--cc-sp-6);
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--cc-border-2);
+  background: var(--cc-card-bg);
+  color: var(--cc-text-soft);
+  font-family: var(--cc-font); font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+  cursor: pointer; text-decoration: none;
+  transition: background var(--cc-anim-fast), color var(--cc-anim-fast);
+}
+.al-page-btn:hover     { background: var(--cc-brand-softer); color: var(--cc-brand); border-color: var(--cc-brand); }
+.al-page-btn.is-active { background: var(--cc-brand); color: #fff; border-color: var(--cc-brand); }
+.al-page-btn[disabled] { opacity: .4; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── إجماليات Hero ────────────────────────────────────────────────── #}
+<div class="al-hero" role="region" aria-label="إجماليات السجل">
+  <div class="al-stat">
+    <div class="al-stat-icon purple" aria-hidden="true"><i class="fa-solid fa-list-check"></i></div>
+    <div>
+      <div class="al-stat-val" aria-label="إجمالي العمليات">{{ stats.total | default('0') }}</div>
+      <div class="al-stat-label">إجمالي العمليات</div>
+    </div>
+  </div>
+  <div class="al-stat">
+    <div class="al-stat-icon blue" aria-hidden="true"><i class="fa-solid fa-calendar-day"></i></div>
+    <div>
+      <div class="al-stat-val" aria-label="عمليات اليوم">{{ stats.today | default('0') }}</div>
+      <div class="al-stat-label">اليوم</div>
+    </div>
+  </div>
+  <div class="al-stat">
+    <div class="al-stat-icon green" aria-hidden="true"><i class="fa-solid fa-calendar-week"></i></div>
+    <div>
+      <div class="al-stat-val" aria-label="عمليات الأسبوع">{{ stats.week | default('0') }}</div>
+      <div class="al-stat-label">هذا الأسبوع</div>
+    </div>
+  </div>
+  <div class="al-stat">
+    <div class="al-stat-icon amber" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <div>
+      <div class="al-stat-val" aria-label="عمليات بها خطأ">{{ stats.errors | default('0') }}</div>
+      <div class="al-stat-label">أخطاء</div>
+    </div>
+  </div>
+</div>
+
+{# ── فلاتر البحث ──────────────────────────────────────────────────── #}
+<form class="al-filter-card" method="get" action="" role="search" aria-label="فلترة السجل">
+  <div class="al-filter-group">
+    <label class="al-filter-label" for="al-f-from">من تاريخ</label>
+    <input class="al-filter-input" id="al-f-from" name="from_date" type="date"
+           value="{{ request.args.get('from_date','') }}" dir="ltr">
+  </div>
+  <div class="al-filter-group">
+    <label class="al-filter-label" for="al-f-to">إلى تاريخ</label>
+    <input class="al-filter-input" id="al-f-to" name="to_date" type="date"
+           value="{{ request.args.get('to_date','') }}" dir="ltr">
+  </div>
+  <div class="al-filter-group">
+    <label class="al-filter-label" for="al-f-admin">المشرف</label>
+    <select class="al-filter-select" id="al-f-admin" name="actor">
+      <option value="">كل المشرفين</option>
+      {% for adm in admin_list | default([]) %}
+      <option value="{{ adm.username }}" {% if request.args.get('actor')==adm.username %}selected{% endif %}>
+        {{ adm.full_name or adm.username }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="al-filter-group">
+    <label class="al-filter-label" for="al-f-type">نوع العملية</label>
+    <select class="al-filter-select" id="al-f-type" name="action_type">
+      <option value="">كل العمليات</option>
+      <option value="create"  {% if request.args.get('action_type')=='create'  %}selected{% endif %}>إنشاء</option>
+      <option value="edit"    {% if request.args.get('action_type')=='edit'    %}selected{% endif %}>تعديل</option>
+      <option value="delete"  {% if request.args.get('action_type')=='delete'  %}selected{% endif %}>حذف</option>
+      <option value="login"   {% if request.args.get('action_type')=='login'   %}selected{% endif %}>تسجيل دخول</option>
+      <option value="error"   {% if request.args.get('action_type')=='error'   %}selected{% endif %}>خطأ</option>
+    </select>
+  </div>
+  <div class="al-filter-actions">
+    <button class="al-btn-filter" type="submit">
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> بحث
+    </button>
+    <a class="al-btn-reset" href="{{ request.path }}">
+      <i class="fa-solid fa-times" aria-hidden="true"></i> إعادة ضبط
+    </a>
+  </div>
+</form>
+
+{# ── جدول السجل ───────────────────────────────────────────────────── #}
+<div class="al-card">
+  <div class="al-card-head">
+    <span class="al-card-head-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
+    <span class="al-card-head-title">العمليات</span>
+    <span class="al-card-head-count">{{ logs|length }} سجل</span>
+  </div>
+  <div class="cc-table-toolbar">
+    <span class="cc-table-count" id="tbl-audit-info">{{ logs|length }} سجل</span>
+    <div class="cc-rows-select">
+      <span>عدد الصفوف:</span>
+      <select class="cc-select cc-per-page"
+              data-table="#tbl-audit"
+              data-info="#tbl-audit-info"
+              aria-label="عدد الصفوف في الصفحة">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="al-table-wrap">
+    <table class="al-table" id="tbl-audit" role="table">
+      <thead>
+        <tr role="row">
+          <th scope="col" style="width:32px"></th>
+          <th scope="col" class="cc-th-sort">الوقت</th>
+          <th scope="col" class="cc-th-sort">المشرف</th>
+          <th scope="col" class="cc-th-sort">نوع العملية</th>
+          <th scope="col" class="cc-th-sort">الكيان المتأثر</th>
+          <th scope="col" class="cc-th-sort">العنوان IP</th>
+          <th scope="col" class="cc-th-sort">الحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in logs %}
+        {% set row_id = 'al-row-' ~ loop.index %}
+
+        {# ── صف البيانات الرئيسية ── #}
+        <tr role="row">
+          <td>
+            {% if entry.payload or entry.details %}
+            <button class="al-expand-btn" type="button"
+                    aria-expanded="false"
+                    aria-controls="{{ row_id }}-detail"
+                    aria-label="عرض تفاصيل العملية"
+                    onclick="alToggleDetail('{{ row_id }}-detail', this)">
+              <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+            </button>
+            {% endif %}
+          </td>
+
+          <td class="al-mono" dir="ltr">
+            {{ entry.created_at | dt if entry.created_at else '—' }}
+          </td>
+
+          <td>
+            {% if entry.actor %}
+              <span style="font-weight:var(--cc-fw-bold)">{{ entry.actor }}</span>
+            {% else %}
+              <span style="color:var(--cc-text-mute)">النظام</span>
+            {% endif %}
+          </td>
+
+          <td>
+            {# تلوين نوع العملية #}
+            {% set op_map = {
+              'create':         ('create', 'fa-plus',           'إنشاء'),
+              'add':            ('create', 'fa-plus',           'إضافة'),
+              'edit':           ('edit',   'fa-pen',            'تعديل'),
+              'update':         ('edit',   'fa-pen',            'تحديث'),
+              'delete':         ('delete', 'fa-trash',          'حذف'),
+              'remove':         ('delete', 'fa-trash',          'إزالة'),
+              'login':          ('login',  'fa-right-to-bracket','دخول'),
+              'logout':         ('view',   'fa-right-from-bracket','خروج'),
+              'view':           ('view',   'fa-eye',            'عرض'),
+              'error':          ('error',  'fa-circle-exclamation','خطأ'),
+              'disconnect':     ('delete', 'fa-plug-circle-xmark','فصل'),
+              'generate':       ('create', 'fa-layer-group',   'توليد'),
+            } %}
+            {% set oc = op_map.get(entry.action|lower, ('view','fa-circle','أخرى')) %}
+            <span class="al-op {{ oc[0] }}">
+              <i class="fa-solid {{ oc[1] }}" aria-hidden="true"></i>
+              {{ oc[2] }}
+            </span>
+          </td>
+
+          <td>
+            <div class="al-entity">{{ entry.target_id or '—' }}</div>
+            <div class="al-entity-type">{{ entry.target_type or '' }}</div>
+          </td>
+
+          <td>
+            <span class="al-mono">{{ entry.ip_address or '—' }}</span>
+          </td>
+
+          <td>
+            <span class="al-status {{ 'ok' if not entry.is_error else 'err' }}">
+              {{ 'ناجح' if not entry.is_error else 'خطأ' }}
+            </span>
+          </td>
+        </tr>
+
+        {# ── صف التفاصيل (مخفي افتراضياً) ── #}
+        {% if entry.payload or entry.details %}
+        <tr class="al-detail-row" id="{{ row_id }}-detail" role="row">
+          <td colspan="7">
+            <strong>التفاصيل:</strong>
+            {% if entry.payload %}
+              <pre dir="ltr" style="margin:var(--cc-sp-3) 0 0;background:var(--hb-bg);padding:var(--cc-sp-5);border-radius:var(--cc-r-sm);font-size:var(--cc-fs-tiny);overflow-x:auto;max-height:200px">{{ entry.payload | tojson(indent=2) if entry.payload is mapping else entry.payload }}</pre>
+            {% elif entry.details %}
+              <span>{{ entry.details }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align:center;padding:var(--cc-sp-13);color:var(--cc-text-mute)">
+            <i class="fa-solid fa-clipboard-list" aria-hidden="true" style="font-size:24px;display:block;margin-block-end:var(--cc-sp-5)"></i>
+            لا توجد سجلات بالمعايير المحددة
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── ترقيم الصفحات ── #}
+  {% if pagination %}
+  <div class="al-foot">
+    <div class="al-foot-info">
+      عرض {{ pagination.from }}–{{ pagination.to }} من {{ pagination.total }} سجل
+    </div>
+    <div class="al-pagination" role="navigation" aria-label="صفحات النتائج">
+      <a class="al-page-btn" href="?page={{ pagination.page - 1 }}&{{ request.query_string.decode() }}"
+         {% if pagination.page <= 1 %}disabled aria-disabled="true"{% endif %}
+         aria-label="الصفحة السابقة">
+        <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+      </a>
+      {% for p in pagination.pages %}
+        {% if p == '...' %}
+          <span class="al-page-btn" aria-hidden="true">…</span>
+        {% else %}
+          <a class="al-page-btn {{ 'is-active' if p == pagination.page else '' }}"
+             href="?page={{ p }}&{{ request.query_string.decode() }}"
+             aria-current="{{ 'page' if p == pagination.page else 'false' }}">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      <a class="al-page-btn" href="?page={{ pagination.page + 1 }}&{{ request.query_string.decode() }}"
+         {% if pagination.page >= pagination.total_pages %}disabled aria-disabled="true"{% endif %}
+         aria-label="الصفحة التالية">
+        <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+  window.alToggleDetail = function(rowId, btn) {
+    var row = document.getElementById(rowId);
+    if (!row) return;
+    var isOpen = row.classList.toggle('is-open');
+    btn.classList.toggle('is-open', isOpen);
+    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  };
+}());
+</script>
+{% endblock %}

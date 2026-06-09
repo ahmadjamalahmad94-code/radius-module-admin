@@ -141,7 +141,7 @@ def chr_nodes_list():
             "is_stale": _is_stale(n),
         })
     return render_template(
-        "admin/infra/chr_nodes.html",
+        "admin/infra/chr_nodes_new.html",
         node_stats=node_stats,
         service_choices=SERVICE_TYPE_CHOICES,
     )
@@ -206,7 +206,7 @@ def chr_node_detail(node_id: int):
         .all()
     )
     return render_template(
-        "admin/infra/chr_node_detail.html",
+        "admin/infra/chr_detail_new.html",
         node=node,
         reserved_mbps=reserved,
         available_mbps=max(0, node.max_reserved_mbps - reserved),
@@ -507,75 +507,6 @@ def service_allocation_edit(alloc_id: int):
     return redirect(url_for("admin_infra.customer_service_allocations", customer_id=alloc.customer_id))
 
 
-@bp.get("/service-allocations/<int:alloc_id>/snapshots")
-@login_required
-def allocation_snapshots(alloc_id: int):
-    """عرض تاريخ usage snapshots لتخصيص محدد (آخر 100 سجل)."""
-    alloc = ServiceAllocation.query.get_or_404(alloc_id)
-    snapshots = (
-        ServiceUsageSnapshot.query
-        .filter_by(service_allocation_id=alloc_id)
-        .order_by(ServiceUsageSnapshot.measured_at.desc())
-        .limit(100)
-        .all()
-    )
-    return render_template(
-        "admin/infra/allocation_snapshots.html",
-        alloc=alloc,
-        snapshots=snapshots,
-        usage_health=_usage_health,
-    )
-
-
-@bp.get("/health-overview")
-@login_required
-def health_overview():
-    """نظرة عامة على صحة خدمات كل العملاء (بناءً على آخر usage snapshot)."""
-    from ..models import License
-
-    customers = Customer.query.order_by(Customer.company_name).all()
-    customer_rows = []
-    for c in customers:
-        active_allocs = (
-            ServiceAllocation.query
-            .filter_by(customer_id=c.id, status="active")
-            .all()
-        )
-        if not active_allocs:
-            continue
-
-        alloc_rows = []
-        health_values = []
-        for a in active_allocs:
-            snap = _latest_snapshot(a.id)
-            hs = (snap.health_status if snap else "unknown")
-            health_values.append(hs)
-            alloc_rows.append({"alloc": a, "snap": snap, "health": hs})
-
-        if "critical" in health_values:
-            overall = "critical"
-        elif "warning" in health_values:
-            overall = "warning"
-        elif all(h == "ok" for h in health_values):
-            overall = "ok"
-        else:
-            overall = "unknown"
-
-        customer_rows.append({
-            "customer": c,
-            "allocs": alloc_rows,
-            "overall_health": overall,
-        })
-
-    # ترتيب: critical أولاً، ثم warning، ثم ok، ثم unknown
-    _order = {"critical": 0, "warning": 1, "ok": 2, "unknown": 3}
-    customer_rows.sort(key=lambda r: _order.get(r["overall_health"], 99))
-
-    return render_template(
-        "admin/infra/health_overview.html",
-        customer_rows=customer_rows,
-    )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Proxy Realm Routes
@@ -593,7 +524,7 @@ def proxy_routes_list():
     chr_nodes = ChrNode.query.filter_by(status="active").order_by(ChrNode.name).all()
     instances = CustomerRadiusInstance.query.order_by(CustomerRadiusInstance.realm).all()
     return render_template(
-        "admin/infra/proxy_routes.html",
+        "admin/infra/proxy_routes_new.html",
         routes=routes,
         chr_nodes=chr_nodes,
         instances=instances,
@@ -609,7 +540,7 @@ def proxy_route_create():
         flash("الـ Realm ونسخة RADIUS مطلوبان.", "error")
         return redirect(url_for("admin_infra.proxy_routes_list"))
     if ProxyRealmRoute.query.filter_by(realm=realm).first():
-        flash(f"مسار الـ Realm «{realm}» موجود مسبقًا.", "error")
+        flash(f"مسار الـ Realm \u00ab{realm}\u00bb موجود مسبقًا.", "error")
         return redirect(url_for("admin_infra.proxy_routes_list"))
     instance = CustomerRadiusInstance.query.get_or_404(radius_instance_id)
     allowed_node_ids = [_int(x) for x in request.form.getlist("allowed_chr_node_ids") if _int(x)]
@@ -626,9 +557,9 @@ def proxy_route_create():
     route.allowed_chr_node_ids = allowed_node_ids
     db.session.add(route)
     db.session.flush()
-    audit("proxy_route_create", "proxy_realm_route", route.id, f"إنشاء مسار Proxy للـ Realm: {realm}", {})
+    audit("proxy_route_create", "proxy_realm_route", route.id, f"\u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Proxy \u0644\u0644\u0640 Realm: {realm}", {})
     db.session.commit()
-    flash(f"تم إنشاء مسار Realm «{realm}».", "success")
+    flash(f"\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Realm \u00ab{realm}\u00bb.", "success")
     return redirect(url_for("admin_infra.proxy_routes_list"))
 
 
@@ -638,10 +569,133 @@ def proxy_route_set_status(route_id: int):
     route = ProxyRealmRoute.query.get_or_404(route_id)
     new_status = _str(request.form.get("status"), 20)
     if new_status not in {"active", "suspended", "draft"}:
-        flash("حالة غير صالحة.", "error")
+        flash("\u062d\u0627\u0644\u0629 \u063a\u064a\u0631 \u0635\u0627\u0644\u062d\u0629.", "error")
         return redirect(url_for("admin_infra.proxy_routes_list"))
     route.status = new_status
-    audit("proxy_route_status", "proxy_realm_route", route.id, f"تغيير حالة مسار {route.realm} إلى {new_status}", {})
+    audit("proxy_route_status", "proxy_realm_route", route.id, f"\u062a\u063a\u064a\u064a\u0631 \u062d\u0627\u0644\u0629 \u0645\u0633\u0627\u0631 {route.realm} \u0625\u0644\u0649 {new_status}", {})
     db.session.commit()
-    flash("تم تحديث الحالة.", "success")
+    flash("\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u062d\u0627\u0644\u0629.", "success")
     return redirect(url_for("admin_infra.proxy_routes_list"))
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Macros / Scripts Library
+# ──────────────────────────────────────────────────────────────────────────────
+
+_BUILTIN_MACROS = [
+    {"name": "PPPoE Server Setup", "description": "إعداد PPPoE Server على عقدة CHR بالخطوات الأساسية", "category": "vpn", "code": "# PPPoE Server\n/interface pppoe-server server add service-name=pppoe interface=ether1 authentication=pap chap mschapv1 mschapv2"},
+    {"name": "Firewall Basic Rules", "description": "قواعد جدار حماية أساسية لحماية الشبكة", "category": "firewall", "code": "# Basic Firewall\n/ip firewall filter add chain=input action=accept connection-state=established,related"},
+    {"name": "RADIUS Client Config", "description": "ضبط عميل RADIUS للمصادقة مع الخادم المركزي", "category": "routing", "code": "# RADIUS Client\n/radius add service=ppp,login address=<server-ip> secret=<secret>"},
+    {"name": "CPU & Memory Monitor", "description": "سكربت مراقبة استخدام المعالج والذاكرة وإرسال تنبيه عند تجاوز الحد", "category": "monitoring", "code": "# Monitor\n:local cpu [/system resource get cpu-load]\n:if ($cpu > 80) do={:log warning (\"High CPU: \" . $cpu . \"%\")}"},
+    {"name": "User Profile Sync", "description": "مزامنة بروفايلات المستخدمين بين RouterOS و RADIUS", "category": "users", "code": "# User Sync\n/ppp secret print terse"},
+    {"name": "Config Backup Script", "description": "أخذ نسخة احتياطية من إعدادات RouterOS وحفظها محلياً", "category": "backup", "code": "# Backup\n/system backup save name=backup-auto\n/export file=config-export"},
+]
+
+
+@bp.get("/macros")
+@login_required
+def macros_list():
+    macro_categories = sorted({m["category"] for m in _BUILTIN_MACROS})
+    return render_template(
+        "admin/infra/macros_new.html",
+        macros=_BUILTIN_MACROS,
+        macro_categories=macro_categories,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# System Health Dashboard  (logs/health_new.html)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _health_cls(pct: float) -> str:
+    if pct >= 85:
+        return "error"
+    if pct >= 70:
+        return "warn"
+    return "ok"
+
+
+@bp.get("/system-health")
+@login_required
+def system_health():
+    import os
+    import time as _time
+    now = _utcnow()
+
+    cpu_pct: float = 0.0
+    mem_pct: float = 0.0
+    disk_pct: float = 0.0
+    try:
+        import psutil
+        cpu_pct = psutil.cpu_percent(interval=0.1)
+        vm = psutil.virtual_memory()
+        mem_pct = vm.percent
+        du = psutil.disk_usage("/")
+        disk_pct = du.percent
+    except Exception:
+        try:
+            with open("/proc/meminfo") as fh:
+                lines = {k.strip(): v.strip() for k, v in (ln.split(":", 1) for ln in fh if ":" in ln)}
+            total = int(lines.get("MemTotal", "1 kB").split()[0]) or 1
+            avail = int(lines.get("MemAvailable", "1 kB").split()[0])
+            mem_pct = round((1 - avail / total) * 100, 1)
+        except Exception:
+            pass
+        try:
+            st = os.statvfs("/")
+            disk_pct = round((1 - st.f_bavail / (st.f_blocks or 1)) * 100, 1)
+        except Exception:
+            pass
+
+    db_ok = False
+    db_ms = 0.0
+    try:
+        t0 = _time.monotonic()
+        from ..extensions import db as _db
+        _db.session.execute(_db.text("SELECT 1"))
+        db_ms = round((_time.monotonic() - t0) * 1000, 1)
+        db_ok = True
+    except Exception:
+        pass
+
+    try:
+        from ..models import WhatsAppAccount
+        wa_total = WhatsAppAccount.query.count()
+        wa_conn = WhatsAppAccount.query.filter_by(status="active").count()
+    except Exception:
+        wa_total = 0
+        wa_conn = 0
+
+    from ..models import AuditLog
+    recent_errors = (
+        AuditLog.query
+        .filter(AuditLog.action.ilike("%error%") | AuditLog.action.ilike("%fail%"))
+        .order_by(AuditLog.created_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    proxy_routes_active = ProxyRealmRoute.query.filter_by(status="active").count()
+
+    return render_template(
+        "admin/logs/health_new.html",
+        now=now,
+        cpu_pct=round(cpu_pct, 1),
+        mem_pct=round(mem_pct, 1),
+        disk_pct=round(disk_pct, 1),
+        cpu_cls=_health_cls(cpu_pct),
+        mem_cls=_health_cls(mem_pct),
+        disk_cls=_health_cls(disk_pct),
+        sv_cls="ok",
+        db_cls="ok" if db_ok else "error",
+        px_cls="ok" if proxy_routes_active >= 0 else "warn",
+        wa_cls="ok" if wa_conn > 0 else "warn",
+        health={"status": "ok"},
+        sv={"uptime": "—", "requests_per_min": "—", "version": "—", "workers": "—"},
+        db={"response_ms": db_ms, "connections": "—", "size_mb": "—", "queries_per_min": "—", "ok": db_ok},
+        proxy={"active_routes": proxy_routes_active, "auth_reqs_min": "—", "acct_reqs_min": "—", "reject_rate_pct": "—"},
+        wa={"msgs_today": "—", "delivered_pct": "—", "failed_today": "—", "phone_display": f"{wa_conn}/{wa_total} متصل"},
+        pts_arr=[],
+        mpts=[],
+        recent_errors=recent_errors,
+        err=None,
+    )

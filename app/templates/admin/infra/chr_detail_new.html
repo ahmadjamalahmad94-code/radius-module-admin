@@ -1,0 +1,810 @@
+{% extends "admin/base_new.html" %}
+{% block title %}{{ node.name }} — تفاصيل العقدة{% endblock %}
+{% block page_title %}{{ node.name }}{% endblock %}
+
+{% block content %}
+
+{# ══════════════════════════════════════════════════════════════════
+   شريط KPI العلوي
+   ══════════════════════════════════════════════════════════════════ #}
+{% set pct = (reserved_mbps / node.max_reserved_mbps * 100)|round(1) if node.max_reserved_mbps else 0 %}
+
+<div class="cd-kpi-strip">
+
+  <div class="cd-kpi">
+    <div class="cd-kpi__icon cd-kpi__icon--purple">
+      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+    </div>
+    <div>
+      <div class="cd-kpi__val">{{ node.capacity_mbps }}<small>Mbps</small></div>
+      <div class="cd-kpi__lbl">السعة الكلية</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi__icon{% if pct >= 85 %} cd-kpi__icon--red{% elif pct >= 70 %} cd-kpi__icon--amber{% else %} cd-kpi__icon--green{% endif %}">
+      <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
+    </div>
+    <div>
+      <div class="cd-kpi__val{% if pct >= 85 %} cd-kpi__val--red{% elif pct >= 70 %} cd-kpi__val--amber{% endif %}">
+        {{ reserved_mbps }}<small>Mbps</small>
+      </div>
+      <div class="cd-kpi__lbl">المحجوز ({{ pct|int }}%)</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi__icon cd-kpi__icon--green">
+      <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+    </div>
+    <div>
+      <div class="cd-kpi__val">{{ available_mbps }}<small>Mbps</small></div>
+      <div class="cd-kpi__lbl">المتاح</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi__icon cd-kpi__icon--blue">
+      <i class="fa-solid fa-users" aria-hidden="true"></i>
+    </div>
+    <div>
+      <div class="cd-kpi__val">{{ allocations|selectattr('status','eq','active')|list|length }}</div>
+      <div class="cd-kpi__lbl">تخصيصات نشطة</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi__icon{% if stale is defined and stale %} cd-kpi__icon--red{% else %} cd-kpi__icon--green{% endif %}">
+      <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i>
+    </div>
+    <div>
+      <div class="cd-kpi__val" style="font-size:var(--cc-fs-body-l)">
+        {% if node.last_seen_at %}
+          {{ node.last_seen_at.strftime('%H:%M') }}
+          <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">
+            {{ node.last_seen_at.strftime('%Y-%m-%d') }}
+          </span>
+        {% else %}—{% endif %}
+      </div>
+      <div class="cd-kpi__lbl">آخر ظهور</div>
+    </div>
+  </div>
+
+</div>{# /cd-kpi-strip #}
+
+{# شريط السعة المرئي #}
+<div class="cd-usage-banner">
+  <div class="cd-usage-banner__label">
+    استخدام السعة المحجوزة:
+    <strong>{{ pct }}%</strong>
+    <span style="color:var(--cc-text-mute)">({{ reserved_mbps }} / {{ node.max_reserved_mbps }} Mbps)</span>
+  </div>
+  <div class="cd-usage-banner__bar">
+    <div class="cd-usage-banner__fill cd-usage-banner__fill--{% if pct >= 85 %}red{% elif pct >= 70 %}amber{% else %}green{% endif %}"
+         style="width:{{ [pct,100]|min }}%"
+         role="progressbar"
+         aria-valuenow="{{ pct|int }}" aria-valuemin="0" aria-valuemax="100">
+    </div>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   Tabs
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="cd-tabs-bar" role="tablist" aria-label="أقسام تفاصيل العقدة">
+  <button class="cd-tab is-active" role="tab" id="tab-info"
+          aria-selected="true" aria-controls="panel-info"
+          onclick="cdTab('info')">
+    <i class="fa-solid fa-info-circle" aria-hidden="true"></i>
+    المعلومات
+  </button>
+  <button class="cd-tab" role="tab" id="tab-tunnels"
+          aria-selected="false" aria-controls="panel-tunnels"
+          onclick="cdTab('tunnels')">
+    <i class="fa-solid fa-route" aria-hidden="true"></i>
+    التخصيصات
+    <span class="cd-tab__badge">{{ allocations|length }}</span>
+  </button>
+  <button class="cd-tab" role="tab" id="tab-log"
+          aria-selected="false" aria-controls="panel-log"
+          onclick="cdTab('log')">
+    <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+    السجل
+    <span class="cd-tab__badge">{{ recent_metrics|length if recent_metrics else 0 }}</span>
+  </button>
+</div>
+
+{# ════════════════════════════
+   Tab 1 — المعلومات
+   ════════════════════════════ #}
+<div class="cd-panel is-active" id="panel-info" role="tabpanel" aria-labelledby="tab-info">
+  <div class="cd-card">
+
+    <div class="cd-card__head">
+      <span class="cd-card__title">
+        <i class="fa-solid fa-server" aria-hidden="true"></i>
+        بيانات العقدة
+      </span>
+      <div class="cd-card__actions">
+        <form method="post"
+              action="{{ url_for('admin_infra.chr_node_poll', node_id=node.id) }}"
+              style="display:inline">
+          {{ csrf_input() }}
+          <button class="infra-btn infra-btn--ghost cd-btn-sm" type="submit">
+            <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i>
+            استطلاع الآن
+          </button>
+        </form>
+        <button class="infra-btn infra-btn--ghost cd-btn-sm" type="button"
+                onclick="cdToggleEdit()">
+          <i class="fa-solid fa-pen" aria-hidden="true"></i>
+          تعديل
+        </button>
+      </div>
+    </div>
+
+    {# جدول المعلومات #}
+    <div class="cd-kv-grid" id="cd-info-view">
+      <div class="cd-kv"><span class="cd-kv__k">الـ IP العام</span>
+        <span class="cd-kv__v infra-mono ltr">{{ node.public_ip }}</span></div>
+      <div class="cd-kv"><span class="cd-kv__k">IP الإدارة (WG)</span>
+        <span class="cd-kv__v infra-mono ltr">{{ node.management_ip or '—' }}</span></div>
+      <div class="cd-kv"><span class="cd-kv__k">الدومين</span>
+        <span class="cd-kv__v infra-mono ltr">{{ node.domain or '—' }}</span></div>
+      <div class="cd-kv"><span class="cd-kv__k">الموقع</span>
+        <span class="cd-kv__v">{{ node.location or '—' }}</span></div>
+      <div class="cd-kv"><span class="cd-kv__k">RouterOS</span>
+        <span class="cd-kv__v infra-mono ltr">
+          {{ node.routeros_host or '—' }}
+          {% if node.routeros_host %}:{{ node.routeros_port }} ({{ node.routeros_user }}){% endif %}
+        </span></div>
+      <div class="cd-kv"><span class="cd-kv__k">الحالة</span>
+        <span class="cd-kv__v">
+          {% if node.status == 'active' %}
+            <span class="infra-pill infra-pill--green">
+              <span class="infra-heartbeat" aria-hidden="true"></span>نشط
+            </span>
+          {% elif node.status == 'maintenance' %}
+            <span class="infra-pill infra-pill--amber">صيانة</span>
+          {% elif node.status == 'decommissioned' %}
+            <span class="infra-pill infra-pill--red">مُوقف</span>
+          {% else %}
+            <span class="infra-pill infra-pill--grey">{{ node.status }}</span>
+          {% endif %}
+        </span></div>
+      <div class="cd-kv cd-kv--full"><span class="cd-kv__k">الخدمات المتاحة</span>
+        <span class="cd-kv__v">
+          <div class="infra-chips">
+            {% for s in node.enabled_services %}
+              <span class="infra-chip">{{ s }}</span>
+            {% else %}
+              <span class="infra-muted">لا توجد خدمات محددة</span>
+            {% endfor %}
+          </div>
+        </span></div>
+      {% if node.notes %}
+      <div class="cd-kv cd-kv--full"><span class="cd-kv__k">ملاحظات</span>
+        <span class="cd-kv__v">{{ node.notes }}</span></div>
+      {% endif %}
+    </div>
+
+    {# نموذج التعديل (مخفي افتراضياً) #}
+    <form id="cd-edit-form" class="cd-edit-form cd-hidden"
+          method="post"
+          action="{{ url_for('admin_infra.chr_node_edit', node_id=node.id) }}">
+      {{ csrf_input() }}
+      <div class="infra-form-grid">
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-pub-ip">IP العام</label>
+          <input class="infra-input infra-mono ltr" id="e-pub-ip" name="public_ip"
+                 value="{{ node.public_ip }}" aria-describedby="e-hint-pub-ip">
+          <p class="infra-hint" id="e-hint-pub-ip">عنوان IPv4 العام للعقدة</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-mgmt-ip">IP الإدارة</label>
+          <input class="infra-input infra-mono ltr" id="e-mgmt-ip" name="management_ip"
+                 value="{{ node.management_ip }}" aria-describedby="e-hint-mgmt">
+          <p class="infra-hint" id="e-hint-mgmt">شبكة WireGuard الداخلية للإدارة</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-domain">الدومين</label>
+          <input class="infra-input ltr" id="e-domain" name="domain"
+                 value="{{ node.domain }}" aria-describedby="e-hint-domain">
+          <p class="infra-hint" id="e-hint-domain">اختياري — يُستخدم بدلاً من IP</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-location">الموقع</label>
+          <input class="infra-input" id="e-location" name="location"
+                 value="{{ node.location }}" aria-describedby="e-hint-loc">
+          <p class="infra-hint" id="e-hint-loc">مثال: Frankfurt, DE</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-cap">السعة (Mbps)</label>
+          <input class="infra-input" id="e-cap" name="capacity_mbps"
+                 type="number" value="{{ node.capacity_mbps }}"
+                 aria-describedby="e-hint-cap">
+          <p class="infra-hint" id="e-hint-cap">الحد الأقصى الحقيقي للسرعة</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-maxres">أقصى محجوز (Mbps)</label>
+          <input class="infra-input" id="e-maxres" name="max_reserved_mbps"
+                 type="number" value="{{ node.max_reserved_mbps }}"
+                 aria-describedby="e-hint-maxres">
+          <p class="infra-hint" id="e-hint-maxres">85% من السعة = الحد الآمن الموصى به</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-maxsess">أقصى جلسات</label>
+          <input class="infra-input" id="e-maxsess" name="max_active_sessions"
+                 type="number" value="{{ node.max_active_sessions or '' }}"
+                 placeholder="بدون حد" aria-describedby="e-hint-sess">
+          <p class="infra-hint" id="e-hint-sess">اتركه فارغاً للسماح بعدد غير محدود</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-maxcust">أقصى عملاء</label>
+          <input class="infra-input" id="e-maxcust" name="max_customers"
+                 type="number" value="{{ node.max_customers or '' }}"
+                 placeholder="بدون حد" aria-describedby="e-hint-cust">
+          <p class="infra-hint" id="e-hint-cust">اتركه فارغاً لعدم تحديد حد للعملاء</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-ros-host">RouterOS Host</label>
+          <input class="infra-input infra-mono ltr" id="e-ros-host" name="routeros_host"
+                 value="{{ node.routeros_host }}" aria-describedby="e-hint-ros-host">
+          <p class="infra-hint" id="e-hint-ros-host">IP للوصول إلى REST API</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-ros-user">RouterOS User</label>
+          <input class="infra-input infra-mono ltr" id="e-ros-user" name="routeros_user"
+                 value="{{ node.routeros_user }}" aria-describedby="e-hint-ros-user">
+          <p class="infra-hint" id="e-hint-ros-user">اسم مستخدم REST API</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-ros-port">RouterOS Port</label>
+          <input class="infra-input" id="e-ros-port" name="routeros_port"
+                 type="number" value="{{ node.routeros_port }}"
+                 aria-describedby="e-hint-ros-port">
+          <p class="infra-hint" id="e-hint-ros-port">المنفذ الافتراضي هو 443</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-ros-pass">
+            RouterOS Password
+            <small style="color:var(--cc-text-mute);font-weight:400"> (فارغ = بدون تغيير)</small>
+          </label>
+          <input class="infra-input infra-mono ltr" id="e-ros-pass" name="routeros_password"
+                 type="password" autocomplete="new-password"
+                 placeholder="{{ '••••••••' if node.routeros_password_enc else 'لم تُضبط بعد' }}"
+                 aria-describedby="e-hint-ros-pass">
+          <p class="infra-hint" id="e-hint-ros-pass">اتركها فارغة للإبقاء على كلمة المرور الحالية</p>
+        </div>
+
+        <div class="infra-field">
+          <label class="infra-label" for="e-status">الحالة</label>
+          <select class="infra-input" id="e-status" name="status"
+                  aria-describedby="e-hint-status">
+            {% for st in ['pending','active','maintenance','decommissioned'] %}
+            <option value="{{ st }}" {% if node.status == st %}selected{% endif %}>{{ st }}</option>
+            {% endfor %}
+          </select>
+          <p class="infra-hint" id="e-hint-status">pending = لم يبدأ، active = يعمل، decommissioned = مُوقف نهائياً</p>
+        </div>
+
+        <div class="infra-field infra-field--full">
+          <label class="infra-label">الخدمات المتاحة</label>
+          <div class="infra-checkgroup" aria-describedby="e-hint-svcs">
+            {% for svc in service_choices %}
+            <label class="infra-check">
+              <input type="checkbox" name="enabled_services" value="{{ svc }}"
+                {% if svc in node.enabled_services %}checked{% endif %}>
+              <span class="infra-mono">{{ svc }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="infra-hint" id="e-hint-svcs">البروتوكولات التي يدعمها هذا الخادم</p>
+        </div>
+
+        <div class="infra-field infra-field--full">
+          <label class="infra-label" for="e-notes">ملاحظات</label>
+          <textarea class="infra-input" id="e-notes" name="notes" rows="2"
+                    aria-describedby="e-hint-notes">{{ node.notes }}</textarea>
+          <p class="infra-hint" id="e-hint-notes">للاستخدام الداخلي — لا تظهر للعملاء</p>
+        </div>
+
+      </div>{# /infra-form-grid #}
+      <div class="cd-edit-form__foot">
+        <button class="infra-btn infra-btn--primary" type="submit">
+          <i class="fa-solid fa-save" aria-hidden="true"></i>
+          حفظ التغييرات
+        </button>
+        <button class="infra-btn infra-btn--ghost" type="button" onclick="cdToggleEdit()">
+          إلغاء
+        </button>
+      </div>
+    </form>
+
+  </div>{# /cd-card #}
+</div>{# /panel-info #}
+
+{# ════════════════════════════
+   Tab 2 — التخصيصات
+   ════════════════════════════ #}
+<div class="cd-panel" id="panel-tunnels" role="tabpanel" aria-labelledby="tab-tunnels">
+  <div class="cd-card">
+    <div class="cd-card__head">
+      <span class="cd-card__title">
+        <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+        التخصيصات على هذه العقدة
+      </span>
+    </div>
+
+    {% if not allocations %}
+      <div class="infra-empty" style="padding:var(--cc-sp-12) var(--cc-sp-11)">
+        <i class="fa-solid fa-inbox fa-2x" aria-hidden="true"></i>
+        <p>لا توجد تخصيصات على هذه العقدة حتى الآن.</p>
+      </div>
+    {% else %}
+    <div class="infra-table-wrap">
+      <table class="infra-table">
+        <thead>
+          <tr>
+            <th>العميل</th>
+            <th>نوع الخدمة</th>
+            <th>السرعة</th>
+            <th>الحسابات</th>
+            <th>تاريخ الانتهاء</th>
+            <th>الحالة</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for a in allocations %}
+          <tr class="infra-table__row">
+            <td><strong>{{ a.customer.company_name }}</strong></td>
+            <td><span class="infra-chip">{{ a.service_type }}</span></td>
+            <td><span class="infra-mono">{{ a.speed_limit_mbps }} Mbps</span></td>
+            <td>{{ a.max_accounts }}</td>
+            <td style="font-size:var(--cc-fs-small)">
+              {{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}
+            </td>
+            <td>
+              {% if a.status == 'active' %}
+                <span class="infra-pill infra-pill--green">نشط</span>
+              {% elif a.status == 'suspended' %}
+                <span class="infra-pill infra-pill--amber">موقوف</span>
+              {% elif a.status == 'expired' %}
+                <span class="infra-pill infra-pill--red">منتهي</span>
+              {% else %}
+                <span class="infra-pill infra-pill--grey">{{ a.status }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ════════════════════════════
+   Tab 3 — السجل
+   ════════════════════════════ #}
+<div class="cd-panel" id="panel-log" role="tabpanel" aria-labelledby="tab-log">
+  <div class="cd-card">
+    <div class="cd-card__head">
+      <span class="cd-card__title">
+        <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+        مقاييس حديثة
+      </span>
+      <span class="cd-card__sub">آخر {{ recent_metrics|length if recent_metrics else 0 }} قراءة</span>
+    </div>
+
+    {% if not recent_metrics %}
+      <div class="infra-empty" style="padding:var(--cc-sp-12) var(--cc-sp-11)">
+        <i class="fa-solid fa-chart-simple fa-2x" aria-hidden="true"></i>
+        <p>لا توجد مقاييس مسجّلة بعد. ابدأ باستطلاع العقدة.</p>
+      </div>
+    {% else %}
+    <div class="infra-table-wrap">
+      <table class="infra-table" style="font-size:var(--cc-fs-small)">
+        <thead>
+          <tr>
+            <th>الوقت</th>
+            <th>RX Mbps</th>
+            <th>TX Mbps</th>
+            <th>الجلسات</th>
+            <th>CPU %</th>
+            <th>RAM %</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for m in recent_metrics %}
+          <tr class="infra-table__row">
+            <td class="infra-mono">{{ m.measured_at.strftime('%m-%d %H:%M') }}</td>
+            <td>{{ m.current_rx_mbps }}</td>
+            <td>{{ m.current_tx_mbps }}</td>
+            <td>{{ m.active_sessions }}</td>
+            <td>{{ m.cpu_percent or '—' }}</td>
+            <td>{{ m.memory_percent or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   Styles + Script
+   ══════════════════════════════════════════════════════════════════ #}
+{% block scripts %}
+<style>
+:root {
+  /* ── Local viewport vars (hero overlay + code block) ── */
+  --vr-white:         #ffffff;
+  --vr-hero-sub:      rgba(255,255,255,.78);
+  --vr-hero-lbl:      rgba(255,255,255,.75);
+  --vr-hero-stat:     rgba(255,255,255,.13);
+  --vr-hero-ghost:    rgba(255,255,255,.14);
+  --vr-hero-ghost-hov:rgba(255,255,255,.22);
+  --vr-hero-border:   rgba(255,255,255,.30);
+  --vr-hero-green:    #6EF8A8;
+  --vr-hero-amber:    #FFD97D;
+  --vr-hero-red:      #FF8FA3;
+  --vr-hero-grey:     rgba(255,255,255,.65);
+  --vr-code-bg:       #1E1E2E;
+  --vr-code-text:     #CDD6F4;
+  --vr-toast-bg:      #1F2937;
+}
+/* ── KPI strip ───────────────────────────────────────── */
+.cd-kpi-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-gap-inline);
+  margin-bottom: var(--cc-gap-section);
+}
+.cd-kpi {
+  flex: 1;
+  min-width: 140px;
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  padding: var(--cc-sp-9) var(--cc-sp-10);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-8);
+}
+.cd-kpi__icon {
+  width: 40px; height: 40px;
+  border-radius: var(--cc-r-tile);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.cd-kpi__icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.cd-kpi__icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.cd-kpi__icon--amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg); }
+.cd-kpi__icon--red    { background: var(--tile-red-bg);    color: var(--tile-red-fg); }
+.cd-kpi__icon--blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.cd-kpi__val {
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  line-height: var(--cc-lh-tight);
+}
+.cd-kpi__val small { font-size: var(--cc-fs-small); color: var(--cc-text-mute); margin-right: 2px; }
+.cd-kpi__val--red   { color: var(--hb-red); }
+.cd-kpi__val--amber { color: var(--hb-amber); }
+.cd-kpi__lbl { font-size: var(--cc-fs-small); color: var(--cc-text-mute); margin-top: var(--cc-sp-2); }
+
+/* ── Usage banner ────────────────────────────────────── */
+.cd-usage-banner {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  padding: var(--cc-sp-8) var(--cc-sp-11);
+  margin-bottom: var(--cc-gap-section);
+  box-shadow: var(--cc-sh-card);
+}
+.cd-usage-banner__label {
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-soft);
+  margin-bottom: var(--cc-sp-5);
+  display: flex;
+  gap: var(--cc-sp-5);
+  align-items: baseline;
+}
+.cd-usage-banner__bar {
+  height: 10px;
+  border-radius: var(--cc-r-pill);
+  background: var(--cc-border-2);
+  overflow: hidden;
+}
+.cd-usage-banner__fill {
+  height: 100%;
+  border-radius: var(--cc-r-pill);
+  transition: width var(--cc-anim-med) var(--cc-ease-out);
+}
+.cd-usage-banner__fill--green { background: var(--hb-green); }
+.cd-usage-banner__fill--amber { background: var(--hb-amber); }
+.cd-usage-banner__fill--red   { background: var(--hb-red); }
+
+/* ── Tabs bar ────────────────────────────────────────── */
+.cd-tabs-bar {
+  display: flex;
+  gap: var(--cc-sp-4);
+  border-bottom: 2px solid var(--cc-border);
+  margin-bottom: var(--cc-gap-section);
+  overflow-x: auto;
+  padding-bottom: 0;
+}
+.cd-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-sp-4);
+  padding: var(--cc-sp-6) var(--cc-sp-9);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text-mute);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -2px;
+  transition: var(--cc-tr-fast);
+  white-space: nowrap;
+}
+.cd-tab:hover { color: var(--cc-text); }
+.cd-tab.is-active {
+  color: var(--cc-brand);
+  border-bottom-color: var(--cc-brand);
+  font-weight: var(--cc-fw-bold);
+}
+.cd-tab__badge {
+  background: var(--hb-bg);
+  color: var(--cc-text-soft);
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny);
+  padding: 0 var(--cc-sp-4);
+  min-width: 20px;
+  text-align: center;
+}
+.cd-tab.is-active .cd-tab__badge {
+  background: var(--cc-brand-soft);
+  color: var(--cc-brand);
+}
+
+/* ── Panels ──────────────────────────────────────────── */
+.cd-panel { display: none; }
+.cd-panel.is-active { display: block; }
+
+/* ── Card ────────────────────────────────────────────── */
+.cd-card {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  overflow: hidden;
+  margin-bottom: var(--cc-gap-section);
+}
+.cd-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--cc-sp-8) var(--cc-sp-11);
+  border-bottom: 1px solid var(--cc-border);
+  flex-wrap: wrap;
+  gap: var(--cc-sp-6);
+}
+.cd-card__title {
+  font-size: var(--cc-fs-h3);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-5);
+}
+.cd-card__sub {
+  font-size: var(--cc-fs-small);
+  color: var(--cc-text-mute);
+}
+.cd-card__actions { display: flex; gap: var(--cc-sp-5); }
+
+/* ── KV Grid ─────────────────────────────────────────── */
+.cd-kv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: var(--cc-sp-8) var(--cc-sp-11);
+  gap: 0;
+}
+.cd-kv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-sp-2);
+  padding: var(--cc-sp-7) 0;
+  border-bottom: 1px solid var(--cc-border);
+}
+.cd-kv--full { grid-column: 1 / -1; }
+.cd-kv__k {
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text-mute);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.cd-kv__v {
+  font-size: var(--cc-fs-body);
+  color: var(--cc-text);
+}
+
+/* ── Edit form ───────────────────────────────────────── */
+.cd-edit-form {
+  border-top: 1px solid var(--cc-border);
+  padding: var(--cc-sp-11);
+}
+.cd-edit-form__foot {
+  display: flex;
+  gap: var(--cc-sp-6);
+  margin-top: var(--cc-sp-10);
+  padding-top: var(--cc-sp-9);
+  border-top: 1px solid var(--cc-border);
+}
+.cd-hidden { display: none !important; }
+
+/* ── Small button in card head ───────────────────────── */
+.cd-btn-sm {
+  height: 32px !important;
+  font-size: var(--cc-fs-small) !important;
+  padding: 0 var(--cc-sp-7) !important;
+  background: var(--hb-bg) !important;
+  color: var(--cc-text-soft) !important;
+  border: 1px solid var(--cc-border-2) !important;
+}
+.cd-btn-sm:hover { background: var(--hb-bg-hover) !important; color: var(--cc-text) !important; }
+
+/* ── Shared pill/heartbeat/chips from chr_nodes ──────── */
+.infra-pill {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  padding: var(--cc-sp-1) var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
+}
+.infra-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg); }
+.infra-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg); }
+.infra-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg); }
+.infra-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg); }
+.infra-heartbeat {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--hb-green); display: inline-block;
+  animation: infra-pulse 2s ease-in-out infinite;
+}
+@keyframes infra-pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.45; transform:scale(.7); }
+}
+.infra-chips { display:flex; flex-wrap:wrap; gap:var(--cc-sp-2); }
+.infra-chip {
+  background: var(--hb-purple-softer); color: var(--cc-brand);
+  border-radius: var(--cc-r-sm);
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+  padding: 1px var(--cc-sp-4);
+  font-family: var(--cc-font-mono);
+}
+.infra-mono  { font-family: var(--cc-font-mono); }
+.infra-muted { color: var(--cc-text-mute); }
+.infra-empty {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:var(--cc-sp-8);
+  color:var(--cc-text-mute); text-align:center;
+}
+.infra-empty p { margin:0; font-size:var(--cc-fs-body-l); }
+.infra-table-wrap { overflow-x:auto; }
+.infra-table { width:100%; border-collapse:collapse; font-family:var(--cc-font); font-size:var(--cc-fs-body); }
+.infra-table thead th {
+  background: var(--cc-table-head-bg); color: var(--cc-text-soft);
+  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
+  padding: var(--cc-sp-6) var(--cc-sp-8); text-align:right;
+  border-bottom: 1px solid var(--cc-border-2);
+}
+.infra-table tbody td {
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-bottom: 1px solid var(--cc-border);
+  vertical-align: middle;
+}
+.infra-table__row:last-child td { border-bottom:none; }
+.infra-table__row:hover td { background: var(--cc-table-row-hover); }
+.infra-btn {
+  display:inline-flex; align-items:center; gap:var(--cc-sp-4);
+  padding:0 var(--cc-sp-9); height:var(--cc-btn-h);
+  border-radius:var(--cc-btn-radius); font-family:var(--cc-font);
+  font-size:var(--cc-fs-body); font-weight:var(--cc-fw-medium);
+  cursor:pointer; border:none; transition:var(--cc-tr-fast);
+  text-decoration:none; white-space:nowrap;
+}
+.infra-btn--primary { background:var(--cc-btn-primary-bg); color:var(--vr-white); }
+.infra-btn--primary:hover { background:var(--cc-btn-primary-hover); }
+.infra-btn--ghost {
+  background:var(--hb-bg); color:var(--cc-text-soft);
+  border:1px solid var(--cc-border-2);
+}
+.infra-btn--ghost:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
+.infra-form-grid {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:var(--cc-sp-8) var(--cc-gap-inline);
+}
+.infra-field { display:flex; flex-direction:column; gap:var(--cc-sp-3); }
+.infra-field--full { grid-column:1/-1; }
+.infra-label { font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-medium); color:var(--cc-text); }
+.infra-input {
+  height:var(--cc-input-h); padding:0 var(--cc-sp-7);
+  border-radius:var(--cc-input-radius); border:1px solid var(--cc-input-border);
+  background:var(--cc-input-bg); font-family:var(--cc-font);
+  font-size:var(--cc-fs-body); color:var(--cc-text);
+  transition:var(--cc-tr-fast); width:100%; box-sizing:border-box; direction:rtl;
+}
+.infra-input:focus { outline:none; border-color:var(--cc-brand); background:var(--cc-input-bg-focus); box-shadow:var(--cc-input-ring); }
+.infra-input.ltr, .infra-input.infra-mono { direction:ltr; text-align:left; }
+textarea.infra-input { height:auto; padding:var(--cc-sp-6) var(--cc-sp-7); resize:vertical; }
+select.infra-input { cursor:pointer; }
+.infra-hint { font-size:var(--cc-fs-tiny); color:var(--cc-text-mute); margin:0; line-height:var(--cc-lh-default); }
+.infra-checkgroup {
+  display:flex; flex-wrap:wrap; gap:var(--cc-sp-6);
+  padding:var(--cc-sp-6) var(--cc-sp-7);
+  background:var(--cc-input-bg); border:1px solid var(--cc-input-border);
+  border-radius:var(--cc-input-radius);
+}
+.infra-check { display:flex; align-items:center; gap:var(--cc-sp-4); cursor:pointer; font-size:var(--cc-fs-body-s); color:var(--cc-text); }
+.infra-check input[type=checkbox] { accent-color:var(--cc-brand); width:14px; height:14px; }
+@media (max-width:640px) {
+  .cd-kv-grid, .infra-form-grid { grid-template-columns:1fr; }
+  .cd-kpi-strip { flex-direction:column; }
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ── Tab switching ── */
+  window.cdTab = function(name) {
+    document.querySelectorAll('.cd-tab').forEach(function(t) {
+      var active = t.id === 'tab-' + name;
+      t.classList.toggle('is-active', active);
+      t.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.cd-panel').forEach(function(p) {
+      p.classList.toggle('is-active', p.id === 'panel-' + name);
+    });
+  };
+
+  /* ── Edit form toggle ── */
+  window.cdToggleEdit = function() {
+    var form = document.getElementById('cd-edit-form');
+    var view = document.getElementById('cd-info-view');
+    if (!form || !view) return;
+    var editing = !form.classList.contains('cd-hidden');
+    form.classList.toggle('cd-hidden', editing);
+    view.classList.toggle('cd-hidden', !editing);
+    if (!editing) {
+      var first = form.querySelector('input, select, textarea');
+      if (first) first.focus();
+    }
+  };
+}());
+</script>
+{% endblock %}
+
+{% endblock %}

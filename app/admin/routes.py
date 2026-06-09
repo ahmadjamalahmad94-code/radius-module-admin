@@ -407,7 +407,7 @@ def dashboard():
         "support_email": _setting("support_email", ""),
         "api_base": _setting("license_api_base_url", ""),
     }
-    return render_template("admin/dashboard.html", stats=stats, recent_checks=recent_checks, recent_renewals=recent_renewals, health=health)
+    return render_template("admin/dashboard_new.html", stats=stats, recent_checks=recent_checks, recent_renewals=recent_renewals, health=health)
 
 
 @bp.get("/customers")
@@ -422,13 +422,32 @@ def customers_list():
     if status:
         q = q.filter_by(status=status)
     customers = q.order_by(Customer.created_at.desc()).all()
-    return render_template("admin/customers_list.html", customers=customers, search=search, status=status)
+    total_customers = Customer.query.count()
+    active_count = Customer.query.filter_by(status="active").count()
+    inactive_count = total_customers - active_count
+    return render_template(
+        "admin/customers/list_new.html",
+        customers=customers,
+        search=search,
+        status=status,
+        total_count=total_customers,
+        total_customers=total_customers,
+        active_count=active_count,
+        inactive_count=inactive_count,
+    )
 
 
 @bp.get("/customers/new")
 @login_required
 def customer_new():
-    return render_template("admin/customer_form.html", customer=Customer(), is_new=True)
+    return render_template(
+        "admin/customers/add_new.html",
+        customer=Customer(),
+        is_new=True,
+        form_data={},
+        form_errors={},
+        msg=None,
+    )
 
 
 @bp.post("/customers/new")
@@ -439,7 +458,7 @@ def customer_create():
         _fill_customer(customer)
     except CustomerControlValidationError as exc:
         flash(str(exc), "error")
-        return render_template("admin/customer_form.html", customer=customer, is_new=True), 400
+        return render_template("admin/customers/add_new.html", customer=customer, is_new=True, form_data=request.form, form_errors={"_": str(exc)}, msg=str(exc)), 400
     db.session.add(customer)
     db.session.flush()
     audit("customer_created", "customer", str(customer.id), f"Created customer {customer.company_name}")
@@ -459,16 +478,22 @@ def customer_detail(customer_id: int):
         license_active=license_allows_vpn_services(current_license),
         status=current_license.status if current_license else "not_found",
     )
+    _plan = current_license.plan if current_license else None
+    _customer_users = customer.users.order_by(CustomerUser.created_at.desc()).all()
+    _payment_requests = LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all()
+    _paid_count = sum(1 for pr in _payment_requests if getattr(pr, "status", "") == "paid")
+    _pending_count = sum(1 for pr in _payment_requests if getattr(pr, "status", "") in ("pending", "proof_submitted"))
+    _total_paid = sum(getattr(pr, "amount", 0) or 0 for pr in _payment_requests if getattr(pr, "status", "") == "paid")
     return render_template(
-        "admin/customer_detail.html",
+        "admin/customers/detail_new.html",
         customer=customer,
         licenses=licenses,
         current_license=current_license,
         contract=contract,
-        customer_users=customer.users.order_by(CustomerUser.created_at.desc()).all(),
+        customer_users=_customer_users,
         service_catalog=service_catalog_items(),
         service_entitlements=customer_service_map(customer),
-        payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
+        payment_requests=_payment_requests,
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
         audit_logs=AuditLog.query.filter_by(entity_type="customer", entity_id=str(customer.id)).order_by(AuditLog.created_at.desc()).limit(12).all(),
         users_version=customer_users_version(customer),
@@ -477,6 +502,14 @@ def customer_detail(customer_id: int):
         customer_backups=list_customer_backups(customer.id),
         customer_gdrive=_customer_gdrive_status(customer.id),
         radius_admins=radius_admins_for_customer(customer),
+        nas_devices=radius_admins_for_customer(customer),
+        max_nas=getattr(_plan, "max_nas", None),
+        max_sub=getattr(_plan, "max_users", None),
+        cur_nas=len(radius_admins_for_customer(customer)),
+        cur_sub=len(_customer_users),
+        paid_count=_paid_count,
+        pending_count=_pending_count,
+        total_paid=_total_paid,
     )
 
 
@@ -1256,16 +1289,21 @@ def _render_customer_vpn_tunnels(customer: Customer):
     from ..services import vpn_tunnels as vt
 
     tunnels = vt.list_tunnels(customer)
+    _type_count = {}
+    for t in tunnels:
+        _type_count[getattr(t, "tunnel_type", "unknown")] = _type_count.get(getattr(t, "tunnel_type", "unknown"), 0) + 1
     return render_template(
-        "admin/customer_vpn_tunnels.html",
+        "admin/infra/vpn_tunnels_new.html",
         customer=customer,
         tunnels=tunnels,
+        type_count=_type_count,
+        type_key=vt.TUNNEL_TYPE_LABELS if hasattr(vt, "TUNNEL_TYPE_LABELS") else {},
         chr_enabled=chr_svc.enabled(),
         chr_configured=(chr_svc.get_state().get("configured") if chr_svc.enabled() else False),
         allowance=vt.effective_connection_allowance(customer),
         active_count=vt.count_active_tunnels(customer),
         manual_types=sorted(vt.MANUAL_TYPES),
-        type_labels=vt.TUNNEL_TYPE_LABELS,
+        type_labels=vt.TUNNEL_TYPE_LABELS if hasattr(vt, "TUNNEL_TYPE_LABELS") else {},
         speed_profiles=sp.list_profiles(active_only=True),
     )
 
@@ -1465,7 +1503,7 @@ def customer_approve(customer_id: int):
 @login_required
 def plans_list():
     plans = Plan.query.order_by(Plan.monthly_price.asc(), Plan.name.asc()).all()
-    return render_template("admin/plans_list.html", plans=plans)
+    return render_template("admin/licenses/plans_new.html", plans=plans)
 
 
 @bp.get("/plans/new")
@@ -1688,7 +1726,16 @@ def licenses_list():
         like = f"%{search}%"
         q = q.filter(License.license_key.ilike(like) | Customer.company_name.ilike(like) | Plan.name.ilike(like))
     licenses = q.order_by(License.created_at.desc()).all()
-    return render_template("admin/licenses_list.html", licenses=licenses, status=status, search=search)
+    now_ts = utcnow()
+    soon_ts = now_ts + timedelta(days=7)
+    _lic_stats = {
+        "total": License.query.count(),
+        "active": License.query.filter_by(status="active").count(),
+        "expired": License.query.filter(License.expires_at < now_ts).count(),
+        "suspended": License.query.filter_by(status="suspended").count(),
+        "expiring_soon": License.query.filter(License.expires_at >= now_ts, License.expires_at <= soon_ts).count(),
+    }
+    return render_template("admin/licenses/list_new.html", licenses=licenses, status=status, search=search, stats=_lic_stats)
 
 
 @bp.get("/licenses/new")
@@ -1697,7 +1744,7 @@ def license_new():
     customers = Customer.query.order_by(Customer.company_name.asc()).all()
     plans = Plan.query.filter_by(status="active").order_by(Plan.name.asc()).all()
     today = utcnow()
-    return render_template("admin/license_form.html", customers=customers, plans=plans, today=today, timedelta=timedelta)
+    return render_template("admin/licenses/create_new.html", customers=customers, plans=plans, today=today, timedelta=timedelta)
 
 
 @bp.post("/licenses/new")
@@ -1740,7 +1787,54 @@ def license_detail(license_id: int):
         LicenseCheck.license_id == lic.id,
         LicenseCheck.ip_address != "",
     ).scalar() > 3
-    return render_template("admin/license_detail.html", license=lic, checks=checks, renewals=renewals, suspicious=suspicious)
+    _plan = lic.plan
+    def _pct(used, mx):
+        if not mx:
+            return 0
+        return min(100, int(used * 100 / mx))
+    _used_users = lic.customer.users.count() if lic.customer else 0
+    _used_nas = len(radius_admins_for_customer(lic.customer)) if lic.customer else 0
+    _used_admins = AuditLog.query.filter_by(entity_type="license", entity_id=str(lic.id)).count()
+    _used_fp = len(lic.fingerprints)
+    return render_template(
+        "admin/licenses/detail_new.html",
+        license=lic,
+        checks=checks,
+        renewals=renewals,
+        suspicious=suspicious,
+        max_users=getattr(_plan, "max_users", None),
+        max_nas=getattr(_plan, "max_nas", None),
+        max_admins=getattr(_plan, "max_admins", None),
+        max_fp=getattr(lic, "max_fingerprints", None),
+        max_bk=None,
+        max_wa=None,
+        used_users=_used_users,
+        used_nas=_used_nas,
+        used_admins=_used_admins,
+        used_fp=_used_fp,
+        used_bk=0,
+        used_wa=0,
+        pct_users=_pct(_used_users, getattr(_plan, "max_users", 0)),
+        pct_nas=_pct(_used_nas, getattr(_plan, "max_nas", 0)),
+        pct_admins=_pct(_used_admins, getattr(_plan, "max_admins", 0)),
+        pct_fp=_pct(_used_fp, getattr(lic, "max_fingerprints", 0) or 0),
+        pct_bk=0,
+        pct_wa=0,
+    )
+
+
+@bp.get("/licenses/<int:license_id>/services")
+@login_required
+def license_services(license_id: int):
+    """صفحة إدارة خدمات الترخيص — mock data، ستُستبدل بـ DB query لاحقاً."""
+    from .services_data import SERVICES_MOCK
+    lic = db.get_or_404(License, license_id)
+    return render_template(
+        "admin/licenses/services_new.html",
+        services=SERVICES_MOCK,
+        license=lic,
+        license_id=license_id,
+    )
 
 
 @bp.post("/licenses/<int:license_id>/renew")
@@ -1850,7 +1944,31 @@ def renewals_list():
 @login_required
 def audit_logs():
     logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(500).all()
-    return render_template("admin/audit_logs.html", logs=logs)
+    _now = utcnow()
+    _today_start = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+    _week_start = _now - timedelta(days=7)
+    _audit_stats = {
+        "total": AuditLog.query.count(),
+        "today": AuditLog.query.filter(AuditLog.created_at >= _today_start).count(),
+        "week": AuditLog.query.filter(AuditLog.created_at >= _week_start).count(),
+        "errors": AuditLog.query.filter(AuditLog.action.ilike("%error%") | AuditLog.action.ilike("%fail%")).count(),
+    }
+    _total = _audit_stats["total"]
+    _page = max(1, int(request.args.get("page") or 1))
+    _per = 50
+    _pagination = {
+        "page": _page,
+        "from": min((_page - 1) * _per + 1, _total),
+        "to": min(_page * _per, _total),
+        "total": _total,
+        "pages": max(1, (_total + _per - 1) // _per),
+    }
+    return render_template(
+        "admin/logs/audit_new.html",
+        logs=logs,
+        stats=_audit_stats,
+        pagination=_pagination,
+    )
 
 
 @bp.get("/settings")
@@ -1862,17 +1980,71 @@ def settings_page():
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     return render_template(
-        "admin/settings.html",
+        "admin/settings/general_new.html",
         settings=settings,
+        customer_name=_setting("product_name", ""),
+        support_email=_setting("support_email", ""),
         wac_enabled=wac.enabled(),
         wac_state=wac.get_state() if wac.enabled() else None,
-        # Embedded Signup config is ALWAYS manageable from the UI (zero-terminal):
-        # the section shows regardless of any env flag so the owner can enable it
-        # right here. The toggle inside the form drives availability.
         wae_state=wae.get_state(),
         chr_enabled=chr_svc.enabled(),
         chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
         proxy_route_count=ProxyRealmRoute.query.filter_by(status="active").count(),
+    )
+
+
+@bp.get("/settings/whatsapp")
+@login_required
+def settings_whatsapp():
+    from ..services.whatsapp import cloud_settings as wac
+    wac_state = wac.get_state() if wac.enabled() else {}
+    _wa = {
+        "connected": wac_state.get("connected", False) if wac_state else False,
+        "error": wac_state.get("error") if wac_state else None,
+        "phone_display": wac_state.get("phone_display", "") if wac_state else "",
+        "token_set": bool(wac_state.get("token_set") if wac_state else False),
+        "phone_number_id": wac_state.get("phone_number_id", "") if wac_state else "",
+        "waba_id": wac_state.get("waba_id", "") if wac_state else "",
+        "tpl_renewal_name": wac_state.get("tpl_renewal_name", "") if wac_state else "",
+        "tpl_renewal_lang": wac_state.get("tpl_renewal_lang", "ar") if wac_state else "ar",
+        "tpl_expiry_name": wac_state.get("tpl_expiry_name", "") if wac_state else "",
+        "tpl_expiry_lang": wac_state.get("tpl_expiry_lang", "ar") if wac_state else "ar",
+        "tpl_welcome_name": wac_state.get("tpl_welcome_name", "") if wac_state else "",
+    }
+    return render_template("admin/settings/whatsapp_new.html", whatsapp=_wa)
+
+
+@bp.route("/settings/sections", methods=["GET", "POST"])
+@login_required
+def sections_settings():
+    from .section_visibility import get_hidden_sections, save_visibility
+    if request.method == "POST":
+        data = request.get_json() or {}
+        save_visibility(data)
+        return jsonify({"success": True})
+    hidden = get_hidden_sections()
+    return render_template("admin/settings/sections_new.html", hidden_sections=hidden)
+
+
+@bp.get("/settings/admins")
+@login_required
+def settings_admins():
+    from ..models import Admin as _Admin
+    admins = _Admin.query.order_by(_Admin.id.asc()).all()
+    class _AdminProxy:
+        def __init__(self, a):
+            self._a = a
+        def __getattr__(self, name):
+            return getattr(self._a, name)
+        @property
+        def role(self):
+            return "super_admin" if self._a.is_super_admin else "operator"
+        @property
+        def enabled(self):
+            return self._a.active
+    return render_template(
+        "admin/settings/admins_new.html",
+        admins=[_AdminProxy(a) for a in admins],
     )
 
 
@@ -2950,16 +3122,6 @@ def generate_activation_token(customer_id: int):
 
     record = InstanceActivationToken(
         customer_id=customer.id,
-        token_hash=token_hash,
-        expires_at=expires_at,
-        created_by_admin_id=admin.id if admin else None,
-    )
-    db.session.add(record)
-    db.session.flush()
-
-    audit_customer_control(
-        actor_admin_id=admin.id if admin else None,
-        action="activation_token_generated",
         entity_type="customer",
         entity_id=str(customer.id),
         summary=f"تم إنشاء كود تفعيل Admin Bridge للعميل {customer.company_name} (token_id={record.id})",

@@ -1,0 +1,990 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}العملاء{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <span class="ar-breadcrumb-item">العملاء</span>
+{% endblock %}
+{% block page_breadcrumb %}قائمة العملاء{% endblock %}
+
+{# ─── الأنماط الخاصة بالصفحة ─── #}
+{% block head_extra %}
+<style>
+  /* ======================================================
+     Hero Section
+  ====================================================== */
+  .clist-hero {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-10) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-11);
+  }
+
+  .clist-hero-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: var(--cc-r-lg);
+    background: var(--cc-hero-grad);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 22px;
+    color: #fff;
+    box-shadow: var(--cc-sh-glow);
+  }
+
+  .clist-hero-body { flex: 1; }
+
+  .clist-hero-title {
+    font-size: var(--cc-fs-h1);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    line-height: 1.2;
+  }
+
+  .clist-hero-sub {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-mute);
+    margin-block-start: var(--cc-sp-2);
+    font-weight: var(--cc-fw-medium);
+  }
+
+  .clist-hero-stats {
+    display: flex;
+    gap: var(--cc-sp-8);
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .clist-stat {
+    text-align: center;
+  }
+
+  .clist-stat-num {
+    font-size: var(--cc-fs-display);
+    font-weight: var(--cc-fw-display);
+    color: var(--cc-brand);
+    line-height: 1;
+  }
+
+  .clist-stat-label {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    margin-block-start: var(--cc-sp-1);
+    white-space: nowrap;
+  }
+
+  .clist-stat-divider {
+    width: 1px;
+    height: 40px;
+    background: var(--cc-border-2);
+  }
+
+  /* ======================================================
+     بار الأدوات (بحث + فلاتر + زر الإضافة)
+  ====================================================== */
+  .clist-toolbar {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: flex-end;
+    gap: var(--cc-sp-6);
+    flex-wrap: wrap;
+  }
+
+  .clist-toolbar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--cc-sp-6);
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  /* حقل مشترك */
+  .clist-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-sp-2);
+  }
+
+  .clist-field-label {
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* حقل البحث */
+  .clist-search-wrap {
+    position: relative;
+    min-width: 280px;
+  }
+
+  .clist-search-icon {
+    position: absolute;
+    inset-inline-start: var(--cc-sp-5);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--cc-text-mute);
+    font-size: var(--cc-fs-body-s);
+    pointer-events: none;
+  }
+
+  .clist-search-input {
+    width: 100%;
+    height: var(--cc-input-h);
+    padding-inline: calc(var(--cc-sp-5) + 20px) var(--cc-sp-6);
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-text);
+    transition: background var(--cc-anim-fast) var(--cc-ease),
+                border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+    outline: none;
+  }
+
+  .clist-search-input::placeholder { color: var(--cc-text-faint); }
+
+  .clist-search-input:focus {
+    background: var(--cc-input-bg-focus);
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+  }
+
+  /* Select */
+  .clist-select {
+    height: var(--cc-input-h);
+    min-width: 180px;
+    padding-inline: var(--cc-sp-6);
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-text);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6,9 12,15 18,9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: left var(--cc-sp-5) center;
+    padding-inline-end: calc(var(--cc-sp-5) + 20px);
+    transition: border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .clist-select:focus {
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+    background-color: var(--cc-input-bg-focus);
+  }
+
+  /* أزرار الأدوات */
+  .clist-btn {
+    height: var(--cc-btn-h);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding-inline: var(--cc-sp-8);
+    border-radius: var(--cc-btn-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    text-decoration: none;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+  }
+
+  .clist-btn--primary {
+    background: var(--cc-btn-primary-bg);
+    color: #fff;
+    box-shadow: var(--cc-sh-glow);
+  }
+  .clist-btn--primary:hover {
+    background: var(--cc-btn-primary-hover);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(107,90,237,.45);
+  }
+
+  .clist-btn--filter {
+    background: var(--cc-card-bg);
+    color: var(--cc-text-soft);
+    border-color: var(--cc-border-2);
+  }
+  .clist-btn--filter:hover {
+    background: var(--hb-bg-hover);
+    color: var(--cc-text);
+  }
+
+  .clist-btn--reset {
+    background: transparent;
+    color: var(--cc-text-mute);
+    border-color: transparent;
+    padding-inline: var(--cc-sp-5);
+    font-size: var(--cc-fs-tiny);
+  }
+  .clist-btn--reset:hover {
+    color: var(--hb-red);
+  }
+
+  /* ======================================================
+     الجدول الرئيسي
+  ====================================================== */
+  .clist-card {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    overflow: hidden;
+  }
+
+  .clist-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    border-block-end: 1px solid var(--cc-border);
+  }
+
+  .clist-card-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+  }
+
+  .clist-card-count {
+    padding: var(--cc-sp-1) var(--cc-sp-4);
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand-ink);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+  }
+
+  .clist-table-wrap {
+    overflow-x: auto;
+  }
+
+  .clist-table {
+    width: 100%;
+    border-collapse: collapse;
+    direction: rtl;
+  }
+
+  .clist-table thead th {
+    background: var(--cc-table-head-bg);
+    padding: var(--cc-sp-5) var(--cc-sp-8);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-block-end: 1px solid var(--cc-border-2);
+    white-space: nowrap;
+  }
+
+  .clist-table thead th.col-center { text-align: center; }
+  .clist-table thead th.col-actions { text-align: center; }
+
+  .clist-table tbody tr {
+    border-block-end: 1px solid var(--cc-border);
+    transition: background var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .clist-table tbody tr:last-child { border-block-end: none; }
+
+  .clist-table tbody tr:hover { background: var(--cc-table-row-hover); }
+
+  .clist-table tbody td {
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+    vertical-align: middle;
+  }
+
+  /* عمود الاسم */
+  .clist-customer-name {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--cc-r-lg);
+    background: var(--cc-hero-grad);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+    color: #fff;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .clist-name-block strong {
+    display: block;
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text);
+    line-height: 1.3;
+  }
+
+  .clist-name-sub {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    margin-block-start: 2px;
+  }
+
+  /* البريد — يُقرأ من اليسار */
+  .ltr-val {
+    direction: ltr;
+    unicode-bidi: embed;
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+  }
+
+  /* الحالة pill */
+  .clist-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+    padding: var(--cc-sp-1) var(--cc-sp-5);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    white-space: nowrap;
+  }
+
+  .clist-pill .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: var(--cc-r-pill);
+    display: inline-block;
+  }
+
+  .pill--active   { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+  .pill--active   .dot { background: var(--pill-green-fg); }
+  .pill--inactive { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+  .pill--inactive .dot { background: var(--pill-grey-fg); }
+  .pill--blocked  { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+  .pill--blocked  .dot { background: var(--pill-red-fg); }
+  .pill--pending  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+  .pill--pending  .dot { background: var(--pill-amber-fg); }
+  .pill--trial    { background: var(--pill-cyan-bg);   color: var(--pill-cyan-fg);   }
+  .pill--trial    .dot { background: var(--pill-cyan-fg); }
+
+  /* أزرار الإجراءات */
+  .clist-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    justify-content: center;
+  }
+
+  .clist-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--cc-r);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: var(--cc-tr-fast);
+  }
+
+  .clist-action-btn--view {
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand);
+  }
+  .clist-action-btn--view:hover {
+    background: var(--cc-brand);
+    color: #fff;
+  }
+
+  .clist-action-btn--edit {
+    background: var(--tile-amber-bg);
+    color: var(--tile-amber-fg);
+  }
+  .clist-action-btn--edit:hover {
+    background: var(--hb-amber);
+    color: #fff;
+  }
+
+  .clist-action-btn--vault {
+    background: var(--tile-grey-bg);
+    color: var(--tile-grey-fg);
+  }
+  .clist-action-btn--vault:hover {
+    background: var(--cc-text-soft);
+    color: #fff;
+  }
+
+  /* ======================================================
+     Empty State
+  ====================================================== */
+  .clist-empty {
+    padding: var(--cc-sp-13) var(--cc-sp-11);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--cc-r-card);
+    background: var(--cc-brand-softer);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: var(--cc-brand);
+  }
+
+  .clist-empty-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+  }
+
+  .clist-empty-sub {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-mute);
+    max-width: 340px;
+    line-height: var(--cc-lh-loose);
+  }
+
+  /* ======================================================
+     Pagination
+  ====================================================== */
+  .clist-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--cc-sp-7) var(--cc-sp-11);
+    border-block-start: 1px solid var(--cc-border);
+    flex-wrap: wrap;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-page-info {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+  }
+
+  .clist-page-btns {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+  }
+
+  .clist-page-btn {
+    min-width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--cc-r);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    font-family: var(--cc-font);
+    cursor: pointer;
+    text-decoration: none;
+    border: 1px solid var(--cc-border-2);
+    background: var(--cc-card-bg);
+    color: var(--cc-text-soft);
+    transition: var(--cc-tr-fast);
+    padding-inline: var(--cc-sp-4);
+  }
+
+  .clist-page-btn:hover {
+    background: var(--hb-bg-hover);
+    color: var(--cc-text);
+    border-color: var(--cc-brand);
+  }
+
+  .clist-page-btn.is-active {
+    background: var(--cc-brand);
+    color: #fff;
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-sh-glow);
+  }
+
+  .clist-page-btn[disabled] {
+    opacity: .4;
+    cursor: not-allowed;
+  }
+
+  /* ======================================================
+     Active Filter Chips
+  ====================================================== */
+  .clist-active-filters {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    flex-wrap: wrap;
+    margin-block-end: var(--cc-gap-section);
+  }
+
+  .clist-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding: var(--cc-sp-2) var(--cc-sp-5);
+    background: var(--cc-brand-soft);
+    border: 1px solid var(--cc-brand-soft2);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-brand-ink);
+  }
+
+  .clist-filter-chip-remove {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--cc-r-pill);
+    background: rgba(107,90,237,.15);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: var(--cc-brand-ink);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    font-family: var(--cc-font);
+    text-decoration: none;
+  }
+
+  .clist-filter-chip-remove:hover { background: var(--cc-brand); color: #fff; }
+</style>
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+
+{# ── حساب الإحصائيات ── #}
+{% set total_customers = customers|length %}
+{% set active_count   = customers|selectattr('status','equalto','active')|list|length %}
+{% set inactive_count = total_customers - active_count %}
+
+{# ── Hero Section ── #}
+<div class="clist-hero">
+  <div class="clist-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-users"></i>
+  </div>
+  <div class="clist-hero-body">
+    <h1 class="clist-hero-title">إدارة العملاء</h1>
+    <p class="clist-hero-sub">
+      كل شركة أو عميل يستخدم النظام موجود هنا — يمكنك البحث، التصفية، والوصول السريع لأي عميل.
+    </p>
+  </div>
+  <div class="clist-hero-stats" aria-label="إحصائيات العملاء">
+    <div class="clist-stat">
+      <div class="clist-stat-num">{{ total_customers }}</div>
+      <div class="clist-stat-label">إجمالي العملاء</div>
+    </div>
+    <div class="clist-stat-divider" aria-hidden="true"></div>
+    <div class="clist-stat">
+      <div class="clist-stat-num" style="color:var(--hb-green)">{{ active_count }}</div>
+      <div class="clist-stat-label">نشط</div>
+    </div>
+    <div class="clist-stat-divider" aria-hidden="true"></div>
+    <div class="clist-stat">
+      <div class="clist-stat-num" style="color:var(--cc-text-mute)">{{ inactive_count }}</div>
+      <div class="clist-stat-label">غير نشط</div>
+    </div>
+  </div>
+</div>
+
+{# ── Toolbar — بحث + فلاتر ── #}
+<div class="clist-toolbar" role="search" aria-label="بحث وتصفية العملاء">
+  <form class="clist-toolbar-row" method="get" id="clist-filter-form">
+
+    {# البحث #}
+    <div class="clist-field">
+      <label class="clist-field-label" for="clist-q">البحث</label>
+      <div class="clist-search-wrap">
+        <span class="clist-search-icon" aria-hidden="true">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </span>
+        <input
+          class="clist-search-input"
+          type="search"
+          id="clist-q"
+          name="q"
+          placeholder="ابحث بالاسم أو البريد الإلكتروني..."
+          value="{{ search or '' }}"
+          autocomplete="off"
+          aria-label="بحث بالاسم أو البريد"
+        >
+      </div>
+    </div>
+
+    {# الحالة #}
+    <div class="clist-field">
+      <label class="clist-field-label" for="clist-status">الحالة</label>
+      <select class="clist-select" id="clist-status" name="status" aria-label="تصفية بالحالة">
+        <option value="">كل الحالات</option>
+        <option value="active"   {{ 'selected' if status == 'active' }}>✅ نشط</option>
+        <option value="inactive" {{ 'selected' if status == 'inactive' }}>⬜ غير نشط</option>
+        <option value="blocked"  {{ 'selected' if status == 'blocked' }}>🚫 موقوف</option>
+        <option value="pending"  {{ 'selected' if status == 'pending' }}>⏳ في الانتظار</option>
+        <option value="trial"    {{ 'selected' if status == 'trial' }}>🔵 تجريبي</option>
+      </select>
+    </div>
+
+    {# أزرار الأدوات #}
+    <div class="clist-field" style="justify-content:flex-end">
+      <label class="clist-field-label" style="visibility:hidden" aria-hidden="true">.</label>
+      <div style="display:flex;gap:var(--cc-sp-4);align-items:center">
+        <button type="submit" class="clist-btn clist-btn--filter">
+          <i class="fa-solid fa-filter" aria-hidden="true"></i>
+          تصفية
+        </button>
+        {% if search or status %}
+          <a href="{{ url_for('admin.customers_list') }}" class="clist-btn clist-btn--reset" aria-label="مسح الفلاتر">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            مسح
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+  </form>
+
+  {# زر إضافة عميل جديد #}
+  <a href="{{ url_for('admin.customer_new') }}" class="clist-btn clist-btn--primary" aria-label="إضافة عميل جديد">
+    <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+    إضافة عميل جديد
+  </a>
+</div>
+
+{# ── Chips الفلاتر النشطة ── #}
+{% if search or status %}
+<div class="clist-active-filters" role="status" aria-label="الفلاتر المفعّلة">
+  <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-heavy)">الفلاتر:</span>
+  {% if search %}
+    <div class="clist-filter-chip">
+      <i class="fa-solid fa-magnifying-glass" style="font-size:9px"></i>
+      بحث: «{{ search }}»
+      <a href="{{ url_for('admin.customers_list', status=status) }}" class="clist-filter-chip-remove" aria-label="إزالة فلتر البحث">
+        <i class="fa-solid fa-xmark"></i>
+      </a>
+    </div>
+  {% endif %}
+  {% if status %}
+    <div class="clist-filter-chip">
+      <i class="fa-solid fa-circle-dot" style="font-size:9px"></i>
+      الحالة: {{ status|status_label if status|status_label is defined else status }}
+      <a href="{{ url_for('admin.customers_list', q=search) }}" class="clist-filter-chip-remove" aria-label="إزالة فلتر الحالة">
+        <i class="fa-solid fa-xmark"></i>
+      </a>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── الجدول ── #}
+<div class="clist-card" role="region" aria-label="قائمة العملاء">
+
+  <div class="clist-card-header">
+    <div class="clist-card-title">
+      <i class="fa-solid fa-address-book" aria-hidden="true" style="color:var(--cc-brand)"></i>
+      جميع العملاء
+      <span class="clist-card-count" aria-label="{{ customers|length }} عميل">{{ customers|length }}</span>
+    </div>
+  </div>
+
+  <div class="cc-table-toolbar">
+    <span class="cc-table-count" id="tbl-customers-info">{{ customers|length }} عميل</span>
+    <div class="cc-rows-select">
+      <span>عدد الصفوف:</span>
+      <select class="cc-select cc-per-page"
+              data-table="#tbl-customers"
+              data-info="#tbl-customers-info"
+              aria-label="عدد الصفوف في الصفحة">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="clist-table-wrap">
+    <table class="clist-table" id="tbl-customers" role="table" aria-label="قائمة العملاء">
+      <thead>
+        <tr role="row">
+          <th scope="col" class="cc-th-sort">اسم الشركة / العميل</th>
+          <th scope="col" class="cc-th-sort">البريد الإلكتروني</th>
+          <th scope="col" class="cc-th-sort">الهاتف</th>
+          <th scope="col" class="cc-th-sort col-center">الحالة</th>
+          <th scope="col" class="cc-th-sort">تاريخ الانضمام</th>
+          <th scope="col" class="cc-th-sort">آخر نشاط</th>
+          <th scope="col" class="col-actions">الإجراءات</th>
+        </tr>
+      </thead>
+      <tbody>
+
+      {% for customer in customers %}
+        <tr role="row">
+
+          {# الاسم + أفاتار #}
+          <td>
+            <div class="clist-customer-name">
+              <div class="clist-avatar" aria-hidden="true">
+                {{ customer.company_name[0]|upper if customer.company_name else '؟' }}
+              </div>
+              <div class="clist-name-block">
+                <strong>
+                  <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}"
+                     style="color:inherit;text-decoration:none;"
+                     aria-label="عرض ملف {{ customer.company_name }}">
+                    {{ customer.company_name }}
+                  </a>
+                </strong>
+                {% if customer.contact_name %}
+                  <span class="clist-name-sub">
+                    <i class="fa-solid fa-user" style="font-size:9px" aria-hidden="true"></i>
+                    {{ customer.contact_name }}
+                  </span>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+
+          {# البريد #}
+          <td>
+            {% if customer.email %}
+              <a href="mailto:{{ customer.email }}" class="ltr-val" style="text-decoration:none;color:var(--cc-brand)">
+                {{ customer.email }}
+              </a>
+            {% else %}
+              <span style="color:var(--cc-text-faint)">—</span>
+            {% endif %}
+          </td>
+
+          {# الهاتف #}
+          <td>
+            {% if customer.phone %}
+              <span class="ltr-val">{{ customer.phone }}</span>
+            {% else %}
+              <span style="color:var(--cc-text-faint)">—</span>
+            {% endif %}
+          </td>
+
+          {# الحالة #}
+          <td style="text-align:center">
+            {% set s = customer.status or 'inactive' %}
+            <span class="clist-pill pill--{{ s }}" role="status" aria-label="الحالة: {{ s }}">
+              <span class="dot" aria-hidden="true"></span>
+              {% if s == 'active' %}نشط
+              {% elif s == 'inactive' %}غير نشط
+              {% elif s == 'blocked' %}موقوف
+              {% elif s == 'pending' %}في الانتظار
+              {% elif s == 'trial' %}تجريبي
+              {% else %}{{ s }}
+              {% endif %}
+            </span>
+          </td>
+
+          {# تاريخ الانضمام #}
+          <td>
+            {% if customer.created_at %}
+              <span title="{{ customer.created_at }}">
+                {{ customer.created_at|datetimeformat if customer.created_at|datetimeformat is defined else customer.created_at }}
+              </span>
+            {% else %}
+              <span style="color:var(--cc-text-faint)">—</span>
+            {% endif %}
+          </td>
+
+          {# آخر نشاط #}
+          <td>
+            {% if customer.last_activity %}
+              <span title="{{ customer.last_activity }}">
+                {{ customer.last_activity|datetimeformat if customer.last_activity|datetimeformat is defined else customer.last_activity }}
+              </span>
+            {% else %}
+              <span style="color:var(--cc-text-faint)">—</span>
+            {% endif %}
+          </td>
+
+          {# الإجراءات #}
+          <td>
+            <div class="clist-actions">
+              <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}"
+                 class="clist-action-btn clist-action-btn--view"
+                 title="عرض ملف العميل الكامل"
+                 aria-label="عرض ملف {{ customer.company_name }}">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </a>
+              <a href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}"
+                 class="clist-action-btn clist-action-btn--edit"
+                 title="تعديل بيانات العميل"
+                 aria-label="تعديل {{ customer.company_name }}">
+                <i class="fa-solid fa-pen" aria-hidden="true"></i>
+              </a>
+              {% if is_super_admin %}
+                <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}"
+                   class="clist-action-btn clist-action-btn--vault"
+                   title="الخزنة السرية — للمدير العام فقط"
+                   aria-label="خزنة {{ customer.company_name }}">
+                  <i class="fa-solid fa-vault" aria-hidden="true"></i>
+                </a>
+              {% endif %}
+            </div>
+          </td>
+
+        </tr>
+      {% else %}
+        {# Empty State #}
+        <tr>
+          <td colspan="7" style="padding:0;border:none">
+            <div class="clist-empty" role="status" aria-label="لا يوجد عملاء">
+              <div class="clist-empty-icon" aria-hidden="true">
+                <i class="fa-solid fa-users-slash"></i>
+              </div>
+              <div class="clist-empty-title">
+                {% if search or status %}
+                  لم يتطابق أي عميل مع بحثك
+                {% else %}
+                  لا يوجد عملاء بعد
+                {% endif %}
+              </div>
+              <p class="clist-empty-sub">
+                {% if search or status %}
+                  جرّب تغيير كلمة البحث أو تغيير فلتر الحالة، أو
+                  <a href="{{ url_for('admin.customers_list') }}" style="color:var(--cc-brand)">عرض كل العملاء</a>.
+                {% else %}
+                  ابدأ بإضافة أول عميل عبر الزر أعلاه — كل بيانات التراخيص والشبكة مرتبطة بالعميل.
+                {% endif %}
+              </p>
+              {% if not search and not status %}
+                <a href="{{ url_for('admin.customer_new') }}" class="clist-btn clist-btn--primary">
+                  <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                  إضافة أول عميل
+                </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Pagination ── #}
+  {% if customers|length > 0 %}
+  <div class="clist-pagination" role="navigation" aria-label="التنقل بين الصفحات">
+    <div class="clist-page-info">
+      عرض
+      <strong>{{ customers|length }}</strong>
+      من أصل
+      <strong>{{ total_count if total_count is defined else customers|length }}</strong>
+      عميل
+    </div>
+    <div class="clist-page-btns" aria-label="أرقام الصفحات">
+      {# زر الصفحة السابقة #}
+      {% if page and page > 1 %}
+        <a href="{{ url_for('admin.customers_list', q=search, status=status, page=page-1) }}"
+           class="clist-page-btn" aria-label="الصفحة السابقة">
+          <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+        </a>
+      {% else %}
+        <span class="clist-page-btn" disabled aria-disabled="true" aria-label="لا توجد صفحة سابقة">
+          <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+        </span>
+      {% endif %}
+
+      {# أرقام الصفحات #}
+      {% if total_pages is defined %}
+        {% for p in range(1, total_pages + 1) %}
+          {% if p == page %}
+            <span class="clist-page-btn is-active" aria-current="page" aria-label="الصفحة {{ p }}">{{ p }}</span>
+          {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <a href="{{ url_for('admin.customers_list', q=search, status=status, page=p) }}"
+               class="clist-page-btn" aria-label="الصفحة {{ p }}">{{ p }}</a>
+          {% elif p == page - 3 or p == page + 3 %}
+            <span class="clist-page-btn" style="border:none;cursor:default;color:var(--cc-text-faint)" aria-hidden="true">…</span>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <span class="clist-page-btn is-active" aria-current="page">1</span>
+      {% endif %}
+
+      {# زر الصفحة التالية #}
+      {% if page and total_pages is defined and page < total_pages %}
+        <a href="{{ url_for('admin.customers_list', q=search, status=status, page=page+1) }}"
+           class="clist-page-btn" aria-label="الصفحة التالية">
+          <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+        </a>
+      {% else %}
+        <span class="clist-page-btn" disabled aria-disabled="true" aria-label="لا توجد صفحة تالية">
+          <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+        </span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>{# /.clist-card #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  /* البحث الفوري عند التوقف عن الكتابة (debounce 500ms) */
+  var searchInput = document.getElementById('clist-q');
+  var form = document.getElementById('clist-filter-form');
+  if (!searchInput || !form) return;
+
+  var timer;
+  searchInput.addEventListener('input', function () {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      form.submit();
+    }, 500);
+  });
+}());
+</script>
+{% endblock %}

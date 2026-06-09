@@ -1,0 +1,620 @@
+{% extends "admin/base_new.html" %}
+{% block title %}وكيل RADIUS — مسارات الـ Realm{% endblock %}
+{% block page_title %}وكيل RADIUS{% endblock %}
+
+{% block content %}
+
+{# ══════════════════════════════════════════════════════════════════
+   بطاقة الشرح — كيف يعمل الوكيل
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="pr-explain-card">
+  <div class="pr-explain-card__icon">
+    <i class="fa-solid fa-arrows-split-up-and-left" aria-hidden="true"></i>
+  </div>
+  <div>
+    <div class="pr-explain-card__title">كيف يعمل وكيل RADIUS؟</div>
+    <p class="pr-explain-card__text">
+      عندما يتصل مشترك عبر إحدى عقد CHR، ترسل العقدة طلب المصادقة إلى
+      <strong>الوكيل المركزي</strong> فقط. الوكيل يقرأ اللاحقة
+      <span class="pr-mono ltr">@realm</span> من اسم المستخدم ويُعيد توجيه
+      الطلب إلى خادم RADIUS الخاص بذلك العميل. هكذا لا تعرف عقد CHR
+      عناوين RADIUS للعملاء — تعرف الوكيل فقط.
+    </p>
+    <div class="pr-flow">
+      <span class="pr-flow__box">مشترك يتصل</span>
+      <i class="fa-solid fa-arrow-left pr-flow__arr" aria-hidden="true"></i>
+      <span class="pr-flow__box pr-flow__box--blue">عقدة CHR</span>
+      <i class="fa-solid fa-arrow-left pr-flow__arr" aria-hidden="true"></i>
+      <span class="pr-flow__box pr-flow__box--purple">وكيل RADIUS</span>
+      <i class="fa-solid fa-arrow-left pr-flow__arr" aria-hidden="true"></i>
+      <span class="pr-flow__box pr-flow__box--green">RADIUS العميل</span>
+      <i class="fa-solid fa-arrow-left pr-flow__arr" aria-hidden="true"></i>
+      <span class="pr-flow__box">Accept / Reject</span>
+    </div>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   شريط الأدوات: عدد المسارات + زر الإضافة + زر التحديث
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="pr-toolbar">
+  <div class="pr-toolbar__left">
+    <span class="pr-toolbar__count">
+      <i class="fa-solid fa-route" aria-hidden="true"></i>
+      {{ routes|length }} مسار محدّد
+    </span>
+  </div>
+  <div class="pr-toolbar__right">
+    <form method="post" action="{{ url_for('admin_infra.proxy_routes_reload') }}"
+          style="display:inline" id="form-reload">
+      {{ csrf_input() }}
+      <button class="pr-btn pr-btn--ghost" type="submit"
+              title="تحديث تكوين الوكيل على الخادم">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+        تحديث التكوين
+      </button>
+    </form>
+    <button class="pr-btn pr-btn--primary" type="button"
+            onclick="prModal('modal-add-route')">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      إضافة مسار
+    </button>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   جدول المسارات
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="pr-card">
+
+  {% if not routes %}
+    <div class="pr-empty">
+      <i class="fa-solid fa-route fa-2x" aria-hidden="true"></i>
+      <p>لا توجد مسارات محددة بعد.</p>
+      <p style="font-size:var(--cc-fs-body-s)">أضف مساراً لكل عميل يملك RADIUS Instance.</p>
+      <button class="pr-btn pr-btn--primary" type="button"
+              onclick="prModal('modal-add-route')">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        إضافة أول مسار
+      </button>
+    </div>
+  {% else %}
+  <div class="pr-table-wrap">
+    <table class="pr-table">
+      <thead>
+        <tr>
+          <th>Realm</th>
+          <th>العميل</th>
+          <th>Target IP</th>
+          <th>Auth / Acct</th>
+          <th>Vault Ref</th>
+          <th>عقد CHR المسموحة</th>
+          <th>الحالة</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in routes %}
+        <tr class="pr-table__row">
+
+          {# realm #}
+          <td>
+            <span class="pr-realm-badge">@{{ r.realm }}</span>
+          </td>
+
+          {# العميل #}
+          <td><strong>{{ r.customer.company_name }}</strong></td>
+
+          {# target IP #}
+          <td>
+            <span class="pr-mono pr-ltr" style="font-size:var(--cc-fs-small)">
+              {{ r.target_radius_ip }}
+            </span>
+          </td>
+
+          {# المنافذ #}
+          <td>
+            <span class="pr-mono pr-ltr" style="font-size:var(--cc-fs-small)">
+              {{ r.target_auth_port }} / {{ r.target_acct_port }}
+            </span>
+          </td>
+
+          {# vault ref #}
+          <td>
+            <span class="pr-mono" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">
+              {{ r.secret_vault_ref or '—' }}
+            </span>
+          </td>
+
+          {# عقد CHR المسموحة #}
+          <td>
+            {% if not r.allowed_chr_node_ids %}
+              <span class="infra-pill infra-pill--grey">كل العقد</span>
+            {% else %}
+              <div style="display:flex;flex-wrap:wrap;gap:var(--cc-sp-2)">
+                {% for nid in r.allowed_chr_node_ids %}
+                  {% set n = chr_nodes|selectattr('id','eq',nid)|first %}
+                  {% if n %}
+                    <span class="pr-node-chip pr-mono">{{ n.name }}</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </td>
+
+          {# الحالة #}
+          <td>
+            {% if r.status == 'active' %}
+              <span class="infra-pill infra-pill--green">نشط</span>
+            {% elif r.status == 'suspended' %}
+              <span class="infra-pill infra-pill--amber">موقوف</span>
+            {% else %}
+              <span class="infra-pill infra-pill--grey">مسودة</span>
+            {% endif %}
+          </td>
+
+          {# إجراء — تغيير الحالة #}
+          <td>
+            <div style="display:flex;gap:var(--cc-sp-3);flex-wrap:wrap">
+              {% for st, lbl in [('active','تفعيل'),('suspended','إيقاف'),('draft','مسودة')] %}
+              {% if r.status != st %}
+              <form method="post"
+                    action="{{ url_for('admin_infra.proxy_route_set_status', route_id=r.id) }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <input type="hidden" name="status" value="{{ st }}">
+                <button class="pr-btn pr-btn--xs" type="submit">{{ lbl }}</button>
+              </form>
+              {% endif %}
+              {% endfor %}
+            </div>
+          </td>
+
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>{# /pr-card #}
+
+{# ══════════════════════════════════════════════════════════════════
+   Modal — إضافة مسار Realm
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="pr-modal-overlay" id="modal-add-route" role="dialog"
+     aria-modal="true" aria-labelledby="modal-add-route-title"
+     onclick="if(event.target===this)prModalClose('modal-add-route')">
+  <div class="pr-modal">
+
+    <div class="pr-modal__head">
+      <h2 id="modal-add-route-title" class="pr-modal__title">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        إضافة مسار Realm جديد
+      </h2>
+      <button class="pr-modal__close" type="button"
+              onclick="prModalClose('modal-add-route')"
+              aria-label="إغلاق">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <form method="post" action="{{ url_for('admin_infra.proxy_route_create') }}"
+          class="pr-modal__body">
+      {{ csrf_input() }}
+
+      <div class="pr-form-grid">
+
+        {# Realm #}
+        <div class="pr-field pr-field--full">
+          <label class="pr-label" for="r-realm">
+            الـ Realm <span class="pr-required" aria-hidden="true">*</span>
+          </label>
+          <input class="pr-input pr-mono pr-ltr" id="r-realm" name="realm"
+                 placeholder="client5" required autocomplete="off"
+                 aria-describedby="hint-r-realm">
+          <p class="pr-hint" id="hint-r-realm">
+            اللاحقة في <span class="pr-mono pr-ltr">username@realm</span> — يجب أن يطابق
+            realm الـ RADIUS Instance الخاص بالعميل
+          </p>
+        </div>
+
+        {# RADIUS Instance #}
+        <div class="pr-field pr-field--full">
+          <label class="pr-label" for="r-inst">
+            RADIUS Instance <span class="pr-required" aria-hidden="true">*</span>
+          </label>
+          <select class="pr-input" id="r-inst" name="radius_instance_id" required
+                  aria-describedby="hint-r-inst">
+            <option value="">— اختر العميل —</option>
+            {% for inst in instances %}
+            <option value="{{ inst.id }}">
+              {{ inst.customer.company_name }}
+              (@{{ inst.realm }}) — {{ inst.radius_auth_ip or 'IP غير محدد' }}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="pr-hint" id="hint-r-inst">
+            اختر خادم RADIUS التابع للعميل — سيُملأ الـ IP تلقائياً
+          </p>
+        </div>
+
+        {# Target IP #}
+        <div class="pr-field">
+          <label class="pr-label" for="r-tip">Target RADIUS IP</label>
+          <input class="pr-input pr-mono pr-ltr" id="r-tip" name="target_radius_ip"
+                 placeholder="يُملأ تلقائياً من Instance"
+                 aria-describedby="hint-r-tip">
+          <p class="pr-hint" id="hint-r-tip">اتركه فارغاً للاستخدام التلقائي من الـ Instance</p>
+        </div>
+
+        {# Auth Port #}
+        <div class="pr-field">
+          <label class="pr-label" for="r-aport">Auth Port</label>
+          <input class="pr-input" id="r-aport" name="target_auth_port"
+                 type="number" value="1812"
+                 aria-describedby="hint-r-aport">
+          <p class="pr-hint" id="hint-r-aport">المنفذ الافتراضي لطلبات المصادقة هو 1812</p>
+        </div>
+
+        {# Acct Port #}
+        <div class="pr-field">
+          <label class="pr-label" for="r-cport">Acct Port</label>
+          <input class="pr-input" id="r-cport" name="target_acct_port"
+                 type="number" value="1813"
+                 aria-describedby="hint-r-cport">
+          <p class="pr-hint" id="hint-r-cport">المنفذ الافتراضي للمحاسبة هو 1813</p>
+        </div>
+
+        {# Vault Ref #}
+        <div class="pr-field">
+          <label class="pr-label" for="r-vault">Vault Ref (سر الـ Proxy)</label>
+          <input class="pr-input pr-mono pr-ltr" id="r-vault" name="secret_vault_ref"
+                 placeholder="proxy_secret_client5"
+                 aria-describedby="hint-r-vault">
+          <p class="pr-hint" id="hint-r-vault">مفتاح Secret المشترك بين الوكيل وخادم RADIUS العميل</p>
+        </div>
+
+        {# عقد CHR المسموحة #}
+        <div class="pr-field pr-field--full">
+          <label class="pr-label">
+            عقد CHR المسموح لها بالتوجيه عبر هذا المسار
+          </label>
+          <div class="pr-checkgroup" aria-describedby="hint-r-nodes">
+            {% for n in chr_nodes %}
+            <label class="pr-check">
+              <input type="checkbox" name="allowed_chr_node_ids" value="{{ n.id }}">
+              <span class="pr-mono">{{ n.name }}</span>
+              <span class="pr-check__sub">{{ n.public_ip }}</span>
+            </label>
+            {% else %}
+              <span style="color:var(--cc-text-mute);font-size:var(--cc-fs-body-s)">
+                لا توجد عقد CHR مسجّلة بعد
+              </span>
+            {% endfor %}
+          </div>
+          <p class="pr-hint" id="hint-r-nodes">
+            اتركه فارغاً للسماح لجميع عقد CHR بالتوجيه عبر هذا المسار
+          </p>
+        </div>
+
+      </div>{# /pr-form-grid #}
+
+      <div class="pr-modal__foot">
+        <button class="pr-btn pr-btn--primary" type="submit">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          إضافة المسار
+        </button>
+        <button class="pr-btn pr-btn--ghost" type="button"
+                onclick="prModalClose('modal-add-route')">إلغاء</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% block scripts %}
+<style>
+:root {
+  /* ── Local viewport vars (hero overlay + code block) ── */
+  --vr-white:         #ffffff;
+  --vr-hero-sub:      rgba(255,255,255,.78);
+  --vr-hero-lbl:      rgba(255,255,255,.75);
+  --vr-hero-stat:     rgba(255,255,255,.13);
+  --vr-hero-ghost:    rgba(255,255,255,.14);
+  --vr-hero-ghost-hov:rgba(255,255,255,.22);
+  --vr-hero-border:   rgba(255,255,255,.30);
+  --vr-hero-green:    #6EF8A8;
+  --vr-hero-amber:    #FFD97D;
+  --vr-hero-red:      #FF8FA3;
+  --vr-hero-grey:     rgba(255,255,255,.65);
+  --vr-code-bg:       #1E1E2E;
+  --vr-code-text:     #CDD6F4;
+  --vr-toast-bg:      #1F2937;
+}
+/* ── Explain card ────────────────────────────────────── */
+.pr-explain-card {
+  display: flex;
+  gap: var(--cc-sp-10);
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  padding: var(--cc-sp-11);
+  margin-bottom: var(--cc-gap-section);
+}
+.pr-explain-card__icon {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  border-radius: var(--cc-r-tile);
+  background: var(--tile-purple-bg);
+  color: var(--tile-purple-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+.pr-explain-card__title {
+  font-size: var(--cc-fs-h3);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  margin-bottom: var(--cc-sp-5);
+}
+.pr-explain-card__text {
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-soft);
+  line-height: var(--cc-lh-default);
+  margin: 0 0 var(--cc-sp-9);
+}
+
+/* ── Flow diagram ────────────────────────────────────── */
+.pr-flow {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-5);
+  flex-wrap: wrap;
+}
+.pr-flow__box {
+  padding: var(--cc-sp-3) var(--cc-sp-8);
+  border: 1px solid var(--cc-border-2);
+  border-radius: var(--cc-r);
+  background: var(--hb-bg);
+  font-size: var(--cc-fs-small);
+  color: var(--cc-text-soft);
+  white-space: nowrap;
+}
+.pr-flow__box--blue   { background: var(--tile-blue-bg);   border-color: var(--hr-blue-info); color: var(--tile-blue-fg); }
+.pr-flow__box--purple { background: var(--tile-purple-bg); border-color: var(--cc-brand-3);   color: var(--tile-purple-fg); }
+.pr-flow__box--green  { background: var(--tile-green-bg);  border-color: var(--hr-green);     color: var(--tile-green-fg); }
+.pr-flow__arr {
+  color: var(--cc-text-faint);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* ── Toolbar ──────────────────────────────────────────── */
+.pr-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--cc-gap-section);
+  flex-wrap: wrap;
+  gap: var(--cc-sp-8);
+}
+.pr-toolbar__left { display: flex; align-items: center; gap: var(--cc-sp-6); }
+.pr-toolbar__right { display: flex; align-items: center; gap: var(--cc-sp-6); }
+.pr-toolbar__count {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text-soft);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-5);
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+.pr-btn {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-4);
+  padding: 0 var(--cc-sp-9); height: var(--cc-btn-h);
+  border-radius: var(--cc-btn-radius); font-family: var(--cc-font);
+  font-size: var(--cc-fs-body); font-weight: var(--cc-fw-medium);
+  cursor: pointer; border: none; transition: var(--cc-tr-fast);
+  text-decoration: none; white-space: nowrap;
+}
+.pr-btn--primary { background: var(--cc-btn-primary-bg); color: var(--vr-white); }
+.pr-btn--primary:hover { background: var(--cc-btn-primary-hover); }
+.pr-btn--ghost {
+  background: var(--hb-bg); color: var(--cc-text-soft);
+  border: 1px solid var(--cc-border-2);
+}
+.pr-btn--ghost:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+.pr-btn--xs {
+  height: 26px; font-size: var(--cc-fs-tiny);
+  padding: 0 var(--cc-sp-6);
+  background: var(--hb-bg); color: var(--cc-text-soft);
+  border: 1px solid var(--cc-border-2);
+  border-radius: var(--cc-r-sm);
+}
+.pr-btn--xs:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+
+/* ── Card / Table ────────────────────────────────────── */
+.pr-card {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  margin-bottom: var(--cc-gap-section);
+  overflow: hidden;
+}
+.pr-table-wrap { overflow-x: auto; }
+.pr-table {
+  width: 100%; border-collapse: collapse;
+  font-family: var(--cc-font); font-size: var(--cc-fs-body);
+}
+.pr-table thead th {
+  background: var(--cc-table-head-bg); color: var(--cc-text-soft);
+  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
+  padding: var(--cc-sp-6) var(--cc-sp-8); text-align: right;
+  border-bottom: 1px solid var(--cc-border-2); white-space: nowrap;
+}
+.pr-table tbody td {
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-bottom: 1px solid var(--cc-border);
+  color: var(--cc-text); vertical-align: middle;
+}
+.pr-table__row:last-child td { border-bottom: none; }
+.pr-table__row:hover td { background: var(--cc-table-row-hover); }
+
+/* ── Realm badge ─────────────────────────────────────── */
+.pr-realm-badge {
+  display: inline-block;
+  padding: var(--cc-sp-2) var(--cc-sp-6);
+  border-radius: var(--cc-r-pill);
+  background: var(--pill-blue-bg);
+  color: var(--pill-blue-fg);
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-small);
+  font-weight: var(--cc-fw-bold);
+}
+
+/* ── Node chip ───────────────────────────────────────── */
+.pr-node-chip {
+  display: inline-block;
+  background: var(--hb-bg);
+  border: 1px solid var(--cc-border-2);
+  border-radius: var(--cc-r-sm);
+  font-size: var(--cc-fs-tiny);
+  padding: 1px var(--cc-sp-4);
+  color: var(--cc-text-soft);
+}
+
+/* ── Pills (shared) ──────────────────────────────────── */
+.infra-pill {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  padding: var(--cc-sp-1) var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
+}
+.infra-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg); }
+.infra-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg); }
+.infra-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg); }
+
+/* ── Empty ───────────────────────────────────────────── */
+.pr-empty {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: var(--cc-sp-8);
+  padding: var(--cc-sp-13) var(--cc-sp-11);
+  color: var(--cc-text-mute); text-align: center;
+}
+.pr-empty p { margin: 0; font-size: var(--cc-fs-body-l); }
+
+/* ── Modal ───────────────────────────────────────────── */
+.pr-modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: var(--cc-modal-overlay);
+  z-index: 1000; align-items: flex-start; justify-content: center;
+  padding: var(--cc-sp-13) var(--cc-sp-8); overflow-y: auto;
+}
+.pr-modal-overlay.is-open { display: flex; }
+.pr-modal {
+  background: var(--cc-card-bg);
+  border-radius: var(--cc-modal-radius);
+  box-shadow: var(--cc-modal-shadow);
+  width: 100%; max-width: 560px;
+  animation: pr-in var(--cc-anim-med) var(--cc-ease-out);
+}
+@keyframes pr-in {
+  from { opacity:0; transform:translateY(-14px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.pr-modal__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--cc-sp-9) var(--cc-sp-11);
+  border-bottom: 1px solid var(--cc-border);
+}
+.pr-modal__title {
+  font-size: var(--cc-fs-h2); font-weight: var(--cc-fw-bold);
+  color: var(--cc-text); display: flex; align-items: center;
+  gap: var(--cc-sp-6); margin: 0;
+}
+.pr-modal__close {
+  width:32px; height:32px; border-radius:var(--cc-r);
+  border:1px solid var(--cc-border); background:transparent;
+  cursor:pointer; color:var(--cc-text-mute);
+  display:flex; align-items:center; justify-content:center;
+  transition:var(--cc-tr-fast);
+}
+.pr-modal__close:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
+.pr-modal__body { padding: var(--cc-sp-11); }
+.pr-modal__foot {
+  display:flex; gap:var(--cc-sp-6);
+  padding:var(--cc-sp-9) var(--cc-sp-11);
+  border-top:1px solid var(--cc-border);
+}
+
+/* ── Form ────────────────────────────────────────────── */
+.pr-form-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--cc-sp-8) var(--cc-gap-inline);
+}
+.pr-field { display:flex; flex-direction:column; gap:var(--cc-sp-3); }
+.pr-field--full { grid-column:1/-1; }
+.pr-label { font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-medium); color:var(--cc-text); }
+.pr-required { color:var(--hb-red); }
+.pr-input {
+  height:var(--cc-input-h); padding:0 var(--cc-sp-7);
+  border-radius:var(--cc-input-radius); border:1px solid var(--cc-input-border);
+  background:var(--cc-input-bg); font-family:var(--cc-font);
+  font-size:var(--cc-fs-body); color:var(--cc-text);
+  transition:var(--cc-tr-fast); width:100%; box-sizing:border-box; direction:rtl;
+}
+.pr-input:focus { outline:none; border-color:var(--cc-brand); background:var(--cc-input-bg-focus); box-shadow:var(--cc-input-ring); }
+.pr-input.pr-ltr, .pr-input.pr-mono { direction:ltr; text-align:left; }
+select.pr-input { cursor:pointer; }
+.pr-hint { font-size:var(--cc-fs-tiny); color:var(--cc-text-mute); margin:0; line-height:var(--cc-lh-default); }
+.pr-checkgroup {
+  display:flex; flex-wrap:wrap; gap:var(--cc-sp-6);
+  padding:var(--cc-sp-7); background:var(--cc-input-bg);
+  border:1px solid var(--cc-input-border); border-radius:var(--cc-input-radius);
+}
+.pr-check {
+  display:flex; align-items:center; gap:var(--cc-sp-4);
+  cursor:pointer; font-size:var(--cc-fs-body-s); color:var(--cc-text);
+}
+.pr-check input[type=checkbox] { accent-color:var(--cc-brand); width:14px; height:14px; }
+.pr-check__sub { font-size:var(--cc-fs-tiny); color:var(--cc-text-mute); font-family:var(--cc-font-mono); }
+.pr-mono { font-family:var(--cc-font-mono); }
+.pr-ltr  { direction:ltr; }
+
+@media (max-width:640px) {
+  .pr-form-grid { grid-template-columns:1fr; }
+  .pr-explain-card { flex-direction:column; }
+  .pr-toolbar { flex-direction:column; align-items:flex-start; }
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+  function prModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('is-open');
+    var first = el.querySelector('input, select, textarea');
+    if (first) setTimeout(function(){ first.focus(); }, 80);
+  }
+  function prModalClose(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('is-open');
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.pr-modal-overlay.is-open').forEach(function(m) {
+        m.classList.remove('is-open');
+      });
+    }
+  });
+  window.prModal      = prModal;
+  window.prModalClose = prModalClose;
+}());
+</script>
+{% endblock %}
+
+{% endblock %}

@@ -1,0 +1,771 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}الإعدادات العامة{% endblock %}
+{% block page_title %}الإعدادات العامة{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   settings/general_new.html — إعدادات عامة
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero ────────────────────────────────────────────── */
+.sg-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-10) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-10);
+  margin-block-end: var(--cc-gap-section);
+  position:      relative;
+  overflow:      hidden;
+}
+.sg-hero::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: -40px;
+  inset-block-start: -40px;
+  width: 160px; height: 160px;
+  border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
+.sg-hero-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h1);
+  flex-shrink: 0;
+}
+.sg-hero-title {
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  line-height: var(--cc-lh-tight);
+  margin-block-end: var(--cc-sp-2);
+}
+.sg-hero-sub {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  opacity: .85;
+}
+
+/* ── كارد القسم ────────────────────────────────────────── */
+.sg-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  margin-block-end: var(--cc-gap-section);
+  overflow: hidden;
+}
+.sg-card-head {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-5);
+  padding:     var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background:  var(--hb-bg);
+}
+.sg-card-head-icon {
+  width:  32px; height: 32px;
+  border-radius: var(--cc-r-sm);
+  background: var(--tile-purple-bg);
+  color:      var(--tile-purple-fg);
+  display:    flex; align-items: center; justify-content: center;
+  font-size:  var(--cc-fs-body-s);
+  flex-shrink: 0;
+}
+.sg-card-head-title {
+  font-size:   var(--cc-fs-h3);
+  font-weight: var(--cc-fw-heavy);
+  color:       var(--cc-text);
+}
+.sg-card-head-sub {
+  margin-inline-start: auto;
+  font-size:  var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-medium);
+  color:      var(--cc-text-mute);
+}
+.sg-card-body {
+  padding: var(--cc-sp-8);
+}
+
+/* ── شبكة الحقول ─────────────────────────────────────── */
+.sg-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap:                   var(--cc-sp-7) var(--cc-sp-8);
+  margin-block-end:      var(--cc-sp-8);
+}
+.sg-grid--full { grid-template-columns: 1fr; }
+
+.sg-field { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.sg-field.is-full { grid-column: 1 / -1; }
+
+.sg-label {
+  font-size:   var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-heavy);
+  color:       var(--cc-text-soft);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.sg-label .sg-req {
+  color: var(--hb-red);
+  margin-inline-start: 2px;
+}
+
+.sg-input,
+.sg-select,
+.sg-textarea {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body);
+  font-weight:   var(--cc-fw-medium);
+  color:         var(--cc-text);
+  width:         100%;
+  transition:    border-color var(--cc-anim-fast), background var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+  outline:       none;
+  direction:     inherit;
+}
+.sg-textarea {
+  height: auto;
+  padding: var(--cc-sp-5) var(--cc-sp-6);
+  min-height: 80px;
+  resize: vertical;
+}
+.sg-select { appearance: none; cursor: pointer; padding-inline-end: var(--cc-sp-10); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394A3B8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: left 10px center; }
+
+.sg-input:focus,
+.sg-select:focus,
+.sg-textarea:focus {
+  background:   var(--cc-input-bg-focus);
+  border-color: var(--cc-brand);
+  box-shadow:   var(--cc-input-ring);
+}
+.sg-input::placeholder { color: var(--cc-text-mute); font-style: italic; }
+
+.sg-hint {
+  font-size:   var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-medium);
+  color:       var(--cc-text-mute);
+  line-height: var(--cc-lh-default);
+}
+
+/* ── رفع الصورة (شعار) ───────────────────────────────── */
+.sg-logo-upload {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-8);
+  padding:       var(--cc-sp-7);
+  border:        1px dashed var(--cc-border-2);
+  border-radius: var(--cc-r-lg);
+  background:    var(--cc-tint-bg);
+}
+.sg-logo-preview {
+  width: 60px; height: 60px;
+  border-radius: var(--cc-r-lg);
+  background: var(--hb-bg);
+  border: 1px solid var(--cc-border);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--cc-text-mute);
+  font-size: 20px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.sg-logo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.sg-logo-meta { flex: 1; }
+.sg-logo-title { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); margin-block-end: var(--cc-sp-2); }
+.sg-logo-hint { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-4); }
+
+/* ── divider داخل الكارد ─────────────────────────────── */
+.sg-divider {
+  height: 1px;
+  background: var(--cc-border);
+  margin: var(--cc-sp-8) 0;
+}
+
+/* ── اختبار البريد ───────────────────────────────────── */
+.sg-test-row {
+  display:       flex;
+  align-items:   flex-end;
+  gap:           var(--cc-sp-6);
+  padding:       var(--cc-sp-7);
+  background:    var(--cc-tint-bg);
+  border-radius: var(--cc-r-lg);
+  border:        1px solid var(--cc-border);
+  margin-block-start: var(--cc-sp-8);
+}
+.sg-test-row .sg-field { flex: 1; margin: 0; }
+
+/* ── أزرار الحفظ ─────────────────────────────────────── */
+.sg-foot {
+  display:    flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap:        var(--cc-sp-6);
+  padding-block-start: var(--cc-sp-8);
+  border-block-start:  1px solid var(--cc-border);
+  margin-block-start:  var(--cc-sp-4);
+}
+
+.sg-btn-primary {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background:    var(--cc-btn-primary-bg);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body);
+  font-weight:   var(--cc-fw-bold);
+  border:        none;
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.sg-btn-primary:hover {
+  background:  var(--cc-btn-primary-hover);
+  box-shadow:  var(--cc-sh-glow);
+}
+
+.sg-btn-secondary {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background:    var(--cc-brand-softer);
+  color:         var(--cc-brand);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body);
+  font-weight:   var(--cc-fw-bold);
+  border:        1px solid var(--cc-border-2);
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast);
+}
+.sg-btn-secondary:hover { background: var(--cc-brand-soft2); }
+
+/* ── بوابات الدفع chips ──────────────────────────────── */
+.sg-gateway-grid {
+  display:    grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap:        var(--cc-sp-5);
+  margin-block-end: var(--cc-sp-6);
+}
+.sg-gateway-chip {
+  display:       flex;
+  flex-direction: column;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  padding:       var(--cc-sp-6) var(--cc-sp-5);
+  border-radius: var(--cc-r-lg);
+  border:        2px solid var(--cc-border);
+  background:    var(--cc-card-bg);
+  cursor:        pointer;
+  transition:    border-color var(--cc-anim-fast), background var(--cc-anim-fast);
+  position:      relative;
+}
+.sg-gateway-chip input[type="checkbox"] {
+  position: absolute;
+  inset-inline-end: 8px;
+  inset-block-start: 8px;
+  width: 16px; height: 16px;
+  accent-color: var(--cc-brand);
+}
+.sg-gateway-chip:has(input:checked) {
+  border-color: var(--cc-brand);
+  background:   var(--cc-brand-softer);
+}
+.sg-gateway-icon {
+  width:  40px; height: 40px;
+  border-radius: var(--cc-r-lg);
+  background: var(--tile-blue-bg);
+  color:      var(--tile-blue-fg);
+  display:    flex; align-items: center; justify-content: center;
+  font-size:  18px;
+}
+.sg-gateway-name {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color:       var(--cc-text);
+  text-align:  center;
+}
+
+/* ── شريط حالة SMTP ──────────────────────────────────── */
+.sg-smtp-status {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  padding:       var(--cc-sp-5) var(--cc-sp-6);
+  border-radius: var(--cc-r-lg);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  margin-block-end: var(--cc-sp-8);
+}
+.sg-smtp-status.is-ok {
+  background: var(--tile-green-bg);
+  color:      var(--tile-green-fg);
+  border:     1px solid #b6e8cc;
+}
+.sg-smtp-status.is-warn {
+  background: var(--tile-amber-bg);
+  color:      var(--tile-amber-fg);
+  border:     1px solid #f5dfa5;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ─────────────────────────────────────────────────────────── #}
+<div class="sg-hero">
+  <div class="sg-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-sliders"></i>
+  </div>
+  <div>
+    <div class="sg-hero-title">الإعدادات العامة</div>
+    <div class="sg-hero-sub">تحكّم في هوية الموقع وطرق الدفع وإعدادات البريد — كل تغيير يُحفظ فوراً</div>
+  </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   شريط التبويبات
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tabs" role="tablist" aria-label="أقسام الإعدادات">
+  <button class="cc-tab-btn" role="tab" data-tab="site"
+          aria-controls="tab-site" id="tab-btn-site">
+    <i class="fa-solid fa-globe" aria-hidden="true"></i> معلومات الموقع
+  </button>
+  <button class="cc-tab-btn" role="tab" data-tab="payments"
+          aria-controls="tab-payments" id="tab-btn-payments">
+    <i class="fa-solid fa-credit-card" aria-hidden="true"></i> المدفوعات
+  </button>
+  <button class="cc-tab-btn" role="tab" data-tab="email"
+          aria-controls="tab-email" id="tab-btn-email">
+    <i class="fa-solid fa-envelope" aria-hidden="true"></i> البريد الإلكتروني
+  </button>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   القسم 1 — معلومات الموقع
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-site" role="tabpanel" aria-labelledby="tab-btn-site">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" aria-hidden="true">
+      <i class="fa-solid fa-globe"></i>
+    </span>
+    <span class="sg-card-head-title">معلومات الموقع</span>
+    <span class="sg-card-head-sub">تظهر في العنوان وفي رسائل التواصل مع العملاء</span>
+  </div>
+  <div class="sg-card-body">
+    <form method="post" action="#" enctype="multipart/form-data">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="site_info">
+
+      {# الشعار #}
+      <div class="sg-logo-upload" style="margin-block-end:var(--cc-sp-8)">
+        <div class="sg-logo-preview" id="sg-logo-preview">
+          {% if settings.get('site_logo') %}
+            <img src="{{ settings.site_logo }}" alt="شعار الموقع">
+          {% else %}
+            <i class="fa-solid fa-image"></i>
+          {% endif %}
+        </div>
+        <div class="sg-logo-meta">
+          <div class="sg-logo-title">شعار الموقع</div>
+          <div class="sg-logo-hint">PNG أو SVG، عرض مقترح 200×60 بكسل، حجم أقصى 500 كيلوبايت</div>
+          <label class="sg-btn-secondary" style="cursor:pointer">
+            <i class="fa-solid fa-upload"></i> اختر ملف
+            <input type="file" name="site_logo" accept="image/*" style="display:none"
+                   onchange="
+                     var f=this.files[0];
+                     if(f){
+                       var r=new FileReader();
+                       r.onload=function(e){
+                         var p=document.getElementById('sg-logo-preview');
+                         p.innerHTML='<img src='+e.target.result+' alt=شعار>';
+                       };r.readAsDataURL(f);
+                     }">
+          </label>
+        </div>
+      </div>
+
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="sg-site-name">
+            اسم الموقع <span class="sg-req">*</span>
+          </label>
+          <input class="sg-input" id="sg-site-name" name="site_name" type="text"
+                 value="{{ settings.get('site_name', '') }}"
+                 placeholder="مثال: HobeRadius ISP">
+          <div class="sg-hint">الاسم الذي يظهر في تبويب المتصفح وفي رأس الرسائل المرسلة للعملاء.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-site-tagline">الشعار الفرعي</label>
+          <input class="sg-input" id="sg-site-tagline" name="site_tagline" type="text"
+                 value="{{ settings.get('site_tagline', '') }}"
+                 placeholder="مثال: خدمة إنترنت موثوقة">
+          <div class="sg-hint">جملة قصيرة تظهر أسفل الاسم في صفحة تسجيل الدخول.</div>
+        </div>
+
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-site-address">عنوان المكتب / الشركة</label>
+          <input class="sg-input" id="sg-site-address" name="site_address" type="text"
+                 value="{{ settings.get('site_address', '') }}"
+                 placeholder="مثال: رام الله، شارع الإرسال، بناية 12">
+          <div class="sg-hint">يُستخدم في تذييل الفواتير والرسائل الرسمية.</div>
+        </div>
+      </div>
+
+      <div class="sg-divider"></div>
+
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="sg-support-email">بريد الدعم <span class="sg-req">*</span></label>
+          <input class="sg-input" id="sg-support-email" name="support_email" type="email"
+                 value="{{ settings.get('support_email', '') }}"
+                 placeholder="support@example.com" dir="ltr">
+          <div class="sg-hint">يظهر في رسائل الترحيب والفواتير ليتواصل معك العملاء مباشرة.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-support-phone">هاتف الدعم</label>
+          <input class="sg-input" id="sg-support-phone" name="support_phone" type="tel"
+                 value="{{ settings.get('support_phone', '') }}"
+                 placeholder="0599123456" dir="ltr">
+          <div class="sg-hint">رقم واتساب أو هاتف للتواصل السريع. يظهر في نهاية الرسائل.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-site-url">رابط الموقع الرئيسي</label>
+          <input class="sg-input" id="sg-site-url" name="site_url" type="url"
+                 value="{{ settings.get('site_url', '') }}"
+                 placeholder="https://example.com" dir="ltr">
+          <div class="sg-hint">يُضمَّن في الروابط التي تُرسل للعملاء (تجديد الباقة، استعادة كلمة المرور).</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-site-timezone">المنطقة الزمنية</label>
+          <select class="sg-select" id="sg-site-timezone" name="timezone">
+            <option value="Asia/Jerusalem" {% if settings.get('timezone','Asia/Jerusalem')=='Asia/Jerusalem' %}selected{% endif %}>Asia/Jerusalem (فلسطين)</option>
+            <option value="Asia/Riyadh" {% if settings.get('timezone')=='Asia/Riyadh' %}selected{% endif %}>Asia/Riyadh (السعودية)</option>
+            <option value="Asia/Dubai" {% if settings.get('timezone')=='Asia/Dubai' %}selected{% endif %}>Asia/Dubai (الإمارات)</option>
+            <option value="Africa/Cairo" {% if settings.get('timezone')=='Africa/Cairo' %}selected{% endif %}>Africa/Cairo (مصر)</option>
+            <option value="UTC" {% if settings.get('timezone')=='UTC' %}selected{% endif %}>UTC</option>
+          </select>
+          <div class="sg-hint">تؤثر على توقيت جميع الإشعارات والسجلات المعروضة في اللوحة.</div>
+        </div>
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ معلومات الموقع
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+</div>{# /cc-tab-pane#site #}
+
+{# ════════════════════════════════════════════════════════════════════
+   القسم 2 — إعدادات الدفع
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-payments" role="tabpanel" aria-labelledby="tab-btn-payments">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-teal-bg);color:var(--tile-teal-fg)" aria-hidden="true">
+      <i class="fa-solid fa-money-bill-wave"></i>
+    </span>
+    <span class="sg-card-head-title">إعدادات الدفع</span>
+    <span class="sg-card-head-sub">العملة، بوابات الدفع المفعّلة، والرسوم الإضافية</span>
+  </div>
+  <div class="sg-card-body">
+    <form method="post" action="#">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="payment">
+
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="sg-currency">العملة الافتراضية <span class="sg-req">*</span></label>
+          <select class="sg-select" id="sg-currency" name="default_currency">
+            <option value="ILS" {% if settings.get('default_currency','ILS')=='ILS' %}selected{% endif %}>₪ شيكل (ILS)</option>
+            <option value="USD" {% if settings.get('default_currency')=='USD' %}selected{% endif %}>$ دولار أمريكي (USD)</option>
+            <option value="JOD" {% if settings.get('default_currency')=='JOD' %}selected{% endif %}>د.أ دينار أردني (JOD)</option>
+            <option value="SAR" {% if settings.get('default_currency')=='SAR' %}selected{% endif %}>ر.س ريال سعودي (SAR)</option>
+            <option value="AED" {% if settings.get('default_currency')=='AED' %}selected{% endif %}>د.إ درهم إماراتي (AED)</option>
+          </select>
+          <div class="sg-hint">العملة المعروضة في الفواتير والخطط. تغييرها لا يحوّل الأسعار القديمة تلقائياً.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-tax-rate">نسبة الضريبة (%)</label>
+          <input class="sg-input" id="sg-tax-rate" name="tax_rate" type="number"
+                 min="0" max="100" step="0.1"
+                 value="{{ settings.get('tax_rate', '0') }}"
+                 placeholder="0" dir="ltr">
+          <div class="sg-hint">اتركها صفراً إن لم تكن مطلوبة. تُضاف تلقائياً على أسعار الخطط في الفاتورة.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-grace-days">أيام السماح بعد الانتهاء</label>
+          <input class="sg-input" id="sg-grace-days" name="grace_days" type="number"
+                 min="0" max="30"
+                 value="{{ settings.get('grace_days', '3') }}"
+                 placeholder="3" dir="ltr">
+          <div class="sg-hint">عدد الأيام التي يبقى فيها الاشتراك نشطاً بعد انتهاء الباقة قبل القطع. مفيد لمنح وقت للتجديد.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-invoice-prefix">بادئة رقم الفاتورة</label>
+          <input class="sg-input" id="sg-invoice-prefix" name="invoice_prefix" type="text"
+                 value="{{ settings.get('invoice_prefix', 'INV') }}"
+                 placeholder="INV" dir="ltr">
+          <div class="sg-hint">تُضاف أمام رقم الفاتورة التسلسلي. مثلاً: INV-0042.</div>
+        </div>
+      </div>
+
+      <div class="sg-divider"></div>
+
+      <div style="margin-block-end:var(--cc-sp-5)">
+        <div class="sg-label" style="margin-block-end:var(--cc-sp-5)">بوابات الدفع المفعّلة</div>
+        <div class="sg-hint" style="margin-block-end:var(--cc-sp-7)">
+          اختر البوابات التي يمكن للعملاء استخدامها لسداد الاشتراكات. يجب ضبط مفاتيح كل بوابة في متغيرات البيئة.
+        </div>
+        <div class="sg-gateway-grid">
+          <label class="sg-gateway-chip">
+            <input type="checkbox" name="gateway_cash" value="1"
+                   {% if settings.get('gateway_cash') %}checked{% endif %}>
+            <div class="sg-gateway-icon" style="background:var(--tile-green-bg);color:var(--tile-green-fg)">
+              <i class="fa-solid fa-money-bills"></i>
+            </div>
+            <span class="sg-gateway-name">نقداً</span>
+          </label>
+          <label class="sg-gateway-chip">
+            <input type="checkbox" name="gateway_bank" value="1"
+                   {% if settings.get('gateway_bank') %}checked{% endif %}>
+            <div class="sg-gateway-icon">
+              <i class="fa-solid fa-building-columns"></i>
+            </div>
+            <span class="sg-gateway-name">تحويل بنكي</span>
+          </label>
+          <label class="sg-gateway-chip">
+            <input type="checkbox" name="gateway_stripe" value="1"
+                   {% if settings.get('gateway_stripe') %}checked{% endif %}>
+            <div class="sg-gateway-icon" style="background:var(--tile-purple-bg);color:var(--tile-purple-fg)">
+              <i class="fa-brands fa-stripe-s"></i>
+            </div>
+            <span class="sg-gateway-name">Stripe</span>
+          </label>
+          <label class="sg-gateway-chip">
+            <input type="checkbox" name="gateway_paypal" value="1"
+                   {% if settings.get('gateway_paypal') %}checked{% endif %}>
+            <div class="sg-gateway-icon" style="background:var(--tile-cyan-bg);color:var(--tile-cyan-fg)">
+              <i class="fa-brands fa-paypal"></i>
+            </div>
+            <span class="sg-gateway-name">PayPal</span>
+          </label>
+          <label class="sg-gateway-chip">
+            <input type="checkbox" name="gateway_whatsapp" value="1"
+                   {% if settings.get('gateway_whatsapp') %}checked{% endif %}>
+            <div class="sg-gateway-icon" style="background:var(--tile-green-bg);color:var(--tile-green-fg)">
+              <i class="fa-brands fa-whatsapp"></i>
+            </div>
+            <span class="sg-gateway-name">عبر واتساب</span>
+          </label>
+        </div>
+        <div class="sg-hint">بوابات بحاجة لمفاتيح API في بيئة الخادم: Stripe وPayPal. النقد والتحويل يُؤكَّدان يدوياً من لوحة التحكم.</div>
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ إعدادات الدفع
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+</div>{# /cc-tab-pane#payments #}
+
+{# ════════════════════════════════════════════════════════════════════
+   القسم 3 — إعدادات البريد الإلكتروني (SMTP)
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-email" role="tabpanel" aria-labelledby="tab-btn-email">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-blue-bg);color:var(--tile-blue-fg)" aria-hidden="true">
+      <i class="fa-solid fa-envelope"></i>
+    </span>
+    <span class="sg-card-head-title">إعدادات البريد الإلكتروني</span>
+    <span class="sg-card-head-sub">خادم SMTP وقالب الرسائل</span>
+  </div>
+  <div class="sg-card-body">
+    <form method="post" action="#">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="email">
+
+      {# حالة SMTP #}
+      <div class="sg-smtp-status {% if settings.get('smtp_configured') %}is-ok{% else %}is-warn{% endif %}"
+           style="margin-block-end:var(--cc-sp-8)">
+        <i class="fa-solid {% if settings.get('smtp_configured') %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+        {% if settings.get('smtp_configured') %}
+          البريد مضبوط ويعمل — آخر إرسال ناجح كان {{ settings.get('last_mail_at', 'غير معروف') }}
+        {% else %}
+          البريد غير مضبوط بعد — الرسائل التلقائية (تجديد، انتهاء، ترحيب) لن تُرسَل حتى تُكمل الإعداد
+        {% endif %}
+      </div>
+
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="sg-smtp-host">خادم SMTP <span class="sg-req">*</span></label>
+          <input class="sg-input" id="sg-smtp-host" name="smtp_host" type="text"
+                 value="{{ settings.get('smtp_host', '') }}"
+                 placeholder="smtp.gmail.com" dir="ltr">
+          <div class="sg-hint">عنوان خادم البريد. لجيميل: smtp.gmail.com — لأوتلوك: smtp.office365.com.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-smtp-port">المنفذ (Port)</label>
+          <input class="sg-input" id="sg-smtp-port" name="smtp_port" type="number"
+                 value="{{ settings.get('smtp_port', '587') }}"
+                 placeholder="587" dir="ltr">
+          <div class="sg-hint">587 للتشفير STARTTLS (الأكثر شيوعاً) — 465 لـ SSL/TLS — 25 بدون تشفير (لا يُنصح).</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-smtp-user">اسم المستخدم / البريد</label>
+          <input class="sg-input" id="sg-smtp-user" name="smtp_username" type="email"
+                 value="{{ settings.get('smtp_username', '') }}"
+                 placeholder="noreply@example.com" dir="ltr">
+          <div class="sg-hint">البريد الذي يستخدمه الخادم للمصادقة. عادةً هو نفس عنوان المُرسِل.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-smtp-pass">كلمة المرور</label>
+          <input class="sg-input" id="sg-smtp-pass" name="smtp_password" type="password"
+                 autocomplete="new-password"
+                 placeholder="{{ 'محفوظة — اتركها فارغة للإبقاء' if settings.get('smtp_password') else 'أدخل كلمة مرور SMTP' }}"
+                 dir="ltr">
+          <div class="sg-hint">
+            {% if settings.get('smtp_password') %}
+              محفوظة مشفّرة. اتركها فارغة إن لم ترد تغييرها.
+            {% else %}
+              لجيميل استخدم "App Password" وليس كلمة المرور الأصلية لحسابك.
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-from-name">اسم المُرسِل</label>
+          <input class="sg-input" id="sg-from-name" name="from_name" type="text"
+                 value="{{ settings.get('from_name', '') }}"
+                 placeholder="فريق HobeRadius">
+          <div class="sg-hint">الاسم الذي يراه العميل في صندوق الوارد. مثلاً: «فريق الدعم» أو اسم شركتك.</div>
+        </div>
+
+        <div class="sg-field">
+          <label class="sg-label" for="sg-from-email">البريد الظاهر كمُرسِل</label>
+          <input class="sg-input" id="sg-from-email" name="from_email" type="email"
+                 value="{{ settings.get('from_email', '') }}"
+                 placeholder="noreply@example.com" dir="ltr">
+          <div class="sg-hint">قد يختلف عن بريد المصادقة. يجب أن يكون مرخصاً في نطاقك لتجنب الوقوع في البريد المزعج.</div>
+        </div>
+      </div>
+
+      <div class="sg-divider"></div>
+
+      {# قالب الرسائل #}
+      <div class="sg-label" style="margin-block-end:var(--cc-sp-4)">قالب توقيع الرسائل</div>
+      <div class="sg-hint" style="margin-block-end:var(--cc-sp-5)">يُضاف في نهاية كل رسالة. يمكن استخدام HTML بسيط. المتغيرات المتاحة: <code dir="ltr">{{customer_name}}</code>, <code dir="ltr">{{support_email}}</code></div>
+      <div class="sg-field is-full" style="margin-block-end:var(--cc-sp-8)">
+        <textarea class="sg-textarea" name="email_signature" rows="4"
+                  placeholder="مع تحيات فريق الدعم&#10;للتواصل: support@example.com">{{ settings.get('email_signature', '') }}</textarea>
+      </div>
+
+      {# اختبار الإرسال #}
+      <div class="sg-test-row">
+        <div class="sg-field">
+          <label class="sg-label" for="sg-test-email">اختبار الإرسال</label>
+          <input class="sg-input" id="sg-test-email" name="test_recipient" type="email"
+                 placeholder="your@email.com" dir="ltr">
+          <div class="sg-hint">سيُرسَل بريد تجريبي للتأكد من صحة الإعداد.</div>
+        </div>
+        <button class="sg-btn-secondary" type="button"
+                onclick="this.form.elements['_test'].value='1'; this.form.submit()">
+          <i class="fa-solid fa-paper-plane"></i> إرسال تجريبي
+        </button>
+        <input type="hidden" name="_test" value="0">
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ إعدادات البريد
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+</div>{# /cc-tab-pane#email #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var TABS    = ['site', 'payments', 'email'];
+  var DEFAULT = 'site';
+
+  function activateTab(id) {
+    if (TABS.indexOf(id) === -1) id = DEFAULT;
+
+    TABS.forEach(function (t) {
+      var btn  = document.getElementById('tab-btn-' + t);
+      var pane = document.getElementById('tab-' + t);
+      var active = (t === id);
+      if (btn)  { btn.classList.toggle('active', active); btn.setAttribute('aria-selected', active); }
+      if (pane) { pane.classList.toggle('active', active); }
+    });
+
+    /* حفظ في URL hash بدون scroll */
+    try {
+      history.replaceState(null, '', '#' + id);
+    } catch (_) {}
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    /* قراءة التبويب من hash أو الافتراضي */
+    var hash = (window.location.hash || '').replace('#', '');
+    activateTab(hash || DEFAULT);
+
+    /* ربط أزرار التبويبات */
+    TABS.forEach(function (t) {
+      var btn = document.getElementById('tab-btn-' + t);
+      if (btn) {
+        btn.addEventListener('click', function () { activateTab(t); });
+      }
+    });
+
+    /* دعم زر الرجوع للمتصفح */
+    window.addEventListener('hashchange', function () {
+      var h = (window.location.hash || '').replace('#', '');
+      activateTab(h || DEFAULT);
+    });
+  });
+}());
+</script>
+{% endblock %}

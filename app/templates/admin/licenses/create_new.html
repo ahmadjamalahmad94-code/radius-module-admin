@@ -1,0 +1,1002 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}ترخيص جديد{% endblock %}
+{% block page_title %}ترخيص جديد{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ============================================================
+   licenses/create_new.html — معالج إنشاء الترخيص (3 خطوات)
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================ */
+
+.lcr-page {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-gap-section);
+  max-width:      860px;
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.lcr-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-9);
+  overflow:      hidden;
+  position:      relative;
+}
+.lcr-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-start: -60px;
+  inset-block-start:  -60px;
+  width:     200px;
+  height:    200px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.lcr-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+.lcr-hero-title {
+  font-size:        var(--cc-fs-h1);
+  font-weight:      var(--cc-fw-display);
+  margin-block-end: var(--cc-sp-2);
+}
+.lcr-hero-sub {
+  font-size:   var(--cc-fs-body-s);
+  opacity:     0.85;
+}
+
+/* ── شريط خطوات التقدم ───────────────────────────────────── */
+.lcr-stepper {
+  display:         flex;
+  align-items:     center;
+  gap:             0;
+  background:      var(--cc-card-bg);
+  border:          1px solid var(--cc-border);
+  border-radius:   var(--cc-r-card);
+  box-shadow:      var(--cc-sh-card);
+  padding:         var(--cc-sp-7) var(--cc-sp-9);
+  overflow-x:      auto;
+}
+
+.lcr-step {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-4);
+  flex:        1;
+  min-width:   160px;
+}
+
+.lcr-step-connector {
+  flex:         1;
+  height:       2px;
+  background:   var(--cc-border-2);
+  transition:   background var(--cc-anim-med);
+}
+.lcr-step-connector.is-done { background: var(--cc-brand); }
+
+.lcr-step-num {
+  width:         34px;
+  height:        34px;
+  border-radius: 50%;
+  border:        2px solid var(--cc-border-2);
+  background:    var(--hb-bg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-display);
+  color:         var(--cc-text-mute);
+  flex-shrink:   0;
+  transition:    var(--cc-tr-fast);
+}
+.lcr-step.is-active .lcr-step-num {
+  background:   var(--cc-brand);
+  border-color: var(--cc-brand);
+  color:        #fff;
+  box-shadow:   var(--cc-sh-glow);
+}
+.lcr-step.is-done .lcr-step-num {
+  background:   var(--tile-green-bg);
+  border-color: var(--hb-green);
+  color:        var(--tile-green-fg);
+}
+
+.lcr-step-body {}
+.lcr-step-label {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-mute);
+}
+.lcr-step.is-active .lcr-step-label { color: var(--cc-brand); }
+.lcr-step.is-done .lcr-step-label   { color: var(--tile-green-fg); }
+.lcr-step-hint {
+  font-size: var(--cc-fs-tiny);
+  color:     var(--cc-text-faint);
+  margin-top: 2px;
+}
+
+/* ── بطاقة الخطوة ────────────────────────────────────────── */
+.lcr-card {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  overflow:      hidden;
+}
+.lcr-card-head {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-7) var(--cc-sp-9);
+  border-block-end: 1px solid var(--cc-border);
+  background:       var(--hb-bg);
+}
+.lcr-card-icon {
+  width:         34px;
+  height:        34px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     14px;
+  flex-shrink:   0;
+}
+.lcr-card-title {
+  font-size:   var(--cc-fs-h3);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+  flex:        1;
+}
+.lcr-card-body {
+  padding: var(--cc-sp-9) var(--cc-sp-10);
+}
+
+/* ── حقول النموذج ────────────────────────────────────────── */
+.lcr-form-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+.lcr-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-sp-2);
+}
+.lcr-field.full { grid-column: 1 / -1; }
+.lcr-label {
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-soft);
+}
+.lcr-req { color: var(--hb-red); margin-inline-start: 2px; }
+.lcr-input {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  outline:       none;
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast), background var(--cc-anim-fast);
+}
+.lcr-input:focus {
+  border-color: var(--cc-brand);
+  background:   var(--cc-input-bg-focus);
+  box-shadow:   var(--cc-input-ring);
+}
+.lcr-select {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  outline:       none;
+  cursor:        pointer;
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.lcr-select:focus {
+  border-color: var(--cc-brand);
+  box-shadow:   var(--cc-input-ring);
+}
+.lcr-hint {
+  font-size:  var(--cc-fs-tiny);
+  color:      var(--cc-text-mute);
+  line-height: 1.5;
+}
+
+/* ── كاردز اختيار الباقة ─────────────────────────────────── */
+.lcr-plans-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  margin-top:            var(--cc-sp-7);
+}
+
+.lcr-plan-card {
+  position:      relative;
+  border:        2px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  background:    var(--hb-bg);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  cursor:        pointer;
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast), background var(--cc-anim-fast);
+}
+.lcr-plan-card:hover {
+  border-color: var(--cc-brand-3);
+  background:   var(--cc-card-bg);
+  box-shadow:   var(--cc-sh-card);
+}
+.lcr-plan-card input[type="radio"] {
+  position: absolute;
+  opacity:  0;
+  width:    0;
+  height:   0;
+}
+.lcr-plan-card.is-selected {
+  border-color: var(--cc-brand);
+  background:   var(--cc-card-bg);
+  box-shadow:   var(--cc-sh-glow);
+}
+.lcr-plan-check {
+  position:      absolute;
+  inset-inline-start: var(--cc-sp-5);
+  inset-block-start:  var(--cc-sp-5);
+  width:         20px;
+  height:        20px;
+  border-radius: 50%;
+  border:        2px solid var(--cc-border-2);
+  background:    var(--cc-card-bg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     10px;
+  color:         #fff;
+  transition:    var(--cc-tr-fast);
+}
+.lcr-plan-card.is-selected .lcr-plan-check {
+  background:   var(--cc-brand);
+  border-color: var(--cc-brand);
+}
+.lcr-plan-name {
+  font-size:        var(--cc-fs-body-s);
+  font-weight:      var(--cc-fw-display);
+  color:            var(--cc-text);
+  margin-block-end: var(--cc-sp-2);
+  padding-inline-start: var(--cc-sp-8);
+}
+.lcr-plan-price {
+  font-size:        var(--cc-fs-h2);
+  font-weight:      var(--cc-fw-display);
+  color:            var(--cc-brand);
+  margin-block-end: var(--cc-sp-5);
+}
+.lcr-plan-price span {
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-medium);
+  color:       var(--cc-text-mute);
+}
+.lcr-plan-features {
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-sp-3);
+}
+.lcr-plan-features li {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-3);
+  font-size:   var(--cc-fs-small);
+  color:       var(--cc-text-soft);
+}
+.lcr-plan-features li i {
+  color:     var(--hb-green);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* ── مبدّلات الخدمات الاختيارية ─────────────────────────── */
+.lcr-toggle-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-sp-4);
+}
+.lcr-toggle-row {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-5);
+  padding:       var(--cc-sp-5) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  border:        1px solid var(--cc-border);
+  background:    var(--hb-bg);
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast);
+}
+.lcr-toggle-row:hover { background: var(--cc-card-bg); }
+.lcr-toggle-icon {
+  width:         32px;
+  height:        32px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     13px;
+  flex-shrink:   0;
+}
+.lcr-toggle-body { flex: 1; }
+.lcr-toggle-name {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.lcr-toggle-hint {
+  font-size:  var(--cc-fs-tiny);
+  color:      var(--cc-text-mute);
+  margin-top: 2px;
+}
+.lcr-switch {
+  width:         42px;
+  height:        24px;
+  border-radius: var(--cc-r-pill);
+  background:    var(--cc-border-2);
+  position:      relative;
+  flex-shrink:   0;
+  transition:    background var(--cc-anim-fast);
+  cursor:        pointer;
+}
+.lcr-switch::after {
+  content:       '';
+  position:      absolute;
+  top:           3px;
+  inset-inline-end: 3px;
+  width:         18px;
+  height:        18px;
+  border-radius: 50%;
+  background:    #fff;
+  box-shadow:    0 1px 3px rgba(0,0,0,.15);
+  transition:    inset-inline-end var(--cc-anim-fast);
+}
+.lcr-toggle-row.is-on .lcr-switch {
+  background: var(--cc-brand);
+}
+.lcr-toggle-row.is-on .lcr-switch::after {
+  inset-inline-end: calc(100% - 21px);
+}
+.lcr-toggle-row input[type="checkbox"] {
+  position: absolute;
+  opacity:  0;
+  width:    0;
+  height:   0;
+}
+
+/* ── ملخص المراجعة ────────────────────────────────────────── */
+.lcr-review-box {
+  background:    var(--hb-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  overflow:      hidden;
+}
+.lcr-review-row {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-6);
+  padding:          var(--cc-sp-5) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  font-size:        var(--cc-fs-body-s);
+}
+.lcr-review-row:last-child { border-block-end: none; }
+.lcr-review-label {
+  width:       140px;
+  flex-shrink: 0;
+  color:       var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+}
+.lcr-review-value {
+  color:       var(--cc-text);
+  font-weight: var(--cc-fw-semibold);
+  flex:        1;
+}
+
+/* ── أزرار التنقل ────────────────────────────────────────── */
+.lcr-nav {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-5);
+  flex-wrap:   wrap;
+}
+.lcr-btn {
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-8);
+  border-radius: var(--cc-btn-radius);
+  border:        1px solid transparent;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  cursor:        pointer;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  text-decoration: none;
+  transition:    var(--cc-tr-fast);
+}
+.lcr-btn--primary  { background: var(--cc-btn-primary-bg); color: #fff; }
+.lcr-btn--primary:hover  { background: var(--cc-btn-primary-hover); }
+.lcr-btn--secondary { background: var(--cc-card-bg); border-color: var(--cc-border-2); color: var(--cc-text-soft); }
+.lcr-btn--secondary:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+.lcr-btn--ghost { background: transparent; border-color: transparent; color: var(--cc-text-mute); }
+.lcr-btn--ghost:hover { color: var(--cc-text); }
+.lcr-btn--success { background: var(--hb-green); color: #fff; }
+.lcr-btn--success:hover { background: #18a34a; }
+
+/* ── الخطوة المخفية ──────────────────────────────────────── */
+.lcr-step-panel { display: none; }
+.lcr-step-panel.is-active { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lcr-page">
+
+  {# ── Hero ─────────────────────────────────────────────────────────── #}
+  <div class="lcr-hero">
+    <div class="lcr-hero-icon" aria-hidden="true">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+    </div>
+    <div>
+      <div class="lcr-hero-title">إنشاء ترخيص جديد</div>
+      <div class="lcr-hero-sub">
+        اختر العميل والباقة، حدد المدة والخدمات، ثم راجع التفاصيل قبل الحفظ.
+        مفتاح الترخيص يُولَّد تلقائياً بصيغة آمنة عند الحفظ.
+      </div>
+    </div>
+  </div>
+
+  {# ── شريط الخطوات ─────────────────────────────────────────────────── #}
+  <div class="lcr-stepper" aria-label="خطوات إنشاء الترخيص" role="list">
+
+    <div class="lcr-step is-active" id="st1" role="listitem">
+      <div class="lcr-step-num" aria-label="الخطوة 1">
+        <span class="st1-num">1</span>
+        <i class="fa-solid fa-check st1-check" style="display:none;" aria-hidden="true"></i>
+      </div>
+      <div class="lcr-step-body">
+        <div class="lcr-step-label">العميل والباقة</div>
+        <div class="lcr-step-hint">اختر من بين العملاء والباقات المتاحة</div>
+      </div>
+    </div>
+
+    <div class="lcr-step-connector" id="conn1"></div>
+
+    <div class="lcr-step" id="st2" role="listitem">
+      <div class="lcr-step-num" aria-label="الخطوة 2">
+        <span class="st2-num">2</span>
+        <i class="fa-solid fa-check st2-check" style="display:none;" aria-hidden="true"></i>
+      </div>
+      <div class="lcr-step-body">
+        <div class="lcr-step-label">المدة والخدمات</div>
+        <div class="lcr-step-hint">حدد تاريخ الانتهاء والخدمات الإضافية</div>
+      </div>
+    </div>
+
+    <div class="lcr-step-connector" id="conn2"></div>
+
+    <div class="lcr-step" id="st3" role="listitem">
+      <div class="lcr-step-num" aria-label="الخطوة 3">
+        <span class="st3-num">3</span>
+      </div>
+      <div class="lcr-step-body">
+        <div class="lcr-step-label">مراجعة وتأكيد</div>
+        <div class="lcr-step-hint">راجع كل التفاصيل قبل الحفظ</div>
+      </div>
+    </div>
+
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     نموذج متعدد الخطوات
+     ══════════════════════════════════════════════════════════════════════ #}
+  <form method="post" id="lcr-form" novalidate>
+    {{ csrf_input() }}
+
+    {# ══════════════════════
+       الخطوة 1: العميل + الباقة
+       ══════════════════════ #}
+    <div class="lcr-step-panel is-active" id="panel1">
+
+      {# اختيار العميل #}
+      <div class="lcr-card" style="margin-block-end: var(--cc-gap-inline);">
+        <div class="lcr-card-head">
+          <div class="lcr-card-icon"><i class="fa-solid fa-building" aria-hidden="true"></i></div>
+          <div class="lcr-card-title">اختيار العميل</div>
+        </div>
+        <div class="lcr-card-body">
+          <div class="lcr-form-grid">
+
+            <div class="lcr-field full">
+              <label class="lcr-label" for="customer_id">
+                العميل <span class="lcr-req" aria-hidden="true">*</span>
+              </label>
+              <select class="lcr-select" id="customer_id" name="customer_id" required
+                      aria-required="true" aria-describedby="customer_id-hint">
+                <option value="">— اختر شركة العميل —</option>
+                {% for customer in customers %}
+                  <option value="{{ customer.id }}">{{ customer.company_name }}</option>
+                {% endfor %}
+              </select>
+              <div class="lcr-hint" id="customer_id-hint">
+                اختر الشركة أو المؤسسة التي ستستخدم هذا الترخيص.
+                كل ترخيص مرتبط بعميل واحد فقط.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {# اختيار الباقة #}
+      <div class="lcr-card">
+        <div class="lcr-card-head">
+          <div class="lcr-card-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></div>
+          <div class="lcr-card-title">اختيار الباقة</div>
+        </div>
+        <div class="lcr-card-body">
+          <p class="lcr-hint" style="margin-block-end: var(--cc-sp-3);">
+            الباقة تحدد الحدود والخدمات المتاحة للعميل. انقر على الباقة التي تريدها.
+          </p>
+
+          <div class="lcr-plans-grid" role="radiogroup" aria-label="اختيار الباقة">
+            {% for plan in plans %}
+            <label class="lcr-plan-card" id="plan-card-{{ plan.id }}" aria-label="{{ plan.name }}">
+              <input type="radio" name="plan_id" value="{{ plan.id }}"
+                     onchange="selectPlan({{ plan.id }})"
+                     {{ 'required' if loop.first }}>
+              <div class="lcr-plan-check" aria-hidden="true">
+                <i class="fa-solid fa-check fa-xs"></i>
+              </div>
+              <div class="lcr-plan-name">{{ plan.name }}</div>
+              <div class="lcr-plan-price">
+                {{ plan.monthly_price | money }} {{ plan.currency }}
+                <span>/ شهر</span>
+              </div>
+              <ul class="lcr-plan-features">
+                <li>
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                  <span>حتى {{ plan.max_users }} مستخدم</span>
+                </li>
+                <li>
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                  <span>{{ plan.max_nas }} جهاز شبكة</span>
+                </li>
+                <li>
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                  <span>{{ plan.max_admins }} حسابات إدارة</span>
+                </li>
+                {% for key, val in plan.features.items() %}
+                  {% if val %}
+                  <li>
+                    <i class="fa-solid fa-check" aria-hidden="true"></i>
+                    <span>
+                      {% if key == 'whatsapp' %}بوابة واتساب
+                      {% elif key == 'backup' %}نسخ احتياطية
+                      {% elif key == 'api_access' %}وصول API
+                      {% elif key == 'reports' %}تقارير متقدمة
+                      {% elif key == 'multi_admin' %}تعدد المدراء
+                      {% elif key == 'sms' %}رسائل SMS
+                      {% else %}{{ key }}{% endif %}
+                    </span>
+                  </li>
+                  {% endif %}
+                {% endfor %}
+              </ul>
+            </label>
+            {% else %}
+            <div style="grid-column:1/-1; text-align:center; padding:var(--cc-sp-10); color:var(--cc-text-mute);">
+              <div style="font-size:28px; margin-block-end:var(--cc-sp-4);opacity:.4;"><i class="fa-solid fa-layer-group"></i></div>
+              <div>لا توجد باقات متاحة — أنشئ باقة أولاً من صفحة إدارة الباقات.</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="lcr-nav" style="margin-top: var(--cc-gap-inline);">
+        <button type="button" class="lcr-btn lcr-btn--primary" onclick="goStep(2)">
+          التالي — المدة والخدمات
+          <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
+        </button>
+        <a class="lcr-btn lcr-btn--ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
+      </div>
+
+    </div>
+
+    {# ══════════════════════
+       الخطوة 2: المدة + الخدمات
+       ══════════════════════ #}
+    <div class="lcr-step-panel" id="panel2">
+
+      {# مدة الترخيص #}
+      <div class="lcr-card" style="margin-block-end: var(--cc-gap-inline);">
+        <div class="lcr-card-head">
+          <div class="lcr-card-icon"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i></div>
+          <div class="lcr-card-title">مدة الترخيص</div>
+        </div>
+        <div class="lcr-card-body">
+          <div class="lcr-form-grid">
+
+            <div class="lcr-field">
+              <label class="lcr-label" for="status">حالة الترخيص عند الإنشاء</label>
+              <select class="lcr-select" id="status" name="status" aria-describedby="status-hint">
+                <option value="active">نشط — يعمل فوراً</option>
+                <option value="trial">تجريبي — للتجربة قبل الالتزام</option>
+                <option value="suspended">موقوف — يُفعَّل لاحقاً يدوياً</option>
+              </select>
+              <div class="lcr-hint" id="status-hint">
+                «نشط» يعني أن العميل يستطيع استخدام النظام مباشرة.
+                «تجريبي» يعطي صلاحية محدودة. «موقوف» يحجب الوصول حتى تفعّله يدوياً.
+              </div>
+            </div>
+
+            <div class="lcr-field">
+              <label class="lcr-label" for="max_fingerprints">أقصى عدد خوادم (بصمات)</label>
+              <input class="lcr-input" id="max_fingerprints" name="max_fingerprints"
+                     type="number" min="1" value="1" aria-describedby="fp-hint">
+              <div class="lcr-hint" id="fp-hint">
+                البصمة هي هوية الخادم الذي يشغّل النظام.
+                معظم العملاء يحتاجون خادماً واحداً فقط.
+              </div>
+            </div>
+
+            <div class="lcr-field">
+              <label class="lcr-label" for="starts_at">تاريخ بداية الترخيص</label>
+              <input class="lcr-input" id="starts_at" name="starts_at"
+                     type="datetime-local"
+                     value="{{ today.strftime('%Y-%m-%dT%H:%M') }}"
+                     aria-describedby="starts-hint">
+              <div class="lcr-hint" id="starts-hint">
+                التاريخ الذي يبدأ فيه العميل الدفع والاستخدام الرسمي.
+              </div>
+            </div>
+
+            <div class="lcr-field">
+              <label class="lcr-label" for="expires_at">تاريخ انتهاء الترخيص</label>
+              <input class="lcr-input" id="expires_at" name="expires_at"
+                     type="datetime-local"
+                     value="{{ (today + timedelta(days=30)).strftime('%Y-%m-%dT%H:%M') }}"
+                     aria-describedby="expires-hint">
+              <div class="lcr-hint" id="expires-hint">
+                بعد هذا التاريخ سيتوقف النظام عن العمل ما لم يُجدَّد.
+              </div>
+            </div>
+
+            <div class="lcr-field">
+              <label class="lcr-label" for="grace_until">مهلة السماح (اختياري)</label>
+              <input class="lcr-input" id="grace_until" name="grace_until"
+                     type="datetime-local"
+                     value="{{ (today + timedelta(days=37)).strftime('%Y-%m-%dT%H:%M') }}"
+                     aria-describedby="grace-hint">
+              <div class="lcr-hint" id="grace-hint">
+                فترة قصيرة بعد الانتهاء يستطيع فيها العميل الدخول بصلاحية محدودة.
+                يساعد في منح وقت كافٍ لإتمام التجديد.
+              </div>
+            </div>
+
+            <div class="lcr-field full">
+              <label class="lcr-label" for="notes">ملاحظات داخلية (اختياري)</label>
+              <textarea class="lcr-input" id="notes" name="notes" rows="3"
+                        style="height:auto; padding-top:var(--cc-sp-4);"
+                        aria-describedby="notes-hint"></textarea>
+              <div class="lcr-hint" id="notes-hint">
+                ملاحظات للمدير فقط — لا تظهر للعميل ولا في عقد الترخيص.
+                مثال: «تجديد سنوي — مدفوع يناير 2026».
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {# الخدمات الإضافية #}
+      <div class="lcr-card">
+        <div class="lcr-card-head">
+          <div class="lcr-card-icon"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i></div>
+          <div class="lcr-card-title">خدمات إضافية اختيارية</div>
+        </div>
+        <div class="lcr-card-body">
+          <p class="lcr-hint" style="margin-block-end:var(--cc-sp-7);">
+            يمكنك تفعيل أو تعطيل خدمات إضافية لهذا الترخيص بصرف النظر عن الباقة الأساسية.
+            انقر على الخدمة لتغيير حالتها.
+          </p>
+          <div class="lcr-toggle-list" role="group" aria-label="الخدمات الإضافية">
+
+            {% set extra_svcs = [
+              ('override_whatsapp',  'fa-brands fa-whatsapp',    'tile-green-bg',  'tile-green-fg',  'تفعيل/تعطيل بوابة واتساب', 'تجاوز إعداد الباقة وتحديد حالة واتساب يدوياً لهذا العميل فقط'),
+              ('override_backup',    'fa-solid fa-database',     'tile-cyan-bg',   'tile-cyan-fg',   'تفعيل/تعطيل النسخ الاحتياطية','تجاوز إعداد الباقة للنسخ الاحتياطية'),
+              ('override_api',       'fa-solid fa-plug',         'tile-blue-bg',   'tile-blue-fg',   'تفعيل/تعطيل وصول API',     'تجاوز إعداد الباقة لصلاحية الـ API'),
+              ('override_reports',   'fa-solid fa-chart-line',   'tile-purple-bg', 'tile-purple-fg', 'تفعيل/تعطيل التقارير المتقدمة','تجاوز إعداد الباقة للتقارير'),
+            ] %}
+
+            {% for key, icon, bg, fg, name, hint in extra_svcs %}
+            <label class="lcr-toggle-row" id="toggle-{{ key }}">
+              <input type="checkbox" name="{{ key }}" value="1" aria-describedby="{{ key }}-hint">
+              <div class="lcr-toggle-icon" style="background:var(--{{ bg }}); color:var(--{{ fg }});" aria-hidden="true">
+                <i class="{{ icon }}"></i>
+              </div>
+              <div class="lcr-toggle-body">
+                <div class="lcr-toggle-name">{{ name }}</div>
+                <div class="lcr-toggle-hint" id="{{ key }}-hint">{{ hint }}</div>
+              </div>
+              <div class="lcr-switch" aria-hidden="true"></div>
+            </label>
+            {% endfor %}
+
+          </div>
+
+          {# حدود مخصصة #}
+          <div style="margin-top: var(--cc-gap-inline); padding-top: var(--cc-gap-inline); border-top: 1px solid var(--cc-border);">
+            <div style="font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-semibold); color:var(--cc-text); margin-block-end:var(--cc-sp-5);">
+              حدود مخصصة (تجاوز حدود الباقة)
+            </div>
+            <div class="lcr-form-grid">
+              <div class="lcr-field">
+                <label class="lcr-label" for="custom_max_users">حد مستخدمين مخصص</label>
+                <input class="lcr-input" id="custom_max_users" name="custom_max_users"
+                       type="number" min="0" placeholder="اتركه فارغاً لاستخدام حد الباقة"
+                       aria-describedby="cmu-hint">
+                <div class="lcr-hint" id="cmu-hint">اتركه فارغاً للاعتماد على الرقم الموجود في الباقة.</div>
+              </div>
+              <div class="lcr-field">
+                <label class="lcr-label" for="custom_max_nas">حد أجهزة شبكة مخصص</label>
+                <input class="lcr-input" id="custom_max_nas" name="custom_max_nas"
+                       type="number" min="0" placeholder="اتركه فارغاً لاستخدام حد الباقة"
+                       aria-describedby="cmn-hint">
+                <div class="lcr-hint" id="cmn-hint">اتركه فارغاً للاعتماد على الرقم الموجود في الباقة.</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="lcr-nav" style="margin-top: var(--cc-gap-inline);">
+        <button type="button" class="lcr-btn lcr-btn--secondary" onclick="goStep(1)">
+          <i class="fa-solid fa-arrow-right fa-xs" aria-hidden="true"></i>
+          السابق
+        </button>
+        <button type="button" class="lcr-btn lcr-btn--primary" onclick="goStep(3)">
+          التالي — مراجعة وتأكيد
+          <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
+        </button>
+      </div>
+
+    </div>
+
+    {# ══════════════════════
+       الخطوة 3: مراجعة وتأكيد
+       ══════════════════════ #}
+    <div class="lcr-step-panel" id="panel3">
+
+      <div class="lcr-card">
+        <div class="lcr-card-head">
+          <div class="lcr-card-icon" style="background:var(--tile-green-bg); color:var(--tile-green-fg);">
+            <i class="fa-solid fa-clipboard-check" aria-hidden="true"></i>
+          </div>
+          <div class="lcr-card-title">مراجعة تفاصيل الترخيص</div>
+        </div>
+        <div class="lcr-card-body">
+
+          <p style="font-size:var(--cc-fs-body-s); color:var(--cc-text-mute); margin-block-end:var(--cc-sp-7);">
+            راجع التفاصيل أدناه جيداً قبل الضغط على «حفظ الترخيص».
+            مفتاح الترخيص سيُولَّد تلقائياً عند الحفظ بصيغة <strong style="color:var(--cc-text);">HBR-XXXX-XXXX-XXXX-XXXX</strong>.
+          </p>
+
+          <div class="lcr-review-box" id="review-box" aria-live="polite">
+
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">العميل</span>
+              <span class="lcr-review-value" id="rev-customer">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">الباقة</span>
+              <span class="lcr-review-value" id="rev-plan">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">الحالة</span>
+              <span class="lcr-review-value" id="rev-status">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">تاريخ البدء</span>
+              <span class="lcr-review-value" id="rev-starts">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">تاريخ الانتهاء</span>
+              <span class="lcr-review-value" id="rev-expires">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">مهلة السماح</span>
+              <span class="lcr-review-value" id="rev-grace">—</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">أقصى بصمات</span>
+              <span class="lcr-review-value" id="rev-fp">1</span>
+            </div>
+            <div class="lcr-review-row">
+              <span class="lcr-review-label">ملاحظات</span>
+              <span class="lcr-review-value" id="rev-notes" style="color:var(--cc-text-mute);">—</span>
+            </div>
+
+          </div>
+
+          <div style="margin-top: var(--cc-gap-inline); padding: var(--cc-sp-6) var(--cc-sp-8); background:var(--tile-green-bg); border-radius:var(--cc-r-lg); display:flex; align-items:flex-start; gap:var(--cc-sp-5);">
+            <i class="fa-solid fa-circle-check" style="color:var(--tile-green-fg); margin-top:2px;" aria-hidden="true"></i>
+            <div>
+              <div style="font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-semibold); color:var(--tile-green-fg);">
+                جاهز للحفظ
+              </div>
+              <div style="font-size:var(--cc-fs-tiny); color:var(--cc-text-soft); margin-top:var(--cc-sp-2);">
+                بمجرد الضغط على «حفظ الترخيص» سيُرسل النموذج وسيُنشأ الترخيص فوراً.
+                يمكنك دائماً التعديل لاحقاً من صفحة تفاصيل الترخيص.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="lcr-nav" style="margin-top: var(--cc-gap-inline);">
+        <button type="button" class="lcr-btn lcr-btn--secondary" onclick="goStep(2)">
+          <i class="fa-solid fa-arrow-right fa-xs" aria-hidden="true"></i>
+          السابق
+        </button>
+        <button type="submit" class="lcr-btn lcr-btn--success">
+          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+          حفظ الترخيص
+        </button>
+        <a class="lcr-btn lcr-btn--ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
+      </div>
+
+    </div>
+
+  </form>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   JS معالج الخطوات
+   ═══════════════════════════════════════════════════════════════ */
+var currentStep = 1;
+
+function goStep(n) {
+  // إخفاء الخطوة الحالية
+  document.getElementById('panel' + currentStep).classList.remove('is-active');
+  // تحديث الـ stepper
+  updateStepper(currentStep, n);
+  // إذا كانت الخطوة 3 نحدّث الملخص
+  if (n === 3) buildReview();
+  currentStep = n;
+  document.getElementById('panel' + n).classList.add('is-active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updateStepper(from, to) {
+  for (var i = 1; i <= 3; i++) {
+    var stepEl = document.getElementById('st' + i);
+    var numEl  = stepEl.querySelector('.lcr-step-num');
+    stepEl.classList.remove('is-active', 'is-done');
+
+    if (i < to) {
+      // خطوة مكتملة
+      stepEl.classList.add('is-done');
+      numEl.innerHTML = '<i class="fa-solid fa-check" style="font-size:11px;" aria-hidden="true"></i>';
+    } else if (i === to) {
+      // الخطوة النشطة
+      stepEl.classList.add('is-active');
+      numEl.innerHTML = String(i);
+    } else {
+      // خطوة قادمة
+      numEl.innerHTML = String(i);
+    }
+  }
+  // لون الموصلات
+  for (var j = 1; j <= 2; j++) {
+    var conn = document.getElementById('conn' + j);
+    if (conn) {
+      if (j < to) conn.classList.add('is-done');
+      else        conn.classList.remove('is-done');
+    }
+  }
+}
+
+function selectPlan(id) {
+  document.querySelectorAll('.lcr-plan-card').forEach(function(card) {
+    card.classList.remove('is-selected');
+  });
+  var card = document.getElementById('plan-card-' + id);
+  if (card) card.classList.add('is-selected');
+}
+
+// تزامن حالة مبدّل الـ checkbox مع CSS
+document.querySelectorAll('.lcr-toggle-row').forEach(function(row) {
+  var cb = row.querySelector('input[type="checkbox"]');
+  if (cb) {
+    cb.addEventListener('change', function() {
+      row.classList.toggle('is-on', cb.checked);
+    });
+    // حالة ابتدائية
+    row.classList.toggle('is-on', cb.checked);
+  }
+});
+
+function buildReview() {
+  var form = document.getElementById('lcr-form');
+
+  // العميل
+  var custSel = form.querySelector('[name="customer_id"]');
+  var custText = custSel && custSel.options[custSel.selectedIndex]
+    ? custSel.options[custSel.selectedIndex].text : '—';
+  setRev('rev-customer', custText);
+
+  // الباقة
+  var planRadio = form.querySelector('[name="plan_id"]:checked');
+  var planLabel = planRadio ? planRadio.closest('.lcr-plan-card') : null;
+  var planName  = planLabel ? planLabel.querySelector('.lcr-plan-name') : null;
+  setRev('rev-plan', planName ? planName.textContent.trim() : '—');
+
+  // الحالة
+  var statusSel = form.querySelector('[name="status"]');
+  var statusLabels = { active: 'نشط', trial: 'تجريبي', suspended: 'موقوف' };
+  setRev('rev-status', statusSel ? (statusLabels[statusSel.value] || statusSel.value) : '—');
+
+  // التواريخ
+  setRev('rev-starts',  fmtDt(form.querySelector('[name="starts_at"]')));
+  setRev('rev-expires', fmtDt(form.querySelector('[name="expires_at"]')));
+  setRev('rev-grace',   fmtDt(form.querySelector('[name="grace_until"]')));
+
+  // البصمات
+  var fpEl = form.querySelector('[name="max_fingerprints"]');
+  setRev('rev-fp', fpEl ? fpEl.value : '1');
+
+  // الملاحظات
+  var notesEl = form.querySelector('[name="notes"]');
+  setRev('rev-notes', (notesEl && notesEl.value.trim()) ? notesEl.value.trim() : '—');
+}
+
+function setRev(id, text) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function fmtDt(input) {
+  if (!input || !input.value) return '—';
+  // تحويل من datetime-local إلى نص مقروء
+  var d = new Date(input.value);
+  if (isNaN(d)) return input.value;
+  return d.toLocaleDateString('ar-SA', { year:'numeric', month:'long', day:'numeric' });
+}
+</script>
+{% endblock %}

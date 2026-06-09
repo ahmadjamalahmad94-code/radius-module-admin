@@ -1,0 +1,952 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إدارة الباقات{% endblock %}
+{% block page_title %}إدارة الباقات{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ============================================================
+   licenses/plans_new.html — إدارة الباقات
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================ */
+
+.pln-page {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-gap-section);
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.pln-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-9);
+  position:      relative;
+  overflow:      hidden;
+}
+.pln-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-end: -50px;
+  inset-block-start: -50px;
+  width:     180px;
+  height:    180px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
+.pln-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+.pln-hero-body { flex: 1; }
+.pln-hero-title {
+  font-size:        var(--cc-fs-h1);
+  font-weight:      var(--cc-fw-display);
+  margin-block-end: var(--cc-sp-2);
+}
+.pln-hero-sub {
+  font-size:  var(--cc-fs-body-s);
+  opacity:    0.85;
+}
+.pln-hero-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  padding:       var(--cc-sp-4) var(--cc-sp-8);
+  border-radius: var(--cc-r-lg);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  cursor:        pointer;
+  text-decoration: none;
+  transition:    background var(--cc-anim-fast);
+  flex-shrink:   0;
+}
+.pln-hero-btn:hover { background: rgba(255,255,255,.30); }
+
+/* ── شبكة الباقات ────────────────────────────────────────── */
+.pln-cards-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+
+.pln-card {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  display:       flex;
+  flex-direction: column;
+  overflow:      hidden;
+  transition:    box-shadow var(--cc-anim-fast), transform var(--cc-anim-fast);
+}
+.pln-card:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform:  translateY(-2px);
+}
+.pln-card.is-inactive {
+  opacity: 0.65;
+  filter:  grayscale(0.25);
+}
+
+/* رأس الكارد */
+.pln-card-top {
+  background:    var(--cc-hero-grad);
+  padding:       var(--cc-sp-8) var(--cc-sp-9);
+  color:         #fff;
+  position:      relative;
+  overflow:      hidden;
+}
+.pln-card-top::after {
+  content:  '';
+  position: absolute;
+  inset-inline-end: -20px;
+  inset-block-start: -20px;
+  width:    80px;
+  height:   80px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.08);
+  pointer-events: none;
+}
+.pln-card-name {
+  font-size:        var(--cc-fs-h2);
+  font-weight:      var(--cc-fw-display);
+  margin-block-end: var(--cc-sp-2);
+}
+.pln-card-price {
+  font-size:   28px;
+  font-weight: var(--cc-fw-display);
+  line-height: 1;
+}
+.pln-card-price span {
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-medium);
+  opacity:     0.8;
+}
+.pln-card-badge {
+  position:      absolute;
+  inset-inline-start: var(--cc-sp-5);
+  inset-block-end:    var(--cc-sp-5);
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-1);
+  padding:       2px var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+  background:    rgba(255,255,255,.2);
+  border:        1px solid rgba(255,255,255,.3);
+}
+
+/* جسم الكارد */
+.pln-card-body {
+  flex:    1;
+  padding: var(--cc-sp-8) var(--cc-sp-9);
+}
+
+/* الحدود والأرقام */
+.pln-limits {
+  display:        flex;
+  flex-wrap:      wrap;
+  gap:            var(--cc-sp-4);
+  margin-block-end: var(--cc-sp-7);
+}
+.pln-limit-chip {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       var(--cc-sp-2) var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+}
+
+/* مميزات الباقة */
+.pln-features-title {
+  font-size:        var(--cc-fs-small);
+  font-weight:      var(--cc-fw-semibold);
+  color:            var(--cc-text-soft);
+  margin-block-end: var(--cc-sp-4);
+  text-transform:   uppercase;
+  letter-spacing:   0.04em;
+}
+
+.pln-features {
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-sp-3);
+}
+.pln-feature-item {
+  display:     flex;
+  align-items: flex-start;
+  gap:         var(--cc-sp-4);
+  font-size:   var(--cc-fs-body-s);
+}
+.pln-feature-dot {
+  width:         18px;
+  height:        18px;
+  border-radius: 50%;
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     9px;
+  flex-shrink:   0;
+  margin-top:    1px;
+}
+.pln-feature-dot--on  { background: var(--tile-green-bg); color: var(--tile-green-fg); }
+.pln-feature-dot--off { background: var(--pill-grey-bg);  color: var(--pill-grey-fg);  }
+
+.pln-feature-text { flex: 1; }
+.pln-feature-name {
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.pln-feature-hint {
+  font-size:  var(--cc-fs-tiny);
+  color:      var(--cc-text-mute);
+  margin-top: 1px;
+  line-height: 1.4;
+}
+
+/* إحصاء المشتركين */
+.pln-card-footer {
+  padding:          var(--cc-sp-5) var(--cc-sp-9);
+  border-top:       1px solid var(--cc-border);
+  display:          flex;
+  align-items:      center;
+  justify-content:  space-between;
+  gap:              var(--cc-sp-5);
+  background:       var(--hb-bg);
+}
+.pln-subscribers {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-3);
+  font-size:   var(--cc-fs-small);
+  color:       var(--cc-text-mute);
+}
+.pln-subscribers strong {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-display);
+  color:       var(--cc-text);
+}
+.pln-card-actions {
+  display:   flex;
+  gap:       var(--cc-sp-3);
+  flex-wrap: wrap;
+}
+
+/* ── أزرار ────────────────────────────────────────────────── */
+.pln-btn {
+  height:        32px;
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-btn-radius);
+  border:        1px solid transparent;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-small);
+  font-weight:   var(--cc-fw-bold);
+  cursor:        pointer;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  text-decoration: none;
+  transition:    var(--cc-tr-fast);
+}
+.pln-btn--secondary {
+  background:   var(--cc-card-bg);
+  border-color: var(--cc-border-2);
+  color:        var(--cc-text-soft);
+}
+.pln-btn--secondary:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+.pln-btn--danger {
+  background:   var(--cc-card-bg);
+  border-color: rgba(239,68,68,.3);
+  color:        var(--hb-red);
+}
+.pln-btn--danger:hover { background: var(--tile-red-bg); }
+
+/* ── حالة فارغة ──────────────────────────────────────────── */
+.pln-empty {
+  text-align: center;
+  padding:    var(--cc-sp-14) var(--cc-sp-9);
+  background: var(--cc-card-bg);
+  border:     1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+}
+.pln-empty-icon {
+  width:         60px;
+  height:        60px;
+  border-radius: var(--cc-r-card);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     26px;
+  margin:        0 auto var(--cc-sp-7);
+}
+.pln-empty-title {
+  font-size:        var(--cc-fs-h3);
+  font-weight:      var(--cc-fw-display);
+  color:            var(--cc-text);
+  margin-block-end: var(--cc-sp-3);
+}
+.pln-empty-sub {
+  font-size: var(--cc-fs-body-s);
+  color:     var(--cc-text-mute);
+  margin-block-end: var(--cc-sp-8);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Modal — إضافة / تعديل باقة
+   ══════════════════════════════════════════════════════════════ */
+.pln-modal-overlay {
+  display:         none;
+  position:        fixed;
+  inset:           0;
+  background:      var(--cc-modal-overlay);
+  z-index:         900;
+  align-items:     center;
+  justify-content: center;
+  padding:         var(--cc-sp-8);
+}
+.pln-modal-overlay.is-open {
+  display: flex;
+}
+
+.pln-modal {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-modal-radius);
+  box-shadow:    var(--cc-modal-shadow);
+  width:         100%;
+  max-width:     640px;
+  max-height:    90vh;
+  overflow-y:    auto;
+  display:       flex;
+  flex-direction: column;
+  animation:     pln-modal-in var(--cc-anim-med) var(--cc-ease-out);
+}
+@keyframes pln-modal-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.pln-modal-head {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-7) var(--cc-sp-9);
+  border-block-end: 1px solid var(--cc-border);
+  position:         sticky;
+  top:              0;
+  background:       var(--cc-card-bg);
+  z-index:          1;
+}
+.pln-modal-icon {
+  width:         36px;
+  height:        36px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     15px;
+  flex-shrink:   0;
+}
+.pln-modal-title {
+  flex:        1;
+  font-size:   var(--cc-fs-h3);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.pln-modal-close {
+  width:         32px;
+  height:        32px;
+  border-radius: var(--cc-r-sm);
+  border:        none;
+  background:    var(--hb-bg);
+  color:         var(--cc-text-mute);
+  cursor:        pointer;
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     14px;
+  transition:    background var(--cc-anim-fast), color var(--cc-anim-fast);
+}
+.pln-modal-close:hover { background: var(--tile-red-bg); color: var(--hb-red); }
+
+.pln-modal-body {
+  padding: var(--cc-sp-8) var(--cc-sp-9);
+  flex:    1;
+}
+
+.pln-modal-foot {
+  display:       flex;
+  gap:           var(--cc-sp-5);
+  padding:       var(--cc-sp-7) var(--cc-sp-9);
+  border-top:    1px solid var(--cc-border);
+  background:    var(--hb-bg);
+  position:      sticky;
+  bottom:        0;
+}
+.pln-modal-foot .pln-btn {
+  height: 38px;
+  font-size: var(--cc-fs-body-s);
+  padding: 0 var(--cc-sp-8);
+}
+.pln-btn--primary {
+  background:   var(--cc-btn-primary-bg);
+  color:        #fff;
+  border-color: var(--cc-btn-primary-bg);
+}
+.pln-btn--primary:hover { background: var(--cc-btn-primary-hover); border-color: var(--cc-btn-primary-hover); }
+.pln-btn--ghost {
+  background:   transparent;
+  border-color: var(--cc-border-2);
+  color:        var(--cc-text-mute);
+}
+.pln-btn--ghost:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+
+/* نموذج Modal */
+.pln-form-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+.pln-field { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.pln-field.full { grid-column: 1 / -1; }
+.pln-label {
+  font-size:   var(--cc-fs-small);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-soft);
+}
+.pln-req { color: var(--hb-red); margin-inline-start: 2px; }
+.pln-input {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  outline:       none;
+  transition:    border-color var(--cc-anim-fast), box-shadow var(--cc-anim-fast), background var(--cc-anim-fast);
+}
+.pln-input:focus {
+  border-color: var(--cc-brand);
+  background:   var(--cc-input-bg-focus);
+  box-shadow:   var(--cc-input-ring);
+}
+.pln-select {
+  height:        var(--cc-input-h);
+  padding:       0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border:        1px solid var(--cc-input-border);
+  background:    var(--cc-input-bg);
+  color:         var(--cc-text);
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  outline:       none;
+  cursor:        pointer;
+  transition:    border-color var(--cc-anim-fast);
+}
+.pln-select:focus { border-color: var(--cc-brand); box-shadow: var(--cc-input-ring); }
+.pln-hint {
+  font-size:   var(--cc-fs-tiny);
+  color:       var(--cc-text-mute);
+  line-height: 1.5;
+}
+.pln-section-label {
+  font-size:        var(--cc-fs-small);
+  font-weight:      var(--cc-fw-semibold);
+  color:            var(--cc-text-soft);
+  margin-block-end: var(--cc-sp-4);
+  padding-block-end: var(--cc-sp-3);
+  border-block-end:  1px solid var(--cc-border);
+  grid-column:       1 / -1;
+}
+.pln-check-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap:                   var(--cc-sp-4);
+  grid-column:           1 / -1;
+}
+.pln-check-item {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--cc-sp-4);
+  padding:       var(--cc-sp-5) var(--cc-sp-6);
+  border-radius: var(--cc-r-lg);
+  border:        1px solid var(--cc-border);
+  background:    var(--hb-bg);
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast), border-color var(--cc-anim-fast);
+}
+.pln-check-item:hover { background: var(--cc-card-bg); }
+.pln-check-item input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--cc-brand);
+  width: 15px;
+  height: 15px;
+}
+.pln-check-body {}
+.pln-check-name {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.pln-check-desc {
+  font-size:  var(--cc-fs-tiny);
+  color:      var(--cc-text-mute);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pln-page">
+
+  {# ── Hero ─────────────────────────────────────────────────────────── #}
+  <div class="pln-hero" role="banner">
+    <div class="pln-hero-icon" aria-hidden="true">
+      <i class="fa-solid fa-layer-group"></i>
+    </div>
+    <div class="pln-hero-body">
+      <div class="pln-hero-title">إدارة الباقات</div>
+      <div class="pln-hero-sub">
+        كل باقة تحدد ما يحق للعميل استخدامه من خدمات وحدود.
+        الباقات المعطّلة لا تظهر للعملاء الجدد لكنها تبقى للقديمة.
+      </div>
+    </div>
+    <button class="pln-hero-btn" type="button" onclick="openModal(null)"
+            aria-label="إضافة باقة جديدة" aria-haspopup="dialog">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      باقة جديدة
+    </button>
+  </div>
+
+  {# ── شبكة الباقات ─────────────────────────────────────────────────── #}
+  {% if plans %}
+  <div class="pln-cards-grid" aria-label="قائمة الباقات" role="list">
+
+    {% for plan in plans %}
+    <article class="pln-card {{ 'is-inactive' if plan.status == 'inactive' else '' }}"
+             role="listitem"
+             aria-label="باقة {{ plan.name }}">
+
+      {# رأس الكارد — الاسم والسعر #}
+      <div class="pln-card-top">
+        <div class="pln-card-name">{{ plan.name }}</div>
+        <div class="pln-card-price">
+          {{ plan.monthly_price | money }}
+          <span>{{ plan.currency }} / شهر</span>
+        </div>
+        {% if plan.status == 'active' %}
+          <div class="pln-card-badge" aria-label="الباقة نشطة">
+            <i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> نشطة
+          </div>
+        {% else %}
+          <div class="pln-card-badge" style="background:rgba(0,0,0,.2); border-color:rgba(255,255,255,.15);" aria-label="الباقة معطّلة">
+            <i class="fa-solid fa-pause fa-xs" aria-hidden="true"></i> معطّلة
+          </div>
+        {% endif %}
+      </div>
+
+      {# جسم الكارد #}
+      <div class="pln-card-body">
+
+        {# الحدود الرقمية #}
+        <div class="pln-limits">
+          <span class="pln-limit-chip" style="background:var(--tile-purple-bg); color:var(--tile-purple-fg);"
+                title="أقصى عدد مستخدمين مسموح بهم داخل نظام العميل">
+            <i class="fa-solid fa-users fa-xs" aria-hidden="true"></i>
+            {{ plan.max_users }} مستخدم
+          </span>
+          <span class="pln-limit-chip" style="background:var(--tile-blue-bg); color:var(--tile-blue-fg);"
+                title="أجهزة الشبكة (MikroTik / NAS) المسموح ربطها">
+            <i class="fa-solid fa-network-wired fa-xs" aria-hidden="true"></i>
+            {{ plan.max_nas }} جهاز شبكة
+          </span>
+          <span class="pln-limit-chip" style="background:var(--tile-teal-bg); color:var(--tile-teal-fg);"
+                title="حسابات المدراء المسموحة">
+            <i class="fa-solid fa-user-shield fa-xs" aria-hidden="true"></i>
+            {{ plan.max_admins }} مدير
+          </span>
+        </div>
+
+        {# المميزات مع شرح بسيط #}
+        <div class="pln-features-title">المميزات المضمّنة</div>
+        <ul class="pln-features">
+
+          {% set features_defs = [
+            ('whatsapp',      'بوابة واتساب',         'إرسال إشعارات للمستخدمين عبر واتساب — مفيد لتجديد الاشتراكات والتنبيهات'),
+            ('backup',        'النسخ الاحتياطية',     'حفظ نسخ احتياطية دورية من قاعدة البيانات لحماية بيانات العميل'),
+            ('api_access',    'الوصول للـ API',         'يسمح للعميل بدمج النظام مع برامجه الخارجية عبر واجهة برمجية'),
+            ('reports',       'التقارير المتقدمة',    'تقارير تفصيلية عن الاستخدام والمبيعات والنشاط اليومي'),
+            ('multi_admin',   'تعدد المدراء',          'إضافة أكثر من مدير واحد لإدارة النظام في آنٍ واحد'),
+            ('custom_domain', 'النطاق المخصص',         'ربط النظام بنطاق خاص بالعميل بدلاً من النطاق الافتراضي'),
+            ('sms',           'رسائل SMS',              'إرسال رسائل نصية قصيرة للمستخدمين عند تجديد الاشتراك أو انتهائه'),
+            ('vpn',           'خدمة VPN',               'تفعيل الـ VPN لمستخدمي العميل للاتصال الآمن بالشبكة'),
+          ] %}
+
+          {% for key, name, desc in features_defs %}
+            {% set is_on = plan.features.get(key, false) %}
+            <li class="pln-feature-item">
+              <div class="pln-feature-dot {{ 'pln-feature-dot--on' if is_on else 'pln-feature-dot--off' }}"
+                   aria-label="{{ 'مفعّلة' if is_on else 'غير مفعّلة' }}">
+                {% if is_on %}
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                {% else %}
+                  <i class="fa-solid fa-minus" aria-hidden="true"></i>
+                {% endif %}
+              </div>
+              <div class="pln-feature-text">
+                <div class="pln-feature-name">{{ name }}</div>
+                <div class="pln-feature-hint">{{ desc }}</div>
+              </div>
+            </li>
+          {% endfor %}
+
+        </ul>
+      </div>
+
+      {# تذييل الكارد — المشتركون والأزرار #}
+      <div class="pln-card-footer">
+        <div class="pln-subscribers">
+          <i class="fa-solid fa-users fa-xs" aria-hidden="true"></i>
+          <span>المشتركون:</span>
+          <strong>{{ plan.subscriber_count | default(0) }}</strong>
+        </div>
+        <div class="pln-card-actions">
+          <button class="pln-btn pln-btn--secondary" type="button"
+                  onclick="openModal({{ plan.id }})"
+                  aria-label="تعديل باقة {{ plan.name }}">
+            <i class="fa-solid fa-pen fa-xs" aria-hidden="true"></i>
+            تعديل
+          </button>
+          <form method="post"
+                action="{{ url_for('admin.plan_delete', plan_id=plan.id) }}"
+                id="del-plan-{{ plan.id }}" style="display:none;">
+            {{ csrf_input() }}
+          </form>
+          <button class="pln-btn pln-btn--danger" type="button"
+                  onclick="confirmDelete({{ plan.id }}, '{{ plan.name | e }}')"
+                  aria-label="حذف باقة {{ plan.name }}">
+            <i class="fa-solid fa-trash fa-xs" aria-hidden="true"></i>
+            حذف
+          </button>
+        </div>
+      </div>
+
+    </article>
+    {% endfor %}
+
+  </div>
+
+  {% else %}
+  {# حالة فارغة #}
+  <div class="pln-empty" role="status">
+    <div class="pln-empty-icon" aria-hidden="true">
+      <i class="fa-solid fa-layer-group"></i>
+    </div>
+    <div class="pln-empty-title">لا توجد باقات بعد</div>
+    <div class="pln-empty-sub">
+      الباقات هي الطريقة التي تحدد بها ما يحق لكل عميل استخدامه.
+      ابدأ بإنشاء باقة افتراضية مثل «الأساسية» أو «الاحترافية».
+    </div>
+    <button class="pln-btn pln-btn--primary" type="button" onclick="openModal(null)"
+            style="height:40px; font-size:var(--cc-fs-body-s); padding:0 var(--cc-sp-9);">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      إنشاء أول باقة
+    </button>
+  </div>
+  {% endif %}
+
+</div>
+
+{# ══════════════════════════════════════════════════════════════════════
+   Modal — إضافة / تعديل باقة
+   ══════════════════════════════════════════════════════════════════════ #}
+<div class="pln-modal-overlay" id="plan-modal" role="dialog" aria-modal="true"
+     aria-labelledby="modal-title" onclick="closeModalOnOverlay(event)">
+  <div class="pln-modal">
+
+    <div class="pln-modal-head">
+      <div class="pln-modal-icon" aria-hidden="true">
+        <i class="fa-solid fa-layer-group"></i>
+      </div>
+      <div class="pln-modal-title" id="modal-title">باقة جديدة</div>
+      <button class="pln-modal-close" type="button" onclick="closeModal()"
+              aria-label="إغلاق نافذة الباقة">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <form class="pln-modal-body" method="post" id="plan-modal-form" novalidate>
+      {{ csrf_input() }}
+      <input type="hidden" name="plan_id" id="modal-plan-id" value="">
+
+      <div class="pln-form-grid">
+
+        {# التعريف #}
+        <div class="pln-section-label">التعريف والسعر</div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-name">
+            اسم الباقة <span class="pln-req" aria-hidden="true">*</span>
+          </label>
+          <input class="pln-input" id="m-name" name="name" type="text"
+                 placeholder="مثال: الأساسية، الاحترافية، المؤسسات"
+                 required aria-required="true" aria-describedby="m-name-hint">
+          <div class="pln-hint" id="m-name-hint">
+            الاسم الذي سيظهر في قوائم الاختيار عند إنشاء الترخيص.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-price">السعر الشهري</label>
+          <input class="pln-input" id="m-price" name="monthly_price"
+                 type="number" step="0.01" min="0" value="0"
+                 aria-describedby="m-price-hint">
+          <div class="pln-hint" id="m-price-hint">
+            يُستخدم كمرجع في سجلات التجديد والتقارير المالية.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-currency">العملة</label>
+          <input class="pln-input" id="m-currency" name="currency"
+                 type="text" value="USD" placeholder="USD / ILS / SAR"
+                 aria-describedby="m-currency-hint"
+                 style="font-family:var(--cc-font-mono); text-transform:uppercase;">
+          <div class="pln-hint" id="m-currency-hint">
+            استخدم رمزاً موحداً مثل USD أو ILS أو SAR.
+            يجب أن يكون نفس الرمز في جميع باقاتك.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-status">حالة الباقة</label>
+          <select class="pln-select" id="m-status" name="status" aria-describedby="m-status-hint">
+            <option value="active">نشطة — تظهر عند إنشاء التراخيص</option>
+            <option value="inactive">معطّلة — لا تظهر للعملاء الجدد</option>
+          </select>
+          <div class="pln-hint" id="m-status-hint">
+            الباقة المعطّلة لا تختفي من التراخيص القائمة — فقط لا يمكن اختيارها للجديد.
+          </div>
+        </div>
+
+        {# الحدود #}
+        <div class="pln-section-label">الحدود التجارية</div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-users">أقصى عدد مستخدمين</label>
+          <input class="pln-input" id="m-users" name="max_users"
+                 type="number" min="1" value="100"
+                 aria-describedby="m-users-hint">
+          <div class="pln-hint" id="m-users-hint">
+            عدد الحسابات الإجمالية التي يستطيع العميل إنشاءها في نظامه.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-nas">أقصى عدد أجهزة شبكة</label>
+          <input class="pln-input" id="m-nas" name="max_nas"
+                 type="number" min="1" value="10"
+                 aria-describedby="m-nas-hint">
+          <div class="pln-hint" id="m-nas-hint">
+            عدد أجهزة MikroTik أو الـ NAS التي يستطيع العميل ربطها بالنظام.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-admins">أقصى عدد حسابات إدارة</label>
+          <input class="pln-input" id="m-admins" name="max_admins"
+                 type="number" min="1" value="3"
+                 aria-describedby="m-admins-hint">
+          <div class="pln-hint" id="m-admins-hint">
+            عدد المديرين الذين يستطيعون الدخول للوحة تحكم العميل.
+          </div>
+        </div>
+
+        <div class="pln-field">
+          <label class="pln-label" for="m-devices">أقصى خوادم (بصمات)</label>
+          <input class="pln-input" id="m-devices" name="max_devices"
+                 type="number" min="1" value="1"
+                 aria-describedby="m-devices-hint">
+          <div class="pln-hint" id="m-devices-hint">
+            عدد الخوادم أو التثبيتات المسموحة لنفس الترخيص.
+            غالباً ١ للعملاء الصغار وأكثر للمؤسسات.
+          </div>
+        </div>
+
+        {# المميزات #}
+        <div class="pln-section-label">المميزات المضمّنة في الباقة</div>
+
+        <div class="pln-check-grid" role="group" aria-label="اختيار مميزات الباقة">
+
+          {% set features_list = [
+            ('whatsapp',      'بوابة واتساب',         'إرسال إشعارات وتنبيهات عبر واتساب للمستخدمين مباشرة من النظام'),
+            ('backup',        'النسخ الاحتياطية',     'حفظ نسخ احتياطية دورية تلقائية لحماية بيانات العميل من الفقدان'),
+            ('api_access',    'وصول API',              'يسمح لفريق العميل التقني بدمج النظام مع أدوات وبرامج خارجية'),
+            ('reports',       'التقارير المتقدمة',    'تقارير تفصيلية مرئية عن الاستخدام والمبيعات والنشاط اليومي'),
+            ('multi_admin',   'تعدد المدراء',          'إمكانية إضافة أكثر من مدير واحد لإدارة النظام بدلاً من حساب واحد'),
+            ('custom_domain', 'النطاق المخصص',         'ربط لوحة التحكم بنطاق (domain) خاص بالعميل'),
+            ('sms',           'رسائل SMS',              'إرسال رسائل نصية قصيرة تلقائية للمستخدمين عند الأحداث المهمة'),
+            ('vpn',           'خدمة VPN',               'تفعيل خدمة VPN لمستخدمي العميل للاتصال الآمن والمشفّر'),
+          ] %}
+
+          {% for key, name, desc in features_list %}
+          <label class="pln-check-item">
+            <input type="checkbox" name="feature_{{ key }}">
+            <div class="pln-check-body">
+              <div class="pln-check-name">{{ name }}</div>
+              <div class="pln-check-desc">{{ desc }}</div>
+            </div>
+          </label>
+          {% endfor %}
+
+        </div>
+
+      </div>
+    </form>
+
+    <div class="pln-modal-foot">
+      <button class="pln-btn pln-btn--primary" type="submit" form="plan-modal-form">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+        حفظ الباقة
+      </button>
+      <button class="pln-btn pln-btn--ghost" type="button" onclick="closeModal()">
+        إلغاء
+      </button>
+    </div>
+
+  </div>
+</div>
+{# / modal #}
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   JS — modal إدارة الباقات
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── بيانات الباقات من Jinja2 للاستخدام في JS ── */
+var plansData = {
+  {% for plan in plans %}
+  {{ plan.id }}: {
+    name:          {{ plan.name | tojson }},
+    monthly_price: {{ plan.monthly_price | default(0) }},
+    currency:      {{ plan.currency | default('USD') | tojson }},
+    status:        {{ plan.status | default('active') | tojson }},
+    max_users:     {{ plan.max_users | default(100) }},
+    max_nas:       {{ plan.max_nas | default(10) }},
+    max_admins:    {{ plan.max_admins | default(3) }},
+    max_devices:   {{ plan.max_devices | default(1) }},
+    features:      {{ plan.features | tojson }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
+
+function openModal(planId) {
+  var overlay = document.getElementById('plan-modal');
+  var title   = document.getElementById('modal-title');
+  var form    = document.getElementById('plan-modal-form');
+
+  if (planId && plansData[planId]) {
+    // وضع التعديل
+    title.textContent = 'تعديل الباقة';
+    var p = plansData[planId];
+    form.action = '{{ url_for("admin.plan_edit", plan_id=0) }}'.replace('/0', '/' + planId);
+    setVal('modal-plan-id', planId);
+    setVal('m-name',     p.name);
+    setVal('m-price',    p.monthly_price);
+    setVal('m-currency', p.currency);
+    setVal('m-status',   p.status);
+    setVal('m-users',    p.max_users);
+    setVal('m-nas',      p.max_nas);
+    setVal('m-admins',   p.max_admins);
+    setVal('m-devices',  p.max_devices);
+    // المميزات
+    form.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+      var key = cb.name.replace('feature_', '');
+      cb.checked = !!(p.features && p.features[key]);
+    });
+  } else {
+    // وضع الإضافة
+    title.textContent = 'باقة جديدة';
+    form.action = '{{ url_for("admin.plan_new") }}';
+    form.reset();
+    setVal('modal-plan-id', '');
+    setVal('m-status', 'active');
+    setVal('m-users', '100');
+    setVal('m-nas',   '10');
+    setVal('m-admins','3');
+    setVal('m-devices','1');
+    setVal('m-currency','USD');
+    setVal('m-price', '0');
+  }
+
+  overlay.classList.add('is-open');
+  document.body.style.overflow = 'hidden';
+  // focus الأول
+  setTimeout(function() {
+    var first = form.querySelector('input:not([type="hidden"]):not([type="checkbox"])');
+    if (first) first.focus();
+  }, 80);
+}
+
+function closeModal() {
+  document.getElementById('plan-modal').classList.remove('is-open');
+  document.body.style.overflow = '';
+}
+
+function closeModalOnOverlay(e) {
+  if (e.target === document.getElementById('plan-modal')) closeModal();
+}
+
+function setVal(id, val) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (el.tagName === 'SELECT') el.value = val;
+  else el.value = val;
+}
+
+/* ── تأكيد حذف الباقة ── */
+function confirmDelete(planId, planName) {
+  if (confirm('هل أنت متأكد من حذف باقة «' + planName + '»؟\nلن يمكن استرجاعها، والتراخيص القائمة ستبقى بدون تغيير.')) {
+    document.getElementById('del-plan-' + planId).submit();
+  }
+}
+
+/* ── إغلاق بـ Escape ── */
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+{% endblock %}

@@ -705,9 +705,14 @@ def _install_csrf(app: Flask) -> None:
     def _inject_admin_flags():
         # Exposes `is_super_admin` to all templates so elevated-only UI (e.g. the
         # Customer Secure Vault entry) can be hidden from non-super admins.
+        # Also exposes `hidden_sections` for sidebar visibility control.
         from .auth.routes import current_admin
+        from .admin.section_visibility import get_hidden_sections
         admin = current_admin()
-        return {"is_super_admin": bool(admin and getattr(admin, "is_super_admin", False))}
+        return {
+            "is_super_admin": bool(admin and getattr(admin, "is_super_admin", False)),
+            "hidden_sections": get_hidden_sections(),
+        }
 
     @app.before_request
     def check_csrf():

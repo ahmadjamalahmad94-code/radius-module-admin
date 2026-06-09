@@ -1,0 +1,1503 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إضافة عميل جديد{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+{% endblock %}
+{% block page_breadcrumb %}إضافة عميل جديد{% endblock %}
+
+{# ─── أنماط الصفحة ─── #}
+{% block head_extra %}
+<style>
+  /* ============================================================
+     متغيرات محلية للصفحة
+  ============================================================ */
+  :root {
+    --cadd-step-size:     36px;
+    --cadd-line-color:    var(--cc-border-2);
+    --cadd-step-done-bg:  var(--tile-green-bg);
+    --cadd-step-done-fg:  var(--tile-green-fg);
+    --cadd-step-act-bg:   var(--cc-brand);
+    --cadd-step-act-fg:   #fff;
+    --cadd-step-idle-bg:  var(--cc-border-2);
+    --cadd-step-idle-fg:  var(--cc-text-faint);
+  }
+
+  /* ============================================================
+     الغلاف العام للصفحة
+  ============================================================ */
+  .cadd-page { max-width: 780px; }
+
+  /* ============================================================
+     Hero
+  ============================================================ */
+  .cadd-hero {
+    background: var(--cc-hero-grad);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-hero);
+    padding: var(--cc-sp-10) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-8);
+  }
+
+  .cadd-hero-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--cc-r-lg);
+    background: rgba(255,255,255,.2);
+    border: 2px solid rgba(255,255,255,.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .cadd-hero-title {
+    font-size: var(--cc-fs-h1);
+    font-weight: var(--cc-fw-display);
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .cadd-hero-sub {
+    font-size: var(--cc-fs-body-s);
+    color: rgba(255,255,255,.75);
+    margin-block-start: var(--cc-sp-2);
+    font-weight: var(--cc-fw-medium);
+  }
+
+  /* ============================================================
+     شريط الخطوات (Stepper)
+  ============================================================ */
+  .cadd-stepper {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-9) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .cadd-stepper::-webkit-scrollbar { display: none; }
+
+  .cadd-step-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    position: relative;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  /* خط الربط بين الخطوات */
+  .cadd-step-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    inset-block-start: calc(var(--cadd-step-size) / 2);
+    inset-inline-start: calc(50% + var(--cadd-step-size) / 2);
+    width: calc(100% - var(--cadd-step-size));
+    height: 2px;
+    background: var(--cadd-line-color);
+    z-index: 0;
+  }
+
+  .cadd-step-item.is-done:not(:last-child)::after {
+    background: var(--cadd-step-done-fg);
+  }
+
+  .cadd-step-circle {
+    width: var(--cadd-step-size);
+    height: var(--cadd-step-size);
+    border-radius: var(--cc-r-pill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+    z-index: 1;
+    transition: background var(--cc-anim-med) var(--cc-ease),
+                color var(--cc-anim-med) var(--cc-ease);
+  }
+
+  .cadd-step-item.is-idle   .cadd-step-circle { background: var(--cadd-step-idle-bg); color: var(--cadd-step-idle-fg); }
+  .cadd-step-item.is-active .cadd-step-circle { background: var(--cadd-step-act-bg);  color: var(--cadd-step-act-fg); box-shadow: var(--cc-sh-glow); }
+  .cadd-step-item.is-done   .cadd-step-circle { background: var(--cadd-step-done-bg); color: var(--cadd-step-done-fg); }
+
+  .cadd-step-label {
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-bold);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .cadd-step-item.is-idle   .cadd-step-label { color: var(--cc-text-faint); }
+  .cadd-step-item.is-active .cadd-step-label { color: var(--cc-brand); }
+  .cadd-step-item.is-done   .cadd-step-label { color: var(--tile-green-fg); }
+
+  .cadd-step-sub {
+    font-size: 10px;
+    color: var(--cc-text-faint);
+    text-align: center;
+  }
+
+  .cadd-step-item.is-active .cadd-step-sub { color: var(--cc-brand); opacity: .7; }
+  .cadd-step-item.is-done   .cadd-step-sub { color: var(--tile-green-fg); opacity: .7; }
+
+  /* ============================================================
+     الكرت الرئيسي للنموذج
+  ============================================================ */
+  .cadd-card {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    overflow: hidden;
+    margin-block-end: var(--cc-gap-section);
+  }
+
+  .cadd-card-header {
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    border-block-end: 1px solid var(--cc-border);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .cadd-card-header-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--cc-r-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    flex-shrink: 0;
+  }
+
+  .cadd-card-header-icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+  .cadd-card-header-icon--teal   { background: var(--tile-teal-bg);   color: var(--tile-teal-fg);   }
+  .cadd-card-header-icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+
+  .cadd-card-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+  }
+
+  .cadd-card-title-sub {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    margin-block-start: 2px;
+  }
+
+  /* محتوى الكرت */
+  .cadd-card-body {
+    padding: var(--cc-sp-11);
+  }
+
+  /* ============================================================
+     لوحة الخطوة (panel)
+  ============================================================ */
+  .cadd-panel { display: none; }
+  .cadd-panel.is-active { display: block; }
+
+  /* ============================================================
+     Hint box
+  ============================================================ */
+  .cadd-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-5);
+    background: var(--cc-brand-softer);
+    border: 1px solid var(--cc-brand-soft2);
+    border-radius: var(--cc-r-lg);
+    padding: var(--cc-sp-6) var(--cc-sp-8);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-brand-ink);
+    line-height: var(--cc-lh-default);
+    margin-block-end: var(--cc-sp-11);
+  }
+
+  .cadd-hint-icon { color: var(--cc-brand); flex-shrink: 0; margin-block-start: 2px; }
+
+  .cadd-hint--warn {
+    background: var(--tile-amber-bg);
+    border-color: var(--hb-amber);
+    color: var(--tile-amber-fg);
+  }
+  .cadd-hint--warn .cadd-hint-icon { color: var(--hb-amber); }
+
+  /* ============================================================
+     Fieldset عنوان القسم
+  ============================================================ */
+  .cadd-fieldset-title {
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    padding-block-end: var(--cc-sp-5);
+    margin-block-end: var(--cc-sp-8);
+    border-block-end: 1px solid var(--cc-border);
+  }
+
+  .cadd-fieldset-title i { color: var(--cc-brand); font-size: var(--cc-fs-body-s); }
+
+  .cadd-fieldset { margin-block-end: var(--cc-sp-11); }
+  .cadd-fieldset:last-child { margin-block-end: 0; }
+
+  /* ============================================================
+     شبكة الحقول
+  ============================================================ */
+  .cadd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cc-sp-8);
+  }
+
+  .cadd-grid-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .cadd-field-full { grid-column: 1 / -1; }
+
+  /* ============================================================
+     الحقل (label + input/select/textarea + hint + error)
+  ============================================================ */
+  .cadd-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-sp-3);
+  }
+
+  .cadd-label {
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text-soft);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+  }
+
+  .cadd-label-req {
+    color: var(--hb-red);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+  }
+
+  .cadd-label-opt {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-faint);
+    font-weight: var(--cc-fw-medium);
+    margin-inline-start: var(--cc-sp-2);
+  }
+
+  /* Input / Textarea / Select */
+  .cadd-input,
+  .cadd-select,
+  .cadd-textarea {
+    width: 100%;
+    padding-inline: var(--cc-sp-7);
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-text);
+    transition: background var(--cc-anim-fast) var(--cc-ease),
+                border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+    outline: none;
+  }
+
+  .cadd-input,
+  .cadd-select { height: var(--cc-input-h); }
+
+  .cadd-textarea {
+    padding-block: var(--cc-sp-6);
+    min-height: 90px;
+    resize: vertical;
+    line-height: var(--cc-lh-default);
+  }
+
+  .cadd-input::placeholder,
+  .cadd-textarea::placeholder { color: var(--cc-text-faint); font-weight: var(--cc-fw-regular); }
+
+  .cadd-input:focus,
+  .cadd-select:focus,
+  .cadd-textarea:focus {
+    background: var(--cc-input-bg-focus);
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+  }
+
+  /* حالة الخطأ */
+  .cadd-input.is-error,
+  .cadd-select.is-error,
+  .cadd-textarea.is-error {
+    border-color: var(--hb-red);
+    background: var(--tile-red-bg);
+  }
+  .cadd-input.is-error:focus,
+  .cadd-select.is-error:focus { box-shadow: 0 0 0 3px rgba(239,68,68,.15); }
+
+  /* حالة النجاح */
+  .cadd-input.is-ok { border-color: var(--hb-green); }
+  .cadd-input.is-ok:focus { box-shadow: 0 0 0 3px rgba(34,197,94,.12); }
+
+  /* Select (سهم مخصص) */
+  .cadd-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6,9 12,15 18,9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: left var(--cc-sp-5) center;
+    padding-inline-end: calc(var(--cc-sp-5) + 20px);
+    cursor: pointer;
+  }
+
+  /* input مع prefix أيقونة */
+  .cadd-input-wrap {
+    position: relative;
+  }
+
+  .cadd-input-icon {
+    position: absolute;
+    inset-inline-start: var(--cc-sp-5);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--cc-text-mute);
+    font-size: var(--cc-fs-body-s);
+    pointer-events: none;
+  }
+
+  .cadd-input-wrap .cadd-input {
+    padding-inline-start: calc(var(--cc-sp-5) + 20px);
+  }
+
+  /* hint حقل */
+  .cadd-field-hint {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    line-height: var(--cc-lh-default);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-2);
+  }
+
+  .cadd-field-hint i { color: var(--cc-text-faint); flex-shrink: 0; margin-block-start: 1px; }
+
+  /* رسالة الخطأ */
+  .cadd-field-error {
+    font-size: var(--cc-fs-tiny);
+    color: var(--hb-red);
+    font-weight: var(--cc-fw-bold);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+    display: none;
+  }
+
+  .cadd-field-error.is-visible { display: flex; }
+
+  /* ============================================================
+     راديو — اختيار الحالة الأولية
+  ============================================================ */
+  .cadd-radio-group {
+    display: flex;
+    gap: var(--cc-sp-5);
+    flex-wrap: wrap;
+  }
+
+  .cadd-radio-card {
+    position: relative;
+    flex: 1;
+    min-width: 130px;
+  }
+
+  .cadd-radio-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .cadd-radio-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding: var(--cc-sp-7) var(--cc-sp-6);
+    background: var(--cc-input-bg);
+    border: 2px solid var(--cc-border-2);
+    border-radius: var(--cc-r-tile);
+    cursor: pointer;
+    transition: border-color var(--cc-anim-fast) var(--cc-ease),
+                background var(--cc-anim-fast) var(--cc-ease);
+    text-align: center;
+  }
+
+  .cadd-radio-label:hover { background: var(--hb-bg-hover); border-color: var(--cc-brand-soft2); }
+
+  .cadd-radio-card input[type="radio"]:checked + .cadd-radio-label {
+    border-color: var(--cc-brand);
+    background: var(--cc-brand-softer);
+  }
+
+  .cadd-radio-label-icon {
+    font-size: var(--cc-fs-body-l);
+  }
+
+  .cadd-radio-label-title {
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text-soft);
+  }
+
+  .cadd-radio-label-sub {
+    font-size: 10px;
+    color: var(--cc-text-faint);
+    font-weight: var(--cc-fw-medium);
+    line-height: 1.4;
+  }
+
+  .cadd-radio-card input[type="radio"]:checked + .cadd-radio-label .cadd-radio-label-title {
+    color: var(--cc-brand);
+  }
+
+  /* ============================================================
+     صفحة المراجعة (Step 3)
+  ============================================================ */
+  .cadd-review-section {
+    margin-block-end: var(--cc-sp-11);
+  }
+
+  .cadd-review-section:last-child { margin-block-end: 0; }
+
+  .cadd-review-title {
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-block-end: var(--cc-sp-6);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+  }
+
+  .cadd-review-title i { color: var(--cc-brand); }
+
+  .cadd-review-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--cc-gap-section);
+  }
+
+  .cadd-review-item {
+    background: var(--cc-tint-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-tile);
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+  }
+
+  .cadd-review-item-key {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    margin-block-end: var(--cc-sp-2);
+  }
+
+  .cadd-review-item-val {
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text);
+    word-break: break-word;
+  }
+
+  .cadd-review-item-val.mono {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-fs-tiny);
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+
+  .cadd-review-item-val.is-empty { color: var(--cc-text-faint); font-weight: var(--cc-fw-medium); }
+
+  /* ============================================================
+     أزرار التنقل (التالي / السابق / إرسال)
+  ============================================================ */
+  .cadd-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cc-sp-6);
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    border-block-start: 1px solid var(--cc-border);
+    background: var(--cc-tint-bg);
+    border-radius: 0 0 var(--cc-r-card) var(--cc-r-card);
+  }
+
+  .cadd-btn {
+    height: var(--cc-btn-h);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    padding-inline: var(--cc-sp-9);
+    border-radius: var(--cc-btn-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    text-decoration: none;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .cadd-btn--primary {
+    background: var(--cc-btn-primary-bg);
+    color: #fff;
+    box-shadow: var(--cc-sh-glow);
+  }
+  .cadd-btn--primary:hover {
+    background: var(--cc-btn-primary-hover);
+    box-shadow: 0 4px 16px rgba(107,90,237,.45);
+    color: #fff;
+  }
+
+  .cadd-btn--secondary {
+    background: var(--cc-card-bg);
+    color: var(--cc-text-soft);
+    border-color: var(--cc-border-2);
+  }
+  .cadd-btn--secondary:hover { background: var(--hb-bg-hover); color: var(--cc-text); }
+
+  .cadd-btn--cancel {
+    background: transparent;
+    color: var(--cc-text-mute);
+    border-color: transparent;
+  }
+  .cadd-btn--cancel:hover { color: var(--hb-red); }
+
+  .cadd-btn--submit {
+    background: var(--tile-green-bg);
+    color: var(--tile-green-fg);
+    border-color: var(--tile-green-fg);
+  }
+  .cadd-btn--submit:hover {
+    background: var(--hb-green);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(34,197,94,.35);
+  }
+
+  .cadd-nav-end {
+    display: flex;
+    gap: var(--cc-sp-5);
+  }
+
+  /* ============================================================
+     Flash رسائل الخطأ من Flask
+  ============================================================ */
+  .cadd-flash-error {
+    background: var(--tile-red-bg);
+    border: 1px solid var(--hb-red);
+    border-radius: var(--cc-r-lg);
+    padding: var(--cc-sp-6) var(--cc-sp-8);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    color: var(--tile-red-fg);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-5);
+    margin-block-end: var(--cc-gap-section);
+    line-height: var(--cc-lh-default);
+  }
+
+  /* ============================================================
+     Responsive
+  ============================================================ */
+  @media (max-width: 640px) {
+    .cadd-grid, .cadd-grid-3 { grid-template-columns: 1fr; }
+    .cadd-field-full { grid-column: 1; }
+    .cadd-stepper { gap: 0; padding: var(--cc-sp-7); }
+    .cadd-step-sub { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<div class="cadd-page">
+
+{# ── Flash errors from Flask ── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    {% if cat in ['danger','error'] %}
+      <div class="cadd-flash-error" role="alert">
+        <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+        <span>{{ msg }}</span>
+      </div>
+    {% endif %}
+  {% endfor %}
+{% endwith %}
+
+{# ── Hero ── #}
+<div class="cadd-hero">
+  <div class="cadd-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-user-plus"></i>
+  </div>
+  <div>
+    <div class="cadd-hero-title">إضافة عميل جديد</div>
+    <div class="cadd-hero-sub">أكمل الخطوات الثلاث وستتمكن من إدارة تراخيصه واتصالاته فوراً</div>
+  </div>
+</div>
+
+{# ── Stepper ── #}
+<div class="cadd-stepper" role="list" aria-label="خطوات إضافة العميل">
+
+  <div class="cadd-step-item is-active" id="step-ind-1" role="listitem" aria-current="step">
+    <div class="cadd-step-circle"><i class="fa-solid fa-user" aria-hidden="true"></i></div>
+    <div class="cadd-step-label">المعلومات الأساسية</div>
+    <div class="cadd-step-sub">الاسم، التواصل، الموقع</div>
+  </div>
+
+  <div class="cadd-step-item is-idle" id="step-ind-2" role="listitem">
+    <div class="cadd-step-circle"><i class="fa-solid fa-network-wired" aria-hidden="true"></i></div>
+    <div class="cadd-step-label">إعداد الشبكة</div>
+    <div class="cadd-step-sub">الخادم، الحالة، RADIUS</div>
+  </div>
+
+  <div class="cadd-step-item is-idle" id="step-ind-3" role="listitem">
+    <div class="cadd-step-circle"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></div>
+    <div class="cadd-step-label">مراجعة وتأكيد</div>
+    <div class="cadd-step-sub">فحص وحفظ</div>
+  </div>
+
+</div>
+
+{# ═══════════════════════════════════════════════
+   النموذج الرئيسي
+═══════════════════════════════════════════════ #}
+<form method="post"
+      action="{{ url_for('admin.customer_new') }}"
+      id="cadd-form"
+      novalidate
+      autocomplete="off">
+  {{ csrf_input() }}
+
+  {# حقل مخفي لتتبع الخطوة #}
+  <input type="hidden" name="_step" id="cadd-step-hidden" value="1">
+
+  {# ═══════════════════════════════════════
+     الكرت 1 — المعلومات الأساسية
+  ═══════════════════════════════════════ #}
+  <div class="cadd-card">
+
+    <div class="cadd-card-header">
+      <div class="cadd-card-header-icon cadd-card-header-icon--purple" aria-hidden="true">
+        <i class="fa-solid fa-id-card"></i>
+      </div>
+      <div>
+        <div class="cadd-card-title">المعلومات الأساسية</div>
+        <div class="cadd-card-title-sub">الخطوة 1 من 3 — بيانات التعريف والتواصل</div>
+      </div>
+    </div>
+
+    <div class="cadd-card-body">
+
+      {# لوحة الخطوة 1 #}
+      <div class="cadd-panel is-active" id="cadd-panel-1">
+
+        <div class="cadd-hint">
+          <i class="fa-solid fa-circle-info cadd-hint-icon" aria-hidden="true"></i>
+          <span>
+            أدخل بيانات الشركة أو العميل هنا. هذه المعلومات تُستخدم للتواصل والتقارير فقط — إنشاء العميل وحده لا يُفعّل أي اشتراك أو ترخيص.
+          </span>
+        </div>
+
+        {# قسم 1: التعريف والتواصل #}
+        <div class="cadd-fieldset">
+          <div class="cadd-fieldset-title">
+            <i class="fa-solid fa-address-book" aria-hidden="true"></i>
+            التعريف والتواصل
+          </div>
+
+          <div class="cadd-grid">
+
+            {# اسم الشركة #}
+            <div class="cadd-field" id="field-company_name">
+              <label class="cadd-label" for="company_name">
+                اسم الشركة
+                <span class="cadd-label-req" aria-label="مطلوب">*</span>
+              </label>
+              <input
+                class="cadd-input {{ 'is-error' if form_errors and 'company_name' in form_errors else '' }}"
+                type="text"
+                id="company_name"
+                name="company_name"
+                value="{{ form_data.company_name if form_data else customer.company_name if customer else '' }}"
+                placeholder="مثال: شركة النجم للاتصالات"
+                required
+                aria-required="true"
+                aria-describedby="hint-company_name err-company_name"
+              >
+              <div class="cadd-field-error {{ 'is-visible' if form_errors and 'company_name' in form_errors }}"
+                   id="err-company_name" role="alert">
+                <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+                {{ form_errors.company_name if form_errors and 'company_name' in form_errors else 'اسم الشركة مطلوب' }}
+              </div>
+              <div class="cadd-field-hint" id="hint-company_name">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                الاسم الذي سيظهر في كل القوائم والتقارير — يُفضَّل الاسم التجاري الرسمي.
+              </div>
+            </div>
+
+            {# اسم المسؤول #}
+            <div class="cadd-field" id="field-contact_name">
+              <label class="cadd-label" for="contact_name">
+                اسم المسؤول
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <input
+                class="cadd-input"
+                type="text"
+                id="contact_name"
+                name="contact_name"
+                value="{{ form_data.contact_name if form_data else customer.contact_name if customer else '' }}"
+                placeholder="مثال: أحمد محمد"
+                aria-describedby="hint-contact_name"
+              >
+              <div class="cadd-field-hint" id="hint-contact_name">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                الشخص الذي تتواصل معه مباشرة بخصوص الدفع والدعم الفني.
+              </div>
+            </div>
+
+            {# البريد الإلكتروني #}
+            <div class="cadd-field" id="field-email">
+              <label class="cadd-label" for="email">
+                البريد الإلكتروني
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-envelope cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input {{ 'is-error' if form_errors and 'email' in form_errors else '' }}"
+                  type="email"
+                  id="email"
+                  name="email"
+                  value="{{ form_data.email if form_data else customer.email if customer else '' }}"
+                  placeholder="name@company.com"
+                  dir="ltr"
+                  aria-describedby="hint-email err-email"
+                >
+              </div>
+              <div class="cadd-field-error {{ 'is-visible' if form_errors and 'email' in form_errors }}"
+                   id="err-email" role="alert">
+                <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+                {{ form_errors.email if form_errors and 'email' in form_errors else 'صيغة البريد الإلكتروني غير صحيحة' }}
+              </div>
+              <div class="cadd-field-hint" id="hint-email">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                للمراسلات الإدارية فقط — لا يُستخدم لتسجيل الدخول للنظام.
+              </div>
+            </div>
+
+            {# الهاتف #}
+            <div class="cadd-field" id="field-phone">
+              <label class="cadd-label" for="phone">
+                رقم الهاتف
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-phone cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input"
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value="{{ form_data.phone if form_data else customer.phone if customer else '' }}"
+                  placeholder="+966 5X XXX XXXX"
+                  dir="ltr"
+                  aria-describedby="hint-phone"
+                >
+              </div>
+              <div class="cadd-field-hint" id="hint-phone">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                رقم واتساب أو اتصال للتواصل السريع — أدخله بصيغة دولية إن أمكن.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {# قسم 2: الموقع والعملة #}
+        <div class="cadd-fieldset">
+          <div class="cadd-fieldset-title">
+            <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
+            الموقع والعملة
+          </div>
+
+          <div class="cadd-grid cadd-grid-3">
+
+            {# الدولة #}
+            <div class="cadd-field" id="field-country">
+              <label class="cadd-label" for="country">الدولة</label>
+              <input
+                class="cadd-input"
+                type="text"
+                id="country"
+                name="country"
+                value="{{ form_data.country if form_data else customer.country if customer else '' }}"
+                placeholder="مثال: السعودية"
+                aria-describedby="hint-country"
+              >
+              <div class="cadd-field-hint" id="hint-country">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                تُستخدم في التقارير وتصنيف العملاء حسب المنطقة.
+              </div>
+            </div>
+
+            {# المدينة #}
+            <div class="cadd-field" id="field-city">
+              <label class="cadd-label" for="city">المدينة</label>
+              <input
+                class="cadd-input"
+                type="text"
+                id="city"
+                name="city"
+                value="{{ form_data.city if form_data else customer.city if customer else '' }}"
+                placeholder="مثال: الرياض"
+                aria-describedby="hint-city"
+              >
+              <div class="cadd-field-hint" id="hint-city">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                اكتب المدينة أو المنطقة التي يعمل فيها العميل.
+              </div>
+            </div>
+
+            {# عملة الفوترة #}
+            <div class="cadd-field" id="field-currency">
+              <label class="cadd-label" for="currency">عملة الفوترة</label>
+              <select class="cadd-select" id="currency" name="currency" aria-describedby="hint-currency">
+                <option value="USD" {{ 'selected' if (form_data and form_data.currency == 'USD') or not (form_data or customer) }}>USD — دولار أمريكي</option>
+                <option value="SAR" {{ 'selected' if form_data and form_data.currency == 'SAR' or (customer and customer.currency == 'SAR') }}>SAR — ريال سعودي</option>
+                <option value="AED" {{ 'selected' if form_data and form_data.currency == 'AED' or (customer and customer.currency == 'AED') }}>AED — درهم إماراتي</option>
+                <option value="KWD" {{ 'selected' if form_data and form_data.currency == 'KWD' or (customer and customer.currency == 'KWD') }}>KWD — دينار كويتي</option>
+                <option value="QAR" {{ 'selected' if form_data and form_data.currency == 'QAR' or (customer and customer.currency == 'QAR') }}>QAR — ريال قطري</option>
+                <option value="JOD" {{ 'selected' if form_data and form_data.currency == 'JOD' or (customer and customer.currency == 'JOD') }}>JOD — دينار أردني</option>
+                <option value="EGP" {{ 'selected' if form_data and form_data.currency == 'EGP' or (customer and customer.currency == 'EGP') }}>EGP — جنيه مصري</option>
+              </select>
+              <div class="cadd-field-hint" id="hint-currency">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                العملة التي ستُحتسب بها الفواتير والمدفوعات لهذا العميل. يمكن تغييرها لاحقاً.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {# ملاحظات إضافية #}
+        <div class="cadd-fieldset">
+          <div class="cadd-fieldset-title">
+            <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+            ملاحظات
+            <span class="cadd-label-opt">(اختياري)</span>
+          </div>
+
+          <div class="cadd-field">
+            <label class="cadd-label" for="notes">ملاحظات داخلية</label>
+            <textarea
+              class="cadd-textarea"
+              id="notes"
+              name="notes"
+              placeholder="أي تفاصيل إضافية عن هذا العميل — لا تظهر للعميل نفسه..."
+              aria-describedby="hint-notes"
+            >{{ form_data.notes if form_data else customer.notes if customer else '' }}</textarea>
+            <div class="cadd-field-hint" id="hint-notes">
+              <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+              هذه الملاحظات للاستخدام الداخلي فقط — لن يراها العميل أبداً.
+            </div>
+          </div>
+        </div>
+
+      </div>{# /.cadd-panel.is-active #}
+
+      {# ═══════════════════════════════════════
+         لوحة الخطوة 2 — إعداد الشبكة
+      ═══════════════════════════════════════ #}
+      <div class="cadd-panel" id="cadd-panel-2">
+
+        <div class="cadd-hint">
+          <i class="fa-solid fa-circle-info cadd-hint-icon" aria-hidden="true"></i>
+          <span>
+            هذه الإعدادات تتحكم في كيفية اتصال النظام بخادم RADIUS الخاص بالعميل.
+            إذا لم تعرف هذه التفاصيل الآن، يمكنك تركها فارغة وإكمالها لاحقاً من صفحة تعديل العميل.
+          </span>
+        </div>
+
+        {# قسم 1: خادم RADIUS #}
+        <div class="cadd-fieldset">
+          <div class="cadd-fieldset-title">
+            <i class="fa-solid fa-server" aria-hidden="true"></i>
+            خادم RADIUS
+          </div>
+
+          <div class="cadd-grid">
+
+            {# رابط الخادم #}
+            <div class="cadd-field cadd-field-full" id="field-runtime_url">
+              <label class="cadd-label" for="runtime_url">
+                رابط خادم RADIUS
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-link cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input {{ 'is-error' if form_errors and 'runtime_url' in form_errors else '' }}"
+                  type="url"
+                  id="runtime_url"
+                  name="runtime_url"
+                  value="{{ form_data.runtime_url if form_data else customer.runtime_url if customer else '' }}"
+                  placeholder="https://radius.company.com  أو  http://192.168.1.10"
+                  dir="ltr"
+                  aria-describedby="hint-runtime_url err-runtime_url"
+                >
+              </div>
+              <div class="cadd-field-error {{ 'is-visible' if form_errors and 'runtime_url' in form_errors }}"
+                   id="err-runtime_url" role="alert">
+                <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+                {{ form_errors.runtime_url if form_errors and 'runtime_url' in form_errors else 'صيغة الرابط غير صحيحة — يجب أن يبدأ بـ http:// أو https://' }}
+              </div>
+              <div class="cadd-field-hint" id="hint-runtime_url">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                العنوان الكامل للوحة تحكم RADIUS الخاصة بهذا العميل — يُستخدم للمزامنة وإدارة المستخدمين عن بُعد.
+              </div>
+            </div>
+
+            {# Realm #}
+            <div class="cadd-field" id="field-realm">
+              <label class="cadd-label" for="realm">
+                RADIUS Realm
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-at cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input"
+                  type="text"
+                  id="realm"
+                  name="realm"
+                  value="{{ form_data.realm if form_data else customer.realm if customer else '' }}"
+                  placeholder="company.local"
+                  dir="ltr"
+                  aria-describedby="hint-realm"
+                >
+              </div>
+              <div class="cadd-field-hint" id="hint-realm">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                النطاق (Realm) يُستخدم في بروتوكول RADIUS لتحديد هوية الشبكة — مثال: company.local أو company.net
+              </div>
+            </div>
+
+            {# RADIUS Secret #}
+            <div class="cadd-field" id="field-radius_secret">
+              <label class="cadd-label" for="radius_secret">
+                RADIUS Secret
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-key cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input"
+                  type="password"
+                  id="radius_secret"
+                  name="radius_secret"
+                  value="{{ form_data.radius_secret if form_data else '' }}"
+                  placeholder="كلمة السر المشتركة بين الخادم والأجهزة"
+                  dir="ltr"
+                  autocomplete="new-password"
+                  aria-describedby="hint-radius_secret"
+                >
+              </div>
+              <div class="cadd-field-hint" id="hint-radius_secret">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                كلمة السر التي تعرفها أجهزة الشبكة للتحقق من هويتها مع خادم RADIUS — تُخزَّن بشكل مشفر.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {# قسم 2: الحالة الأولية #}
+        <div class="cadd-fieldset">
+          <div class="cadd-fieldset-title">
+            <i class="fa-solid fa-toggle-on" aria-hidden="true"></i>
+            الحالة الأولية للحساب
+          </div>
+
+          <div class="cadd-hint cadd-hint--warn">
+            <i class="fa-solid fa-triangle-exclamation cadd-hint-icon" aria-hidden="true"></i>
+            <span>
+              الحالة «نشط» تعني أن العميل يمكنه الدخول والعمل مباشرة.
+              اختر «في الانتظار» إذا كنت تريد مراجعة البيانات قبل التفعيل، أو «تجريبي» لمنحه فترة تجربة محدودة.
+            </span>
+          </div>
+
+          <div class="cadd-field">
+            <label class="cadd-label" id="label-status">الحالة</label>
+            <div class="cadd-radio-group" role="radiogroup" aria-labelledby="label-status">
+
+              <div class="cadd-radio-card">
+                <input type="radio" id="status-pending" name="status" value="pending"
+                       {{ 'checked' if not form_data or form_data.status == 'pending' }}>
+                <label class="cadd-radio-label" for="status-pending">
+                  <span class="cadd-radio-label-icon">⏳</span>
+                  <span class="cadd-radio-label-title">في الانتظار</span>
+                  <span class="cadd-radio-label-sub">مراجعة يدوية مطلوبة قبل التفعيل</span>
+                </label>
+              </div>
+
+              <div class="cadd-radio-card">
+                <input type="radio" id="status-active" name="status" value="active"
+                       {{ 'checked' if form_data and form_data.status == 'active' }}>
+                <label class="cadd-radio-label" for="status-active">
+                  <span class="cadd-radio-label-icon">✅</span>
+                  <span class="cadd-radio-label-title">نشط</span>
+                  <span class="cadd-radio-label-sub">الحساب جاهز للعمل الآن</span>
+                </label>
+              </div>
+
+              <div class="cadd-radio-card">
+                <input type="radio" id="status-trial" name="status" value="trial"
+                       {{ 'checked' if form_data and form_data.status == 'trial' }}>
+                <label class="cadd-radio-label" for="status-trial">
+                  <span class="cadd-radio-label-icon">🔵</span>
+                  <span class="cadd-radio-label-title">تجريبي</span>
+                  <span class="cadd-radio-label-sub">فترة تجربة — صلاحيات محدودة</span>
+                </label>
+              </div>
+
+              <div class="cadd-radio-card">
+                <input type="radio" id="status-inactive" name="status" value="inactive"
+                       {{ 'checked' if form_data and form_data.status == 'inactive' }}>
+                <label class="cadd-radio-label" for="status-inactive">
+                  <span class="cadd-radio-label-icon">⬜</span>
+                  <span class="cadd-radio-label-title">غير نشط</span>
+                  <span class="cadd-radio-label-sub">الحساب موجود لكن معطّل</span>
+                </label>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>{# /.cadd-panel #}
+
+      {# ═══════════════════════════════════════
+         لوحة الخطوة 3 — مراجعة وتأكيد
+      ═══════════════════════════════════════ #}
+      <div class="cadd-panel" id="cadd-panel-3">
+
+        <div class="cadd-hint">
+          <i class="fa-solid fa-circle-info cadd-hint-icon" aria-hidden="true"></i>
+          <span>
+            راجع البيانات أدناه قبل الحفظ. إذا وجدت خطأ، اضغط «السابق» للتعديل.
+            بعد الحفظ ستنتقل مباشرة لملف العميل حيث يمكنك إضافة التراخيص.
+          </span>
+        </div>
+
+        {# ─ المعلومات الأساسية ─ #}
+        <div class="cadd-review-section">
+          <div class="cadd-review-title">
+            <i class="fa-solid fa-user" aria-hidden="true"></i>
+            المعلومات الأساسية
+          </div>
+          <div class="cadd-review-grid">
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">اسم الشركة</div>
+              <div class="cadd-review-item-val" id="rev-company_name">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">المسؤول</div>
+              <div class="cadd-review-item-val" id="rev-contact_name">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">البريد الإلكتروني</div>
+              <div class="cadd-review-item-val mono" id="rev-email">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">الهاتف</div>
+              <div class="cadd-review-item-val mono" id="rev-phone">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">الدولة / المدينة</div>
+              <div class="cadd-review-item-val" id="rev-location">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">عملة الفوترة</div>
+              <div class="cadd-review-item-val" id="rev-currency">—</div>
+            </div>
+          </div>
+        </div>
+
+        {# ─ إعدادات الشبكة ─ #}
+        <div class="cadd-review-section">
+          <div class="cadd-review-title">
+            <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+            إعدادات الشبكة
+          </div>
+          <div class="cadd-review-grid">
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">رابط خادم RADIUS</div>
+              <div class="cadd-review-item-val mono" id="rev-runtime_url">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">Realm</div>
+              <div class="cadd-review-item-val mono" id="rev-realm">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">RADIUS Secret</div>
+              <div class="cadd-review-item-val mono" id="rev-radius_secret">—</div>
+            </div>
+            <div class="cadd-review-item">
+              <div class="cadd-review-item-key">الحالة الأولية</div>
+              <div class="cadd-review-item-val" id="rev-status">—</div>
+            </div>
+          </div>
+        </div>
+
+        {# ─ ملاحظات ─ #}
+        <div class="cadd-review-section">
+          <div class="cadd-review-title">
+            <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+            ملاحظات داخلية
+          </div>
+          <div class="cadd-review-item">
+            <div class="cadd-review-item-key">الملاحظات</div>
+            <div class="cadd-review-item-val" id="rev-notes">—</div>
+          </div>
+        </div>
+
+      </div>{# /.cadd-panel (step 3) #}
+
+    </div>{# /.cadd-card-body #}
+
+    {# ─── أزرار التنقل ─── #}
+    <div class="cadd-nav">
+
+      {# اليسار: إلغاء أو رجوع #}
+      <div>
+        <button type="button"
+                class="cadd-btn cadd-btn--secondary"
+                id="cadd-btn-prev"
+                onclick="caddPrev()"
+                style="display:none"
+                aria-label="العودة للخطوة السابقة">
+          <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          السابق
+        </button>
+        <a href="{{ url_for('admin.customers_list') }}"
+           class="cadd-btn cadd-btn--cancel"
+           id="cadd-btn-cancel"
+           aria-label="إلغاء والعودة للقائمة">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          إلغاء
+        </a>
+      </div>
+
+      {# اليمين: التالي أو حفظ #}
+      <div class="cadd-nav-end">
+        <button type="button"
+                class="cadd-btn cadd-btn--primary"
+                id="cadd-btn-next"
+                onclick="caddNext()"
+                aria-label="الانتقال للخطوة التالية">
+          التالي
+          <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+        </button>
+        <button type="submit"
+                class="cadd-btn cadd-btn--submit"
+                id="cadd-btn-submit"
+                style="display:none"
+                aria-label="حفظ العميل الجديد">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+          حفظ وإنشاء العميل
+        </button>
+      </div>
+
+    </div>
+
+  </div>{# /.cadd-card #}
+
+</form>
+
+</div>{# /.cadd-page #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* ══════════════════════════════════════════════
+     متغيرات عامة
+  ══════════════════════════════════════════════ */
+  var currentStep  = 1;
+  var totalSteps   = 3;
+
+  var panels  = document.querySelectorAll('.cadd-panel');
+  var stepInds = [
+    document.getElementById('step-ind-1'),
+    document.getElementById('step-ind-2'),
+    document.getElementById('step-ind-3')
+  ];
+
+  var btnPrev   = document.getElementById('cadd-btn-prev');
+  var btnNext   = document.getElementById('cadd-btn-next');
+  var btnCancel = document.getElementById('cadd-btn-cancel');
+  var btnSubmit = document.getElementById('cadd-btn-submit');
+  var hidStep   = document.getElementById('cadd-step-hidden');
+
+  /* ══════════════════════════════════════════════
+     التنقل بين الخطوات
+  ══════════════════════════════════════════════ */
+  function goToStep(n) {
+    /* إخفاء الخطوة الحالية */
+    panels.forEach(function (p) { p.classList.remove('is-active'); });
+    var target = document.getElementById('cadd-panel-' + n);
+    if (target) target.classList.add('is-active');
+
+    /* تحديث مؤشرات الخطوات */
+    stepInds.forEach(function (el, i) {
+      el.classList.remove('is-active', 'is-done', 'is-idle');
+      el.removeAttribute('aria-current');
+      if (i + 1 < n)      { el.classList.add('is-done');   }
+      else if (i + 1 === n) { el.classList.add('is-active'); el.setAttribute('aria-current', 'step'); }
+      else                 { el.classList.add('is-idle');   }
+    });
+
+    /* أزرار التنقل */
+    btnPrev.style.display   = (n > 1) ? '' : 'none';
+    btnCancel.style.display = (n > 1) ? 'none' : '';
+    btnNext.style.display   = (n < totalSteps) ? '' : 'none';
+    btnSubmit.style.display = (n === totalSteps) ? '' : 'none';
+
+    hidStep.value = n;
+    currentStep   = n;
+
+    /* إذا وصلنا لخطوة المراجعة — حدّث القيم */
+    if (n === 3) fillReview();
+
+    /* Scroll للأعلى */
+    var card = document.querySelector('.cadd-card');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* ══════════════════════════════════════════════
+     التحقق من الحقول المطلوبة
+  ══════════════════════════════════════════════ */
+  function validateStep(n) {
+    var ok = true;
+
+    if (n === 1) {
+      ok = validateField('company_name', function (v) { return v.trim().length >= 2; },
+                         'اسم الشركة مطلوب ويجب أن يكون حرفين على الأقل') && ok;
+      var email = document.getElementById('email');
+      if (email && email.value.trim()) {
+        ok = validateField('email', function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); },
+                           'صيغة البريد الإلكتروني غير صحيحة') && ok;
+      }
+    }
+
+    if (n === 2) {
+      var url = document.getElementById('runtime_url');
+      if (url && url.value.trim()) {
+        ok = validateField('runtime_url', function (v) {
+          return /^https?:\/\/.+/.test(v.trim());
+        }, 'الرابط يجب أن يبدأ بـ http:// أو https://') && ok;
+      }
+    }
+
+    return ok;
+  }
+
+  /* دالة مساعدة لحقل واحد */
+  function validateField(name, testFn, errMsg) {
+    var input  = document.getElementById(name);
+    var errEl  = document.getElementById('err-' + name);
+    if (!input) return true;
+
+    var valid = testFn(input.value);
+    input.classList.toggle('is-error', !valid);
+    input.classList.toggle('is-ok',    valid && input.value.trim().length > 0);
+
+    if (errEl) {
+      if (!valid) {
+        errEl.textContent = errMsg;
+        errEl.insertAdjacentHTML('afterbegin', '<i class="fa-solid fa-circle-xmark" style="margin-inline-end:4px"></i>');
+        errEl.classList.add('is-visible');
+      } else {
+        errEl.classList.remove('is-visible');
+      }
+    }
+    return valid;
+  }
+
+  /* ══════════════════════════════════════════════
+     ملء صفحة المراجعة
+  ══════════════════════════════════════════════ */
+  var statusLabels = {
+    'active':   '✅ نشط',
+    'inactive': '⬜ غير نشط',
+    'pending':  '⏳ في الانتظار',
+    'trial':    '🔵 تجريبي',
+    'blocked':  '🚫 موقوف'
+  };
+
+  function fillReview() {
+    var fields = {
+      'company_name': 'rev-company_name',
+      'contact_name': 'rev-contact_name',
+      'email':        'rev-email',
+      'phone':        'rev-phone',
+      'runtime_url':  'rev-runtime_url',
+      'realm':        'rev-realm',
+      'notes':        'rev-notes'
+    };
+
+    Object.keys(fields).forEach(function (fieldId) {
+      var inp = document.getElementById(fieldId) || document.querySelector('[name="' + fieldId + '"]');
+      var rev = document.getElementById(fields[fieldId]);
+      if (!inp || !rev) return;
+      var val = inp.value.trim();
+      if (val) {
+        rev.textContent = val;
+        rev.classList.remove('is-empty');
+      } else {
+        rev.textContent = 'غير محدد';
+        rev.classList.add('is-empty');
+      }
+    });
+
+    /* الدولة + المدينة مجتمعَتان */
+    var country = (document.getElementById('country') || {}).value || '';
+    var city    = (document.getElementById('city')    || {}).value || '';
+    var locEl   = document.getElementById('rev-location');
+    if (locEl) {
+      var loc = [country, city].filter(Boolean).join(' / ');
+      locEl.textContent = loc || 'غير محدد';
+      locEl.classList.toggle('is-empty', !loc);
+    }
+
+    /* العملة */
+    var currSel = document.getElementById('currency');
+    var revCurr = document.getElementById('rev-currency');
+    if (currSel && revCurr) {
+      var opt = currSel.options[currSel.selectedIndex];
+      revCurr.textContent = opt ? opt.text : 'USD';
+      revCurr.classList.remove('is-empty');
+    }
+
+    /* الحالة */
+    var statusInp = document.querySelector('[name="status"]:checked');
+    var revStatus = document.getElementById('rev-status');
+    if (revStatus) {
+      var sVal = statusInp ? statusInp.value : 'pending';
+      revStatus.textContent = statusLabels[sVal] || sVal;
+      revStatus.classList.remove('is-empty');
+    }
+
+    /* RADIUS Secret — نُظهر نجوماً إذا وُجد */
+    var secretInp = document.getElementById('radius_secret');
+    var revSecret = document.getElementById('rev-radius_secret');
+    if (secretInp && revSecret) {
+      if (secretInp.value.trim()) {
+        revSecret.textContent = '●●●●●●●● (مضبوط)';
+        revSecret.classList.remove('is-empty');
+      } else {
+        revSecret.textContent = 'غير محدد';
+        revSecret.classList.add('is-empty');
+      }
+    }
+  }
+
+  /* ══════════════════════════════════════════════
+     دوال مكشوفة (استدعاء من HTML)
+  ══════════════════════════════════════════════ */
+  window.caddNext = function () {
+    if (!validateStep(currentStep)) return;
+    if (currentStep < totalSteps) goToStep(currentStep + 1);
+  };
+
+  window.caddPrev = function () {
+    if (currentStep > 1) goToStep(currentStep - 1);
+  };
+
+  /* ══════════════════════════════════════════════
+     التحقق الفوري أثناء الكتابة
+  ══════════════════════════════════════════════ */
+  ['company_name', 'email', 'runtime_url'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('blur', function () {
+      /* تحقق فردي عند مغادرة الحقل */
+      if (id === 'company_name') {
+        validateField('company_name', function (v) { return v.trim().length >= 2; },
+                      'اسم الشركة مطلوب ويجب أن يكون حرفين على الأقل');
+      }
+      if (id === 'email' && el.value.trim()) {
+        validateField('email', function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); },
+                      'صيغة البريد الإلكتروني غير صحيحة');
+      }
+      if (id === 'runtime_url' && el.value.trim()) {
+        validateField('runtime_url', function (v) { return /^https?:\/\/.+/.test(v.trim()); },
+                      'الرابط يجب أن يبدأ بـ http:// أو https://');
+      }
+    });
+
+    /* مسح حالة الخطأ عند البدء بالكتابة */
+    el.addEventListener('input', function () {
+      el.classList.remove('is-error');
+      var errEl = document.getElementById('err-' + id);
+      if (errEl) errEl.classList.remove('is-visible');
+    });
+  });
+
+  /* ══════════════════════════════════════════════
+     إذا Flask أعاد البيانات مع أخطاء — ابدأ من الخطوة المناسبة
+  ══════════════════════════════════════════════ */
+  (function checkServerErrors() {
+    var stepHidVal = parseInt(hidStep.value || '1', 10);
+    if (stepHidVal > 1 && stepHidVal <= totalSteps) {
+      goToStep(stepHidVal);
+    } else {
+      /* بناء الـ UI للخطوة 1 بدون انتقال */
+      goToStep(1)
+    }
+  }());
+
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,604 @@
+{% extends "admin/base_new.html" %}
+{% block title %}أنفاق VPN{% endblock %}
+{% block page_title %}أنفاق VPN{% endblock %}
+
+{% block content %}
+
+{# ══════════════════════════════════════════════════════════════════
+   Hero
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="vt-hero">
+  <div class="vt-hero__body">
+    <div class="vt-hero__title">
+      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+      أنفاق VPN النشطة
+    </div>
+    <p class="vt-hero__sub">
+      جميع أنفاق VPN المُزوَّدة عبر عقد CHR — SSTP / L2TP / IPsec / WireGuard
+    </p>
+    <div class="vt-hero__stats">
+      <div class="vt-hero__stat">
+        <span class="vt-hero__stat-num">{{ tunnels|length }}</span>
+        <span class="vt-hero__stat-lbl">إجمالي الأنفاق</span>
+      </div>
+      <div class="vt-hero__stat">
+        <span class="vt-hero__stat-num vt-hero__stat-num--green">
+          {{ tunnels|selectattr('status','eq','active')|list|length }}
+        </span>
+        <span class="vt-hero__stat-lbl">نشطة</span>
+      </div>
+      <div class="vt-hero__stat">
+        <span class="vt-hero__stat-num vt-hero__stat-num--amber">
+          {{ tunnels|selectattr('status','eq','suspended')|list|length }}
+        </span>
+        <span class="vt-hero__stat-lbl">موقوفة</span>
+      </div>
+      <div class="vt-hero__stat">
+        <span class="vt-hero__stat-num vt-hero__stat-num--grey">
+          {{ tunnels|selectattr('status','eq','pending')|list|length }}
+        </span>
+        <span class="vt-hero__stat-lbl">معلّقة</span>
+      </div>
+    </div>
+  </div>
+  <div class="vt-hero__cta">
+    <button class="vt-btn vt-btn--white" type="button"
+            onclick="vtModal('modal-provision')">
+      <i class="fa-solid fa-circle-plus" aria-hidden="true"></i>
+      تزويد نفق جديد
+    </button>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   فلتر النوع
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="vt-filter-bar" role="group" aria-label="فلترة حسب نوع النفق">
+  <button class="vt-filter-btn is-active" data-type="all"
+          onclick="vtFilter('all')">
+    الكل
+    <span class="vt-filter-btn__count">{{ tunnels|length }}</span>
+  </button>
+  {% for type_key in ['sstp','l2tp','ipsec','wireguard'] %}
+  {% set type_count = tunnels|selectattr('service_type','eq',type_key)|list|length %}
+  {% if type_count > 0 %}
+  <button class="vt-filter-btn" data-type="{{ type_key }}"
+          onclick="vtFilter('{{ type_key }}')">
+    {{ type_key|upper }}
+    <span class="vt-filter-btn__count">{{ type_count }}</span>
+  </button>
+  {% endif %}
+  {% endfor %}
+</div>
+
+{# ══════════════════════════════════════════════════════════════════
+   جدول الأنفاق
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="vt-card">
+
+  {% if not tunnels %}
+    <div class="vt-empty">
+      <i class="fa-solid fa-shield-halved fa-2x" aria-hidden="true"></i>
+      <p>لا توجد أنفاق VPN مزوَّدة بعد.</p>
+      <button class="vt-btn vt-btn--primary" type="button"
+              onclick="vtModal('modal-provision')">
+        <i class="fa-solid fa-circle-plus" aria-hidden="true"></i>
+        تزويد أول نفق
+      </button>
+    </div>
+  {% else %}
+  <div class="vt-table-wrap">
+    <table class="vt-table">
+      <thead>
+        <tr>
+          <th>الحالة</th>
+          <th>المعرّف</th>
+          <th>العميل / الحساب</th>
+          <th>النوع</th>
+          <th>العقدة</th>
+          <th>عنوان IP المخصص</th>
+          <th>الانتهاء</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody id="vt-tbody">
+      {% for t in tunnels %}
+        <tr class="vt-table__row" data-type="{{ t.service_type }}">
+
+          {# الحالة #}
+          <td>
+            {% if t.status == 'active' %}
+              <span class="vt-pill vt-pill--green">
+                <span class="vt-hb" aria-hidden="true"></span>نشط
+              </span>
+            {% elif t.status == 'suspended' %}
+              <span class="vt-pill vt-pill--amber">موقوف</span>
+            {% elif t.status == 'pending' %}
+              <span class="vt-pill vt-pill--grey">معلّق</span>
+            {% elif t.status == 'expired' %}
+              <span class="vt-pill vt-pill--red">منتهي</span>
+            {% else %}
+              <span class="vt-pill vt-pill--grey">{{ t.status }}</span>
+            {% endif %}
+          </td>
+
+          {# المعرّف #}
+          <td>
+            <span class="vt-mono" style="font-size:var(--cc-fs-small)">
+              {{ t.id }}
+            </span>
+          </td>
+
+          {# العميل / الحساب #}
+          <td>
+            <strong>{{ t.customer_name }}</strong>
+            {% if t.username %}
+              <br><span class="vt-mono vt-muted" style="font-size:var(--cc-fs-tiny)">
+                {{ t.username }}
+              </span>
+            {% endif %}
+          </td>
+
+          {# النوع #}
+          <td>
+            <span class="vt-type-badge vt-type-badge--{{ t.service_type }}">
+              {{ t.service_type|upper }}
+            </span>
+          </td>
+
+          {# العقدة #}
+          <td>
+            <span class="vt-mono">{{ t.chr_node_name or '—' }}</span>
+          </td>
+
+          {# IP المخصص #}
+          <td>
+            <span class="vt-mono vt-ltr" style="font-size:var(--cc-fs-small)">
+              {{ t.assigned_ip or '—' }}
+            </span>
+          </td>
+
+          {# الانتهاء #}
+          <td style="font-size:var(--cc-fs-small)">
+            {{ t.expires_at.strftime('%Y-%m-%d') if t.expires_at else '—' }}
+          </td>
+
+          {# إجراء #}
+          <td>
+            <div style="display:flex;gap:var(--cc-sp-3)">
+              {% if t.status == 'active' %}
+              <form method="post"
+                    action="{{ url_for('admin_infra.vpn_tunnel_suspend', tunnel_id=t.id) }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button class="vt-btn vt-btn--xs vt-btn--amber" type="submit">
+                  إيقاف
+                </button>
+              </form>
+              {% elif t.status == 'suspended' %}
+              <form method="post"
+                    action="{{ url_for('admin_infra.vpn_tunnel_resume', tunnel_id=t.id) }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button class="vt-btn vt-btn--xs vt-btn--green" type="submit">
+                  تفعيل
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>{# /vt-card #}
+
+{# ══════════════════════════════════════════════════════════════════
+   Modal — تزويد نفق جديد
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="vt-modal-overlay" id="modal-provision" role="dialog"
+     aria-modal="true" aria-labelledby="modal-provision-title"
+     onclick="if(event.target===this)vtModalClose('modal-provision')">
+  <div class="vt-modal">
+
+    <div class="vt-modal__head">
+      <h2 id="modal-provision-title" class="vt-modal__title">
+        <i class="fa-solid fa-circle-plus" aria-hidden="true"></i>
+        تزويد نفق VPN جديد
+      </h2>
+      <button class="vt-modal__close" type="button"
+              onclick="vtModalClose('modal-provision')"
+              aria-label="إغلاق">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <form method="post" action="{{ url_for('admin_infra.vpn_tunnel_provision') }}"
+          class="vt-modal__body">
+      {{ csrf_input() }}
+
+      <div class="vt-form-grid">
+
+        {# العميل #}
+        <div class="vt-field vt-field--full">
+          <label class="vt-label" for="vt-customer">
+            العميل <span class="vt-required" aria-hidden="true">*</span>
+          </label>
+          <select class="vt-input" id="vt-customer" name="customer_id" required
+                  aria-describedby="vt-hint-customer">
+            <option value="">— اختر العميل —</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.company_name }}</option>
+            {% endfor %}
+          </select>
+          <p class="vt-hint" id="vt-hint-customer">العميل الذي سيُخصَّص له هذا النفق</p>
+        </div>
+
+        {# اسم المستخدم #}
+        <div class="vt-field">
+          <label class="vt-label" for="vt-username">
+            اسم المستخدم <span class="vt-required" aria-hidden="true">*</span>
+          </label>
+          <input class="vt-input vt-mono vt-ltr" id="vt-username" name="username"
+                 placeholder="user@realm" required autocomplete="off"
+                 aria-describedby="vt-hint-username">
+          <p class="vt-hint" id="vt-hint-username">
+            يجب أن يتضمن <span class="vt-mono vt-ltr">@realm</span> مطابقاً لمسار الوكيل
+          </p>
+        </div>
+
+        {# نوع الخدمة #}
+        <div class="vt-field">
+          <label class="vt-label" for="vt-type">
+            نوع الخدمة <span class="vt-required" aria-hidden="true">*</span>
+          </label>
+          <select class="vt-input" id="vt-type" name="service_type" required
+                  aria-describedby="vt-hint-type">
+            <option value="">— اختر البروتوكول —</option>
+            {% for t in ['sstp','l2tp','ipsec','wireguard'] %}
+            <option value="{{ t }}">{{ t|upper }}</option>
+            {% endfor %}
+          </select>
+          <p class="vt-hint" id="vt-hint-type">بروتوكول الاتصال المستخدم</p>
+        </div>
+
+        {# عقدة CHR #}
+        <div class="vt-field">
+          <label class="vt-label" for="vt-node">
+            عقدة CHR <span class="vt-required" aria-hidden="true">*</span>
+          </label>
+          <select class="vt-input" id="vt-node" name="chr_node_id" required
+                  aria-describedby="vt-hint-node">
+            <option value="">— اختر العقدة —</option>
+            {% for n in chr_nodes %}
+            <option value="{{ n.id }}"{% if n.status != 'active' %} disabled{% endif %}>
+              {{ n.name }} ({{ n.public_ip }}){% if n.status != 'active' %} — غير متاحة{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="vt-hint" id="vt-hint-node">الخادم الذي سيُنشأ عليه النفق</p>
+        </div>
+
+        {# IP المخصص #}
+        <div class="vt-field">
+          <label class="vt-label" for="vt-ip">IP المخصص</label>
+          <input class="vt-input vt-mono vt-ltr" id="vt-ip" name="assigned_ip"
+                 placeholder="10.x.x.x (اختياري)"
+                 aria-describedby="vt-hint-ip">
+          <p class="vt-hint" id="vt-hint-ip">اتركه فارغاً للتخصيص التلقائي من الـ Pool</p>
+        </div>
+
+        {# تاريخ الانتهاء #}
+        <div class="vt-field">
+          <label class="vt-label" for="vt-exp">تاريخ الانتهاء</label>
+          <input class="vt-input vt-ltr" id="vt-exp" name="expires_at"
+                 type="date"
+                 aria-describedby="vt-hint-exp">
+          <p class="vt-hint" id="vt-hint-exp">اتركه فارغاً لنفق غير محدود المدة</p>
+        </div>
+
+        {# ملاحظات #}
+        <div class="vt-field vt-field--full">
+          <label class="vt-label" for="vt-notes">ملاحظات داخلية</label>
+          <textarea class="vt-input" id="vt-notes" name="notes" rows="2"
+                    aria-describedby="vt-hint-notes"
+                    placeholder="أي معلومات إضافية…"></textarea>
+          <p class="vt-hint" id="vt-hint-notes">للاستخدام الداخلي — لا تظهر للمشترك</p>
+        </div>
+
+      </div>{# /vt-form-grid #}
+
+      <div class="vt-modal__foot">
+        <button class="vt-btn vt-btn--primary" type="submit">
+          <i class="fa-solid fa-circle-plus" aria-hidden="true"></i>
+          تزويد النفق
+        </button>
+        <button class="vt-btn vt-btn--ghost" type="button"
+                onclick="vtModalClose('modal-provision')">إلغاء</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% block scripts %}
+<style>
+:root {
+  /* ── Local viewport vars (hero overlay + code block) ── */
+  --vr-white:         #ffffff;
+  --vr-hero-sub:      rgba(255,255,255,.78);
+  --vr-hero-lbl:      rgba(255,255,255,.75);
+  --vr-hero-stat:     rgba(255,255,255,.13);
+  --vr-hero-ghost:    rgba(255,255,255,.14);
+  --vr-hero-ghost-hov:rgba(255,255,255,.22);
+  --vr-hero-border:   rgba(255,255,255,.30);
+  --vr-hero-green:    #6EF8A8;
+  --vr-hero-amber:    #FFD97D;
+  --vr-hero-red:      #FF8FA3;
+  --vr-hero-grey:     rgba(255,255,255,.65);
+  --vr-code-bg:       #1E1E2E;
+  --vr-code-text:     #CDD6F4;
+  --vr-toast-bg:      #1F2937;
+}
+/* ── Hero ────────────────────────────────────────────── */
+.vt-hero {
+  background: var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow: var(--cc-sh-hero);
+  padding: var(--cc-sp-12) var(--cc-sp-13);
+  display: flex; align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cc-sp-11); flex-wrap: wrap;
+  margin-bottom: var(--cc-gap-section);
+}
+.vt-hero__title {
+  font-family: var(--cc-font); font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-bold); color: var(--vr-white);
+  display: flex; align-items: center; gap: var(--cc-sp-6);
+  margin-bottom: var(--cc-sp-4);
+}
+.vt-hero__sub {
+  font-size: var(--cc-fs-body); color: var(--vr-hero-sub);
+  margin: 0 0 var(--cc-sp-10); line-height: var(--cc-lh-default);
+}
+.vt-hero__stats { display:flex; gap:var(--cc-sp-10); flex-wrap:wrap; }
+.vt-hero__stat {
+  display:flex; flex-direction:column; align-items:center;
+  background:var(--vr-hero-stat); border-radius:var(--cc-r-tile);
+  padding:var(--cc-sp-6) var(--cc-sp-10); min-width:72px; gap:var(--cc-sp-2);
+}
+.vt-hero__stat-num { font-size:var(--cc-fs-display); font-weight:var(--cc-fw-heavy); color:var(--vr-white); line-height:var(--cc-lh-tight); }
+.vt-hero__stat-num--green { color:var(--vr-hero-green); }
+.vt-hero__stat-num--amber { color:var(--vr-hero-amber); }
+.vt-hero__stat-num--grey  { color:rgba(255,255,255,.65); }
+.vt-hero__stat-lbl { font-size:var(--cc-fs-small); color:rgba(255,255,255,.75); font-weight:var(--cc-fw-medium); white-space:nowrap; }
+.vt-hero__cta { display:flex; align-items:center; }
+
+/* ── Filter bar ──────────────────────────────────────── */
+.vt-filter-bar {
+  display:flex; gap:var(--cc-sp-4); flex-wrap:wrap;
+  margin-bottom:var(--cc-gap-section);
+}
+.vt-filter-btn {
+  display:inline-flex; align-items:center; gap:var(--cc-sp-4);
+  padding:var(--cc-sp-4) var(--cc-sp-8); height:34px;
+  border-radius:var(--cc-r-pill);
+  font-family:var(--cc-font); font-size:var(--cc-fs-body-s);
+  font-weight:var(--cc-fw-medium); cursor:pointer;
+  border:1px solid var(--cc-border-2);
+  background:var(--cc-card-bg); color:var(--cc-text-soft);
+  transition:var(--cc-tr-fast);
+}
+.vt-filter-btn:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
+.vt-filter-btn.is-active {
+  background:var(--cc-brand-soft); color:var(--cc-brand);
+  border-color:var(--cc-brand-3); font-weight:var(--cc-fw-bold);
+}
+.vt-filter-btn__count {
+  background:var(--hb-bg); color:var(--cc-text-soft);
+  border-radius:var(--cc-r-pill); font-size:var(--cc-fs-tiny);
+  padding:0 var(--cc-sp-4); min-width:20px; text-align:center;
+}
+.vt-filter-btn.is-active .vt-filter-btn__count {
+  background:var(--cc-brand); color:var(--vr-white);
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+.vt-btn {
+  display:inline-flex; align-items:center; gap:var(--cc-sp-4);
+  padding:0 var(--cc-sp-9); height:var(--cc-btn-h);
+  border-radius:var(--cc-btn-radius); font-family:var(--cc-font);
+  font-size:var(--cc-fs-body); font-weight:var(--cc-fw-medium);
+  cursor:pointer; border:none; transition:var(--cc-tr-fast);
+  text-decoration:none; white-space:nowrap;
+}
+.vt-btn--primary { background:var(--cc-btn-primary-bg); color:var(--vr-white); }
+.vt-btn--primary:hover { background:var(--cc-btn-primary-hover); }
+.vt-btn--white  { background:var(--vr-white); color:var(--cc-brand); }
+.vt-btn--white:hover { background:var(--cc-brand-softer); }
+.vt-btn--ghost  {
+  background:var(--hb-bg); color:var(--cc-text-soft);
+  border:1px solid var(--cc-border-2);
+}
+.vt-btn--ghost:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
+.vt-btn--xs { height:26px; font-size:var(--cc-fs-tiny); padding:0 var(--cc-sp-6); border-radius:var(--cc-r-sm); border:1px solid; }
+.vt-btn--green { background:var(--tile-green-bg); color:var(--tile-green-fg); border-color:var(--hr-green); }
+.vt-btn--green:hover { background:var(--tile-green-bg); }
+.vt-btn--amber { background:var(--tile-amber-bg); color:var(--tile-amber-fg); border-color:var(--hr-orange); }
+.vt-btn--amber:hover { background:var(--tile-amber-bg); }
+
+/* ── Card / Table ────────────────────────────────────── */
+.vt-card {
+  background:var(--cc-card-bg); border:1px solid var(--cc-border);
+  border-radius:var(--cc-r-card); box-shadow:var(--cc-sh-card);
+  margin-bottom:var(--cc-gap-section); overflow:hidden;
+}
+.vt-table-wrap { overflow-x:auto; }
+.vt-table { width:100%; border-collapse:collapse; font-family:var(--cc-font); font-size:var(--cc-fs-body); }
+.vt-table thead th {
+  background:var(--cc-table-head-bg); color:var(--cc-text-soft);
+  font-size:var(--cc-fs-small); font-weight:var(--cc-fw-bold);
+  padding:var(--cc-sp-6) var(--cc-sp-8); text-align:right;
+  border-bottom:1px solid var(--cc-border-2); white-space:nowrap;
+}
+.vt-table tbody td {
+  padding:var(--cc-sp-6) var(--cc-sp-8);
+  border-bottom:1px solid var(--cc-border);
+  color:var(--cc-text); vertical-align:middle;
+}
+.vt-table__row:last-child td { border-bottom:none; }
+.vt-table__row:hover td { background:var(--cc-table-row-hover); }
+.vt-table__row--hidden { display:none; }
+
+/* ── Pills ───────────────────────────────────────────── */
+.vt-pill {
+  display:inline-flex; align-items:center; gap:var(--cc-sp-3);
+  padding:var(--cc-sp-1) var(--cc-sp-5);
+  border-radius:var(--cc-r-pill);
+  font-size:var(--cc-fs-small); font-weight:var(--cc-fw-bold);
+}
+.vt-pill--green  { background:var(--pill-green-bg);  color:var(--pill-green-fg); }
+.vt-pill--amber  { background:var(--pill-amber-bg);  color:var(--pill-amber-fg); }
+.vt-pill--grey   { background:var(--pill-grey-bg);   color:var(--pill-grey-fg); }
+.vt-pill--red    { background:var(--pill-red-bg);    color:var(--pill-red-fg); }
+
+/* ── Type badge ──────────────────────────────────────── */
+.vt-type-badge {
+  display:inline-block; padding:var(--cc-sp-2) var(--cc-sp-5);
+  border-radius:var(--cc-r-sm); font-family:var(--cc-font-mono);
+  font-size:var(--cc-fs-tiny); font-weight:var(--cc-fw-bold);
+}
+.vt-type-badge--sstp      { background:var(--tile-blue-bg);   color:var(--tile-blue-fg); }
+.vt-type-badge--l2tp      { background:var(--tile-teal-bg);   color:var(--tile-teal-fg); }
+.vt-type-badge--ipsec     { background:var(--tile-purple-bg); color:var(--tile-purple-fg); }
+.vt-type-badge--wireguard { background:var(--tile-cyan-bg);   color:var(--tile-cyan-fg); }
+
+/* ── Heartbeat ───────────────────────────────────────── */
+.vt-hb {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--hb-green); display:inline-block;
+  animation:vt-pulse 2s ease-in-out infinite;
+}
+@keyframes vt-pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.45; transform:scale(.7); }
+}
+
+/* ── Empty ───────────────────────────────────────────── */
+.vt-empty {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:var(--cc-sp-8);
+  padding:var(--cc-sp-13) var(--cc-sp-11);
+  color:var(--cc-text-mute); text-align:center;
+}
+.vt-empty p { margin:0; font-size:var(--cc-fs-body-l); }
+
+/* ── Modal ───────────────────────────────────────────── */
+.vt-modal-overlay {
+  display:none; position:fixed; inset:0;
+  background:var(--cc-modal-overlay);
+  z-index:1000; align-items:flex-start; justify-content:center;
+  padding:var(--cc-sp-13) var(--cc-sp-8); overflow-y:auto;
+}
+.vt-modal-overlay.is-open { display:flex; }
+.vt-modal {
+  background:var(--cc-card-bg); border-radius:var(--cc-modal-radius);
+  box-shadow:var(--cc-modal-shadow); width:100%; max-width:560px;
+  animation:vt-in var(--cc-anim-med) var(--cc-ease-out);
+}
+@keyframes vt-in { from{opacity:0;transform:translateY(-14px)} to{opacity:1;transform:translateY(0)} }
+.vt-modal__head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:var(--cc-sp-9) var(--cc-sp-11);
+  border-bottom:1px solid var(--cc-border);
+}
+.vt-modal__title {
+  font-size:var(--cc-fs-h2); font-weight:var(--cc-fw-bold); color:var(--cc-text);
+  display:flex; align-items:center; gap:var(--cc-sp-6); margin:0;
+}
+.vt-modal__close {
+  width:32px; height:32px; border-radius:var(--cc-r);
+  border:1px solid var(--cc-border); background:transparent;
+  cursor:pointer; color:var(--cc-text-mute);
+  display:flex; align-items:center; justify-content:center;
+  transition:var(--cc-tr-fast);
+}
+.vt-modal__close:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
+.vt-modal__body { padding:var(--cc-sp-11); }
+.vt-modal__foot {
+  display:flex; gap:var(--cc-sp-6);
+  padding:var(--cc-sp-9) var(--cc-sp-11);
+  border-top:1px solid var(--cc-border);
+}
+
+/* ── Form ────────────────────────────────────────────── */
+.vt-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--cc-sp-8) var(--cc-gap-inline); }
+.vt-field { display:flex; flex-direction:column; gap:var(--cc-sp-3); }
+.vt-field--full { grid-column:1/-1; }
+.vt-label { font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-medium); color:var(--cc-text); }
+.vt-required { color:var(--hb-red); }
+.vt-input {
+  height:var(--cc-input-h); padding:0 var(--cc-sp-7);
+  border-radius:var(--cc-input-radius); border:1px solid var(--cc-input-border);
+  background:var(--cc-input-bg); font-family:var(--cc-font);
+  font-size:var(--cc-fs-body); color:var(--cc-text);
+  transition:var(--cc-tr-fast); width:100%; box-sizing:border-box; direction:rtl;
+}
+.vt-input:focus { outline:none; border-color:var(--cc-brand); background:var(--cc-input-bg-focus); box-shadow:var(--cc-input-ring); }
+.vt-input.vt-ltr, .vt-input.vt-mono { direction:ltr; text-align:left; }
+textarea.vt-input { height:auto; padding:var(--cc-sp-6) var(--cc-sp-7); resize:vertical; }
+select.vt-input { cursor:pointer; }
+.vt-hint { font-size:var(--cc-fs-tiny); color:var(--cc-text-mute); margin:0; line-height:var(--cc-lh-default); }
+.vt-mono { font-family:var(--cc-font-mono); }
+.vt-muted { color:var(--cc-text-mute); }
+.vt-ltr { direction:ltr; }
+
+@media(max-width:640px){
+  .vt-form-grid{grid-template-columns:1fr;}
+  .vt-hero{flex-direction:column;}
+}
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ── Modal ── */
+  function vtModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('is-open');
+    var first = el.querySelector('select, input, textarea');
+    if (first) setTimeout(function(){ first.focus(); }, 80);
+  }
+  function vtModalClose(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('is-open');
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape')
+      document.querySelectorAll('.vt-modal-overlay.is-open').forEach(function(m){ m.classList.remove('is-open'); });
+  });
+  window.vtModal      = vtModal;
+  window.vtModalClose = vtModalClose;
+
+  /* ── Filter ── */
+  window.vtFilter = function(type) {
+    // update active button
+    document.querySelectorAll('.vt-filter-btn').forEach(function(b){
+      b.classList.toggle('is-active', b.dataset.type === type);
+    });
+    // show/hide rows
+    document.querySelectorAll('#vt-tbody .vt-table__row').forEach(function(row){
+      var match = type === 'all' || row.dataset.type === type;
+      row.classList.toggle('vt-table__row--hidden', !match);
+    });
+  };
+}());
+</script>
+{% endblock %}
+
+{% endblock %}

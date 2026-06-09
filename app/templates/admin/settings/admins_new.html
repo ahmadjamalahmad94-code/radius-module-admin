@@ -1,0 +1,734 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إدارة المشرفين{% endblock %}
+{% block page_title %}إدارة المشرفين{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   settings/admins_new.html — إدارة المشرفين
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero ─────────────────────────────────────────────── */
+.sa-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-10) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-10);
+  margin-block-end: var(--cc-gap-section);
+  position:      relative;
+  overflow:      hidden;
+}
+.sa-hero::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: -40px;
+  inset-block-end: -40px;
+  width: 160px; height: 160px;
+  border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.sa-hero-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h1); flex-shrink: 0;
+}
+.sa-hero-title  { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); line-height: var(--cc-lh-tight); margin-block-end: var(--cc-sp-2); }
+.sa-hero-sub    { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); opacity: .85; }
+.sa-hero-body   { flex: 1; }
+.sa-hero-action { flex-shrink: 0; }
+
+/* ── زر إضافة (أبيض على hero) ──────────────────────────── */
+.sa-btn-white {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background:    rgba(255,255,255,.18);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body);
+  font-weight:   var(--cc-fw-bold);
+  border:        1px solid rgba(255,255,255,.32);
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast);
+  text-decoration: none;
+}
+.sa-btn-white:hover { background: rgba(255,255,255,.28); }
+
+/* ── بطاقات الأدوار الموجزة ─────────────────────────────── */
+.sa-roles-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  margin-block-end:      var(--cc-gap-section);
+}
+.sa-role-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-tile);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  display:       flex;
+  flex-direction: column;
+  gap:           var(--cc-sp-3);
+}
+.sa-role-header { display: flex; align-items: center; gap: var(--cc-sp-4); }
+.sa-role-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--cc-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); flex-shrink: 0;
+}
+.sa-role-icon.super  { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.sa-role-icon.oper   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.sa-role-icon.supp   { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.sa-role-icon.viewer { background: var(--tile-grey-bg);   color: var(--tile-grey-fg); }
+.sa-role-name { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); }
+.sa-role-desc { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); line-height: var(--cc-lh-default); }
+.sa-role-count {
+  display: inline-flex; align-items: center;
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  padding: 2px 8px; border-radius: var(--cc-r-pill);
+  background: var(--cc-brand-softer); color: var(--cc-brand);
+  align-self: flex-start;
+}
+
+/* ── بطاقة الجدول الرئيسية ──────────────────────────────── */
+.sa-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  overflow:      hidden;
+  margin-block-end: var(--cc-gap-section);
+}
+.sa-card-head {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-5);
+  padding:     var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background:  var(--hb-bg);
+}
+.sa-card-head-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--cc-r-sm);
+  background: var(--tile-purple-bg); color: var(--tile-purple-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); flex-shrink: 0;
+}
+.sa-card-head-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.sa-card-head-count {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  padding: 2px 10px; border-radius: var(--cc-r-pill);
+  background: var(--cc-brand-soft); color: var(--cc-brand-ink);
+}
+
+/* ── الجدول ──────────────────────────────────────────────── */
+.sa-table-wrap { overflow-x: auto; }
+.sa-table {
+  width: 100%; border-collapse: collapse;
+  font-size: var(--cc-fs-body-s);
+}
+.sa-table thead tr {
+  background: var(--hb-bg);
+  border-block-end: 2px solid var(--cc-border-2);
+}
+.sa-table th {
+  padding: var(--cc-sp-4) var(--cc-sp-7);
+  text-align: start;
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-heavy);
+  color:       var(--cc-text-mute);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  white-space: nowrap;
+}
+.sa-table td {
+  padding:      var(--cc-sp-5) var(--cc-sp-7);
+  border-block-end: 1px solid var(--cc-border);
+  color:        var(--cc-text);
+  vertical-align: middle;
+}
+.sa-table tr:last-child td { border-block-end: none; }
+.sa-table tbody tr:hover { background: var(--cc-row-hover, var(--cc-brand-softer)); }
+
+/* ── خلية المستخدم ───────────────────────────────────────── */
+.sa-user-cell { display: flex; align-items: center; gap: var(--cc-sp-5); }
+.sa-avatar {
+  width: 34px; height: 34px;
+  border-radius: var(--cc-r-pill);
+  background: var(--cc-hero-grad);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-heavy);
+  flex-shrink: 0;
+}
+.sa-user-name  { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); }
+.sa-user-email { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); font-weight: var(--cc-fw-medium); }
+
+/* ── Pills الأدوار ───────────────────────────────────────── */
+.sa-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  white-space: nowrap;
+}
+.sa-pill.super  { background: var(--pill-purple-bg); color: var(--pill-purple-fg); }
+.sa-pill.oper   { background: var(--pill-blue-bg);   color: var(--pill-blue-fg); }
+.sa-pill.supp   { background: var(--pill-green-bg);  color: var(--pill-green-fg); }
+.sa-pill.viewer { background: var(--pill-grey-bg);   color: var(--pill-grey-fg); }
+.sa-pill.bill   { background: var(--pill-amber-bg);  color: var(--pill-amber-fg); }
+
+/* ── حالة الحساب ─────────────────────────────────────────── */
+.sa-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+}
+.sa-status::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: var(--cc-r-pill);
+  flex-shrink: 0;
+}
+.sa-status.active::before  { background: var(--hb-green); }
+.sa-status.active          { color: var(--tile-green-fg); }
+.sa-status.inactive::before{ background: var(--cc-text-mute); }
+.sa-status.inactive        { color: var(--cc-text-mute); }
+
+/* ── أزرار الإجراءات في الجدول ──────────────────────────── */
+.sa-actions { display: flex; gap: var(--cc-sp-4); align-items: center; }
+.sa-icon-btn {
+  width: 28px; height: 28px;
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--cc-border-2);
+  background: var(--cc-card-bg);
+  color: var(--cc-text-soft);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background var(--cc-anim-fast), color var(--cc-anim-fast);
+}
+.sa-icon-btn:hover         { background: var(--cc-brand-softer); color: var(--cc-brand); }
+.sa-icon-btn.is-danger:hover { background: var(--pill-red-bg); color: var(--pill-red-fg); border-color: #fca5a5; }
+
+/* ═══════════════════════════════════════════════════════
+   Modal إضافة مشرف
+   ═══════════════════════════════════════════════════════ */
+.sa-modal-overlay {
+  position:   fixed;
+  inset:      0;
+  background: var(--cc-modal-overlay);
+  backdrop-filter: blur(3px);
+  z-index:    200;
+  display:    flex;
+  align-items: center;
+  justify-content: center;
+  padding:    var(--cc-sp-8);
+  opacity:    0;
+  pointer-events: none;
+  transition: opacity var(--cc-anim-med) var(--cc-ease-out);
+}
+.sa-modal-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sa-modal {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-modal-radius);
+  box-shadow:    var(--cc-sh-pop);
+  width:         100%;
+  max-width:     var(--cc-modal-width);
+  max-height:    90dvh;
+  overflow-y:    auto;
+  transform:     translateY(12px);
+  transition:    transform var(--cc-anim-med) var(--cc-ease-out);
+}
+.sa-modal-overlay.is-open .sa-modal { transform: translateY(0); }
+
+.sa-modal-head {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-5);
+  padding:     var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+}
+.sa-modal-head-icon {
+  width: 38px; height: 38px;
+  border-radius: var(--cc-r-lg);
+  background: var(--tile-purple-bg); color: var(--tile-purple-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h3); flex-shrink: 0;
+}
+.sa-modal-title { font-size: var(--cc-fs-h2); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.sa-modal-close {
+  width: 28px; height: 28px;
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--cc-border-2);
+  background: transparent;
+  color: var(--cc-text-mute);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  transition: background var(--cc-anim-fast);
+}
+.sa-modal-close:hover { background: var(--pill-red-bg); color: var(--pill-red-fg); }
+
+.sa-modal-body { padding: var(--cc-sp-8); }
+.sa-modal-foot {
+  display: flex; gap: var(--cc-sp-5); justify-content: flex-end;
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-block-start: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+
+/* ── حقول الـ modal ──────────────────────────────────────── */
+.sa-mfield { display: flex; flex-direction: column; gap: var(--cc-sp-2); margin-block-end: var(--cc-sp-7); }
+.sa-mfield:last-child { margin-block-end: 0; }
+.sa-mlabel {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text-soft); text-transform: uppercase; letter-spacing: .4px;
+}
+.sa-mlabel .sa-req { color: var(--hb-red); margin-inline-start: 2px; }
+.sa-minput, .sa-mselect {
+  height: var(--cc-input-h);
+  padding: 0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border: 1px solid var(--cc-input-border);
+  background: var(--cc-input-bg);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+  width: 100%;
+  outline: none;
+  transition: border-color var(--cc-anim-fast), background var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.sa-mselect { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394A3B8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: left 10px center; padding-inline-end: var(--cc-sp-10); }
+.sa-minput:focus, .sa-mselect:focus { background: var(--cc-input-bg-focus); border-color: var(--cc-brand); box-shadow: var(--cc-input-ring); }
+.sa-mhint { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); line-height: var(--cc-lh-default); }
+
+/* ── بطاقات اختيار الدور (داخل الـ modal) ───────────────── */
+.sa-role-picker { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cc-sp-5); margin-block-start: var(--cc-sp-4); }
+.sa-role-option {
+  position: relative;
+  padding: var(--cc-sp-6);
+  border-radius: var(--cc-r-lg);
+  border: 2px solid var(--cc-border);
+  cursor: pointer;
+  transition: border-color var(--cc-anim-fast), background var(--cc-anim-fast);
+}
+.sa-role-option:has(input:checked) {
+  border-color: var(--cc-brand);
+  background:   var(--cc-brand-softer);
+}
+.sa-role-option input[type="radio"] {
+  position: absolute; opacity: 0; pointer-events: none;
+}
+.sa-ro-icon {
+  width: 28px; height: 28px;
+  border-radius: var(--cc-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; margin-block-end: var(--cc-sp-4);
+}
+.sa-ro-icon.super  { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.sa-ro-icon.oper   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.sa-ro-icon.supp   { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.sa-ro-icon.viewer { background: var(--tile-grey-bg);   color: var(--tile-grey-fg); }
+.sa-ro-name   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); margin-block-end: var(--cc-sp-2); }
+.sa-ro-desc   { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); line-height: 1.4; }
+
+/* ── أزرار الـ modal ──────────────────────────────────────── */
+.sa-btn-cancel {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  height: var(--cc-btn-h); padding: 0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background: var(--cc-brand-softer); color: var(--cc-brand);
+  font-family: var(--cc-font); font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold);
+  border: 1px solid var(--cc-border-2); cursor: pointer;
+  transition: background var(--cc-anim-fast);
+}
+.sa-btn-cancel:hover { background: var(--cc-brand-soft2); }
+
+.sa-btn-confirm {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  height: var(--cc-btn-h); padding: 0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background: var(--cc-btn-primary-bg); color: #fff;
+  font-family: var(--cc-font); font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold);
+  border: none; cursor: pointer;
+  transition: background var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.sa-btn-confirm:hover { background: var(--cc-btn-primary-hover); box-shadow: var(--cc-sh-glow); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ─────────────────────────────────────────────────────────── #}
+<div class="sa-hero">
+  <div class="sa-hero-icon" aria-hidden="true"><i class="fa-solid fa-users-gear"></i></div>
+  <div class="sa-hero-body">
+    <div class="sa-hero-title">إدارة المشرفين</div>
+    <div class="sa-hero-sub">تحكّم في من يصل للوحة التحكم وما يستطيع فعله</div>
+  </div>
+  <div class="sa-hero-action">
+    <button class="sa-btn-white" type="button" id="sa-open-modal"
+            aria-haspopup="dialog" aria-controls="sa-modal">
+      <i class="fa-solid fa-plus"></i> إضافة مشرف
+    </button>
+  </div>
+</div>
+
+{# ── بطاقات ملخص الأدوار ───────────────────────────────────────────── #}
+<div class="sa-roles-grid">
+  <div class="sa-role-card">
+    <div class="sa-role-header">
+      <div class="sa-role-icon super"><i class="fa-solid fa-crown"></i></div>
+      <div class="sa-role-name">مشرف عام</div>
+    </div>
+    <div class="sa-role-desc">مشرف كامل يملك كل الصلاحيات — يستطيع إضافة وحذف المشرفين الآخرين وتغيير الإعدادات الحساسة.</div>
+    <span class="sa-role-count">{{ admins|selectattr('role','equalto','super_admin')|list|length }} مشرف</span>
+  </div>
+  <div class="sa-role-card">
+    <div class="sa-role-header">
+      <div class="sa-role-icon oper"><i class="fa-solid fa-user-tie"></i></div>
+      <div class="sa-role-name">مشرف تشغيلي</div>
+    </div>
+    <div class="sa-role-desc">مشرف محدود يستطيع فقط إدارة العملاء والاشتراكات والبطاقات والجلسات — لا يصل للإعدادات أو المشرفين.</div>
+    <span class="sa-role-count">{{ admins|selectattr('role','equalto','operator')|list|length }} مشرف</span>
+  </div>
+  <div class="sa-role-card">
+    <div class="sa-role-header">
+      <div class="sa-role-icon supp"><i class="fa-solid fa-headset"></i></div>
+      <div class="sa-role-name">دعم فني</div>
+    </div>
+    <div class="sa-role-desc">مشرف محدود يستطيع فقط عرض البيانات وفصل الجلسات — لا يستطيع التعديل أو الحذف أو الوصول للإعدادات.</div>
+    <span class="sa-role-count">{{ admins|selectattr('role','equalto','support')|list|length }} مشرف</span>
+  </div>
+  <div class="sa-role-card">
+    <div class="sa-role-header">
+      <div class="sa-role-icon viewer"><i class="fa-solid fa-eye"></i></div>
+      <div class="sa-role-name">مستعرض</div>
+    </div>
+    <div class="sa-role-desc">مشرف للقراءة فقط — يرى لوحة التحكم والتقارير دون أن يستطيع إجراء أي تغيير.</div>
+    <span class="sa-role-count">{{ admins|selectattr('role','equalto','viewer')|list|length }} مشرف</span>
+  </div>
+</div>
+
+{# ── جدول المشرفين ────────────────────────────────────────────────── #}
+<div class="sa-card">
+  <div class="sa-card-head">
+    <span class="sa-card-head-icon" aria-hidden="true"><i class="fa-solid fa-users"></i></span>
+    <span class="sa-card-head-title">المشرفون الحاليون</span>
+    <span class="sa-card-head-count">{{ admins|length }} مشرف</span>
+  </div>
+  <div class="cc-table-toolbar">
+    <span class="cc-table-count" id="tbl-admins-info">{{ admins|length }} مشرف</span>
+    <div class="cc-rows-select">
+      <span>عدد الصفوف:</span>
+      <select class="cc-select cc-per-page"
+              data-table="#tbl-admins"
+              data-info="#tbl-admins-info"
+              aria-label="عدد الصفوف في الصفحة">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sa-table-wrap">
+    <table class="sa-table" id="tbl-admins" role="table">
+      <thead>
+        <tr role="row">
+          <th scope="col" class="cc-th-sort">المشرف</th>
+          <th scope="col" class="cc-th-sort">الدور</th>
+          <th scope="col" class="cc-th-sort">آخر دخول</th>
+          <th scope="col" class="cc-th-sort">الحالة</th>
+          <th scope="col">الإجراءات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for admin in admins %}
+        <tr role="row">
+          {# خلية المستخدم #}
+          <td>
+            <div class="sa-user-cell">
+              <div class="sa-avatar" aria-hidden="true">
+                {{ admin.full_name[0] if admin.full_name else admin.username[0]|upper }}
+              </div>
+              <div>
+                <div class="sa-user-name">{{ admin.full_name or admin.username }}</div>
+                <div class="sa-user-email" dir="ltr">{{ admin.email or '—' }}</div>
+              </div>
+            </div>
+          </td>
+
+          {# الدور مع pill ملوّن #}
+          <td>
+            {% set role_map = {
+              'super_admin': ('super',  'fa-crown',   'مشرف عام'),
+              'operator':    ('oper',   'fa-user-tie','مشرف تشغيلي'),
+              'support':     ('supp',   'fa-headset', 'دعم فني'),
+              'billing':     ('bill',   'fa-coins',   'مالي'),
+              'viewer':      ('viewer', 'fa-eye',     'مستعرض'),
+            } %}
+            {% set rc = role_map.get(admin.role, ('viewer','fa-circle','غير معروف')) %}
+            <span class="sa-pill {{ rc[0] }}">
+              <i class="fa-solid {{ rc[1] }}" aria-hidden="true"></i>
+              {{ rc[2] }}
+            </span>
+          </td>
+
+          {# آخر دخول #}
+          <td dir="ltr">
+            {% if admin.last_login_at %}
+              {{ admin.last_login_at|dt }}
+            {% else %}
+              <span style="color:var(--cc-text-mute)">لم يدخل بعد</span>
+            {% endif %}
+          </td>
+
+          {# الحالة #}
+          <td>
+            <span class="sa-status {{ 'active' if admin.enabled else 'inactive' }}">
+              {{ 'نشط' if admin.enabled else 'موقوف' }}
+            </span>
+          </td>
+
+          {# إجراءات #}
+          <td>
+            <div class="sa-actions">
+              <button class="sa-icon-btn" type="button"
+                      aria-label="تعديل {{ admin.username }}"
+                      onclick="saOpenEdit('{{ admin.username }}','{{ admin.full_name|default('') }}','{{ admin.email|default('') }}','{{ admin.role }}')">
+                <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+              </button>
+
+              {% if admin.enabled %}
+              <form method="post" action="#" style="display:contents">
+                {{ csrf_input() }}
+                <input type="hidden" name="action" value="disable">
+                <input type="hidden" name="username" value="{{ admin.username }}">
+                <button class="sa-icon-btn" type="submit"
+                        aria-label="إيقاف {{ admin.username }}"
+                        title="إيقاف الحساب">
+                  <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% else %}
+              <form method="post" action="#" style="display:contents">
+                {{ csrf_input() }}
+                <input type="hidden" name="action" value="enable">
+                <input type="hidden" name="username" value="{{ admin.username }}">
+                <button class="sa-icon-btn" type="submit"
+                        aria-label="تفعيل {{ admin.username }}"
+                        title="تفعيل الحساب">
+                  <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                </button>
+              </form>
+              {% endif %}
+
+              {% if admin.username != session.get('admin_user') %}
+              <button class="sa-icon-btn is-danger" type="button"
+                      aria-label="حذف {{ admin.username }}"
+                      onclick="saConfirmDelete('{{ admin.username }}','{{ admin.full_name or admin.username }}')">
+                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" style="text-align:center;padding:var(--cc-sp-13);color:var(--cc-text-mute)">
+            <i class="fa-solid fa-users-slash" aria-hidden="true" style="font-size:24px;display:block;margin-block-end:var(--cc-sp-5)"></i>
+            لا يوجد مشرفون بعد — أضف أول مشرف من الزر أعلاه
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   Modal إضافة / تعديل مشرف
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="sa-modal-overlay" id="sa-modal" role="dialog"
+     aria-modal="true" aria-labelledby="sa-modal-title">
+  <div class="sa-modal">
+    <div class="sa-modal-head">
+      <div class="sa-modal-head-icon" aria-hidden="true">
+        <i class="fa-solid fa-user-plus" id="sa-modal-icon"></i>
+      </div>
+      <div class="sa-modal-title" id="sa-modal-title">إضافة مشرف جديد</div>
+      <button class="sa-modal-close" type="button" id="sa-modal-close"
+              aria-label="إغلاق النافذة">
+        <i class="fa-solid fa-times" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <div class="sa-modal-body">
+      <form method="post" action="#" id="sa-admin-form">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="create" id="sa-form-action">
+        <input type="hidden" name="edit_username" id="sa-edit-username">
+
+        <div class="sa-mfield">
+          <label class="sa-mlabel" for="sa-fname">الاسم الكامل <span class="sa-req">*</span></label>
+          <input class="sa-minput" id="sa-fname" name="full_name" type="text"
+                 placeholder="مثال: أحمد محمد" autocomplete="name" required>
+          <div class="sa-mhint">الاسم الذي يظهر في السجلات والتقارير والإشعارات.</div>
+        </div>
+
+        <div class="sa-mfield">
+          <label class="sa-mlabel" for="sa-email">البريد الإلكتروني <span class="sa-req">*</span></label>
+          <input class="sa-minput" id="sa-email" name="email" type="email"
+                 placeholder="admin@example.com" dir="ltr" autocomplete="email" required>
+          <div class="sa-mhint">يُستخدم لتسجيل الدخول وإرسال إشعارات النظام. يجب أن يكون فريداً.</div>
+        </div>
+
+        <div class="sa-mfield" id="sa-pass-field">
+          <label class="sa-mlabel" for="sa-password">
+            كلمة المرور <span class="sa-req" id="sa-pass-req">*</span>
+          </label>
+          <input class="sa-minput" id="sa-password" name="password" type="password"
+                 placeholder="8 أحرف على الأقل" autocomplete="new-password">
+          <div class="sa-mhint" id="sa-pass-hint">
+            اختر كلمة مرور قوية تحتوي أحرفاً وأرقاماً. لن تُعرض بعد الحفظ.
+          </div>
+        </div>
+
+        <div class="sa-mfield">
+          <label class="sa-mlabel">الدور <span class="sa-req">*</span></label>
+          <div class="sa-mhint" style="margin-block-end:var(--cc-sp-4)">
+            اختر الدور المناسب — كل دور يحدد بدقة ما يستطيع المشرف فعله داخل اللوحة.
+          </div>
+          <div class="sa-role-picker" role="radiogroup" aria-label="اختيار الدور">
+
+            <label class="sa-role-option">
+              <input type="radio" name="role" value="super_admin" id="sa-role-super">
+              <div class="sa-ro-icon super"><i class="fa-solid fa-crown" aria-hidden="true"></i></div>
+              <div class="sa-ro-name">مشرف عام</div>
+              <div class="sa-ro-desc">يملك كل الصلاحيات بلا استثناء — إدارة المشرفين، الإعدادات، الحذف الدائم.</div>
+            </label>
+
+            <label class="sa-role-option">
+              <input type="radio" name="role" value="operator" id="sa-role-oper" checked>
+              <div class="sa-ro-icon oper"><i class="fa-solid fa-user-tie" aria-hidden="true"></i></div>
+              <div class="sa-ro-name">مشرف تشغيلي</div>
+              <div class="sa-ro-desc">يستطيع فقط إدارة العملاء والبطاقات والباقات والجلسات — لا يصل للإعدادات.</div>
+            </label>
+
+            <label class="sa-role-option">
+              <input type="radio" name="role" value="support" id="sa-role-supp">
+              <div class="sa-ro-icon supp"><i class="fa-solid fa-headset" aria-hidden="true"></i></div>
+              <div class="sa-ro-name">دعم فني</div>
+              <div class="sa-ro-desc">يستطيع فقط عرض البيانات وفصل الجلسات — لا يعدّل ولا يحذف ولا يصل للمال.</div>
+            </label>
+
+            <label class="sa-role-option">
+              <input type="radio" name="role" value="viewer" id="sa-role-viewer">
+              <div class="sa-ro-icon viewer"><i class="fa-solid fa-eye" aria-hidden="true"></i></div>
+              <div class="sa-ro-name">مستعرض فقط</div>
+              <div class="sa-ro-desc">يرى جميع الصفحات والتقارير لكنه لا يستطيع إجراء أي تغيير مطلقاً.</div>
+            </label>
+
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+    <div class="sa-modal-foot">
+      <button class="sa-btn-cancel" type="button" id="sa-modal-cancel">
+        <i class="fa-solid fa-times" aria-hidden="true"></i> إلغاء
+      </button>
+      <button class="sa-btn-confirm" type="button"
+              onclick="document.getElementById('sa-admin-form').submit()">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+        <span id="sa-submit-label">إضافة المشرف</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+{# نموذج الحذف المخفي #}
+<form method="post" action="#" id="sa-delete-form" style="display:none">
+  {{ csrf_input() }}
+  <input type="hidden" name="action" value="delete">
+  <input type="hidden" name="username" id="sa-delete-username">
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var overlay  = document.getElementById('sa-modal');
+  var openBtn  = document.getElementById('sa-open-modal');
+  var closeBtn = document.getElementById('sa-modal-close');
+  var cancelBtn= document.getElementById('sa-modal-cancel');
+
+  function openModal() {
+    overlay.classList.add('is-open');
+    document.getElementById('sa-fname').focus();
+  }
+  function closeModal() {
+    overlay.classList.remove('is-open');
+  }
+
+  if (openBtn)   openBtn.addEventListener('click', openModal);
+  if (closeBtn)  closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) closeModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
+  });
+
+  /* فتح modal للتعديل */
+  window.saOpenEdit = function(username, name, email, role) {
+    document.getElementById('sa-modal-title').textContent  = 'تعديل المشرف';
+    document.getElementById('sa-modal-icon').className     = 'fa-solid fa-pen-to-square';
+    document.getElementById('sa-submit-label').textContent = 'حفظ التعديلات';
+    document.getElementById('sa-form-action').value        = 'edit';
+    document.getElementById('sa-edit-username').value      = username;
+    document.getElementById('sa-fname').value              = name;
+    document.getElementById('sa-email').value              = email;
+    document.getElementById('sa-pass-hint').textContent = 'اتركها فارغة للإبقاء على كلمة المرور الحالية';
+    document.getElementById('sa-pass-req').style.display = 'none';
+    document.getElementById('sa-password').required = false;
+    var roleRadio = document.querySelector('input[name="role"][value="' + role + '"]');
+    if (roleRadio) roleRadio.checked = true;
+    openModal();
+  };
+
+  /* تأكيد الحذف */
+  window.saConfirmDelete = function(username, displayName) {
+    if (!confirm('هل أنت متأكد من حذف المشرف «' + displayName + '»؟ لا يمكن التراجع عن هذا الإجراء.')) return;
+    document.getElementById('sa-delete-username').value = username;
+    document.getElementById('sa-delete-form').submit();
+  };
+
+}());
+</script>
+{% endblock %}

@@ -1,0 +1,321 @@
+/*
+ * admin_tokens.css — HobeRadius Admin Design Tokens
+ * المرجع: design_rules_extracted.md (DESIGN_SYSTEM v1)
+ * اللون الأساسي: #6B5AED — RTL-first — Cairo font
+ * القاعدة: لا hex مجرد في أي مكان — المتغير أولاً دائماً
+ */
+
+/* ============================================================
+   1. FONT LOADING
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+
+/* ============================================================
+   2. ROOT TOKENS
+   ============================================================ */
+:root {
+
+  /* ----------------------------------------------------------
+     2.1 Brand / Purple
+     ---------------------------------------------------------- */
+  --cc-brand:          #6B5AED;
+  --cc-brand-2:        #8B7BF8;
+  --cc-brand-3:        #A99BF9;
+  --cc-brand-deep:     #5B4BD8;
+  --cc-brand-ink:      #2E1F8C;
+  --cc-brand-soft:     #EDE9FE;
+  --cc-brand-soft2:    #E8E1FB;
+  --cc-brand-softer:   #F4F1FE;
+
+  /* aliases used in sidebar / buttons */
+  --hb-purple:         var(--cc-brand);
+  --hb-purple-deep:    var(--cc-brand-deep);
+  --hb-purple-soft:    var(--cc-brand-soft);
+  --hb-purple-softer:  var(--cc-brand-softer);
+
+  /* hero gradient */
+  --cc-hero-grad: linear-gradient(135deg, #6B5AED 0%, #A99BF9 100%);
+
+  /* ----------------------------------------------------------
+     2.2 Page / Surface
+     ---------------------------------------------------------- */
+  --hb-bg-page:        #EFEDF5;
+  --hb-bg:             #F5F3FB;
+  --hb-bg-hover:       #E6E2F2;
+  --hb-bg-icon-idle:   #EBE7F4;
+  --cc-card-bg:        #FFFFFF;
+  --cc-tint-bg:        #FAFAFA;
+
+  /* ----------------------------------------------------------
+     2.3 Text
+     ---------------------------------------------------------- */
+  --cc-text:           #1F2937;
+  --cc-text-soft:      #475569;
+  --cc-text-mute:      #94A3B8;
+  --cc-text-faint:     #B6BCC8;
+
+  /* aliases */
+  --hb-text:           var(--cc-text);
+  --hb-text-soft:      var(--cc-text-soft);
+  --hb-text-muted:     var(--cc-text-mute);
+  --hb-text-faint:     var(--cc-text-faint);
+
+  /* ----------------------------------------------------------
+     2.4 Borders
+     ---------------------------------------------------------- */
+  --cc-border:         #EEEDF3;
+  --cc-border-2:       #E3E1EC;
+  --cc-border-cool:    #E5E0F5;
+
+  /* aliases */
+  --hb-border:         var(--cc-border);
+  --hb-border-strong:  var(--cc-border-2);
+
+  /* ----------------------------------------------------------
+     2.5 Semantic Colors
+     ---------------------------------------------------------- */
+  --hb-green:          #22C55E;
+  --hr-green:          #26B673;
+  --hb-amber:          #F59E0B;
+  --hr-orange:         #F39C12;
+  --hb-red:            #EF4444;
+  --hr-red:            #E84A4A;
+  --hr-blue-info:      #3D8DD6;
+
+  /* ----------------------------------------------------------
+     2.6 Status Icon-Tile Palette (action cards)
+     ---------------------------------------------------------- */
+  --tile-purple-bg:    #EEE9FE;
+  --tile-purple-fg:    #2E1F8C;
+  --tile-green-bg:     #DEF3E5;
+  --tile-green-fg:     #157F4E;
+  --tile-amber-bg:     #FCEFC9;
+  --tile-amber-fg:     #7A4F02;
+  --tile-cyan-bg:      #DEF3F8;
+  --tile-cyan-fg:      #0F627A;
+  --tile-blue-bg:      #E3EDF9;
+  --tile-blue-fg:      #1E5C9F;
+  --tile-red-bg:       #FDE5E5;
+  --tile-red-fg:       #9B1C1C;
+  --tile-grey-bg:      #EDEAE1;
+  --tile-grey-fg:      #5B6470;
+  --tile-teal-bg:      #D2F1EC;
+  --tile-teal-fg:      #0B6E5B;
+
+  /* ----------------------------------------------------------
+     3. TYPOGRAPHY
+     ---------------------------------------------------------- */
+  --cc-font:       "Cairo", "Tajawal", "Segoe UI", -apple-system, sans-serif;
+  --cc-font-mono:  ui-monospace, "JetBrains Mono", Consolas, monospace;
+
+  /* Font Sizes */
+  --cc-fs-display: 30px;
+  --cc-fs-h1:      22px;
+  --cc-fs-h2:      16px;
+  --cc-fs-h3:      14px;
+  --cc-fs-body-l:  14px;
+  --cc-fs-body:    13px;
+  --cc-fs-body-s:  12.5px;
+  --cc-fs-small:   11.5px;
+  --cc-fs-tiny:    11px;
+
+  /* Font Weights */
+  --cc-fw-regular: 500;
+  --cc-fw-medium:  600;
+  --cc-fw-bold:    700;
+  --cc-fw-heavy:   800;
+  --cc-fw-display: 900;
+
+  /* Line Heights */
+  --cc-lh-tight:   1.15;
+  --cc-lh-default: 1.55;
+  --cc-lh-loose:   1.65;
+
+  /* ----------------------------------------------------------
+     4. SPACING SCALE
+     Only these values — never 5px, 7px, 9px, 13px
+     ---------------------------------------------------------- */
+  --cc-sp-1:  2px;
+  --cc-sp-2:  4px;
+  --cc-sp-3:  6px;
+  --cc-sp-4:  8px;
+  --cc-sp-5:  10px;
+  --cc-sp-6:  12px;
+  --cc-sp-7:  14px;
+  --cc-sp-8:  16px;
+  --cc-sp-9:  18px;
+  --cc-sp-10: 20px;
+  --cc-sp-11: 24px;
+  --cc-sp-12: 28px;
+  --cc-sp-13: 32px;
+
+  /* Section Rhythm — LOCKED — use these for all block gaps */
+  --cc-gap-section: 16px;   /* vertical gap between page blocks */
+  --cc-gap-inline:  12px;   /* in-row tile gap */
+
+  /* ----------------------------------------------------------
+     4.2 Layout Dimensions
+     ---------------------------------------------------------- */
+  --hb-side-w:         260px;   /* sidebar opened */
+  --hb-side-w-sm:      72px;    /* sidebar collapsed */
+  --hb-topbar-h:       52px;
+  --cc-page-max:       1180px;
+
+  /* dynamic width (JS sets data-collapsed attr on body) */
+  --hb-side-current-w: var(--hb-side-w);
+
+  /* ----------------------------------------------------------
+     5. BORDER RADIUS SCALE
+     ---------------------------------------------------------- */
+  --cc-r-sm:    6px;
+  --cc-r:       8px;
+  --cc-r-lg:    10px;
+  --cc-r-tile:  14px;
+  --cc-r-card:  18px;
+  --cc-r-hero:  22px;
+  --cc-r-pill:  999px;
+
+  /* aliases */
+  --hr-r-sm:    var(--cc-r-sm);
+  --hr-r:       var(--cc-r);
+  --hr-r-lg:    var(--cc-r-lg);
+
+  /* ----------------------------------------------------------
+     6. SHADOW SCALE
+     ---------------------------------------------------------- */
+  --cc-sh-card:   0 1px 0 rgba(15,23,42,.03), 0 6px 18px rgba(15,23,42,.05);
+  --cc-sh-card2:  0 1px 0 rgba(15,23,42,.03), 0 10px 26px rgba(15,23,42,.08);
+  --cc-sh-hero:   0 14px 30px rgba(74,54,201,.22), 0 4px 10px rgba(74,54,201,.10);
+  --cc-sh-pop:    0 8px 22px rgba(0,0,0,.12);
+  --cc-sh-glow:   0 4px 12px rgba(107,90,237,.30);
+
+  /* aliases */
+  --hr-shadow-sm:  var(--cc-sh-card);
+  --hr-shadow:     var(--cc-sh-card2);
+  --hr-shadow-pop: var(--cc-sh-pop);
+
+  /* ----------------------------------------------------------
+     7. ANIMATION / TRANSITIONS
+     ---------------------------------------------------------- */
+  --cc-anim-fast:    140ms;
+  --cc-anim-med:     240ms;
+  --cc-anim-slow:    3s;
+  --cc-anim-ambient: 60s;
+
+  --cc-ease:         ease;
+  --cc-ease-out:     ease-out;
+  --cc-ease-inout:   ease-in-out;
+
+  /* Shorthand transitions (most common combinations) */
+  --cc-tr-fast:  all var(--cc-anim-fast) var(--cc-ease);
+  --cc-tr-med:   all var(--cc-anim-med)  var(--cc-ease-out);
+
+  /* ----------------------------------------------------------
+     8. COMPONENT-LEVEL TOKENS
+     ---------------------------------------------------------- */
+
+  /* Sidebar */
+  --hb-side-bg:           var(--hb-bg);
+  --hb-side-border:       var(--cc-border);
+  --hb-side-item-radius:  var(--cc-r);
+  --hb-side-item-h:       36px;
+  --hb-side-icon-size:    28px;
+  --hb-side-fs:           15.6px;  /* body(13px) × 1.2 */
+
+  /* Topbar */
+  --hb-topbar-bg:         var(--cc-card-bg);
+  --hb-topbar-border:     var(--cc-border);
+
+  /* Cards */
+  --cc-card-radius:       var(--cc-r-card);
+  --cc-card-shadow:       var(--cc-sh-card);
+  --cc-card-border:       var(--cc-border);
+  --cc-card-hover-shadow: var(--cc-sh-card2);
+
+  /* Inputs */
+  --cc-input-h:           40px;
+  --cc-input-radius:      var(--cc-r);
+  --cc-input-bg:          var(--cc-brand-softer);
+  --cc-input-bg-focus:    var(--cc-card-bg);
+  --cc-input-border:      var(--cc-border-2);
+  --cc-input-ring:        0 0 0 3px rgba(107,90,237,.12);
+
+  /* Buttons */
+  --cc-btn-h:             38px;
+  --cc-btn-radius:        var(--cc-r-lg);
+  --cc-btn-primary-bg:    var(--cc-brand);
+  --cc-btn-primary-hover: var(--cc-brand-deep);
+
+  /* Flash / Toast */
+  --cc-flash-success-bg:  #DEF3E5;
+  --cc-flash-success-fg:  #157F4E;
+  --cc-flash-danger-bg:   #FDE5E5;
+  --cc-flash-danger-fg:   #9B1C1C;
+  --cc-flash-warning-bg:  #FCEFC9;
+  --cc-flash-warning-fg:  #7A4F02;
+  --cc-flash-info-bg:     #E3EDF9;
+  --cc-flash-info-fg:     #1E5C9F;
+
+  /* Pill / Badge */
+  --pill-green-bg:    #DEF3E5;
+  --pill-green-fg:    #157F4E;
+  --pill-amber-bg:    #FCEFC9;
+  --pill-amber-fg:    #7A4F02;
+  --pill-purple-bg:   #EEE9FE;
+  --pill-purple-fg:   #2E1F8C;
+  --pill-blue-bg:     #E3EDF9;
+  --pill-blue-fg:     #1E5C9F;
+  --pill-grey-bg:     #EDEAE1;
+  --pill-grey-fg:     #5B6470;
+  --pill-red-bg:      #FDE5E5;
+  --pill-red-fg:      #9B1C1C;
+  --pill-cyan-bg:     #DEF3F8;
+  --pill-cyan-fg:     #0F627A;
+  --pill-teal-bg:     #D2F1EC;
+  --pill-teal-fg:     #0B6E5B;
+
+  /* Modal */
+  --cc-modal-overlay:    rgba(15,23,42,.45);
+  --cc-modal-width:      460px;
+  --cc-modal-radius:     var(--cc-r-card);
+  --cc-modal-shadow:     var(--cc-sh-pop);
+
+  /* Table */
+  --cc-table-head-bg:    var(--hb-bg);
+  --cc-table-row-hover:  var(--cc-brand-softer);
+  --cc-table-live-bg:    rgba(34,197,94,.04);
+  --cc-table-live-border:var(--hb-green);
+  --cc-table-zebra:      #FBFAFF;
+}
+
+/* ============================================================
+   9. COLLAPSED SIDEBAR — JS adds data-sidebar="collapsed" to body
+   ============================================================ */
+body[data-sidebar="collapsed"] {
+  --hb-side-current-w: var(--hb-side-w-sm);
+}
+
+/* ============================================================
+   10. REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cc-anim-fast:    0ms;
+    --cc-anim-med:     0ms;
+    --cc-anim-slow:    0ms;
+    --cc-anim-ambient: 0ms;
+    --cc-tr-fast:      none;
+    --cc-tr-med:       none;
+  }
+}
+
+/* ============================================================
+   11. PRINT — hide ambient / motion layers
+   ============================================================ */
+@media print {
+  .hb-bg-net,
+  .hb-topbar,
+  .hb-side {
+    display: none !important;
+  }
+}

@@ -1,0 +1,566 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إعدادات الأقسام{% endblock %}
+{% block page_title %}إعدادات الأقسام{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   settings/sections_new.html — التحكم بأقسام السايدبار
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero ─────────────────────────────────────────────── */
+.sv-hero {
+  background:       var(--cc-hero-grad);
+  border-radius:    var(--cc-r-hero);
+  box-shadow:       var(--cc-sh-hero);
+  padding:          var(--cc-sp-10) var(--cc-sp-13);
+  color:            #fff;
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-10);
+  margin-block-end: var(--cc-gap-section);
+  position:         relative;
+  overflow:         hidden;
+}
+.sv-hero::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: -40px;
+  inset-block-start: -40px;
+  width: 160px; height: 160px;
+  border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
+.sv-hero-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h1);
+  flex-shrink: 0;
+}
+.sv-hero-title { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); line-height: var(--cc-lh-tight); margin-block-end: var(--cc-sp-2); }
+.sv-hero-sub   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); opacity: .85; }
+
+/* ── شبكة الأقسام ─────────────────────────────────────── */
+.sv-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap:                   var(--cc-gap-section);
+  margin-block-end:      var(--cc-gap-section);
+}
+
+/* ── كارد القسم ───────────────────────────────────────── */
+.sv-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  overflow:      hidden;
+  transition:    box-shadow var(--cc-anim-fast);
+}
+.sv-card:hover { box-shadow: var(--cc-sh-card2); }
+
+/* رأس الكارد */
+.sv-card-head {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+}
+.sv-card-icon {
+  width: 34px; height: 34px;
+  border-radius: var(--cc-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s);
+  flex-shrink: 0;
+}
+.sv-card-info  { flex: 1; }
+.sv-card-label { font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold); color: var(--cc-text); line-height: var(--cc-lh-tight); }
+.sv-card-desc  { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); margin-block-start: var(--cc-sp-1); }
+
+/* جسم الكارد — قائمة الصفحات الداخلية */
+.sv-card-body { padding: var(--cc-sp-6) var(--cc-sp-8); }
+
+/* صف كل صفحة داخلية */
+.sv-sub-row {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-4) 0;
+  border-block-end: 1px solid var(--cc-border);
+}
+.sv-sub-row:last-child { border-block-end: none; }
+
+.sv-sub-icon {
+  width: 26px; height: 26px;
+  border-radius: var(--cc-r-sm);
+  background: var(--cc-tint-bg);
+  border: 1px solid var(--cc-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  flex-shrink: 0;
+}
+.sv-sub-label {
+  flex: 1;
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-soft);
+  font-weight: var(--cc-fw-medium);
+}
+
+/* ── Toggle Switch ────────────────────────────────────── */
+.cc-toggle {
+  position: relative;
+  display:  inline-block;
+  width:    44px;
+  height:   24px;
+  flex-shrink: 0;
+}
+.cc-toggle input { opacity: 0; width: 0; height: 0; }
+.cc-toggle-slider {
+  position:    absolute;
+  inset:       0;
+  background:  var(--cc-border-2);
+  border-radius: 24px;
+  cursor:      pointer;
+  transition:  var(--cc-tr-fast);
+}
+.cc-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width:  18px; height: 18px;
+  right:  3px;  bottom: 3px;
+  background:    #fff;
+  border-radius: 50%;
+  transition:    var(--cc-tr-fast);
+  box-shadow:    0 1px 3px rgba(0,0,0,.18);
+}
+.cc-toggle input:checked + .cc-toggle-slider { background: var(--cc-brand); }
+.cc-toggle input:checked + .cc-toggle-slider::before { transform: translateX(-20px); }
+
+/* حالة disabled */
+.cc-toggle input:disabled + .cc-toggle-slider { opacity: .45; cursor: not-allowed; }
+
+/* ── شريط الحفظ الثابت أسفل الصفحة ───────────────────── */
+.sv-save-bar {
+  position:         sticky;
+  bottom:           0;
+  background:       var(--cc-card-bg);
+  border-block-start: 1px solid var(--cc-border);
+  padding:          var(--cc-sp-6) var(--cc-sp-8);
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-6);
+  z-index:          10;
+  box-shadow:       0 -4px 16px rgba(15,23,42,.06);
+}
+.sv-save-info {
+  flex: 1;
+  font-size:   var(--cc-fs-body-s);
+  color:       var(--cc-text-mute);
+}
+.sv-save-info strong { color: var(--cc-text); font-weight: var(--cc-fw-bold); }
+.sv-btn-save {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  height:        var(--cc-btn-h);
+  padding:       0 var(--cc-sp-10);
+  border-radius: var(--cc-btn-radius);
+  background:    var(--cc-btn-primary-bg);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body);
+  font-weight:   var(--cc-fw-bold);
+  border:        none;
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast);
+}
+.sv-btn-save:hover   { background: var(--cc-btn-primary-hover); }
+.sv-btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ── رسالة النجاح/الخطأ ───────────────────────────────── */
+.sv-toast {
+  display:       none;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  padding:       var(--cc-sp-4) var(--cc-sp-7);
+  border-radius: var(--cc-r);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-medium);
+}
+.sv-toast.is-success { display: flex; background: var(--cc-flash-success-bg); color: var(--cc-flash-success-fg); }
+.sv-toast.is-error   { display: flex; background: var(--cc-flash-danger-bg);  color: var(--cc-flash-danger-fg); }
+
+/* ── ألوان أيقونات الأقسام ────────────────────────────── */
+.sv-icon-customers { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.sv-icon-licenses  { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.sv-icon-vpn       { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.sv-icon-infra     { background: var(--tile-orange-bg); color: var(--tile-orange-fg); }
+.sv-icon-logs      { background: var(--tile-grey-bg);   color: var(--tile-grey-fg); }
+.sv-icon-settings  { background: var(--tile-red-bg);    color: var(--tile-red-fg); }
+
+/* تأثير إخفاء جسم الكارد عند تعطيل القسم */
+.sv-card.is-hidden .sv-card-body { opacity: .45; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ──────────────────────────────────────────────────────────── #}
+<div class="sv-hero">
+  <div class="sv-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-layer-group"></i>
+  </div>
+  <div>
+    <div class="sv-hero-title">التحكم بأقسام القائمة</div>
+    <div class="sv-hero-sub">أظهر أو أخفِ الأقسام والصفحات الداخلية من القائمة الجانبية</div>
+  </div>
+</div>
+
+{# ── شبكة الأقسام ──────────────────────────────────────────────────── #}
+<form id="sv-form">
+<div class="sv-grid" id="sv-grid">
+
+  {# ── العملاء ────────────────────────────────────────────────────── #}
+  <div class="sv-card {% if 'customers' in hidden_sections %}is-hidden{% endif %}" data-section="customers">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-customers" aria-hidden="true">
+        <i class="fa-solid fa-users"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">العملاء</div>
+        <div class="sv-card-desc">قائمة العملاء وإضافتهم</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم العملاء">
+        <input type="checkbox" name="customers"
+               {% if 'customers' not in hidden_sections %}checked{% endif %}
+               data-section-main="customers">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-list"></i></div>
+        <span class="sv-sub-label">قائمة العملاء</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء قائمة العملاء">
+          <input type="checkbox" name="customers.list"
+                 {% if 'customers.list' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-user-plus"></i></div>
+        <span class="sv-sub-label">إضافة عميل</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء رابط إضافة عميل">
+          <input type="checkbox" name="customers.add"
+                 {% if 'customers.add' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ── التراخيص والاشتراكات ───────────────────────────────────────── #}
+  <div class="sv-card {% if 'licenses' in hidden_sections %}is-hidden{% endif %}" data-section="licenses">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-licenses" aria-hidden="true">
+        <i class="fa-solid fa-key"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">التراخيص والاشتراكات</div>
+        <div class="sv-card-desc">إدارة التراخيص وخطط الاشتراك</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم التراخيص">
+        <input type="checkbox" name="licenses"
+               {% if 'licenses' not in hidden_sections %}checked{% endif %}
+               data-section-main="licenses">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-list"></i></div>
+        <span class="sv-sub-label">قائمة التراخيص</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء قائمة التراخيص">
+          <input type="checkbox" name="licenses.list"
+                 {% if 'licenses.list' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-plus"></i></div>
+        <span class="sv-sub-label">إنشاء ترخيص</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء رابط إنشاء ترخيص">
+          <input type="checkbox" name="licenses.create"
+                 {% if 'licenses.create' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-boxes-stacked"></i></div>
+        <span class="sv-sub-label">خطط الاشتراك</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء خطط الاشتراك">
+          <input type="checkbox" name="licenses.plans"
+                 {% if 'licenses.plans' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ── خدمات VPN ──────────────────────────────────────────────────── #}
+  <div class="sv-card {% if 'vpn' in hidden_sections %}is-hidden{% endif %}" data-section="vpn">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-vpn" aria-hidden="true">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">خدمات VPN</div>
+        <div class="sv-card-desc">أنفاق VPN وإعداداتها</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم VPN">
+        <input type="checkbox" name="vpn"
+               {% if 'vpn' not in hidden_sections %}checked{% endif %}
+               data-section-main="vpn">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-network-wired"></i></div>
+        <span class="sv-sub-label">أنفاق VPN</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء أنفاق VPN">
+          <input type="checkbox" name="vpn.tunnels"
+                 {% if 'vpn.tunnels' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ── البنية التحتية ─────────────────────────────────────────────── #}
+  <div class="sv-card {% if 'infra' in hidden_sections %}is-hidden{% endif %}" data-section="infra">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-infra" aria-hidden="true">
+        <i class="fa-solid fa-server"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">البنية التحتية</div>
+        <div class="sv-card-desc">عقد CHR والبروكسي والماكروز</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم البنية التحتية">
+        <input type="checkbox" name="infra"
+               {% if 'infra' not in hidden_sections %}checked{% endif %}
+               data-section-main="infra">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-microchip"></i></div>
+        <span class="sv-sub-label">عقد CHR</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء عقد CHR">
+          <input type="checkbox" name="infra.chr"
+                 {% if 'infra.chr' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-route"></i></div>
+        <span class="sv-sub-label">وكيل RADIUS</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء وكيل RADIUS">
+          <input type="checkbox" name="infra.proxy"
+                 {% if 'infra.proxy' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-terminal"></i></div>
+        <span class="sv-sub-label">ماكروز RouterOS</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء ماكروز RouterOS">
+          <input type="checkbox" name="infra.macros"
+                 {% if 'infra.macros' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ── السجلات ────────────────────────────────────────────────────── #}
+  <div class="sv-card {% if 'logs' in hidden_sections %}is-hidden{% endif %}" data-section="logs">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-logs" aria-hidden="true">
+        <i class="fa-solid fa-clipboard-list"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">السجلات</div>
+        <div class="sv-card-desc">سجل التدقيق والفحوصات</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم السجلات">
+        <input type="checkbox" name="logs"
+               {% if 'logs' not in hidden_sections %}checked{% endif %}
+               data-section-main="logs">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-scroll"></i></div>
+        <span class="sv-sub-label">سجل التدقيق</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء سجل التدقيق">
+          <input type="checkbox" name="logs.audit"
+                 {% if 'logs.audit' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-heart-pulse"></i></div>
+        <span class="sv-sub-label">صحة الخدمات</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء صحة الخدمات">
+          <input type="checkbox" name="logs.health"
+                 {% if 'logs.health' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ── الإعدادات ──────────────────────────────────────────────────── #}
+  <div class="sv-card {% if 'settings' in hidden_sections %}is-hidden{% endif %}" data-section="settings">
+    <div class="sv-card-head">
+      <div class="sv-card-icon sv-icon-settings" aria-hidden="true">
+        <i class="fa-solid fa-gear"></i>
+      </div>
+      <div class="sv-card-info">
+        <div class="sv-card-label">الإعدادات</div>
+        <div class="sv-card-desc">الإعدادات العامة والمشرفون وواتساب</div>
+      </div>
+      <label class="cc-toggle" aria-label="إظهار/إخفاء قسم الإعدادات">
+        <input type="checkbox" name="settings"
+               {% if 'settings' not in hidden_sections %}checked{% endif %}
+               data-section-main="settings">
+        <span class="cc-toggle-slider"></span>
+      </label>
+    </div>
+    <div class="sv-card-body">
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-sliders"></i></div>
+        <span class="sv-sub-label">الإعدادات العامة</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء الإعدادات العامة">
+          <input type="checkbox" name="settings.general"
+                 {% if 'settings.general' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-user-shield"></i></div>
+        <span class="sv-sub-label">إدارة المشرفين</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء إدارة المشرفين">
+          <input type="checkbox" name="settings.admins"
+                 {% if 'settings.admins' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="sv-sub-row">
+        <div class="sv-sub-icon" aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></div>
+        <span class="sv-sub-label">إعدادات واتساب</span>
+        <label class="cc-toggle" aria-label="إظهار/إخفاء إعدادات واتساب">
+          <input type="checkbox" name="settings.whatsapp"
+                 {% if 'settings.whatsapp' not in hidden_sections %}checked{% endif %}>
+          <span class="cc-toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+</div>{# /sv-grid #}
+
+{# ── شريط الحفظ ─────────────────────────────────────────────────────── #}
+<div class="sv-save-bar">
+  <div class="sv-save-info">
+    <strong>تنبيه:</strong>
+    إخفاء القسم الرئيسي يُخفيه بالكامل من القائمة. يمكنك الوصول لهذه الصفحة دائماً من قائمة الإعدادات.
+  </div>
+  <div class="sv-toast" id="sv-toast" role="alert" aria-live="polite"></div>
+  <button type="button" class="sv-btn-save" id="sv-save-btn">
+    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+    حفظ الإعدادات
+  </button>
+</div>
+</form>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── toggle رئيسي يُعطّل/يُفعّل أزرار الصفحات الداخلية ─────── */
+  document.querySelectorAll('[data-section-main]').forEach(function (chk) {
+    var sectionKey = chk.dataset.sectionMain;
+    var card = chk.closest('.sv-card');
+
+    function syncCard() {
+      var visible = chk.checked;
+      card.classList.toggle('is-hidden', !visible);
+      card.querySelectorAll('.sv-card-body input[type="checkbox"]').forEach(function (sub) {
+        sub.disabled = !visible;
+      });
+    }
+
+    // تهيئة الحالة عند تحميل الصفحة
+    syncCard();
+    chk.addEventListener('change', syncCard);
+  });
+
+  /* ── حفظ الإعدادات عبر fetch ──────────────────────────────────── */
+  var saveBtn  = document.getElementById('sv-save-btn');
+  var toast    = document.getElementById('sv-toast');
+
+  function showToast(type, msg) {
+    toast.className = 'sv-toast is-' + type;
+    toast.innerHTML = '<i class="fa-solid fa-' + (type === 'success' ? 'check' : 'triangle-exclamation') + '"></i> ' + msg;
+    setTimeout(function () { toast.className = 'sv-toast'; }, 3500);
+  }
+
+  saveBtn.addEventListener('click', function () {
+    saveBtn.disabled = true;
+
+    var data = {};
+    document.querySelectorAll('#sv-form input[type="checkbox"]').forEach(function (chk) {
+      data[chk.name] = chk.checked;
+    });
+
+    fetch('{{ url_for("admin.sections_settings") }}', {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  '{{ csrf_token() }}'
+      },
+      body: JSON.stringify(data)
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (json) {
+      if (json.success) {
+        showToast('success', 'تم حفظ إعدادات الأقسام بنجاح');
+      } else {
+        showToast('error', 'حدث خطأ أثناء الحفظ');
+      }
+    })
+    .catch(function () {
+      showToast('error', 'تعذّر الاتصال بالخادم');
+    })
+    .finally(function () {
+      saveBtn.disabled = false;
+    });
+  });
+
+})();
+</script>
+
+{% endblock %}

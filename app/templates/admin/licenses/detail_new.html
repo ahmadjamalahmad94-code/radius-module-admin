@@ -1,0 +1,914 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}{{ license.license_key }}{% endblock %}
+{% block page_title %}تفاصيل الترخيص{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ============================================================
+   licenses/detail_new.html — تفاصيل الترخيص
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================ */
+
+.ldet-page {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--cc-gap-section);
+}
+
+/* ── Hero الترخيص ────────────────────────────────────────── */
+.ldet-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-9);
+  position:      relative;
+  overflow:      hidden;
+  flex-wrap:     wrap;
+}
+.ldet-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-end: -40px;
+  inset-block-end:  -40px;
+  width:     160px;
+  height:    160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.ldet-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+.ldet-hero-body { flex: 1; min-width: 200px; }
+.ldet-hero-key {
+  font-family:  var(--cc-font-mono);
+  font-size:    var(--cc-fs-h2);
+  font-weight:  var(--cc-fw-display);
+  letter-spacing: 0.06em;
+  margin-block-end: var(--cc-sp-2);
+}
+.ldet-hero-sub {
+  font-size:  var(--cc-fs-body-s);
+  opacity:    0.85;
+}
+.ldet-hero-chips {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       var(--cc-sp-4);
+  align-items: center;
+}
+.ldet-hero-chip {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       var(--cc-sp-2) var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  font-size:     var(--cc-fs-small);
+  font-weight:   var(--cc-fw-bold);
+}
+.ldet-hero-btn {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       var(--cc-sp-3) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-small);
+  font-weight:   var(--cc-fw-bold);
+  text-decoration: none;
+  cursor:        pointer;
+  transition:    background var(--cc-anim-fast);
+}
+.ldet-hero-btn:hover { background: rgba(255,255,255,.32); }
+
+/* ── تحذير النشاط المشبوه ────────────────────────────────── */
+.ldet-alert {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--cc-sp-5);
+  padding:       var(--cc-sp-6) var(--cc-sp-8);
+  border-radius: var(--cc-r-lg);
+  background:    var(--cc-flash-warning-bg);
+  border:        1px solid rgba(245,158,11,.25);
+  color:         var(--cc-flash-warning-fg);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-medium);
+}
+.ldet-alert-icon {
+  font-size:  16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+.ldet-tabs {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  overflow:      hidden;
+}
+
+.ldet-tab-bar {
+  display:          flex;
+  gap:              0;
+  border-block-end: 1px solid var(--cc-border);
+  overflow-x:       auto;
+  padding:          0 var(--cc-sp-6);
+  background:       var(--hb-bg);
+}
+
+.ldet-tab-btn {
+  display:     flex;
+  align-items: center;
+  gap:         var(--cc-sp-3);
+  padding:     var(--cc-sp-6) var(--cc-sp-7);
+  border:      none;
+  border-block-end: 2px solid transparent;
+  background:  transparent;
+  font-family: var(--cc-font);
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text-mute);
+  cursor:      pointer;
+  white-space: nowrap;
+  transition:  color var(--cc-anim-fast), border-color var(--cc-anim-fast);
+}
+.ldet-tab-btn:hover {
+  color: var(--cc-text);
+}
+.ldet-tab-btn.is-active {
+  color:        var(--cc-brand);
+  border-block-end-color: var(--cc-brand);
+}
+.ldet-tab-btn .ldet-tab-icon {
+  width:         26px;
+  height:        26px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--tile-purple-bg);
+  color:         var(--tile-purple-fg);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     11px;
+}
+.ldet-tab-btn.is-active .ldet-tab-icon {
+  background: var(--cc-brand-soft);
+  color:      var(--cc-brand);
+}
+
+.ldet-tab-panel {
+  display: none;
+  padding: var(--cc-sp-9) var(--cc-sp-10);
+}
+.ldet-tab-panel.is-active { display: block; }
+
+/* ── قسم داخل التاب ──────────────────────────────────────── */
+.ldet-section-title {
+  font-size:        var(--cc-fs-h3);
+  font-weight:      var(--cc-fw-semibold);
+  color:            var(--cc-text);
+  margin-block-end: var(--cc-sp-6);
+  padding-block-end: var(--cc-sp-4);
+  border-block-end:  1px solid var(--cc-border);
+}
+
+/* ── قائمة المعلومات (كـ definition list) ────────────────── */
+.ldet-info-list {
+  display:        flex;
+  flex-direction: column;
+  gap:            0;
+}
+.ldet-info-row {
+  display:       grid;
+  grid-template-columns: 160px 1fr;
+  gap:           var(--cc-sp-6);
+  padding:       var(--cc-sp-5) 0;
+  border-block-end: 1px solid var(--cc-border);
+  align-items:   center;
+  font-size:     var(--cc-fs-body-s);
+}
+.ldet-info-row:last-child { border-block-end: none; }
+.ldet-info-label {
+  color:       var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+}
+.ldet-info-value {
+  color:       var(--cc-text);
+  font-weight: var(--cc-fw-semibold);
+}
+
+/* ── Progress bars (حدود الاستخدام) ─────────────────────── */
+.ldet-usage-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+.ldet-usage-card {
+  background:    var(--hb-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+}
+.ldet-usage-head {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-4);
+  margin-block-end: var(--cc-sp-5);
+}
+.ldet-usage-icon {
+  width:         32px;
+  height:        32px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     13px;
+  flex-shrink:   0;
+}
+.ldet-usage-name {
+  flex:        1;
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.ldet-usage-nums {
+  font-size:  var(--cc-fs-small);
+  color:      var(--cc-text-mute);
+  white-space: nowrap;
+}
+.ldet-bar-track {
+  height:        8px;
+  border-radius: var(--cc-r-pill);
+  background:    var(--cc-border-2);
+  overflow:      hidden;
+}
+.ldet-bar-fill {
+  height:        100%;
+  border-radius: var(--cc-r-pill);
+  background:    var(--cc-brand);
+  transition:    width var(--cc-anim-med) var(--cc-ease-out);
+}
+.ldet-bar-fill--warn  { background: var(--hb-amber); }
+.ldet-bar-fill--danger{ background: var(--hb-red); }
+.ldet-bar-fill--green { background: var(--hb-green); }
+
+.ldet-bar-hint {
+  margin-top: var(--cc-sp-3);
+  font-size:  var(--cc-fs-tiny);
+  color:      var(--cc-text-mute);
+}
+
+/* ── الخدمات المفعّلة ────────────────────────────────────── */
+.ldet-svc-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+.ldet-svc-card {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-5);
+  padding:       var(--cc-sp-6) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  border:        1px solid var(--cc-border);
+  background:    var(--cc-card-bg);
+}
+.ldet-svc-icon {
+  width:         38px;
+  height:        38px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     15px;
+  flex-shrink:   0;
+}
+.ldet-svc-body { flex: 1; }
+.ldet-svc-name {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-semibold);
+  color:       var(--cc-text);
+}
+.ldet-svc-hint {
+  font-size: var(--cc-fs-tiny);
+  color:     var(--cc-text-mute);
+  margin-top: var(--cc-sp-1);
+}
+.ldet-svc-badge {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-1);
+  padding:       2px var(--cc-sp-3);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+  flex-shrink:   0;
+}
+.ldet-svc-badge--on  { background: var(--pill-green-bg); color: var(--pill-green-fg); }
+.ldet-svc-badge--off { background: var(--pill-grey-bg);  color: var(--pill-grey-fg);  }
+
+/* ── جدول التجديدات ──────────────────────────────────────── */
+.ldet-table-wrap { overflow-x: auto; }
+.ldet-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--cc-fs-body-s);
+}
+.ldet-table th {
+  padding:          var(--cc-sp-4) var(--cc-sp-6);
+  text-align:       start;
+  font-size:        var(--cc-fs-small);
+  font-weight:      var(--cc-fw-semibold);
+  color:            var(--cc-text-soft);
+  background:       var(--cc-table-head-bg);
+  border-block-end: 1px solid var(--cc-border);
+  white-space:      nowrap;
+}
+.ldet-table td {
+  padding:          var(--cc-sp-5) var(--cc-sp-6);
+  border-block-end: 1px solid var(--cc-border);
+  color:            var(--cc-text);
+  vertical-align:   middle;
+}
+.ldet-table tbody tr:hover { background: var(--cc-table-row-hover); }
+.ldet-table tbody tr:last-child td { border-block-end: none; }
+
+.ldet-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-1);
+  padding:       2px var(--cc-sp-3);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-bold);
+}
+.ldet-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+.ldet-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+.ldet-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+.ldet-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+
+/* ── شبكة ثنائية ─────────────────────────────────────────── */
+.ldet-grid-2 {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ldet-page">
+
+  {# ── Breadcrumb ───────────────────────────────────────────────────── #}
+  <nav aria-label="مسار التنقل" style="font-size: var(--cc-fs-small); color: var(--cc-text-mute); display:flex; gap: var(--cc-sp-3); align-items:center;">
+    <a href="{{ url_for('admin.licenses_list') }}" style="color: var(--cc-text-mute); text-decoration:none;">التراخيص</a>
+    <i class="fa-solid fa-chevron-left fa-xs" aria-hidden="true" style="font-size:9px;"></i>
+    <span style="color: var(--cc-text);">{{ license.license_key }}</span>
+  </nav>
+
+  {# ── Hero ─────────────────────────────────────────────────────────── #}
+  <div class="ldet-hero">
+    <div class="ldet-hero-icon" aria-hidden="true">
+      <i class="fa-solid fa-key"></i>
+    </div>
+    <div class="ldet-hero-body">
+      <div class="ldet-hero-key" aria-label="مفتاح الترخيص: {{ license.license_key }}">
+        {{ license.license_key }}
+      </div>
+      <div class="ldet-hero-sub">
+        {{ license.customer.company_name }} — {{ license.plan.name }}
+      </div>
+    </div>
+    <div class="ldet-hero-chips">
+      {% if license.status == 'active' %}
+        <span class="ldet-hero-chip"><i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> نشط</span>
+      {% elif license.status == 'trial' %}
+        <span class="ldet-hero-chip"><i class="fa-solid fa-flask fa-xs" aria-hidden="true"></i> تجريبي</span>
+      {% elif license.status == 'expired' %}
+        <span class="ldet-hero-chip" style="background:rgba(239,68,68,.25); border-color:rgba(239,68,68,.4);">
+          <i class="fa-solid fa-circle-xmark fa-xs" aria-hidden="true"></i> منتهي
+        </span>
+      {% elif license.status == 'suspended' %}
+        <span class="ldet-hero-chip" style="background:rgba(245,158,11,.25); border-color:rgba(245,158,11,.4);">
+          <i class="fa-solid fa-pause fa-xs" aria-hidden="true"></i> موقوف
+        </span>
+      {% else %}
+        <span class="ldet-hero-chip">{{ license.status | status_label }}</span>
+      {% endif %}
+
+      {% if license.expires_at %}
+        <span class="ldet-hero-chip">
+          <i class="fa-regular fa-calendar fa-xs" aria-hidden="true"></i>
+          ينتهي {{ license.expires_at | date }}
+        </span>
+      {% endif %}
+    </div>
+    <a class="ldet-hero-btn" href="{{ url_for('admin.license_detail', license_id=license.id) }}">
+      <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
+      إجراءات سريعة
+    </a>
+  </div>
+
+  {# ── تنبيه النشاط المشبوه ──────────────────────────────────────────── #}
+  {% if suspicious | default(false) %}
+  <div class="ldet-alert" role="alert">
+    <div class="ldet-alert-icon" aria-hidden="true">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+    </div>
+    <div>
+      <strong>تنبيه — نشاط يستحق المراجعة:</strong>
+      يوجد بصمات أو عناوين شبكة متعددة مرتبطة بهذا الترخيص.
+      راجع تاب «سجل التجديدات» أو صفحة الإدارة الكاملة للتفاصيل.
+    </div>
+  </div>
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Tabs
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="ldet-tabs" role="region" aria-label="تفاصيل الترخيص">
+
+    {# ── شريط التابات ─────────────────────────────────────────────── #}
+    <div class="ldet-tab-bar" role="tablist" aria-label="أقسام الترخيص">
+
+      <button class="ldet-tab-btn is-active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="tab-info"
+              id="btn-info"
+              type="button"
+              onclick="switchTab('info')">
+        <span class="ldet-tab-icon" aria-hidden="true"><i class="fa-solid fa-circle-info"></i></span>
+        معلومات الترخيص
+      </button>
+
+      <button class="ldet-tab-btn"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-usage"
+              id="btn-usage"
+              type="button"
+              onclick="switchTab('usage')">
+        <span class="ldet-tab-icon" aria-hidden="true"><i class="fa-solid fa-chart-bar"></i></span>
+        حدود الاستخدام
+      </button>
+
+      <button class="ldet-tab-btn"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-services"
+              id="btn-services"
+              type="button"
+              onclick="switchTab('services')">
+        <span class="ldet-tab-icon" aria-hidden="true"><i class="fa-solid fa-cubes"></i></span>
+        الخدمات المفعّلة
+      </button>
+
+      <button class="ldet-tab-btn"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tab-renewals"
+              id="btn-renewals"
+              type="button"
+              onclick="switchTab('renewals')">
+        <span class="ldet-tab-icon" aria-hidden="true"><i class="fa-solid fa-rotate"></i></span>
+        سجل التجديدات
+      </button>
+
+      <a class="ldet-tab-btn"
+         href="{{ url_for('admin.license_services', license_id=license.id) }}"
+         role="tab"
+         aria-selected="false"
+         title="إدارة خدمات الترخيص">
+        <span class="ldet-tab-icon" aria-hidden="true"><i class="fa-solid fa-puzzle-piece"></i></span>
+        الخدمات
+      </a>
+
+    </div>
+
+    {# ══════════════════════════════════════════
+       Tab 1 — معلومات الترخيص
+       ══════════════════════════════════════════ #}
+    <div class="ldet-tab-panel is-active" id="tab-info" role="tabpanel" aria-labelledby="btn-info">
+
+      <div class="ldet-grid-2">
+
+        {# بيانات الترخيص الأساسية #}
+        <div>
+          <div class="ldet-section-title">
+            <i class="fa-solid fa-id-card" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+            بيانات الترخيص
+          </div>
+          <div class="ldet-info-list">
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">مفتاح الترخيص</span>
+              <span class="ldet-info-value" style="font-family: var(--cc-font-mono); font-size: var(--cc-fs-small);">{{ license.license_key }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">العميل</span>
+              <span class="ldet-info-value">{{ license.customer.company_name }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">الباقة</span>
+              <span class="ldet-info-value">{{ license.plan.name }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">الحالة</span>
+              <span class="ldet-info-value">
+                {% if license.status == 'active' %}
+                  <span class="ldet-pill ldet-pill--green">نشط</span>
+                {% elif license.status == 'trial' %}
+                  <span class="ldet-pill" style="background:var(--pill-blue-bg);color:var(--pill-blue-fg);">تجريبي</span>
+                {% elif license.status == 'expired' %}
+                  <span class="ldet-pill ldet-pill--red">منتهي</span>
+                {% elif license.status == 'suspended' %}
+                  <span class="ldet-pill ldet-pill--amber">موقوف</span>
+                {% else %}
+                  <span class="ldet-pill ldet-pill--grey">{{ license.status | status_label }}</span>
+                {% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {# تواريخ وحدود #}
+        <div>
+          <div class="ldet-section-title">
+            <i class="fa-regular fa-calendar" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+            التواريخ والحدود
+          </div>
+          <div class="ldet-info-list">
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">تاريخ البدء</span>
+              <span class="ldet-info-value">{{ license.starts_at | date if license.starts_at else '—' }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">تاريخ الانتهاء</span>
+              <span class="ldet-info-value">{{ license.expires_at | date if license.expires_at else '—' }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">مهلة السماح</span>
+              <span class="ldet-info-value">{{ license.grace_until | date if license.grace_until else '—' }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">أقصى بصمات</span>
+              <span class="ldet-info-value" style="font-family:var(--cc-font-mono);">{{ license.max_fingerprints }}</span>
+            </div>
+            <div class="ldet-info-row">
+              <span class="ldet-info-label">آخر فحص</span>
+              <span class="ldet-info-value" style="font-size:var(--cc-fs-small); color:var(--cc-text-soft);">
+                {{ license.last_check_at | dt if license.last_check_at else 'لم يُفحص بعد' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {# ملاحظات داخلية #}
+      {% if license.notes %}
+      <div style="margin-top: var(--cc-gap-inline);">
+        <div class="ldet-section-title">
+          <i class="fa-solid fa-note-sticky" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+          ملاحظات داخلية
+        </div>
+        <div style="padding: var(--cc-sp-6) var(--cc-sp-8); background: var(--hb-bg); border-radius: var(--cc-r-lg); border: 1px solid var(--cc-border); font-size: var(--cc-fs-body-s); color: var(--cc-text-soft); line-height: 1.7;">
+          {{ license.notes }}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    {# ══════════════════════════════════════════
+       Tab 2 — حدود الاستخدام
+       ══════════════════════════════════════════ #}
+    <div class="ldet-tab-panel" id="tab-usage" role="tabpanel" aria-labelledby="btn-usage">
+
+      <div class="ldet-section-title">
+        <i class="fa-solid fa-chart-bar" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+        حدود الاستخدام الحالية
+      </div>
+      <p style="font-size: var(--cc-fs-body-s); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-8);">
+        يعرض هذا القسم كمية الاستخدام الفعلي مقارنةً بالحد المسموح به في باقة العميل.
+        الشريط البرتقالي يعني اقتراب الحد، والأحمر يعني تجاوزه أو الوصول إليه.
+      </p>
+
+      <div class="ldet-usage-grid">
+
+        {# مستخدمو النظام #}
+        {% set used_users = usage.users | default(0) %}
+        {% set max_users  = license.plan.max_users | default(1) %}
+        {% set pct_users  = [((used_users / max_users) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-purple-bg); color:var(--tile-purple-fg);">
+              <i class="fa-solid fa-users" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">المستخدمون</span>
+            <span class="ldet-usage-nums" aria-label="{{ used_users }} من {{ max_users }}">
+              {{ used_users }} / {{ max_users }}
+            </span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_users }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_users >= 90 %}ldet-bar-fill--danger{% elif pct_users >= 70 %}ldet-bar-fill--warn{% else %}ldet-bar-fill--green{% endif %}"
+                 style="width: {{ pct_users }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">عدد حسابات المستخدمين المفعّلة داخل نظام العميل.</div>
+        </div>
+
+        {# أجهزة الشبكة #}
+        {% set used_nas = usage.nas | default(0) %}
+        {% set max_nas  = license.plan.max_nas | default(1) %}
+        {% set pct_nas  = [((used_nas / max_nas) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-blue-bg); color:var(--tile-blue-fg);">
+              <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">أجهزة الشبكة</span>
+            <span class="ldet-usage-nums">{{ used_nas }} / {{ max_nas }}</span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_nas }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_nas >= 90 %}ldet-bar-fill--danger{% elif pct_nas >= 70 %}ldet-bar-fill--warn{% endif %}"
+                 style="width: {{ pct_nas }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">أجهزة MikroTik أو الـ NAS المرتبطة بالنظام.</div>
+        </div>
+
+        {# المدراء #}
+        {% set used_admins = usage.admins | default(0) %}
+        {% set max_admins  = license.plan.max_admins | default(1) %}
+        {% set pct_admins  = [((used_admins / max_admins) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-teal-bg); color:var(--tile-teal-fg);">
+              <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">حسابات الإدارة</span>
+            <span class="ldet-usage-nums">{{ used_admins }} / {{ max_admins }}</span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_admins }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_admins >= 90 %}ldet-bar-fill--danger{% elif pct_admins >= 70 %}ldet-bar-fill--warn{% endif %}"
+                 style="width: {{ pct_admins }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">حسابات مدراء النظام المسموحة داخل لوحة العميل.</div>
+        </div>
+
+        {# واتساب #}
+        {% set used_wa = usage.whatsapp_numbers | default(0) %}
+        {% set max_wa  = license.plan.max_whatsapp | default(1) %}
+        {% set pct_wa  = [((used_wa / max_wa) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-green-bg); color:var(--tile-green-fg);">
+              <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">أرقام واتساب</span>
+            <span class="ldet-usage-nums">{{ used_wa }} / {{ max_wa }}</span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_wa }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_wa >= 90 %}ldet-bar-fill--danger{% elif pct_wa >= 70 %}ldet-bar-fill--warn{% else %}ldet-bar-fill--green{% endif %}"
+                 style="width: {{ pct_wa }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">أرقام واتساب مربوطة لإرسال الإشعارات للمستخدمين.</div>
+        </div>
+
+        {# البصمات #}
+        {% set used_fp = license.fingerprints | default([]) | length %}
+        {% set max_fp  = license.max_fingerprints | default(1) %}
+        {% set pct_fp  = [((used_fp / max_fp) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-amber-bg); color:var(--tile-amber-fg);">
+              <i class="fa-solid fa-fingerprint" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">البصمات (خوادم)</span>
+            <span class="ldet-usage-nums">{{ used_fp }} / {{ max_fp }}</span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_fp }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_fp >= 100 %}ldet-bar-fill--danger{% elif pct_fp >= 80 %}ldet-bar-fill--warn{% endif %}"
+                 style="width: {{ pct_fp }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">عدد الخوادم المربوطة بهذا الترخيص من أصل الحد المسموح.</div>
+        </div>
+
+        {# النسخ الاحتياطية #}
+        {% set used_bk = usage.backups | default(0) %}
+        {% set max_bk  = license.plan.max_backups | default(30) %}
+        {% set pct_bk  = [((used_bk / max_bk) * 100) | int, 100] | min %}
+        <div class="ldet-usage-card">
+          <div class="ldet-usage-head">
+            <div class="ldet-usage-icon" style="background:var(--tile-cyan-bg); color:var(--tile-cyan-fg);">
+              <i class="fa-solid fa-database" aria-hidden="true"></i>
+            </div>
+            <span class="ldet-usage-name">النسخ الاحتياطية</span>
+            <span class="ldet-usage-nums">{{ used_bk }} / {{ max_bk }}</span>
+          </div>
+          <div class="ldet-bar-track" role="progressbar" aria-valuenow="{{ pct_bk }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="ldet-bar-fill {% if pct_bk >= 90 %}ldet-bar-fill--danger{% elif pct_bk >= 70 %}ldet-bar-fill--warn{% endif %}"
+                 style="width: {{ pct_bk }}%"></div>
+          </div>
+          <div class="ldet-bar-hint">عدد النسخ الاحتياطية المحفوظة على الخادم.</div>
+        </div>
+
+      </div>
+    </div>
+
+    {# ══════════════════════════════════════════
+       Tab 3 — الخدمات المفعّلة
+       ══════════════════════════════════════════ #}
+    <div class="ldet-tab-panel" id="tab-services" role="tabpanel" aria-labelledby="btn-services">
+
+      <div class="ldet-section-title">
+        <i class="fa-solid fa-cubes" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+        الخدمات المضمّنة في هذا الترخيص
+      </div>
+      <p style="font-size: var(--cc-fs-body-s); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-8);">
+        هذه الخدمات متاحة لعميلك بناءً على الباقة المختارة.
+        الخدمات الموقوفة موجودة في الباقة لكنها معطّلة حالياً بقرار يدوي.
+      </p>
+
+      <div class="ldet-svc-grid">
+
+        {# نولّد الخدمات من plan.features — نعرض كل خدمة بصرف النظر عن كونها مفعّلة أم لا #}
+        {% set svc_list = [
+          ('whatsapp',     'fa-brands fa-whatsapp',    'tile-green-bg',  'tile-green-fg',  'بوابة واتساب',        'إرسال إشعارات وتنبيهات عبر واتساب للمستخدمين'),
+          ('backup',       'fa-solid fa-database',     'tile-cyan-bg',   'tile-cyan-fg',   'النسخ الاحتياطية',    'حفظ نسخ احتياطية دورية من بيانات النظام'),
+          ('api_access',   'fa-solid fa-plug',         'tile-blue-bg',   'tile-blue-fg',   'الوصول للـ API',       'السماح للعميل باستخدام الـ API لدمج أنظمة خارجية'),
+          ('reports',      'fa-solid fa-chart-line',   'tile-purple-bg', 'tile-purple-fg', 'التقارير المتقدمة',   'إنشاء تقارير تفصيلية عن الاستخدام والمبيعات'),
+          ('multi_admin',  'fa-solid fa-users-gear',   'tile-teal-bg',   'tile-teal-fg',   'تعدد المدراء',        'إمكانية إضافة أكثر من مدير واحد للنظام'),
+          ('custom_domain','fa-solid fa-globe',        'tile-amber-bg',  'tile-amber-fg',  'النطاق المخصص',       'ربط النظام بنطاق خاص بالعميل'),
+          ('sms',          'fa-solid fa-message',      'tile-red-bg',    'tile-red-fg',    'الرسائل القصيرة SMS', 'إرسال رسائل SMS للمستخدمين عند تجديد الاشتراك'),
+          ('vpn',          'fa-solid fa-shield-halved','tile-grey-bg',   'tile-grey-fg',   'خدمة VPN',            'تفعيل خدمة الـ VPN لمستخدمي العميل'),
+        ] %}
+
+        {% for key, icon, bg, fg, name, hint in svc_list %}
+          {% set is_on = license.plan.features.get(key, false) %}
+          <div class="ldet-svc-card">
+            <div class="ldet-svc-icon" style="background:var(--{{ bg }}); color:var(--{{ fg }});" aria-hidden="true">
+              <i class="{{ icon }}"></i>
+            </div>
+            <div class="ldet-svc-body">
+              <div class="ldet-svc-name">{{ name }}</div>
+              <div class="ldet-svc-hint">{{ hint }}</div>
+            </div>
+            {% if is_on %}
+              <span class="ldet-svc-badge ldet-svc-badge--on" aria-label="مفعّلة">
+                <i class="fa-solid fa-check fa-xs" aria-hidden="true"></i> مفعّل
+              </span>
+            {% else %}
+              <span class="ldet-svc-badge ldet-svc-badge--off" aria-label="غير مفعّلة">
+                <i class="fa-solid fa-minus fa-xs" aria-hidden="true"></i> غير مفعّل
+              </span>
+            {% endif %}
+          </div>
+        {% endfor %}
+
+      </div>
+    </div>
+
+    {# ══════════════════════════════════════════
+       Tab 4 — سجل التجديدات
+       ══════════════════════════════════════════ #}
+    <div class="ldet-tab-panel" id="tab-renewals" role="tabpanel" aria-labelledby="btn-renewals">
+
+      <div class="ldet-section-title">
+        <i class="fa-solid fa-rotate" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>
+        سجل التجديدات
+        <span style="font-size:var(--cc-fs-small); font-weight:var(--cc-fw-medium); color:var(--cc-text-mute); margin-inline-start:var(--cc-sp-4);">{{ renewals | length }} عملية</span>
+      </div>
+      <p style="font-size: var(--cc-fs-body-s); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-8);">
+        كل سطر يمثّل عملية تجديد واحدة — سواء كانت يدوية أو تلقائية.
+        يمكن استخدام هذا السجل كمرجع مالي لتحصيل المدفوعات.
+      </p>
+
+      <div class="ldet-table-wrap">
+        <table class="ldet-table" aria-label="سجل التجديدات">
+          <thead>
+            <tr>
+              <th scope="col">المدة</th>
+              <th scope="col">فترة التجديد</th>
+              <th scope="col">المبلغ</th>
+              <th scope="col">طريقة الدفع</th>
+              <th scope="col">حالة الدفع</th>
+              <th scope="col">تاريخ العملية</th>
+              <th scope="col">ملاحظات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in renewals %}
+            <tr>
+              <td style="font-weight: var(--cc-fw-semibold);">{{ item.period_months }} شهر</td>
+              <td style="font-size:var(--cc-fs-small); color:var(--cc-text-soft);">
+                {{ item.period_start | date }} &larr; {{ item.period_end | date }}
+              </td>
+              <td style="font-family:var(--cc-font-mono); font-weight:var(--cc-fw-bold);">
+                {{ item.amount | money }} {{ item.currency }}
+              </td>
+              <td>
+                {% if item.method == 'manual' %}يدوي
+                {% elif item.method == 'cash' %}نقدًا
+                {% elif item.method == 'bank' %}تحويل بنكي
+                {% else %}{{ item.method }}{% endif %}
+              </td>
+              <td>
+                {% if item.status == 'paid' %}
+                  <span class="ldet-pill ldet-pill--green">مدفوع</span>
+                {% elif item.status == 'unpaid' %}
+                  <span class="ldet-pill ldet-pill--amber">غير مدفوع</span>
+                {% elif item.status == 'waived' %}
+                  <span class="ldet-pill ldet-pill--grey">معفى</span>
+                {% else %}
+                  <span class="ldet-pill ldet-pill--grey">{{ item.status }}</span>
+                {% endif %}
+              </td>
+              <td style="font-size:var(--cc-fs-small); color:var(--cc-text-soft);">
+                {{ item.created_at | dt }}
+              </td>
+              <td style="font-size:var(--cc-fs-small); color:var(--cc-text-mute);">
+                {{ item.notes or '—' }}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7">
+                <div style="text-align:center; padding: var(--cc-sp-13) 0; color:var(--cc-text-mute);">
+                  <div style="font-size:28px; margin-block-end:var(--cc-sp-4); opacity:.4;">
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                  </div>
+                  <div style="font-weight:var(--cc-fw-semibold); color:var(--cc-text-soft);">لا توجد تجديدات بعد</div>
+                  <div style="font-size:var(--cc-fs-small); margin-top:var(--cc-sp-2);">ستظهر هنا كل عمليات تجديد الترخيص مع تفاصيل الدفع.</div>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+    {# / نهاية التابات #}
+
+  </div>
+  {# / ldet-tabs #}
+
+</div>
+{# / ldet-page #}
+
+<script>
+/* ── تبديل التابات ────────────────────────────────────────────── */
+function switchTab(id) {
+  // إخفاء كل التابات
+  document.querySelectorAll('.ldet-tab-panel').forEach(function(p) {
+    p.classList.remove('is-active');
+  });
+  document.querySelectorAll('.ldet-tab-btn').forEach(function(b) {
+    b.classList.remove('is-active');
+    b.setAttribute('aria-selected', 'false');
+  });
+
+  // إظهار التاب المطلوب
+  var panel = document.getElementById('tab-' + id);
+  var btn   = document.getElementById('btn-' + id);
+  if (panel) panel.classList.add('is-active');
+  if (btn)   { btn.classList.add('is-active'); btn.setAttribute('aria-selected', 'true'); }
+}
+
+// حفظ التاب النشط في URL hash
+document.addEventListener('DOMContentLoaded', function() {
+  var hash = window.location.hash.replace('#', '');
+  var allowed = ['info', 'usage', 'services', 'renewals'];
+  if (hash && allowed.includes(hash)) {
+    switchTab(hash);
+  }
+  // تحديث الـ hash عند التبديل
+  document.querySelectorAll('.ldet-tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('id').replace('btn-', '');
+      history.replaceState(null, '', '#' + id);
+    });
+  });
+});
+</script>
+{% endblock %}

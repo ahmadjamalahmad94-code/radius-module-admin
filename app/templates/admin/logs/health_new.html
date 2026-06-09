@@ -1,0 +1,644 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}لوحة المراقبة{% endblock %}
+{% block page_title %}لوحة المراقبة{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   logs/health_new.html — لوحة المراقبة
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero ─────────────────────────────────────────────── */
+.hl-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-10) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-10);
+  margin-block-end: var(--cc-gap-section);
+  position:      relative;
+  overflow:      hidden;
+}
+.hl-hero::before {
+  content: ''; position: absolute;
+  inset-inline-start: -40px; inset-block-start: -40px;
+  width: 160px; height: 160px;
+  border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.05); pointer-events: none;
+}
+.hl-hero-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h1); flex-shrink: 0;
+}
+.hl-hero-title { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); line-height: var(--cc-lh-tight); margin-block-end: var(--cc-sp-2); }
+.hl-hero-sub   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); opacity: .85; }
+.hl-hero-ts    { font-size: var(--cc-fs-tiny); opacity: .7; margin-block-start: var(--cc-sp-3); font-family: var(--cc-font-mono); }
+
+/* ── بطاقات حالة الخدمات ─────────────────────────────── */
+.hl-services-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  margin-block-end:      var(--cc-gap-section);
+}
+.hl-service-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  padding:       var(--cc-sp-8);
+  transition:    box-shadow var(--cc-anim-fast), border-color var(--cc-anim-fast);
+  position:      relative;
+  overflow:      hidden;
+}
+.hl-service-card::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0; inset-inline-start: 0; inset-inline-end: 0;
+  height: 3px;
+}
+.hl-service-card.is-ok::before     { background: var(--hb-green); }
+.hl-service-card.is-warn::before   { background: var(--hb-amber); }
+.hl-service-card.is-error::before  { background: var(--hb-red); }
+.hl-service-card.is-unknown::before{ background: var(--cc-border-2); }
+.hl-service-card:hover { box-shadow: var(--cc-sh-card2); }
+
+.hl-svc-top { display: flex; align-items: center; gap: var(--cc-sp-6); margin-block-end: var(--cc-sp-6); }
+.hl-svc-icon {
+  width: 44px; height: 44px;
+  border-radius: var(--cc-r-lg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0;
+}
+.hl-svc-icon.ok     { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.hl-svc-icon.warn   { background: var(--tile-amber-bg);  color: var(--tile-amber-fg); }
+.hl-svc-icon.error  { background: var(--tile-red-bg);    color: var(--tile-red-fg); }
+.hl-svc-icon.unknown{ background: var(--tile-grey-bg);   color: var(--tile-grey-fg); }
+.hl-svc-name  { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); }
+.hl-svc-desc  { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); margin-block-start: 2px; }
+
+/* ── نبضة الحالة (pulse) ─────────────────────────────── */
+.hl-pulse-row { display: flex; align-items: center; gap: var(--cc-sp-4); margin-block-end: var(--cc-sp-6); }
+.hl-pulse {
+  width: 10px; height: 10px;
+  border-radius: var(--cc-r-pill);
+  flex-shrink: 0;
+  position: relative;
+}
+.hl-pulse.ok    { background: var(--hb-green); }
+.hl-pulse.warn  { background: var(--hb-amber); }
+.hl-pulse.error { background: var(--hb-red); }
+.hl-pulse.unknown { background: var(--cc-text-mute); }
+.hl-pulse.ok::after, .hl-pulse.warn::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: var(--cc-r-pill);
+  animation: hl-ring 2.2s infinite;
+}
+.hl-pulse.ok::after   { border: 2px solid var(--hb-green); }
+.hl-pulse.warn::after { border: 2px solid var(--hb-amber); }
+@keyframes hl-ring {
+  0%   { opacity: .8; transform: scale(1); }
+  70%  { opacity: 0;  transform: scale(2.2); }
+  100% { opacity: 0;  transform: scale(2.2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hl-pulse::after { animation: none; }
+}
+.hl-pulse-label {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+}
+.hl-pulse-label.ok     { color: var(--tile-green-fg); }
+.hl-pulse-label.warn   { color: var(--tile-amber-fg); }
+.hl-pulse-label.error  { color: var(--tile-red-fg); }
+.hl-pulse-label.unknown{ color: var(--cc-text-mute); }
+
+/* ── مقاييس البطاقة الداخلية ─────────────────────────── */
+.hl-svc-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cc-sp-3); }
+.hl-svc-m-item { display: flex; flex-direction: column; gap: 2px; }
+.hl-svc-m-val   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); font-variant-numeric: tabular-nums; }
+.hl-svc-m-label { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); }
+
+/* ── صفوف الموارد ────────────────────────────────────── */
+.hl-charts-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap:                   var(--cc-gap-section);
+  margin-block-end:      var(--cc-gap-section);
+}
+
+.hl-chart-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  overflow:      hidden;
+}
+.hl-chart-head {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+.hl-chart-icon {
+  width: 28px; height: 28px; border-radius: var(--cc-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0;
+}
+.hl-chart-icon.purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.hl-chart-icon.blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
+.hl-chart-icon.green  { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
+.hl-chart-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.hl-chart-val   { font-size: var(--cc-fs-h2); font-weight: var(--cc-fw-display); color: var(--cc-text); font-variant-numeric: tabular-nums; }
+.hl-chart-body  { padding: var(--cc-sp-8); }
+
+/* ── شريط CSS التقدم ─────────────────────────────────── */
+.hl-bar-wrap    { display: flex; flex-direction: column; gap: var(--cc-sp-3); margin-block-end: var(--cc-sp-6); }
+.hl-bar-header  { display: flex; justify-content: space-between; align-items: center; }
+.hl-bar-label   { font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold); color: var(--cc-text-soft); }
+.hl-bar-pct     { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-display); color: var(--cc-text); font-variant-numeric: tabular-nums; }
+.hl-bar-track {
+  height: 10px;
+  background: var(--cc-border);
+  border-radius: var(--cc-r-pill);
+  overflow: hidden;
+}
+.hl-bar-fill {
+  height: 100%;
+  border-radius: var(--cc-r-pill);
+  transition: width var(--cc-anim-slow) var(--cc-ease-out);
+}
+.hl-bar-fill.ok   { background: linear-gradient(90deg, var(--hb-green), #4ade80); }
+.hl-bar-fill.warn { background: linear-gradient(90deg, var(--hb-amber), #fbbf24); }
+.hl-bar-fill.crit { background: linear-gradient(90deg, var(--hb-red),   #f87171); }
+
+/* ── رسم بياني SVG خفيف للذاكرة / CPU ───────────────── */
+.hl-sparkline-wrap { margin-block-start: var(--cc-sp-6); }
+.hl-sparkline-label { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-3); }
+.hl-sparkline { width: 100%; overflow: hidden; }
+
+/* ── بطاقة آخر الأخطاء ──────────────────────────────── */
+.hl-errors-card {
+  background:    var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  border:        1px solid var(--cc-border);
+  overflow:      hidden;
+}
+.hl-errors-head {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+.hl-errors-icon {
+  width: 32px; height: 32px; border-radius: var(--cc-r-sm);
+  background: var(--tile-red-bg); color: var(--tile-red-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); flex-shrink: 0;
+}
+.hl-errors-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.hl-errors-count {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  padding: 2px 10px; border-radius: var(--cc-r-pill);
+  background: var(--tile-red-bg); color: var(--tile-red-fg);
+}
+.hl-error-list { list-style: none; margin: 0; padding: 0; }
+.hl-error-item {
+  display: flex; align-items: flex-start; gap: var(--cc-sp-6);
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  transition: background var(--cc-anim-fast);
+}
+.hl-error-item:last-child { border-block-end: none; }
+.hl-error-item:hover { background: var(--tile-red-bg); }
+.hl-error-dot {
+  width: 8px; height: 8px; border-radius: var(--cc-r-pill);
+  background: var(--hb-red); flex-shrink: 0; margin-block-start: 5px;
+}
+.hl-error-body { flex: 1; }
+.hl-error-msg  { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); margin-block-end: 3px; }
+.hl-error-meta { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); display: flex; gap: var(--cc-sp-6); flex-wrap: wrap; }
+.hl-error-ts   { font-family: var(--cc-font-mono); direction: ltr; text-align: start; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ─────────────────────────────────────────────────────────── #}
+<div class="hl-hero">
+  <div class="hl-hero-icon" aria-hidden="true"><i class="fa-solid fa-heart-pulse"></i></div>
+  <div>
+    <div class="hl-hero-title">لوحة المراقبة</div>
+    <div class="hl-hero-sub">مراقبة مباشرة لصحة الخدمات، استهلاك الموارد، وآخر الأخطاء</div>
+    <div class="hl-hero-ts" aria-live="polite">
+      آخر تحديث: <span id="hl-ts" dir="ltr">{{ now | dt if now else 'جارٍ التحميل...' }}</span>
+    </div>
+  </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   بطاقات حالة الخدمات
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="hl-services-grid" role="region" aria-label="حالة الخدمات">
+
+  {# ── الخادم الرئيسي ── #}
+  {% set sv = health.server | default({}) %}
+  {% set sv_cls = 'ok' if sv.get('status')=='ok' else ('warn' if sv.get('status')=='warn' else ('error' if sv.get('status')=='error' else 'unknown')) %}
+  <div class="hl-service-card is-{{ sv_cls }}" role="article" aria-label="حالة الخادم الرئيسي">
+    <div class="hl-svc-top">
+      <div class="hl-svc-icon {{ sv_cls }}">
+        <i class="fa-solid fa-server" aria-hidden="true"></i>
+      </div>
+      <div>
+        <div class="hl-svc-name">الخادم الرئيسي</div>
+        <div class="hl-svc-desc">Flask / gunicorn</div>
+      </div>
+    </div>
+    <div class="hl-pulse-row" role="status" aria-label="حالة الخادم">
+      <div class="hl-pulse {{ sv_cls }}" aria-hidden="true"></div>
+      <span class="hl-pulse-label {{ sv_cls }}">
+        {{ 'يعمل' if sv_cls=='ok' else ('تحذير' if sv_cls=='warn' else ('خطأ' if sv_cls=='error' else 'غير معروف')) }}
+      </span>
+    </div>
+    <div class="hl-svc-metrics">
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ sv.get('uptime', '—') }}</div>
+        <div class="hl-svc-m-label">وقت التشغيل</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ sv.get('requests_per_min', '—') }}</div>
+        <div class="hl-svc-m-label">طلب/دقيقة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val" dir="ltr">{{ sv.get('version', '—') }}</div>
+        <div class="hl-svc-m-label">الإصدار</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ sv.get('workers', '—') }}</div>
+        <div class="hl-svc-m-label">عمال نشطون</div>
+      </div>
+    </div>
+  </div>
+
+  {# ── قاعدة البيانات ── #}
+  {% set db = health.database | default({}) %}
+  {% set db_cls = 'ok' if db.get('status')=='ok' else ('warn' if db.get('status')=='warn' else ('error' if db.get('status')=='error' else 'unknown')) %}
+  <div class="hl-service-card is-{{ db_cls }}" role="article" aria-label="حالة قاعدة البيانات">
+    <div class="hl-svc-top">
+      <div class="hl-svc-icon {{ db_cls }}">
+        <i class="fa-solid fa-database" aria-hidden="true"></i>
+      </div>
+      <div>
+        <div class="hl-svc-name">قاعدة البيانات</div>
+        <div class="hl-svc-desc">SQLite / PostgreSQL</div>
+      </div>
+    </div>
+    <div class="hl-pulse-row" role="status" aria-label="حالة قاعدة البيانات">
+      <div class="hl-pulse {{ db_cls }}" aria-hidden="true"></div>
+      <span class="hl-pulse-label {{ db_cls }}">
+        {{ 'متصلة' if db_cls=='ok' else ('بطيئة' if db_cls=='warn' else ('قطع' if db_cls=='error' else 'غير معروفة')) }}
+      </span>
+    </div>
+    <div class="hl-svc-metrics">
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ db.get('response_ms', '—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-medium)">ms</span></div>
+        <div class="hl-svc-m-label">زمن الاستجابة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ db.get('connections', '—') }}</div>
+        <div class="hl-svc-m-label">اتصالات مفتوحة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ db.get('size_mb', '—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-medium)">MB</span></div>
+        <div class="hl-svc-m-label">حجم الـ DB</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ db.get('queries_per_min', '—') }}</div>
+        <div class="hl-svc-m-label">استعلام/دقيقة</div>
+      </div>
+    </div>
+  </div>
+
+  {# ── وكيل RADIUS ── #}
+  {% set proxy = health.proxy | default({}) %}
+  {% set px_cls = 'ok' if proxy.get('status')=='ok' else ('warn' if proxy.get('status')=='warn' else ('error' if proxy.get('status')=='error' else 'unknown')) %}
+  <div class="hl-service-card is-{{ px_cls }}" role="article" aria-label="حالة وكيل RADIUS">
+    <div class="hl-svc-top">
+      <div class="hl-svc-icon {{ px_cls }}">
+        <i class="fa-solid fa-arrows-split-up-and-left" aria-hidden="true"></i>
+      </div>
+      <div>
+        <div class="hl-svc-name">وكيل RADIUS</div>
+        <div class="hl-svc-desc">Auth/Acct proxy</div>
+      </div>
+    </div>
+    <div class="hl-pulse-row" role="status" aria-label="حالة وكيل RADIUS">
+      <div class="hl-pulse {{ px_cls }}" aria-hidden="true"></div>
+      <span class="hl-pulse-label {{ px_cls }}">
+        {{ 'يعمل' if px_cls=='ok' else ('تحذير' if px_cls=='warn' else ('متوقف' if px_cls=='error' else 'غير معروف')) }}
+      </span>
+    </div>
+    <div class="hl-svc-metrics">
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ proxy.get('active_routes', '—') }}</div>
+        <div class="hl-svc-m-label">مسارات نشطة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ proxy.get('auth_reqs_min', '—') }}</div>
+        <div class="hl-svc-m-label">Auth/دقيقة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ proxy.get('acct_reqs_min', '—') }}</div>
+        <div class="hl-svc-m-label">Acct/دقيقة</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ proxy.get('reject_rate_pct', '—') }}%</div>
+        <div class="hl-svc-m-label">نسبة الرفض</div>
+      </div>
+    </div>
+  </div>
+
+  {# ── واتساب ── #}
+  {% set wa = health.whatsapp | default({}) %}
+  {% set wa_cls = 'ok' if wa.get('status')=='ok' else ('warn' if wa.get('status')=='warn' else ('error' if wa.get('status')=='error' else 'unknown')) %}
+  <div class="hl-service-card is-{{ wa_cls }}" role="article" aria-label="حالة اتصال واتساب">
+    <div class="hl-svc-top">
+      <div class="hl-svc-icon {{ wa_cls }}" style="{% if wa_cls=='ok' %}background:#dcfce7;color:#166534{% elif wa_cls=='warn' %}background:var(--tile-amber-bg);color:var(--tile-amber-fg){% elif wa_cls=='error' %}background:var(--tile-red-bg);color:var(--tile-red-fg){% else %}background:var(--tile-grey-bg);color:var(--tile-grey-fg){% endif %}">
+        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+      </div>
+      <div>
+        <div class="hl-svc-name">واتساب</div>
+        <div class="hl-svc-desc">WhatsApp Cloud API</div>
+      </div>
+    </div>
+    <div class="hl-pulse-row" role="status" aria-label="حالة واتساب">
+      <div class="hl-pulse {{ wa_cls }}" aria-hidden="true"></div>
+      <span class="hl-pulse-label {{ wa_cls }}">
+        {{ 'متصل' if wa_cls=='ok' else ('تحذير' if wa_cls=='warn' else ('قطع' if wa_cls=='error' else 'غير مضبوط')) }}
+      </span>
+    </div>
+    <div class="hl-svc-metrics">
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ wa.get('msgs_today', '—') }}</div>
+        <div class="hl-svc-m-label">رسائل اليوم</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ wa.get('delivered_pct', '—') }}%</div>
+        <div class="hl-svc-m-label">معدل التسليم</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val">{{ wa.get('failed_today', '—') }}</div>
+        <div class="hl-svc-m-label">فشل اليوم</div>
+      </div>
+      <div class="hl-svc-m-item">
+        <div class="hl-svc-m-val" dir="ltr" style="font-size:var(--cc-fs-tiny)">
+          {{ wa.get('phone_display', '—') }}
+        </div>
+        <div class="hl-svc-m-label">رقم الهاتف</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   رسوم بيانية الموارد (SVG/CSS خالص)
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="hl-charts-grid" role="region" aria-label="استهلاك الموارد">
+
+  {# ── استهلاك المعالج (CPU) ── #}
+  {% set cpu_pct = health.resources.cpu_pct | default(0) | int %}
+  {% set cpu_cls = 'ok' if cpu_pct < 70 else ('warn' if cpu_pct < 90 else 'crit') %}
+  <div class="hl-chart-card">
+    <div class="hl-chart-head">
+      <div class="hl-chart-icon purple"><i class="fa-solid fa-microchip" aria-hidden="true"></i></div>
+      <span class="hl-chart-title">المعالج (CPU)</span>
+      <span class="hl-chart-val" aria-label="استهلاك المعالج {{ cpu_pct }}%">{{ cpu_pct }}%</span>
+    </div>
+    <div class="hl-chart-body">
+      <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ cpu_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="استهلاك المعالج">
+        <div class="hl-bar-header">
+          <span class="hl-bar-label">الاستهلاك الحالي</span>
+          <span class="hl-bar-pct">{{ cpu_pct }}%</span>
+        </div>
+        <div class="hl-bar-track">
+          <div class="hl-bar-fill {{ cpu_cls }}" style="width:{{ cpu_pct }}%" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      {# رسم بياني SVG لآخر 12 نقطة #}
+      <div class="hl-sparkline-wrap">
+        <div class="hl-sparkline-label">آخر 12 قياس (كل دقيقة)</div>
+        <div class="hl-sparkline">
+          <svg viewBox="0 0 240 50" xmlns="http://www.w3.org/2000/svg"
+               preserveAspectRatio="none" height="50" width="100%"
+               aria-hidden="true" focusable="false">
+            {% set cpu_history = (health.resources.cpu_history if health.resources is defined and health.resources is mapping and health.resources.cpu_history is defined else [20,35,28,45,60,55,70,65,50,cpu_pct,cpu_pct,cpu_pct]) %}
+            {%- set pts_arr = [] -%}
+            {%- for i in range(cpu_history|length) -%}
+              {%- set x = (i * 20) | string -%}
+              {%- set y = (50 - cpu_history[i] * 0.46) | string -%}
+              {%- set _ = pts_arr.append(x ~ ',' ~ y) -%}
+            {%- endfor -%}
+            <polyline
+              points="{{ pts_arr | join(' ') }}"
+              fill="none"
+              stroke="{% if cpu_cls=='ok' %}#22c55e{% elif cpu_cls=='warn' %}#f59e0b{% else %}#ef4444{% endif %}"
+              stroke-width="2"
+              stroke-linejoin="round"
+              stroke-linecap="round"/>
+            {# منطقة التعبئة #}
+            <polyline
+              points="0,50 {{ pts_arr | join(' ') }} 220,50"
+              fill="{% if cpu_cls=='ok' %}rgba(34,197,94,.10){% elif cpu_cls=='warn' %}rgba(245,158,11,.10){% else %}rgba(239,68,68,.10){% endif %}"
+              stroke="none"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hl-svc-metrics" style="margin-block-start:var(--cc-sp-6)">
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.cpu_cores | default('—') }}</div>
+          <div class="hl-svc-m-label">عدد الأنوية</div>
+        </div>
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.load_avg | default('—') }}</div>
+          <div class="hl-svc-m-label">Load avg</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── استهلاك الذاكرة (RAM) ── #}
+  {% set mem_pct = health.resources.mem_pct | default(0) | int %}
+  {% set mem_cls = 'ok' if mem_pct < 75 else ('warn' if mem_pct < 90 else 'crit') %}
+  <div class="hl-chart-card">
+    <div class="hl-chart-head">
+      <div class="hl-chart-icon blue"><i class="fa-solid fa-memory" aria-hidden="true"></i></div>
+      <span class="hl-chart-title">الذاكرة (RAM)</span>
+      <span class="hl-chart-val" aria-label="استهلاك الذاكرة {{ mem_pct }}%">{{ mem_pct }}%</span>
+    </div>
+    <div class="hl-chart-body">
+      <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ mem_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="استهلاك الذاكرة">
+        <div class="hl-bar-header">
+          <span class="hl-bar-label">الاستهلاك الحالي</span>
+          <span class="hl-bar-pct">{{ mem_pct }}%</span>
+        </div>
+        <div class="hl-bar-track">
+          <div class="hl-bar-fill {{ mem_cls }}" style="width:{{ mem_pct }}%" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      {# رسم بياني SVG للذاكرة #}
+      <div class="hl-sparkline-wrap">
+        <div class="hl-sparkline-label">آخر 12 قياس (كل دقيقة)</div>
+        <div class="hl-sparkline">
+          <svg viewBox="0 0 240 50" xmlns="http://www.w3.org/2000/svg"
+               preserveAspectRatio="none" height="50" width="100%"
+               aria-hidden="true" focusable="false">
+            {% set mem_history = (health.resources.mem_history if health.resources is defined and health.resources is mapping and health.resources.mem_history is defined else [40,42,41,43,45,44,46,47,mem_pct,mem_pct,mem_pct,mem_pct]) %}
+            {%- set mpts = [] -%}
+            {%- for i in range(mem_history|length) -%}
+              {%- set mx = (i * 20) | string -%}
+              {%- set my = (50 - mem_history[i] * 0.46) | string -%}
+              {%- set _ = mpts.append(mx ~ ',' ~ my) -%}
+            {%- endfor -%}
+            <polyline
+              points="{{ mpts | join(' ') }}"
+              fill="none"
+              stroke="{% if mem_cls=='ok' %}#3b82f6{% elif mem_cls=='warn' %}#f59e0b{% else %}#ef4444{% endif %}"
+              stroke-width="2"
+              stroke-linejoin="round"
+              stroke-linecap="round"/>
+            <polyline
+              points="0,50 {{ mpts | join(' ') }} 220,50"
+              fill="{% if mem_cls=='ok' %}rgba(59,130,246,.10){% elif mem_cls=='warn' %}rgba(245,158,11,.10){% else %}rgba(239,68,68,.10){% endif %}"
+              stroke="none"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hl-svc-metrics" style="margin-block-start:var(--cc-sp-6)">
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.mem_used_mb | default('—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:500">MB</span></div>
+          <div class="hl-svc-m-label">مستخدم</div>
+        </div>
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.mem_total_mb | default('—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:500">MB</span></div>
+          <div class="hl-svc-m-label">إجمالي</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── مساحة القرص ── #}
+  {% set disk_pct = health.resources.disk_pct | default(0) | int %}
+  {% set disk_cls = 'ok' if disk_pct < 80 else ('warn' if disk_pct < 95 else 'crit') %}
+  <div class="hl-chart-card">
+    <div class="hl-chart-head">
+      <div class="hl-chart-icon green"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i></div>
+      <span class="hl-chart-title">مساحة القرص</span>
+      <span class="hl-chart-val" aria-label="استخدام القرص {{ disk_pct }}%">{{ disk_pct }}%</span>
+    </div>
+    <div class="hl-chart-body">
+      <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ disk_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="مساحة القرص">
+        <div class="hl-bar-header">
+          <span class="hl-bar-label">الاستخدام الحالي</span>
+          <span class="hl-bar-pct">{{ disk_pct }}%</span>
+        </div>
+        <div class="hl-bar-track">
+          <div class="hl-bar-fill {{ disk_cls }}" style="width:{{ disk_pct }}%" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="hl-svc-metrics" style="margin-block-start:var(--cc-sp-6)">
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.disk_used_gb | default('—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:500">GB</span></div>
+          <div class="hl-svc-m-label">مستخدم</div>
+        </div>
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.disk_total_gb | default('—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:500">GB</span></div>
+          <div class="hl-svc-m-label">إجمالي</div>
+        </div>
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val">{{ health.resources.disk_free_gb | default('—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:500">GB</span></div>
+          <div class="hl-svc-m-label">متاح</div>
+        </div>
+        <div class="hl-svc-m-item">
+          <div class="hl-svc-m-val" dir="ltr" style="font-size:var(--cc-fs-tiny)">{{ health.resources.disk_path | default('/') }}</div>
+          <div class="hl-svc-m-label">المسار</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ════════════════════════════════════════════════════════════════════
+   آخر الأخطاء
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="hl-errors-card" role="region" aria-label="آخر الأخطاء">
+  <div class="hl-errors-head">
+    <span class="hl-errors-icon" aria-hidden="true"><i class="fa-solid fa-circle-exclamation"></i></span>
+    <span class="hl-errors-title">آخر الأخطاء</span>
+    <span class="hl-errors-count">{{ recent_errors|length }} خطأ</span>
+  </div>
+  <ul class="hl-error-list" role="list" aria-label="قائمة آخر الأخطاء">
+    {% for err in recent_errors %}
+    <li class="hl-error-item" role="listitem">
+      <div class="hl-error-dot" aria-hidden="true"></div>
+      <div class="hl-error-body">
+        <div class="hl-error-msg">{{ err.message }}</div>
+        <div class="hl-error-meta">
+          <span class="hl-error-ts" dir="ltr">{{ err.occurred_at | dt if err.occurred_at else '—' }}</span>
+          {% if err.service %}
+            <span>الخدمة: <strong>{{ err.service }}</strong></span>
+          {% endif %}
+          {% if err.code %}
+            <span dir="ltr" style="font-family:var(--cc-font-mono)">{{ err.code }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </li>
+    {% else %}
+    <li style="padding:var(--cc-sp-11) var(--cc-sp-8);text-align:center;color:var(--cc-text-mute)" role="listitem">
+      <i class="fa-solid fa-circle-check" aria-hidden="true" style="font-size:20px;display:block;margin-block-end:var(--cc-sp-4);color:var(--hb-green)"></i>
+      لا توجد أخطاء حديثة — كل شيء يعمل بشكل طبيعي
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* تحديث الطابع الزمني كل 30 ثانية */
+  function updateTimestamp() {
+    var el = document.getElementById('hl-ts');
+    if (!el) return;
+    var now = new Date();
+    var opts = { year:'numeric', month:'2-digit', day:'2-digit',
+                 hour:'2-digit', minute:'2-digit', second:'2-digit',
+                 hour12: false };
+    el.textContent = now.toLocaleString('ar-PS', opts);
+  }
+
+  setInterval(updateTimestamp, 30000);
+}());
+</script>
+{% endblock %}

@@ -1,0 +1,678 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}لوحة التحكم{% endblock %}
+{% block page_title %}لوحة التحكم{% endblock %}
+
+{% block head_extra %}
+<style>
+/* =============================================================
+   dashboard_new.html — تعريفات CSS خاصة باللوحة الرئيسية
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================= */
+
+/* ── الـ Hero الترحيبي ─────────────────────────────────────── */
+.dash-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-11);
+  overflow:      hidden;
+  position:      relative;
+}
+
+.dash-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-start: -50px;
+  inset-block-start:  -50px;
+  width:     180px;
+  height:    180px;
+  border-radius: var(--cc-r-pill);
+  background:    rgba(255,255,255,.06);
+  pointer-events: none;
+}
+
+.dash-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+
+.dash-hero-body { flex: 1; }
+
+.dash-hero-title {
+  font-size:   var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  line-height: var(--cc-lh-tight);
+  margin-block-end: var(--cc-sp-2);
+}
+
+.dash-hero-sub {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  opacity:     0.85;
+}
+
+.dash-hero-actions {
+  display:   flex;
+  gap:       var(--cc-sp-5);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.dash-hero-btn {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  padding:       var(--cc-sp-3) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  text-decoration: none;
+  transition:    background var(--cc-anim-fast);
+}
+
+.dash-hero-btn:hover { background: rgba(255,255,255,.28); }
+
+/* ── شبكة مؤشرات الأداء ─────────────────────────────────── */
+.dash-kpi-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+
+.dash-kpi-card {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-tile);
+  box-shadow:    var(--cc-sh-card);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--cc-sp-6);
+  transition:    box-shadow var(--cc-anim-fast), transform var(--cc-anim-fast);
+}
+
+.dash-kpi-card:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform:  translateY(-2px);
+}
+
+.dash-kpi-icon {
+  width:         42px;
+  height:        42px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h3);
+  flex-shrink:   0;
+}
+
+.dash-kpi-icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.dash-kpi-icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+.dash-kpi-icon--amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg);  }
+.dash-kpi-icon--red    { background: var(--tile-red-bg);    color: var(--tile-red-fg);    }
+.dash-kpi-icon--blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg);   }
+
+.dash-kpi-body { flex: 1; min-width: 0; }
+
+.dash-kpi-label {
+  font-size:      var(--cc-fs-tiny);
+  font-weight:    var(--cc-fw-heavy);
+  color:          var(--cc-text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-block-end: var(--cc-sp-2);
+}
+
+.dash-kpi-value {
+  font-size:           var(--cc-fs-display);
+  font-weight:         var(--cc-fw-display);
+  color:               var(--cc-text);
+  line-height:         var(--cc-lh-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-kpi-sub {
+  font-size:        var(--cc-fs-small);
+  font-weight:      var(--cc-fw-medium);
+  color:            var(--cc-text-mute);
+  margin-block-start: var(--cc-sp-2);
+}
+
+.dash-kpi-sub--up   { color: var(--hb-green); }
+.dash-kpi-sub--down { color: var(--hb-red); }
+.dash-kpi-sub--warn { color: var(--hb-amber); }
+
+/* ── بطاقة القسم ─────────────────────────────────────────── */
+.dash-section {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  overflow:      hidden;
+}
+
+.dash-section-head {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-6) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.dash-section-icon {
+  width:         28px;
+  height:        28px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--cc-brand-soft);
+  color:         var(--cc-brand);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     12px;
+  flex-shrink:   0;
+}
+
+.dash-section-icon--amber {
+  background: var(--tile-amber-bg);
+  color:      var(--tile-amber-fg);
+}
+
+.dash-section-title {
+  flex:        1;
+  font-size:   var(--cc-fs-h2);
+  font-weight: var(--cc-fw-heavy);
+  color:       var(--cc-text);
+}
+
+.dash-section-action {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color:       var(--cc-brand);
+  padding:     var(--cc-sp-2) var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  transition:  background var(--cc-anim-fast);
+}
+
+.dash-section-action:hover {
+  background: var(--cc-brand-soft);
+  color:      var(--cc-brand-deep);
+}
+
+/* ── الجدول ──────────────────────────────────────────────── */
+.dash-table-wrap { overflow-x: auto; }
+
+.dash-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--cc-fs-body-s);
+}
+
+.dash-table thead th {
+  padding:         var(--cc-sp-4) var(--cc-sp-7);
+  font-size:       var(--cc-fs-tiny);
+  font-weight:     var(--cc-fw-heavy);
+  color:           var(--cc-text-mute);
+  text-transform:  uppercase;
+  letter-spacing:  0.4px;
+  background:      var(--hb-bg);
+  text-align:      center;
+  white-space:     nowrap;
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.dash-table tbody td {
+  padding:          var(--cc-sp-4) var(--cc-sp-7);
+  color:            var(--cc-text-soft);
+  border-block-end: 1px solid var(--cc-border);
+  text-align:       center;
+  vertical-align:   middle;
+  white-space:      nowrap;
+}
+
+.dash-table tbody tr:last-child td { border-block-end: none; }
+.dash-table tbody tr:hover          { background: var(--cc-brand-softer); }
+.dash-table td.mono {
+  font-family: var(--cc-font-mono);
+  direction:   ltr;
+  font-size:   11.5px;
+}
+
+/* ── شارات الحالة (pill) ──────────────────────────────────── */
+.dash-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       var(--cc-sp-1) var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-heavy);
+  white-space:   nowrap;
+}
+
+.dash-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+.dash-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+.dash-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+.dash-pill--purple { background: var(--pill-purple-bg); color: var(--pill-purple-fg); }
+.dash-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+
+/* ── بطاقات التراخيص المنتهية ────────────────────────────── */
+.dash-expiry-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  padding:               var(--cc-sp-8);
+}
+
+.dash-expiry-card {
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-tile);
+  padding:       var(--cc-sp-6) var(--cc-sp-7);
+  background:    var(--cc-card-bg);
+  text-decoration: none;
+  color:         inherit;
+  display:       block;
+  transition:    box-shadow var(--cc-anim-fast), border-color var(--cc-anim-fast);
+}
+
+.dash-expiry-card:hover {
+  box-shadow:   var(--cc-sh-card2);
+  border-color: var(--cc-brand-soft2);
+}
+
+.dash-expiry-card--critical { border-inline-start: 3px solid var(--hb-red); }
+.dash-expiry-card--soon     { border-inline-start: 3px solid var(--hb-amber); }
+
+.dash-expiry-name {
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-heavy);
+  color:         var(--cc-text);
+  margin-block-end: var(--cc-sp-2);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-expiry-date {
+  font-size:    var(--cc-fs-small);
+  color:        var(--cc-text-mute);
+  font-weight:  var(--cc-fw-medium);
+  margin-block-end: var(--cc-sp-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-expiry-badge { font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy); padding: 2px var(--cc-sp-4); border-radius: var(--cc-r-pill); }
+.dash-expiry-badge--critical { background: var(--tile-red-bg);   color: var(--tile-red-fg);   }
+.dash-expiry-badge--soon     { background: var(--tile-amber-bg); color: var(--tile-amber-fg); }
+
+/* ── الحالة الفارغة ──────────────────────────────────────── */
+.dash-empty {
+  padding:    var(--cc-sp-13) var(--cc-sp-8);
+  text-align: center;
+  color:      var(--cc-text-mute);
+}
+
+.dash-empty-icon  { font-size: 32px; margin-block-end: var(--cc-sp-5); opacity: .4; }
+.dash-empty-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text-soft); margin-block-end: var(--cc-sp-3); }
+.dash-empty-sub   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); }
+
+/* شارة عدد داخل عنوان القسم */
+.dash-count-badge {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       2px var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-heavy);
+  margin-inline-start: var(--cc-sp-4);
+  vertical-align: middle;
+  background:    var(--tile-amber-bg);
+  color:         var(--tile-amber-fg);
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .dash-hero { flex-direction: column; align-items: flex-start; }
+  .dash-hero-actions { margin-block-start: var(--cc-sp-6); }
+}
+
+@media (max-width: 640px) {
+  .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 420px) {
+  .dash-kpi-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── ترحيب Hero ──────────────────────────────────────────────────────────── #}
+<div class="dash-hero" role="banner">
+  <div class="dash-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-gauge-high"></i>
+  </div>
+  <div class="dash-hero-body">
+    <div class="dash-hero-title">
+      {% set _name = session.get('admin_name') or session.get('admin_user') or '' %}
+      مرحباً، {{ 'مدير النظام' if _name in ['', 'admin', 'License Admin'] else _name }}
+    </div>
+    <div class="dash-hero-sub">
+      نظرة عامة على نظام HobeRadius — الترخيص والعملاء والمدفوعات
+    </div>
+  </div>
+  <div class="dash-hero-actions">
+    <a href="{{ url_for('admin.licenses_list') }}" class="dash-hero-btn">
+      <i class="fa-solid fa-key" aria-hidden="true"></i>
+      التراخيص
+    </a>
+    <a href="{{ url_for('admin.settings_page') }}" class="dash-hero-btn">
+      <i class="fa-solid fa-gear" aria-hidden="true"></i>
+      الإعدادات
+    </a>
+  </div>
+</div>
+
+{# ── شبكة مؤشرات الأداء ──────────────────────────────────────────────────── #}
+<div class="dash-kpi-grid" role="list" aria-label="مؤشرات الأداء الرئيسية">
+
+  {# إجمالي العملاء #}
+  <div class="dash-kpi-card" role="listitem">
+    <div class="dash-kpi-icon dash-kpi-icon--purple" aria-hidden="true">
+      <i class="fa-solid fa-users"></i>
+    </div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">إجمالي العملاء</div>
+      <div class="dash-kpi-value">{{ stats.customers | default(0) }}</div>
+      <div class="dash-kpi-sub">
+        جميع الحسابات المسجلة
+      </div>
+    </div>
+  </div>
+
+  {# التراخيص النشطة #}
+  <div class="dash-kpi-card" role="listitem">
+    <div class="dash-kpi-icon dash-kpi-icon--green" aria-hidden="true">
+      <i class="fa-solid fa-circle-check"></i>
+    </div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">تراخيص نشطة</div>
+      <div class="dash-kpi-value">{{ stats.active | default(0) }}</div>
+      <div class="dash-kpi-sub">
+        {% set _total = (stats.active | default(0)) + (stats.expired | default(0)) + (stats.suspended | default(0)) %}
+        من {{ _total }} ترخيص إجمالاً
+      </div>
+    </div>
+  </div>
+
+  {# التراخيص المنتهية #}
+  <div class="dash-kpi-card" role="listitem">
+    <div class="dash-kpi-icon dash-kpi-icon--red" aria-hidden="true">
+      <i class="fa-solid fa-ban"></i>
+    </div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">تراخيص منتهية</div>
+      <div class="dash-kpi-value">{{ stats.expired | default(0) }}</div>
+      <div class="dash-kpi-sub dash-kpi-sub--down">
+        {% if stats.expired | default(0) > 0 %}
+          تحتاج مراجعة وتجديد
+        {% else %}
+          لا تراخيص منتهية
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# تنتهي قريباً #}
+  <div class="dash-kpi-card" role="listitem">
+    <div class="dash-kpi-icon dash-kpi-icon--amber" aria-hidden="true">
+      <i class="fa-solid fa-hourglass-half"></i>
+    </div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">تنتهي قريباً</div>
+      <div class="dash-kpi-value">{{ stats.expiring_soon | default(0) }}</div>
+      <div class="dash-kpi-sub {% if stats.expiring_soon | default(0) > 0 %}dash-kpi-sub--warn{% endif %}">
+        {% if stats.expiring_soon | default(0) > 0 %}
+          خلال الأيام القادمة
+        {% else %}
+          لا تراخيص تنتهي قريباً
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# معلقة #}
+  <div class="dash-kpi-card" role="listitem">
+    <div class="dash-kpi-icon dash-kpi-icon--blue" aria-hidden="true">
+      <i class="fa-solid fa-pause"></i>
+    </div>
+    <div class="dash-kpi-body">
+      <div class="dash-kpi-label">تراخيص معلقة</div>
+      <div class="dash-kpi-value">{{ stats.suspended | default(0) }}</div>
+      <div class="dash-kpi-sub">
+        مؤقتاً خارج الخدمة
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ── تنبيه التراخيص المنتهية قريباً (يظهر فقط إن وجد عناصر) ──────────────── #}
+{% if stats.expiring_soon | default(0) > 0 %}
+<div class="dash-section" role="alert" aria-live="polite">
+  <div class="dash-section-head">
+    <span class="dash-section-icon dash-section-icon--amber" aria-hidden="true">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+    </span>
+    <h2 class="dash-section-title">
+      تنبيه — تراخيص على وشك الانتهاء
+      <span class="dash-count-badge" aria-label="{{ stats.expiring_soon }} ترخيص">
+        {{ stats.expiring_soon }}
+      </span>
+    </h2>
+    <a href="{{ url_for('admin.licenses_list') }}" class="dash-section-action">
+      إدارة التراخيص
+      <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
+    </a>
+  </div>
+  {% if expiring_licenses is defined and expiring_licenses %}
+  <div class="dash-expiry-grid" role="list" aria-label="التراخيص المنتهية قريباً">
+    {% for lic in expiring_licenses %}
+      {% set _days = lic.days_remaining | default(0) | int %}
+      {% set _is_critical = _days <= 3 %}
+      <a href="{{ url_for('admin.license_detail', id=lic.id) }}"
+         class="dash-expiry-card {% if _is_critical %}dash-expiry-card--critical{% else %}dash-expiry-card--soon{% endif %}"
+         role="listitem">
+        <div class="dash-expiry-name">{{ lic.customer_name | default('عميل غير محدد') }}</div>
+        <div class="dash-expiry-date">
+          <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+          {% if lic.expires_at %}
+            ينتهي {{ lic.expires_at.strftime('%Y-%m-%d') }}
+          {% else %}
+            تاريخ انتهاء غير محدد
+          {% endif %}
+        </div>
+        <span class="dash-expiry-badge {% if _is_critical %}dash-expiry-badge--critical{% else %}dash-expiry-badge--soon{% endif %}">
+          {% if _is_critical %}
+            <i class="fa-solid fa-fire-flame-curved fa-xs" aria-hidden="true"></i>
+            {{ _days }} يوم فقط
+          {% else %}
+            {{ _days }} يوم متبقي
+          {% endif %}
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="dash-section-head" style="display:none" aria-hidden="true"></div>
+  <div class="adm-detail-list">
+    <div>
+      <span><i class="fa-solid fa-circle-info" aria-hidden="true"></i> ملاحظة</span>
+      <strong>{{ stats.expiring_soon }} ترخيص تنتهي قريباً — راجع قائمة التراخيص للتفاصيل.</strong>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── عمودَان: آخر فحوصات + آخر تجديدات ──────────────────────────────────── #}
+<div class="adm-grid-2">
+
+  {# آخر فحوصات الترخيص #}
+  <section class="dash-section" aria-labelledby="checks-heading">
+    <div class="dash-section-head">
+      <span class="dash-section-icon" aria-hidden="true">
+        <i class="fa-solid fa-shield-heart"></i>
+      </span>
+      <h2 class="dash-section-title" id="checks-heading">آخر فحوصات الترخيص</h2>
+      <a href="{{ url_for('admin.checks_list') }}" class="dash-section-action">
+        عرض الكل
+        <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="dash-table-wrap">
+      <table class="dash-table" aria-label="آخر فحوصات الترخيص">
+        <thead>
+          <tr>
+            <th scope="col">مفتاح الترخيص</th>
+            <th scope="col">النتيجة</th>
+            <th scope="col">الخادم</th>
+            <th scope="col">الوقت</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in recent_checks %}
+          <tr>
+            <td class="mono">{{ item.license_key }}</td>
+            <td>
+              {% set _r = item.result | default('') %}
+              {% if _r == 'valid' %}
+                <span class="dash-pill dash-pill--green">
+                  <i class="fa-solid fa-check fa-xs" aria-hidden="true"></i> صالح
+                </span>
+              {% elif _r in ['invalid', 'rejected', 'error'] %}
+                <span class="dash-pill dash-pill--red">
+                  <i class="fa-solid fa-xmark fa-xs" aria-hidden="true"></i> {{ item.result | badge_class | default('مرفوض') }}
+                </span>
+              {% else %}
+                <span class="dash-pill dash-pill--grey">{{ _r or 'غير محدد' }}</span>
+              {% endif %}
+            </td>
+            <td>{{ item.hostname | default('—') }}</td>
+            <td class="mono">{{ item.checked_at | dt }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4">
+              <div class="dash-empty">
+                <div class="dash-empty-icon" aria-hidden="true">
+                  <i class="fa-solid fa-shield-heart"></i>
+                </div>
+                <div class="dash-empty-title">لا توجد فحوصات بعد</div>
+                <div class="dash-empty-sub">ستظهر الفحوصات هنا عند بدء الاستخدام</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# آخر التجديدات #}
+  <section class="dash-section" aria-labelledby="renewals-heading">
+    <div class="dash-section-head">
+      <span class="dash-section-icon" aria-hidden="true">
+        <i class="fa-solid fa-rotate"></i>
+      </span>
+      <h2 class="dash-section-title" id="renewals-heading">آخر التجديدات</h2>
+      <a href="{{ url_for('admin.renewals_list') }}" class="dash-section-action">
+        عرض الكل
+        <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
+      </a>
+    </div>
+    <div class="dash-table-wrap">
+      <table class="dash-table" aria-label="آخر التجديدات">
+        <thead>
+          <tr>
+            <th scope="col">العميل</th>
+            <th scope="col">المدة</th>
+            <th scope="col">المبلغ</th>
+            <th scope="col">الوقت</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in recent_renewals %}
+          <tr>
+            <td>{{ item.customer.company_name }}</td>
+            <td class="mono">{{ item.period_months }} شهر</td>
+            <td class="mono">{{ item.amount | money }} {{ item.currency }}</td>
+            <td class="mono">{{ item.created_at | dt }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4">
+              <div class="dash-empty">
+                <div class="dash-empty-icon" aria-hidden="true">
+                  <i class="fa-solid fa-rotate"></i>
+                </div>
+                <div class="dash-empty-title">لا توجد تجديدات بعد</div>
+                <div class="dash-empty-sub">ستظهر التجديدات هنا عند بدء الاستخدام</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+{# ── حالة النظام ──────────────────────────────────────────────────────────── #}
+<section class="dash-section" aria-labelledby="health-heading">
+  <div class="dash-section-head">
+    <span class="dash-section-icon" aria-hidden="true">
+      <i class="fa-solid fa-server"></i>
+    </span>
+    <h2 class="dash-section-title" id="health-heading">حالة النظام</h2>
+    <a href="{{ url_for('admin.settings_page') }}" class="dash-section-action">
+      <i class="fa-solid fa-gear fa-xs" aria-hidden="true"></i>
+      الإعدادات
+    </a>
+  </div>
+  <div class="adm-detail-list">
+    <div>
+      <span>البيئة</span>
+      <strong>{{ health.env | default('—') }}</strong>
+    </div>
+    <div>
+      <span>رابط اللوحة</span>
+      <strong class="mono">{{ health.api_base | default('—') }}</strong>
+    </div>
+    <div>
+      <span>بريد الدعم</span>
+      <strong>{{ health.support_email | default('غير محدد') }}</strong>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

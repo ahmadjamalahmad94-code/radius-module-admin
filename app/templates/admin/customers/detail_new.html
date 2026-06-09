@@ -1,0 +1,1393 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}{{ customer.company_name }} — Customer 360{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+{% endblock %}
+{% block page_breadcrumb %}{{ customer.company_name }}{% endblock %}
+
+{# ─── الأنماط الخاصة بالصفحة ─── #}
+{% block head_extra %}
+<style>
+  /* ======================================================
+     Hero Profile Header
+  ====================================================== */
+  .cd-hero {
+    background: var(--cc-hero-grad);
+    border-radius: var(--cc-r-card);
+    padding: var(--cc-sp-10) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-10);
+    box-shadow: var(--cc-sh-hero);
+    flex-wrap: wrap;
+  }
+
+  .cd-hero-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--cc-r-card);
+    background: rgba(255,255,255,.2);
+    border: 2px solid rgba(255,255,255,.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: var(--cc-fw-heavy);
+    color: #fff;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .cd-hero-body { flex: 1; min-width: 220px; }
+
+  .cd-hero-name {
+    font-size: var(--cc-fs-h1);
+    font-weight: var(--cc-fw-display);
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .cd-hero-meta {
+    font-size: var(--cc-fs-body-s);
+    color: rgba(255,255,255,.75);
+    margin-block-start: var(--cc-sp-3);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+    flex-wrap: wrap;
+  }
+
+  .cd-hero-meta span {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+  }
+
+  .cd-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  .cd-hero-btn {
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding-inline: var(--cc-sp-7);
+    border-radius: var(--cc-btn-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    cursor: pointer;
+    text-decoration: none;
+    border: 1.5px solid rgba(255,255,255,.4);
+    background: rgba(255,255,255,.15);
+    color: #fff;
+    transition: all var(--cc-anim-fast) var(--cc-ease);
+    white-space: nowrap;
+  }
+  .cd-hero-btn:hover {
+    background: rgba(255,255,255,.28);
+    border-color: rgba(255,255,255,.6);
+    color: #fff;
+  }
+
+  .cd-hero-btn--approve {
+    background: rgba(255,255,255,.95);
+    color: var(--cc-brand-ink);
+    border-color: transparent;
+  }
+  .cd-hero-btn--approve:hover {
+    background: #fff;
+    color: var(--cc-brand-deep);
+  }
+
+  /* الحالة pill في الهيرو */
+  .cd-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+    padding: 3px var(--cc-sp-5);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    background: rgba(255,255,255,.2);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.3);
+  }
+
+  /* ======================================================
+     KPI Strip
+  ====================================================== */
+  .cd-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--cc-gap-inline);
+    margin-block-end: var(--cc-gap-section);
+  }
+
+  .cd-kpi {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-tile);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-8) var(--cc-sp-9);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-6);
+  }
+
+  .cd-kpi-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--cc-r-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-l);
+    flex-shrink: 0;
+  }
+
+  .cd-kpi-body {}
+
+  .cd-kpi-num {
+    font-size: var(--cc-fs-h2);
+    font-weight: var(--cc-fw-display);
+    color: var(--cc-text);
+    line-height: 1.1;
+  }
+
+  .cd-kpi-label {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    margin-block-start: 2px;
+  }
+
+  /* ======================================================
+     Tabs
+  ====================================================== */
+  .cd-tabs-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card) var(--cc-r-card) 0 0;
+    padding: var(--cc-sp-4) var(--cc-sp-7);
+    border-block-end: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .cd-tabs-nav::-webkit-scrollbar { display: none; }
+
+  .cd-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding: var(--cc-sp-4) var(--cc-sp-8);
+    border-radius: var(--cc-r-lg);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text-soft);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background var(--cc-anim-fast) var(--cc-ease),
+                color var(--cc-anim-fast) var(--cc-ease);
+    white-space: nowrap;
+  }
+
+  .cd-tab-btn:hover {
+    background: var(--hb-bg-hover);
+    color: var(--cc-text);
+  }
+
+  .cd-tab-btn.is-active {
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand);
+  }
+
+  .cd-tab-btn .cd-tab-count {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--cc-r-pill);
+    background: var(--cc-border-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+  }
+
+  .cd-tab-btn.is-active .cd-tab-count {
+    background: var(--cc-brand);
+    color: #fff;
+  }
+
+  /* محتوى التاب */
+  .cd-tabs-content {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: 0 0 var(--cc-r-card) var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+  }
+
+  .cd-tab-panel {
+    display: none;
+    padding: var(--cc-sp-11);
+  }
+
+  .cd-tab-panel.is-active { display: block; }
+
+  /* ======================================================
+     Section داخل التاب
+  ====================================================== */
+  .cd-section {
+    margin-block-end: var(--cc-sp-11);
+  }
+
+  .cd-section:last-child { margin-block-end: 0; }
+
+  .cd-section-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    margin-block-end: var(--cc-sp-8);
+    padding-block-end: var(--cc-sp-5);
+    border-block-end: 1px solid var(--cc-border);
+  }
+
+  .cd-section-title i { color: var(--cc-brand); }
+
+  /* شبكة حقول */
+  .cd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--cc-gap-section);
+  }
+
+  .cd-grid-3 {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  /* بطاقة المعلومات (قائمة المفتاح/القيمة) */
+  .cd-info-card {
+    background: var(--cc-tint-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-tile);
+    padding: var(--cc-sp-8);
+  }
+
+  .cd-info-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--cc-sp-6);
+    padding: var(--cc-sp-4) 0;
+    border-block-end: 1px solid var(--cc-border);
+  }
+
+  .cd-info-row:last-child { border-block-end: none; padding-block-end: 0; }
+  .cd-info-row:first-child { padding-block-start: 0; }
+
+  .cd-info-key {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    flex-shrink: 0;
+    min-width: 130px;
+  }
+
+  .cd-info-val {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+    font-weight: var(--cc-fw-bold);
+    text-align: end;
+    word-break: break-all;
+  }
+
+  .cd-info-val.mono {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-fs-tiny);
+    letter-spacing: 0.3px;
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+
+  /* ======================================================
+     Hint boxes
+  ====================================================== */
+  .cd-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-4);
+    background: var(--cc-brand-softer);
+    border: 1px solid var(--cc-brand-soft2);
+    border-radius: var(--cc-r-lg);
+    padding: var(--cc-sp-5) var(--cc-sp-7);
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-brand-ink);
+    font-weight: var(--cc-fw-medium);
+    line-height: var(--cc-lh-default);
+    margin-block-end: var(--cc-sp-8);
+  }
+
+  .cd-hint i { color: var(--cc-brand); flex-shrink: 0; margin-block-start: 1px; }
+
+  /* ======================================================
+     Status pill
+  ====================================================== */
+  .cd-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+    padding: 2px var(--cc-sp-5);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    white-space: nowrap;
+  }
+
+  .cd-pill .dot {
+    width: 5px; height: 5px;
+    border-radius: var(--cc-r-pill);
+  }
+
+  .cd-pill--active   { background:var(--pill-green-bg);  color:var(--pill-green-fg); }
+  .cd-pill--active   .dot { background:var(--pill-green-fg); }
+  .cd-pill--inactive { background:var(--pill-grey-bg);   color:var(--pill-grey-fg); }
+  .cd-pill--inactive .dot { background:var(--pill-grey-fg); }
+  .cd-pill--blocked  { background:var(--pill-red-bg);    color:var(--pill-red-fg); }
+  .cd-pill--blocked  .dot { background:var(--pill-red-fg); }
+  .cd-pill--pending  { background:var(--pill-amber-bg);  color:var(--pill-amber-fg); }
+  .cd-pill--pending  .dot { background:var(--pill-amber-fg); }
+  .cd-pill--trial    { background:var(--pill-cyan-bg);   color:var(--pill-cyan-fg); }
+  .cd-pill--trial    .dot { background:var(--pill-cyan-fg); }
+
+  /* ======================================================
+     License cards (Tab 2)
+  ====================================================== */
+  .cd-license-card {
+    background: var(--cc-tint-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-tile);
+    padding: var(--cc-sp-8);
+    margin-block-end: var(--cc-gap-section);
+  }
+
+  .cd-license-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-block-end: var(--cc-sp-8);
+    flex-wrap: wrap;
+    gap: var(--cc-sp-5);
+  }
+
+  .cd-license-key {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-brand);
+    font-weight: var(--cc-fw-bold);
+    background: var(--cc-brand-soft);
+    padding: var(--cc-sp-2) var(--cc-sp-5);
+    border-radius: var(--cc-r);
+    direction: ltr;
+    unicode-bidi: embed;
+    letter-spacing: 0.3px;
+  }
+
+  /* ======================================================
+     Progress bars (حدود الاستخدام)
+  ====================================================== */
+  .cd-usage-bar-wrap {
+    margin-block-end: var(--cc-sp-6);
+  }
+
+  .cd-usage-bar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-block-end: var(--cc-sp-3);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-bold);
+  }
+
+  .cd-usage-bar-label { color: var(--cc-text-soft); }
+  .cd-usage-bar-val   { color: var(--cc-text-mute); }
+
+  .cd-usage-track {
+    height: 6px;
+    background: var(--cc-border-2);
+    border-radius: var(--cc-r-pill);
+    overflow: hidden;
+  }
+
+  .cd-usage-fill {
+    height: 100%;
+    border-radius: var(--cc-r-pill);
+    background: var(--cc-hero-grad);
+    transition: width var(--cc-anim-med) var(--cc-ease-out);
+  }
+
+  .cd-usage-fill--warn  { background: linear-gradient(90deg, var(--hb-amber), var(--hr-orange)); }
+  .cd-usage-fill--danger{ background: linear-gradient(90deg, var(--hb-red), var(--hr-red)); }
+
+  /* ======================================================
+     جدول داخل التاب (مدفوعات / سجل)
+  ====================================================== */
+  .cd-inner-table-wrap { overflow-x: auto; }
+
+  .cd-inner-table {
+    width: 100%;
+    border-collapse: collapse;
+    direction: rtl;
+  }
+
+  .cd-inner-table thead th {
+    background: var(--cc-table-head-bg);
+    padding: var(--cc-sp-4) var(--cc-sp-7);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-block-end: 1px solid var(--cc-border-2);
+    white-space: nowrap;
+  }
+
+  .cd-inner-table tbody tr {
+    border-block-end: 1px solid var(--cc-border);
+    transition: background var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .cd-inner-table tbody tr:last-child { border-block-end: none; }
+  .cd-inner-table tbody tr:hover { background: var(--cc-table-row-hover); }
+
+  .cd-inner-table tbody td {
+    padding: var(--cc-sp-5) var(--cc-sp-7);
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+    vertical-align: middle;
+  }
+
+  /* ======================================================
+     حقل Credentials (RADIUS)
+  ====================================================== */
+  .cd-cred-box {
+    background: var(--hb-bg-page);
+    border: 1px solid var(--cc-border-2);
+    border-radius: var(--cc-r);
+    padding: var(--cc-sp-5) var(--cc-sp-7);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cc-sp-5);
+    margin-block-end: var(--cc-sp-5);
+  }
+
+  .cd-cred-label {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-heavy);
+    flex-shrink: 0;
+    min-width: 110px;
+  }
+
+  .cd-cred-val {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text);
+    font-weight: var(--cc-fw-bold);
+    direction: ltr;
+    unicode-bidi: embed;
+    letter-spacing: 0.3px;
+    word-break: break-all;
+    flex: 1;
+    text-align: start;
+  }
+
+  .cd-cred-copy {
+    width: 28px; height: 28px;
+    border-radius: var(--cc-r);
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--cc-text-mute);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    flex-shrink: 0;
+  }
+  .cd-cred-copy:hover { background: var(--cc-brand-soft); color: var(--cc-brand); border-color: var(--cc-brand-soft2); }
+
+  /* ======================================================
+     Log Timeline (Tab 5)
+  ====================================================== */
+  .cd-timeline { position: relative; }
+
+  .cd-timeline::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 19px;
+    inset-block: 0;
+    width: 2px;
+    background: var(--cc-border-2);
+  }
+
+  .cd-log-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-sp-7);
+    padding: var(--cc-sp-5) 0;
+    position: relative;
+  }
+
+  .cd-log-dot {
+    width: 10px; height: 10px;
+    border-radius: var(--cc-r-pill);
+    background: var(--cc-brand);
+    border: 2px solid var(--cc-card-bg);
+    box-shadow: 0 0 0 2px var(--cc-border-2);
+    flex-shrink: 0;
+    margin-block-start: 4px;
+    margin-inline-start: 14px;
+    z-index: 1;
+  }
+
+  .cd-log-dot--warn  { background: var(--hb-amber); }
+  .cd-log-dot--err   { background: var(--hb-red); }
+  .cd-log-dot--grey  { background: var(--cc-text-faint); }
+
+  .cd-log-body { flex: 1; }
+
+  .cd-log-action {
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text);
+  }
+
+  .cd-log-meta {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    margin-block-start: 2px;
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  /* Empty state داخل التاب */
+  .cd-empty {
+    padding: var(--cc-sp-13) var(--cc-sp-11);
+    text-align: center;
+    color: var(--cc-text-mute);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-medium);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .cd-empty i { font-size: 28px; color: var(--cc-text-faint); }
+
+</style>
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+
+{# ── Hero ── #}
+<div class="cd-hero">
+  <div class="cd-hero-avatar" aria-hidden="true">
+    {{ customer.company_name[0]|upper if customer.company_name else '؟' }}
+  </div>
+  <div class="cd-hero-body">
+    <h1 class="cd-hero-name">{{ customer.company_name }}</h1>
+    <div class="cd-hero-meta">
+      {% if customer.contact_name %}
+        <span><i class="fa-solid fa-user" aria-hidden="true"></i> {{ customer.contact_name }}</span>
+      {% endif %}
+      {% if customer.email %}
+        <span><i class="fa-solid fa-envelope" aria-hidden="true"></i>
+          <span style="direction:ltr;unicode-bidi:embed">{{ customer.email }}</span>
+        </span>
+      {% endif %}
+      {% if customer.city or customer.country %}
+        <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ customer.city }} {{ customer.country }}</span>
+      {% endif %}
+      <span class="cd-status-pill">
+        {% set s = customer.status or 'inactive' %}
+        {% if s == 'active' %}✅ نشط
+        {% elif s == 'inactive' %}⬜ غير نشط
+        {% elif s == 'blocked' %}🚫 موقوف
+        {% elif s == 'pending' %}⏳ في الانتظار
+        {% elif s == 'trial' %}🔵 تجريبي
+        {% else %}{{ s }}
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="cd-hero-actions">
+    {% if customer.status == 'pending' %}
+      <form method="post" action="{{ url_for('admin.customer_approve', customer_id=customer.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <button type="submit" class="cd-hero-btn cd-hero-btn--approve">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i> موافقة وتفعيل
+        </button>
+      </form>
+    {% endif %}
+    <a href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}" class="cd-hero-btn">
+      <i class="fa-solid fa-pen" aria-hidden="true"></i> تعديل البيانات
+    </a>
+    {% if is_super_admin %}
+      <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" class="cd-hero-btn">
+        <i class="fa-solid fa-vault" aria-hidden="true"></i> الخزنة
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+{# ── KPI Strip ── #}
+<div class="cd-kpi-strip">
+
+  <div class="cd-kpi">
+    <div class="cd-kpi-icon" style="background:var(--tile-purple-bg);color:var(--tile-purple-fg)">
+      <i class="fa-solid fa-key" aria-hidden="true"></i>
+    </div>
+    <div class="cd-kpi-body">
+      <div class="cd-kpi-num">{{ licenses|length }}</div>
+      <div class="cd-kpi-label">الترخيص / الاشتراكات</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi-icon" style="background:var(--tile-blue-bg);color:var(--tile-blue-fg)">
+      <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
+    </div>
+    <div class="cd-kpi-body">
+      <div class="cd-kpi-num">{{ customer_users|length }}</div>
+      <div class="cd-kpi-label">مستخدمو العميل</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi-icon" style="background:var(--tile-amber-bg);color:var(--tile-amber-fg)">
+      <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
+    </div>
+    <div class="cd-kpi-body">
+      <div class="cd-kpi-num">{{ payment_requests|length }}</div>
+      <div class="cd-kpi-label">طلبات الدفع</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi-icon" style="background:var(--tile-teal-bg);color:var(--tile-teal-fg)">
+      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+    </div>
+    <div class="cd-kpi-body">
+      <div class="cd-kpi-num">{{ nas_devices|length if nas_devices is defined else '—' }}</div>
+      <div class="cd-kpi-label">أجهزة NAS</div>
+    </div>
+  </div>
+
+  <div class="cd-kpi">
+    <div class="cd-kpi-icon" style="background:var(--tile-grey-bg);color:var(--tile-grey-fg)">
+      <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+    </div>
+    <div class="cd-kpi-body">
+      <div class="cd-kpi-num">{{ users_version or '—' }}</div>
+      <div class="cd-kpi-label">إصدار الدخول</div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Tabs ── #}
+<div class="cd-tabs-nav" role="tablist" aria-label="أقسام ملف العميل">
+
+  <button class="cd-tab-btn is-active" role="tab" aria-selected="true"
+          aria-controls="tab-info" id="tbtn-info" onclick="cdSwitchTab('info')">
+    <i class="fa-solid fa-id-card" aria-hidden="true"></i>
+    المعلومات الأساسية
+  </button>
+
+  <button class="cd-tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-licenses" id="tbtn-licenses" onclick="cdSwitchTab('licenses')">
+    <i class="fa-solid fa-key" aria-hidden="true"></i>
+    التراخيص والاشتراكات
+    <span class="cd-tab-count" aria-hidden="true">{{ licenses|length }}</span>
+  </button>
+
+  <button class="cd-tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-network" id="tbtn-network" onclick="cdSwitchTab('network')">
+    <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+    إعدادات الشبكة
+  </button>
+
+  <button class="cd-tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-payments" id="tbtn-payments" onclick="cdSwitchTab('payments')">
+    <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+    المدفوعات
+    {% if payment_requests %}
+      <span class="cd-tab-count" aria-hidden="true">{{ payment_requests|length }}</span>
+    {% endif %}
+  </button>
+
+  <button class="cd-tab-btn" role="tab" aria-selected="false"
+          aria-controls="tab-activity" id="tbtn-activity" onclick="cdSwitchTab('activity')">
+    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+    السجل والنشاط
+  </button>
+
+</div>
+
+<div class="cd-tabs-content">
+
+  {# =========================================================
+     TAB 1 — المعلومات الأساسية
+     ========================================================= #}
+  <div class="cd-tab-panel is-active" id="tab-info" role="tabpanel" aria-labelledby="tbtn-info">
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        هذه البيانات الأساسية للعميل — الاسم والبريد والهاتف والموقع وحالة الحساب.
+        لتعديل أي معلومة اضغط «تعديل البيانات» في الأعلى.
+      </span>
+    </div>
+
+    <div class="cd-grid">
+
+      {# بيانات الشركة #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-building" aria-hidden="true"></i>
+          بيانات الشركة
+        </div>
+        <div class="cd-info-card">
+          <div class="cd-info-row">
+            <span class="cd-info-key">اسم الشركة</span>
+            <span class="cd-info-val">{{ customer.company_name or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">المسؤول المرتبط</span>
+            <span class="cd-info-val">{{ customer.contact_name or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">البريد الإلكتروني</span>
+            <span class="cd-info-val mono">{{ customer.email or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">رقم الهاتف</span>
+            <span class="cd-info-val mono">{{ customer.phone or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">المدينة</span>
+            <span class="cd-info-val">{{ customer.city or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">الدولة</span>
+            <span class="cd-info-val">{{ customer.country or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">عملة الفوترة</span>
+            <span class="cd-info-val">{{ customer.currency or 'USD' }}</span>
+          </div>
+        </div>
+      </div>
+
+      {# حالة الحساب والباقة #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+          حالة الحساب والباقة
+        </div>
+        <div class="cd-info-card">
+          <div class="cd-info-row">
+            <span class="cd-info-key">الحالة الحالية</span>
+            <span class="cd-info-val">
+              {% set s = customer.status or 'inactive' %}
+              <span class="cd-pill cd-pill--{{ s }}">
+                <span class="dot" aria-hidden="true"></span>
+                {% if s == 'active' %}نشط
+                {% elif s == 'inactive' %}غير نشط
+                {% elif s == 'blocked' %}موقوف
+                {% elif s == 'pending' %}في الانتظار
+                {% elif s == 'trial' %}تجريبي
+                {% else %}{{ s }}{% endif %}
+              </span>
+            </span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">الترخيص الفعال</span>
+            <span class="cd-info-val mono">
+              {{ current_license.license_key[:20] ~ '…' if current_license else '—' }}
+            </span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">تاريخ الانضمام</span>
+            <span class="cd-info-val">
+              {{ customer.created_at|datetimeformat if customer.created_at is defined else (customer.created_at or '—') }}
+            </span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">رابط خادم RADIUS</span>
+            <span class="cd-info-val mono">{{ customer.runtime_url or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">إصدار الدخول</span>
+            <span class="cd-info-val">{{ users_version or '—' }}</span>
+          </div>
+          <div class="cd-info-row">
+            <span class="cd-info-key">آخر تعديل</span>
+            <span class="cd-info-val">
+              {{ customer.updated_at|datetimeformat if customer.updated_at is defined else (customer.updated_at or '—') }}
+            </span>
+          </div>
+        </div>
+
+        {# المستخدمون المرتبطون #}
+        <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
+          <i class="fa-solid fa-users" aria-hidden="true"></i>
+          مستخدمو العميل
+          <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
+            — الحسابات التي يملكها هذا العميل للدخول على البوابة
+          </span>
+        </div>
+        {% if customer_users %}
+          <div class="cd-inner-table-wrap">
+            <table class="cd-inner-table">
+              <thead>
+                <tr>
+                  <th>اسم المستخدم</th>
+                  <th>البريد</th>
+                  <th>الدور</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in customer_users %}
+                  <tr>
+                    <td>{{ u.username }}</td>
+                    <td><span style="direction:ltr;unicode-bidi:embed">{{ u.email or '—' }}</span></td>
+                    <td>{{ u.role or '—' }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="cd-empty">
+            <i class="fa-solid fa-user-slash" aria-hidden="true"></i>
+            لا يوجد مستخدمون مرتبطون بهذا العميل حتى الآن
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  {# =========================================================
+     TAB 2 — التراخيص والاشتراكات
+     ========================================================= #}
+  <div class="cd-tab-panel" id="tab-licenses" role="tabpanel" aria-labelledby="tbtn-licenses">
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        التراخيص تحدد ما يحق للعميل استخدامه — عدد المشتركين، أجهزة الشبكة، مدة الاشتراك.
+        الترخيص النشط هو الذي يعمل حالياً. الترخيص المنتهي يمنع دخول العميل.
+      </span>
+    </div>
+
+    {% if licenses %}
+      {% for lic in licenses %}
+        <div class="cd-license-card">
+          <div class="cd-license-header">
+            <div>
+              <div class="cd-license-key" title="مفتاح الترخيص الكامل: {{ lic.license_key }}">
+                {{ lic.license_key }}
+              </div>
+              <div style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);margin-block-start:var(--cc-sp-2)">
+                أُضيف بتاريخ {{ lic.created_at or '—' }}
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:var(--cc-sp-5)">
+              {% set ls = lic.status or 'inactive' %}
+              <span class="cd-pill cd-pill--{{ ls }}">
+                <span class="dot" aria-hidden="true"></span>
+                {% if ls == 'active' %}نشط{% elif ls == 'inactive' %}غير نشط{% elif ls == 'expired' %}منتهي{% else %}{{ ls }}{% endif %}
+              </span>
+              <a href="{{ url_for('admin.license_detail', license_id=lic.id) }}"
+                 style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-bold);color:var(--cc-brand)">
+                تفاصيل كاملة <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
+              </a>
+            </div>
+          </div>
+
+          <div class="cd-grid cd-grid-3">
+
+            {# تاريخ التجديد #}
+            <div class="cd-info-card">
+              <div class="cd-info-row">
+                <span class="cd-info-key">تاريخ البداية</span>
+                <span class="cd-info-val">{{ lic.start_date or '—' }}</span>
+              </div>
+              <div class="cd-info-row">
+                <span class="cd-info-key">تاريخ الانتهاء</span>
+                <span class="cd-info-val">{{ lic.end_date or '—' }}</span>
+              </div>
+              <div class="cd-info-row">
+                <span class="cd-info-key">موعد التجديد</span>
+                <span class="cd-info-val">{{ lic.renewal_date or lic.end_date or '—' }}</span>
+              </div>
+              <div class="cd-info-row">
+                <span class="cd-info-key">دورة الفوترة</span>
+                <span class="cd-info-val">{{ lic.billing_cycle or 'شهري' }}</span>
+              </div>
+            </div>
+
+            {# حدود الاستخدام #}
+            <div>
+              <div style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-heavy);color:var(--cc-text-mute);
+                          text-transform:uppercase;letter-spacing:0.4px;margin-block-end:var(--cc-sp-6)">
+                حدود الاستخدام
+              </div>
+              {% set max_sub = contract.limits.subscribers.max_total if contract and contract.limits and contract.limits.subscribers else 0 %}
+              {% set cur_sub = customer_users|length %}
+              {% set sub_pct = ((cur_sub / max_sub * 100) | int) if max_sub > 0 else 0 %}
+              <div class="cd-usage-bar-wrap">
+                <div class="cd-usage-bar-header">
+                  <span class="cd-usage-bar-label">المشتركون</span>
+                  <span class="cd-usage-bar-val">{{ cur_sub }} / {{ max_sub or '∞' }}</span>
+                </div>
+                <div class="cd-usage-track">
+                  <div class="cd-usage-fill {% if sub_pct >= 90 %}cd-usage-fill--danger{% elif sub_pct >= 70 %}cd-usage-fill--warn{% endif %}"
+                       style="width:{{ [sub_pct, 100]|min }}%"></div>
+                </div>
+              </div>
+              {% set max_nas = contract.limits.nas.max_total if contract and contract.limits and contract.limits.nas else 0 %}
+              {% set cur_nas = nas_devices|length if nas_devices is defined else 0 %}
+              {% set nas_pct = ((cur_nas / max_nas * 100) | int) if max_nas > 0 else 0 %}
+              <div class="cd-usage-bar-wrap">
+                <div class="cd-usage-bar-header">
+                  <span class="cd-usage-bar-label">أجهزة NAS</span>
+                  <span class="cd-usage-bar-val">{{ cur_nas }} / {{ max_nas or '∞' }}</span>
+                </div>
+                <div class="cd-usage-track">
+                  <div class="cd-usage-fill {% if nas_pct >= 90 %}cd-usage-fill--danger{% elif nas_pct >= 70 %}cd-usage-fill--warn{% endif %}"
+                       style="width:{{ [nas_pct, 100]|min }}%"></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="cd-empty">
+        <i class="fa-solid fa-key-skeleton" aria-hidden="true"></i>
+        لا يوجد أي ترخيص مرتبط بهذا العميل
+        <a href="{{ url_for('admin.license_new') }}" class="clist-btn clist-btn--primary"
+           style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);
+                  display:inline-flex;align-items:center;gap:var(--cc-sp-3);font-size:var(--cc-fs-body-s);
+                  font-weight:var(--cc-fw-bold);background:var(--cc-brand);color:#fff;text-decoration:none;
+                  margin-block-start:var(--cc-sp-5)">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          إضافة ترخيص
+        </a>
+      </div>
+    {% endif %}
+
+  </div>
+
+  {# =========================================================
+     TAB 3 — إعدادات الشبكة
+     ========================================================= #}
+  <div class="cd-tab-panel" id="tab-network" role="tabpanel" aria-labelledby="tbtn-network">
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        هذه إعدادات الاتصال بخادم RADIUS الخاص بالعميل — تشمل بيانات الدخول، أجهزة الشبكة (NAS)، وإعداد الـ Realm.
+        هذه البيانات تقنية وتُستخدم لربط الأجهزة بالنظام.
+      </span>
+    </div>
+
+    <div class="cd-grid">
+
+      {# RADIUS Credentials #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-key" aria-hidden="true"></i>
+          بيانات دخول RADIUS
+        </div>
+        <div class="cd-cred-box">
+          <span class="cd-cred-label">رابط الخادم (URL)</span>
+          <span class="cd-cred-val">{{ customer.runtime_url or '—' }}</span>
+          {% if customer.runtime_url %}
+            <button class="cd-cred-copy" onclick="cdCopy('{{ customer.runtime_url }}')" title="نسخ" aria-label="نسخ رابط الخادم">
+              <i class="fa-solid fa-copy" aria-hidden="true"></i>
+            </button>
+          {% endif %}
+        </div>
+
+        {% if contract %}
+          {% if contract.radius_secret is defined %}
+            <div class="cd-cred-box">
+              <span class="cd-cred-label">RADIUS Secret</span>
+              <span class="cd-cred-val" id="radius-secret-val" style="filter:blur(4px);user-select:none">
+                {{ contract.radius_secret or '—' }}
+              </span>
+              <button class="cd-cred-copy" onclick="cdRevealSecret()" title="إظهار / إخفاء" aria-label="إظهار أو إخفاء الـ Secret">
+                <i class="fa-solid fa-eye" aria-hidden="true" id="radius-secret-eye"></i>
+              </button>
+            </div>
+          {% endif %}
+          {% if contract.realm is defined %}
+            <div class="cd-cred-box">
+              <span class="cd-cred-label">Realm</span>
+              <span class="cd-cred-val">{{ contract.realm or '—' }}</span>
+              {% if contract.realm %}
+                <button class="cd-cred-copy" onclick="cdCopy('{{ contract.realm }}')" title="نسخ" aria-label="نسخ الـ Realm">
+                  <i class="fa-solid fa-copy" aria-hidden="true"></i>
+                </button>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% else %}
+          <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);padding:var(--cc-sp-5) 0">
+            لا توجد بيانات RADIUS مرتبطة — تحقق من الترخيص أولاً.
+          </p>
+        {% endif %}
+      </div>
+
+      {# أجهزة NAS #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-router" aria-hidden="true"></i>
+          أجهزة الشبكة (NAS)
+        </div>
+        {% if nas_devices is defined and nas_devices %}
+          <div class="cd-inner-table-wrap">
+            <table class="cd-inner-table">
+              <thead>
+                <tr>
+                  <th>اسم الجهاز</th>
+                  <th>عنوان IP</th>
+                  <th>النوع</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for nas in nas_devices %}
+                  <tr>
+                    <td>{{ nas.name or nas.shortname or '—' }}</td>
+                    <td><span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">{{ nas.nasname or nas.ip or '—' }}</span></td>
+                    <td>{{ nas.type or '—' }}</td>
+                    <td>
+                      {% set ns = nas.status or 'active' %}
+                      <span class="cd-pill cd-pill--{{ ns }}">
+                        <span class="dot" aria-hidden="true"></span>
+                        {% if ns == 'active' %}نشط{% else %}غير نشط{% endif %}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="cd-empty">
+            <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+            لا توجد أجهزة NAS مرتبطة بهذا العميل
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+
+  </div>
+
+  {# =========================================================
+     TAB 4 — المدفوعات
+     ========================================================= #}
+  <div class="cd-tab-panel" id="tab-payments" role="tabpanel" aria-labelledby="tbtn-payments">
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        سجل كل طلبات الدفع والفواتير لهذا العميل — يمكنك مراجعة الحالة والمبلغ وتاريخ كل طلب من هنا.
+        المدفوعات المعلقة تحتاج مراجعة ومصادقة من المدير.
+      </span>
+    </div>
+
+    {# ملخص مالي #}
+    <div class="cd-kpi-strip" style="margin-block-end:var(--cc-sp-11)">
+      {% set paid_count    = payment_requests|selectattr('status','equalto','approved')|list|length %}
+      {% set pending_count = payment_requests|selectattr('status','equalto','pending')|list|length %}
+      {% set total_paid    = payment_requests|selectattr('status','equalto','approved')|sum(attribute='amount') if payment_requests else 0 %}
+
+      <div class="cd-kpi">
+        <div class="cd-kpi-icon" style="background:var(--tile-green-bg);color:var(--tile-green-fg)">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+        </div>
+        <div class="cd-kpi-body">
+          <div class="cd-kpi-num">{{ paid_count }}</div>
+          <div class="cd-kpi-label">مدفوعة ومؤكدة</div>
+        </div>
+      </div>
+
+      <div class="cd-kpi">
+        <div class="cd-kpi-icon" style="background:var(--tile-amber-bg);color:var(--tile-amber-fg)">
+          <i class="fa-solid fa-clock" aria-hidden="true"></i>
+        </div>
+        <div class="cd-kpi-body">
+          <div class="cd-kpi-num">{{ pending_count }}</div>
+          <div class="cd-kpi-label">في الانتظار</div>
+        </div>
+      </div>
+
+      <div class="cd-kpi">
+        <div class="cd-kpi-icon" style="background:var(--tile-purple-bg);color:var(--tile-purple-fg)">
+          <i class="fa-solid fa-coins" aria-hidden="true"></i>
+        </div>
+        <div class="cd-kpi-body">
+          <div class="cd-kpi-num">{{ total_paid | round(2) }}</div>
+          <div class="cd-kpi-label">إجمالي المدفوع ({{ customer.currency or 'USD' }})</div>
+        </div>
+      </div>
+    </div>
+
+    {# جدول الفواتير #}
+    {% if payment_requests %}
+      <div class="cd-inner-table-wrap">
+        <table class="cd-inner-table">
+          <thead>
+            <tr>
+              <th>رقم الطلب</th>
+              <th>المبلغ</th>
+              <th>العملة</th>
+              <th>طريقة الدفع</th>
+              <th>الحالة</th>
+              <th>تاريخ الطلب</th>
+              <th style="text-align:center">تفاصيل</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pr in payment_requests %}
+              <tr>
+                <td><span style="font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">#{{ pr.id }}</span></td>
+                <td><strong>{{ pr.amount }}</strong></td>
+                <td>{{ pr.currency or customer.currency or 'USD' }}</td>
+                <td>{{ pr.payment_method or '—' }}</td>
+                <td>
+                  {% set ps = pr.status or 'pending' %}
+                  <span class="cd-pill cd-pill--{{ 'active' if ps == 'approved' else ('pending' if ps == 'pending' else 'blocked') }}">
+                    <span class="dot" aria-hidden="true"></span>
+                    {% if ps == 'approved' %}مؤكدة
+                    {% elif ps == 'pending' %}في الانتظار
+                    {% elif ps == 'rejected' %}مرفوضة
+                    {% else %}{{ ps }}{% endif %}
+                  </span>
+                </td>
+                <td>{{ pr.created_at or '—' }}</td>
+                <td style="text-align:center">
+                  <a href="{{ url_for('admin.payment_request_detail', request_id=pr.id) }}"
+                     style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-bold);color:var(--cc-brand)">
+                    عرض <i class="fa-solid fa-chevron-left" style="font-size:9px" aria-hidden="true"></i>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="cd-empty">
+        <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+        لا توجد طلبات دفع لهذا العميل حتى الآن
+      </div>
+    {% endif %}
+
+  </div>
+
+  {# =========================================================
+     TAB 5 — السجل والنشاط
+     ========================================================= #}
+  <div class="cd-tab-panel" id="tab-activity" role="tabpanel" aria-labelledby="tbtn-activity">
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        سجل كامل لكل العمليات التي جرت على حساب هذا العميل — التعديلات، تسجيلات الدخول، تغييرات الحالة، وكل إجراء آخر.
+        هذا السجل يُساعد في التدقيق وتتبع المشاكل.
+      </span>
+    </div>
+
+    {% set audit_entries = audit_logs if audit_logs is defined else [] %}
+
+    {% if audit_entries %}
+      <div class="cd-timeline" role="feed" aria-label="سجل النشاط">
+        {% for entry in audit_entries %}
+          <div class="cd-log-item" role="article">
+            <div class="cd-log-dot
+                {% if entry.severity == 'warning' %}cd-log-dot--warn
+                {% elif entry.severity == 'error' %}cd-log-dot--err
+                {% elif entry.action_type in ['view','read'] %}cd-log-dot--grey
+                {% endif %}"
+                 aria-hidden="true"></div>
+            <div class="cd-log-body">
+              <div class="cd-log-action">{{ entry.description or entry.action_type or 'عملية غير محددة' }}</div>
+              <div class="cd-log-meta">
+                {% if entry.created_at %}
+                  <span><i class="fa-solid fa-clock" style="font-size:9px" aria-hidden="true"></i> {{ entry.created_at }}</span>
+                {% endif %}
+                {% if entry.actor %}
+                  <span><i class="fa-solid fa-user" style="font-size:9px" aria-hidden="true"></i> {{ entry.actor }}</span>
+                {% endif %}
+                {% if entry.ip_address %}
+                  <span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono)">
+                    <i class="fa-solid fa-globe" style="font-size:9px" aria-hidden="true"></i> {{ entry.ip_address }}
+                  </span>
+                {% endif %}
+                {% if entry.resource %}
+                  <span><i class="fa-solid fa-tag" style="font-size:9px" aria-hidden="true"></i> {{ entry.resource }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="cd-empty">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+        لا يوجد سجل نشاط لهذا العميل بعد
+        <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-faint)">
+          ستظهر هنا كل العمليات التي تجري على الحساب
+        </span>
+      </div>
+    {% endif %}
+
+  </div>
+
+</div>{# /.cd-tabs-content #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* ── تبديل التاب ── */
+  window.cdSwitchTab = function (id) {
+    /* إزالة is-active من الأزرار والـ panels #}*/
+    document.querySelectorAll('.cd-tab-btn').forEach(function (b) {
+      b.classList.remove('is-active');
+      b.setAttribute('aria-selected', 'false');
+    });
+    document.querySelectorAll('.cd-tab-panel').forEach(function (p) {
+      p.classList.remove('is-active');
+    });
+
+    /* تفعيل المطلوب */
+    var btn   = document.getElementById('tbtn-' + id);
+    var panel = document.getElementById('tab-' + id);
+    if (btn)   { btn.classList.add('is-active');   btn.setAttribute('aria-selected', 'true'); }
+    if (panel) { panel.classList.add('is-active'); }
+
+    /* حفظ الاختيار في URL hash */
+    if (history.replaceState) {
+      history.replaceState(null, '', '#' + id);
+    }
+  };
+
+  /* ── استعادة التاب من الـ hash عند التحميل ── */
+  (function restoreTab() {
+    var hash = (location.hash || '').replace('#', '');
+    var valid = ['info', 'licenses', 'network', 'payments', 'activity'];
+    if (hash && valid.indexOf(hash) !== -1) {
+      cdSwitchTab(hash);
+    }
+  }());
+
+  /* ── نسخ النص ── */
+  window.cdCopy = function (text) {
+    if (!text || text === '—') return;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function () {
+        cdFlash('تم النسخ ✓');
+      });
+    } else {
+      var el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      cdFlash('تم النسخ ✓');
+    }
+  };
+
+  /* ── إظهار/إخفاء الـ RADIUS secret ── */
+  var secretRevealed = false;
+  window.cdRevealSecret = function () {
+    var valEl  = document.getElementById('radius-secret-val');
+    var eyeEl  = document.getElementById('radius-secret-eye');
+    if (!valEl) return;
+    secretRevealed = !secretRevealed;
+    valEl.style.filter      = secretRevealed ? 'none' : 'blur(4px)';
+    valEl.style.userSelect  = secretRevealed ? 'text' : 'none';
+    if (eyeEl) {
+      eyeEl.className = secretRevealed
+        ? 'fa-solid fa-eye-slash'
+        : 'fa-solid fa-eye';
+    }
+  };
+
+  /* ── flash toast داخلي ── */
+  function cdFlash(msg) {
+    var el = document.createElement('div');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.textContent = msg;
+    el.style.cssText = [
+      'position:fixed', 'bottom:24px', 'inset-inline-start:24px',
+      'background:var(--cc-text)', 'color:#fff',
+      'padding:8px 16px', 'border-radius:var(--cc-r-pill)',
+      'font-size:var(--cc-fs-tiny)', 'font-weight:700',
+      'font-family:var(--cc-font)', 'z-index:9999',
+      'transition:opacity 300ms ease', 'opacity:1',
+      'box-shadow:var(--cc-sh-pop)'
+    ].join(';');
+    document.body.appendChild(el);
+    setTimeout(function () {
+      el.style.opacity = '0';
+      setTimeout(function () { el.remove(); }, 350);
+    }, 1800);
+  }
+
+}());
+</script>
+{% endblock %}
