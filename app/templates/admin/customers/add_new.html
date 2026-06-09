@@ -12,7 +12,8 @@
 {% block head_extra %}
 <style>
   /* ============================================================
-     متغيرات محلية للصفحة
+     متغيرات محلية للصفحة — كل المسافات تتبع --cc-sp-* و --cc-gap-section
+     من admin_tokens.css (لا يوجد بكسل خام في هذه الصفحة)
   ============================================================ */
   :root {
     --cadd-step-size:     36px;
@@ -23,12 +24,20 @@
     --cadd-step-act-fg:   #fff;
     --cadd-step-idle-bg:  var(--cc-border-2);
     --cadd-step-idle-fg:  var(--cc-text-faint);
+
+    /* الإيقاع العام داخل الكرت — قفل واحد لكل مكان في الصفحة */
+    --cadd-card-pad-block:   var(--cc-sp-11);   /* 24 */
+    --cadd-card-pad-inline:  var(--cc-sp-11);   /* 24 */
+    --cadd-section-gap:      var(--cc-sp-11);   /* 24 — بين الـ fieldsets داخل لوحة واحدة */
+    --cadd-hint-gap:         var(--cc-gap-section); /* 16 — بعد التلميح / قبل المحتوى */
+    --cadd-grid-gap:         var(--cc-gap-section); /* 16 — gap داخل شبكة الحقول */
+    --cadd-field-gap:        var(--cc-sp-3);    /* 6 — label/input/hint */
   }
 
   /* ============================================================
      الغلاف العام للصفحة
   ============================================================ */
-  .cadd-page { max-width: 780px; }
+  .cadd-page { max-width: 820px; }
 
   /* ============================================================
      Hero
@@ -37,7 +46,7 @@
     background: var(--cc-hero-grad);
     border-radius: var(--cc-r-card);
     box-shadow: var(--cc-sh-hero);
-    padding: var(--cc-sp-10) var(--cc-sp-11);
+    padding: var(--cadd-card-pad-block) var(--cadd-card-pad-inline);
     margin-block-end: var(--cc-gap-section);
     display: flex;
     align-items: center;
@@ -53,7 +62,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: var(--cc-fs-h2);
     color: #fff;
     flex-shrink: 0;
   }
@@ -62,14 +71,15 @@
     font-size: var(--cc-fs-h1);
     font-weight: var(--cc-fw-display);
     color: #fff;
-    line-height: 1.2;
+    line-height: var(--cc-lh-tight);
   }
 
   .cadd-hero-sub {
     font-size: var(--cc-fs-body-s);
-    color: rgba(255,255,255,.75);
-    margin-block-start: var(--cc-sp-2);
+    color: rgba(255,255,255,.78);
+    margin-block-start: var(--cc-sp-3);
     font-weight: var(--cc-fw-medium);
+    line-height: var(--cc-lh-default);
   }
 
   /* ============================================================
@@ -80,7 +90,7 @@
     border: 1px solid var(--cc-border);
     border-radius: var(--cc-r-card);
     box-shadow: var(--cc-sh-card);
-    padding: var(--cc-sp-9) var(--cc-sp-11);
+    padding: var(--cadd-card-pad-block) var(--cadd-card-pad-inline);
     margin-block-end: var(--cc-gap-section);
     display: flex;
     align-items: center;
@@ -148,7 +158,7 @@
   .cadd-step-item.is-done   .cadd-step-label { color: var(--tile-green-fg); }
 
   .cadd-step-sub {
-    font-size: 10px;
+    font-size: var(--cc-fs-tiny);
     color: var(--cc-text-faint);
     text-align: center;
   }
@@ -169,11 +179,11 @@
   }
 
   .cadd-card-header {
-    padding: var(--cc-sp-8) var(--cc-sp-11);
+    padding: var(--cc-sp-9) var(--cadd-card-pad-inline);
     border-block-end: 1px solid var(--cc-border);
     display: flex;
     align-items: center;
-    gap: var(--cc-sp-5);
+    gap: var(--cc-sp-6);
   }
 
   .cadd-card-header-icon {
@@ -195,18 +205,19 @@
     font-size: var(--cc-fs-h3);
     font-weight: var(--cc-fw-heavy);
     color: var(--cc-text);
+    line-height: var(--cc-lh-tight);
   }
 
   .cadd-card-title-sub {
     font-size: var(--cc-fs-tiny);
     color: var(--cc-text-mute);
     font-weight: var(--cc-fw-medium);
-    margin-block-start: 2px;
+    margin-block-start: var(--cc-sp-1);
   }
 
   /* محتوى الكرت */
   .cadd-card-body {
-    padding: var(--cc-sp-11);
+    padding: var(--cadd-card-pad-block) var(--cadd-card-pad-inline);
   }
 
   /* ============================================================
@@ -225,15 +236,15 @@
     background: var(--cc-brand-softer);
     border: 1px solid var(--cc-brand-soft2);
     border-radius: var(--cc-r-lg);
-    padding: var(--cc-sp-6) var(--cc-sp-8);
+    padding: var(--cc-sp-6) var(--cc-sp-7);
     font-size: var(--cc-fs-body-s);
     font-weight: var(--cc-fw-medium);
     color: var(--cc-brand-ink);
     line-height: var(--cc-lh-default);
-    margin-block-end: var(--cc-sp-11);
+    margin-block-end: var(--cadd-hint-gap);
   }
 
-  .cadd-hint-icon { color: var(--cc-brand); flex-shrink: 0; margin-block-start: 2px; }
+  .cadd-hint-icon { color: var(--cc-brand); flex-shrink: 0; margin-block-start: var(--cc-sp-1); }
 
   .cadd-hint--warn {
     background: var(--tile-amber-bg);
@@ -253,13 +264,13 @@
     align-items: center;
     gap: var(--cc-sp-4);
     padding-block-end: var(--cc-sp-5);
-    margin-block-end: var(--cc-sp-8);
+    margin-block-end: var(--cc-sp-7);
     border-block-end: 1px solid var(--cc-border);
   }
 
   .cadd-fieldset-title i { color: var(--cc-brand); font-size: var(--cc-fs-body-s); }
 
-  .cadd-fieldset { margin-block-end: var(--cc-sp-11); }
+  .cadd-fieldset { margin-block-end: var(--cadd-section-gap); }
   .cadd-fieldset:last-child { margin-block-end: 0; }
 
   /* ============================================================
@@ -268,7 +279,7 @@
   .cadd-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--cc-sp-8);
+    gap: var(--cadd-grid-gap);
   }
 
   .cadd-grid-3 {
@@ -283,7 +294,7 @@
   .cadd-field {
     display: flex;
     flex-direction: column;
-    gap: var(--cc-sp-3);
+    gap: var(--cadd-field-gap);
   }
 
   .cadd-label {
@@ -313,7 +324,7 @@
   .cadd-select,
   .cadd-textarea {
     width: 100%;
-    padding-inline: var(--cc-sp-7);
+    padding-inline: var(--cc-sp-6);
     background: var(--cc-input-bg);
     border: 1px solid var(--cc-input-border);
     border-radius: var(--cc-input-radius);
@@ -332,7 +343,7 @@
 
   .cadd-textarea {
     padding-block: var(--cc-sp-6);
-    min-height: 90px;
+    min-height: 96px;
     resize: vertical;
     line-height: var(--cc-lh-default);
   }
@@ -392,6 +403,64 @@
     padding-inline-start: calc(var(--cc-sp-5) + 20px);
   }
 
+  /* ============================================================
+     مركّب رقم الهاتف + مقدمة الدولة
+  ============================================================ */
+  .cadd-phone-row {
+    display: flex;
+    width: 100%;
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    height: var(--cc-input-h);
+    overflow: hidden;
+    transition: background var(--cc-anim-fast) var(--cc-ease),
+                border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .cadd-phone-row:focus-within {
+    background: var(--cc-input-bg-focus);
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+  }
+
+  .cadd-phone-dial {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-inline: var(--cc-sp-6);
+    min-width: 60px;
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand-ink);
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    border-inline-end: 1px solid var(--cc-border-2);
+    direction: ltr;
+    unicode-bidi: embed;
+    user-select: all;
+  }
+
+  .cadd-phone-dial.is-empty {
+    background: var(--cc-tint-bg);
+    color: var(--cc-text-faint);
+  }
+
+  .cadd-phone-row .cadd-input {
+    border: none;
+    border-radius: 0;
+    height: 100%;
+    background: transparent;
+    padding-inline: var(--cc-sp-6);
+    box-shadow: none;
+  }
+
+  .cadd-phone-row .cadd-input:focus {
+    box-shadow: none;
+    background: transparent;
+  }
+
   /* hint حقل */
   .cadd-field-hint {
     font-size: var(--cc-fs-tiny);
@@ -403,7 +472,7 @@
     gap: var(--cc-sp-2);
   }
 
-  .cadd-field-hint i { color: var(--cc-text-faint); flex-shrink: 0; margin-block-start: 1px; }
+  .cadd-field-hint i { color: var(--cc-text-faint); flex-shrink: 0; margin-block-start: var(--cc-sp-1); }
 
   /* رسالة الخطأ */
   .cadd-field-error {
@@ -423,7 +492,7 @@
   ============================================================ */
   .cadd-radio-group {
     display: flex;
-    gap: var(--cc-sp-5);
+    gap: var(--cc-gap-inline);
     flex-wrap: wrap;
   }
 
@@ -445,7 +514,7 @@
     flex-direction: column;
     align-items: center;
     gap: var(--cc-sp-3);
-    padding: var(--cc-sp-7) var(--cc-sp-6);
+    padding: var(--cc-sp-7) var(--cc-sp-7);
     background: var(--cc-input-bg);
     border: 2px solid var(--cc-border-2);
     border-radius: var(--cc-r-tile);
@@ -473,10 +542,10 @@
   }
 
   .cadd-radio-label-sub {
-    font-size: 10px;
+    font-size: var(--cc-fs-tiny);
     color: var(--cc-text-faint);
     font-weight: var(--cc-fw-medium);
-    line-height: 1.4;
+    line-height: var(--cc-lh-default);
   }
 
   .cadd-radio-card input[type="radio"]:checked + .cadd-radio-label .cadd-radio-label-title {
@@ -487,7 +556,7 @@
      صفحة المراجعة (Step 3)
   ============================================================ */
   .cadd-review-section {
-    margin-block-end: var(--cc-sp-11);
+    margin-block-end: var(--cadd-section-gap);
   }
 
   .cadd-review-section:last-child { margin-block-end: 0; }
@@ -509,14 +578,14 @@
   .cadd-review-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: var(--cc-gap-section);
+    gap: var(--cadd-grid-gap);
   }
 
   .cadd-review-item {
     background: var(--cc-tint-bg);
     border: 1px solid var(--cc-border);
     border-radius: var(--cc-r-tile);
-    padding: var(--cc-sp-7) var(--cc-sp-8);
+    padding: var(--cc-sp-7) var(--cc-sp-7);
   }
 
   .cadd-review-item-key {
@@ -549,8 +618,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--cc-sp-6);
-    padding: var(--cc-sp-8) var(--cc-sp-11);
+    gap: var(--cc-gap-inline);
+    padding: var(--cc-sp-9) var(--cadd-card-pad-inline);
     border-block-start: 1px solid var(--cc-border);
     background: var(--cc-tint-bg);
     border-radius: 0 0 var(--cc-r-card) var(--cc-r-card);
@@ -612,7 +681,7 @@
 
   .cadd-nav-end {
     display: flex;
-    gap: var(--cc-sp-5);
+    gap: var(--cc-gap-inline);
   }
 
   /* ============================================================
@@ -622,7 +691,7 @@
     background: var(--tile-red-bg);
     border: 1px solid var(--hb-red);
     border-radius: var(--cc-r-lg);
-    padding: var(--cc-sp-6) var(--cc-sp-8);
+    padding: var(--cc-sp-6) var(--cc-sp-7);
     font-size: var(--cc-fs-body-s);
     font-weight: var(--cc-fw-bold);
     color: var(--tile-red-fg);
@@ -634,6 +703,32 @@
   }
 
   /* ============================================================
+     Toast (يحلّ مكان alert/confirm — لا نستخدم النوافذ المتصفّحيّة)
+  ============================================================ */
+  .cadd-toast {
+    position: fixed;
+    inset-block-end: var(--cc-sp-11);
+    inset-inline-start: var(--cc-sp-11);
+    background: var(--cc-text);
+    color: #fff;
+    padding: var(--cc-sp-5) var(--cc-sp-9);
+    border-radius: var(--cc-r-pill);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-bold);
+    box-shadow: var(--cc-sh-pop);
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity var(--cc-anim-med) var(--cc-ease);
+    pointer-events: none;
+    max-width: 60ch;
+  }
+  .cadd-toast.is-visible { opacity: 1; }
+  .cadd-toast--warn   { background: var(--hb-amber); color: #1F2937; }
+  .cadd-toast--error  { background: var(--hb-red);   color: #fff; }
+  .cadd-toast--ok     { background: var(--hb-green); color: #fff; }
+
+  /* ============================================================
      Responsive
   ============================================================ */
   @media (max-width: 640px) {
@@ -641,6 +736,7 @@
     .cadd-field-full { grid-column: 1; }
     .cadd-stepper { gap: 0; padding: var(--cc-sp-7); }
     .cadd-step-sub { display: none; }
+    .cadd-nav { padding: var(--cc-sp-7); }
   }
 </style>
 {% endblock %}
@@ -756,7 +852,7 @@
                 type="text"
                 id="company_name"
                 name="company_name"
-                value="{{ form_data.company_name if form_data else customer.company_name if customer else '' }}"
+                value="{{ (form_data and form_data.get('company_name')) or (customer and customer.company_name) or '' }}"
                 placeholder="مثال: شركة النجم للاتصالات"
                 required
                 aria-required="true"
@@ -784,7 +880,7 @@
                 type="text"
                 id="contact_name"
                 name="contact_name"
-                value="{{ form_data.contact_name if form_data else customer.contact_name if customer else '' }}"
+                value="{{ (form_data and form_data.get('contact_name')) or (customer and customer.contact_name) or '' }}"
                 placeholder="مثال: أحمد محمد"
                 aria-describedby="hint-contact_name"
               >
@@ -807,7 +903,7 @@
                   type="email"
                   id="email"
                   name="email"
-                  value="{{ form_data.email if form_data else customer.email if customer else '' }}"
+                  value="{{ (form_data and form_data.get('email')) or (customer and customer.email) or '' }}"
                   placeholder="name@company.com"
                   dir="ltr"
                   aria-describedby="hint-email err-email"
@@ -824,28 +920,31 @@
               </div>
             </div>
 
-            {# الهاتف #}
+            {# الهاتف + مقدمة الدولة (تتعبأ تلقائياً عند اختيار الدولة) #}
             <div class="cadd-field" id="field-phone">
               <label class="cadd-label" for="phone">
                 رقم الهاتف
                 <span class="cadd-label-opt">(اختياري)</span>
               </label>
-              <div class="cadd-input-wrap">
-                <i class="fa-solid fa-phone cadd-input-icon" aria-hidden="true"></i>
+              <div class="cadd-phone-row" dir="ltr">
+                {% set _initial_dial = (form_data and form_data.get('dial_code')) or (customer and customer.dial_code) or '' %}
+                <span class="cadd-phone-dial {{ 'is-empty' if not _initial_dial }}"
+                      id="phone_dial"
+                      aria-label="مقدمة الدولة">{{ _initial_dial or '—' }}</span>
+                <input type="hidden" name="dial_code" id="dial_code" value="{{ _initial_dial }}">
                 <input
                   class="cadd-input"
                   type="tel"
                   id="phone"
                   name="phone"
-                  value="{{ form_data.phone if form_data else customer.phone if customer else '' }}"
-                  placeholder="+966 5X XXX XXXX"
-                  dir="ltr"
+                  value="{{ (form_data and form_data.get('phone')) or (customer and customer.phone) or '' }}"
+                  placeholder="5X XXX XXXX"
                   aria-describedby="hint-phone"
                 >
               </div>
               <div class="cadd-field-hint" id="hint-phone">
                 <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
-                رقم واتساب أو اتصال للتواصل السريع — أدخله بصيغة دولية إن أمكن.
+                مقدمة الدولة تُضاف تلقائياً من اختيار الدولة بالأسفل — أدخل الجزء المحلي فقط.
               </div>
             </div>
 
@@ -859,41 +958,73 @@
             الموقع والعملة
           </div>
 
+          {%- set _selected_iso = ((form_data and form_data.get('country_iso')) or (customer and customer.country_iso) or '')|upper -%}
+          {%- set _selected_city = (form_data and form_data.get('city')) or (customer and customer.city) or '' -%}
+          {%- set _selected_currency = (form_data and form_data.get('currency')) or (customer and customer.currency) or 'USD' -%}
+          {%- set _featured_isos = countries_payload.featured if countries_payload else [] -%}
+
           <div class="cadd-grid cadd-grid-3">
 
-            {# الدولة #}
+            {# الدولة — select منسدلة (الدول العربية أعلى، ثم البقية أبجدياً) #}
             <div class="cadd-field" id="field-country">
-              <label class="cadd-label" for="country">الدولة</label>
-              <input
-                class="cadd-input"
-                type="text"
-                id="country"
-                name="country"
-                value="{{ form_data.country if form_data else customer.country if customer else '' }}"
-                placeholder="مثال: السعودية"
-                aria-describedby="hint-country"
-              >
+              <label class="cadd-label" for="country_iso">الدولة</label>
+              <select class="cadd-select"
+                      id="country_iso"
+                      name="country_iso"
+                      aria-describedby="hint-country">
+                <option value="" {{ 'selected' if not _selected_iso }}>— اختر الدولة —</option>
+                {% if countries_payload %}
+                  <optgroup label="الدول العربية / المنطقة">
+                    {% for item in countries_payload['items'] if item.iso in _featured_isos %}
+                      <option value="{{ item.iso }}"
+                              data-dial="{{ item.dial }}"
+                              {{ 'selected' if _selected_iso == item.iso }}>
+                        {{ item.name_ar }} ({{ item.dial }})
+                      </option>
+                    {% endfor %}
+                  </optgroup>
+                  <optgroup label="باقي الدول">
+                    {% for item in countries_payload['items'] if item.iso not in _featured_isos %}
+                      <option value="{{ item.iso }}"
+                              data-dial="{{ item.dial }}"
+                              {{ 'selected' if _selected_iso == item.iso }}>
+                        {{ item.name_ar }} ({{ item.dial }})
+                      </option>
+                    {% endfor %}
+                  </optgroup>
+                {% endif %}
+              </select>
               <div class="cadd-field-hint" id="hint-country">
                 <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
-                تُستخدم في التقارير وتصنيف العملاء حسب المنطقة.
+                تُستخدم في التقارير وتعبئة مقدمة الدولة لرقم الهاتف تلقائياً.
               </div>
             </div>
 
-            {# المدينة #}
+            {# المدينة — قائمة منسدلة عند توفر مدن معروفة، وإلا حقل نصي حرّ #}
             <div class="cadd-field" id="field-city">
-              <label class="cadd-label" for="city">المدينة</label>
-              <input
-                class="cadd-input"
-                type="text"
-                id="city"
-                name="city"
-                value="{{ form_data.city if form_data else customer.city if customer else '' }}"
-                placeholder="مثال: الرياض"
-                aria-describedby="hint-city"
-              >
+              <label class="cadd-label" for="city_select">المدينة</label>
+              <select class="cadd-select"
+                      id="city_select"
+                      name="city"
+                      aria-describedby="hint-city">
+                <option value="" {{ 'selected' if not _selected_city }}>— اختر المدينة —</option>
+                {# الخيارات تُملأ بعد اختيار الدولة عبر JS #}
+                {% if _selected_city %}
+                  <option value="{{ _selected_city }}" selected>{{ _selected_city }}</option>
+                {% endif %}
+              </select>
+              <input class="cadd-input"
+                     type="text"
+                     id="city_input"
+                     name="city"
+                     value="{{ _selected_city }}"
+                     placeholder="اكتب اسم المدينة"
+                     hidden
+                     disabled
+                     aria-describedby="hint-city">
               <div class="cadd-field-hint" id="hint-city">
                 <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
-                اكتب المدينة أو المنطقة التي يعمل فيها العميل.
+                اختر من القائمة، وإن لم تكن دولة العميل ضمن القائمات المعتمدة سيتحوّل الحقل لإدخال نصّي حرّ.
               </div>
             </div>
 
@@ -901,13 +1032,14 @@
             <div class="cadd-field" id="field-currency">
               <label class="cadd-label" for="currency">عملة الفوترة</label>
               <select class="cadd-select" id="currency" name="currency" aria-describedby="hint-currency">
-                <option value="USD" {{ 'selected' if (form_data and form_data.currency == 'USD') or not (form_data or customer) }}>USD — دولار أمريكي</option>
-                <option value="SAR" {{ 'selected' if form_data and form_data.currency == 'SAR' or (customer and customer.currency == 'SAR') }}>SAR — ريال سعودي</option>
-                <option value="AED" {{ 'selected' if form_data and form_data.currency == 'AED' or (customer and customer.currency == 'AED') }}>AED — درهم إماراتي</option>
-                <option value="KWD" {{ 'selected' if form_data and form_data.currency == 'KWD' or (customer and customer.currency == 'KWD') }}>KWD — دينار كويتي</option>
-                <option value="QAR" {{ 'selected' if form_data and form_data.currency == 'QAR' or (customer and customer.currency == 'QAR') }}>QAR — ريال قطري</option>
-                <option value="JOD" {{ 'selected' if form_data and form_data.currency == 'JOD' or (customer and customer.currency == 'JOD') }}>JOD — دينار أردني</option>
-                <option value="EGP" {{ 'selected' if form_data and form_data.currency == 'EGP' or (customer and customer.currency == 'EGP') }}>EGP — جنيه مصري</option>
+                <option value="USD" {{ 'selected' if _selected_currency == 'USD' }}>USD — دولار أمريكي</option>
+                <option value="SAR" {{ 'selected' if _selected_currency == 'SAR' }}>SAR — ريال سعودي</option>
+                <option value="AED" {{ 'selected' if _selected_currency == 'AED' }}>AED — درهم إماراتي</option>
+                <option value="KWD" {{ 'selected' if _selected_currency == 'KWD' }}>KWD — دينار كويتي</option>
+                <option value="QAR" {{ 'selected' if _selected_currency == 'QAR' }}>QAR — ريال قطري</option>
+                <option value="JOD" {{ 'selected' if _selected_currency == 'JOD' }}>JOD — دينار أردني</option>
+                <option value="EGP" {{ 'selected' if _selected_currency == 'EGP' }}>EGP — جنيه مصري</option>
+                <option value="ILS" {{ 'selected' if _selected_currency == 'ILS' }}>ILS — شيكل</option>
               </select>
               <div class="cadd-field-hint" id="hint-currency">
                 <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
@@ -934,7 +1066,7 @@
               name="notes"
               placeholder="أي تفاصيل إضافية عن هذا العميل — لا تظهر للعميل نفسه..."
               aria-describedby="hint-notes"
-            >{{ form_data.notes if form_data else customer.notes if customer else '' }}</textarea>
+            >{{ (form_data and form_data.get('notes')) or (customer and customer.notes) or '' }}</textarea>
             <div class="cadd-field-hint" id="hint-notes">
               <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
               هذه الملاحظات للاستخدام الداخلي فقط — لن يراها العميل أبداً.
@@ -979,7 +1111,7 @@
                   type="url"
                   id="runtime_url"
                   name="runtime_url"
-                  value="{{ form_data.runtime_url if form_data else customer.runtime_url if customer else '' }}"
+                  value="{{ (form_data and form_data.get('runtime_url')) or (customer and customer.runtime_url) or '' }}"
                   placeholder="https://radius.company.com  أو  http://192.168.1.10"
                   dir="ltr"
                   aria-describedby="hint-runtime_url err-runtime_url"
@@ -1009,7 +1141,7 @@
                   type="text"
                   id="realm"
                   name="realm"
-                  value="{{ form_data.realm if form_data else customer.realm if customer else '' }}"
+                  value="{{ (form_data and form_data.get('realm')) or '' }}"
                   placeholder="company.local"
                   dir="ltr"
                   aria-describedby="hint-realm"
@@ -1034,7 +1166,7 @@
                   type="password"
                   id="radius_secret"
                   name="radius_secret"
-                  value="{{ form_data.radius_secret if form_data else '' }}"
+                  value="{{ (form_data and form_data.get('radius_secret')) or '' }}"
                   placeholder="كلمة السر المشتركة بين الخادم والأجهزة"
                   dir="ltr"
                   autocomplete="new-password"
@@ -1069,9 +1201,10 @@
             <label class="cadd-label" id="label-status">الحالة</label>
             <div class="cadd-radio-group" role="radiogroup" aria-labelledby="label-status">
 
+              {%- set _status_val = (form_data and form_data.get('status')) or 'pending' -%}
               <div class="cadd-radio-card">
                 <input type="radio" id="status-pending" name="status" value="pending"
-                       {{ 'checked' if not form_data or form_data.status == 'pending' }}>
+                       {{ 'checked' if _status_val == 'pending' }}>
                 <label class="cadd-radio-label" for="status-pending">
                   <span class="cadd-radio-label-icon">⏳</span>
                   <span class="cadd-radio-label-title">في الانتظار</span>
@@ -1081,7 +1214,7 @@
 
               <div class="cadd-radio-card">
                 <input type="radio" id="status-active" name="status" value="active"
-                       {{ 'checked' if form_data and form_data.status == 'active' }}>
+                       {{ 'checked' if _status_val == 'active' }}>
                 <label class="cadd-radio-label" for="status-active">
                   <span class="cadd-radio-label-icon">✅</span>
                   <span class="cadd-radio-label-title">نشط</span>
@@ -1091,7 +1224,7 @@
 
               <div class="cadd-radio-card">
                 <input type="radio" id="status-trial" name="status" value="trial"
-                       {{ 'checked' if form_data and form_data.status == 'trial' }}>
+                       {{ 'checked' if _status_val == 'trial' }}>
                 <label class="cadd-radio-label" for="status-trial">
                   <span class="cadd-radio-label-icon">🔵</span>
                   <span class="cadd-radio-label-title">تجريبي</span>
@@ -1101,7 +1234,7 @@
 
               <div class="cadd-radio-card">
                 <input type="radio" id="status-inactive" name="status" value="inactive"
-                       {{ 'checked' if form_data and form_data.status == 'inactive' }}>
+                       {{ 'checked' if _status_val == 'inactive' }}>
                 <label class="cadd-radio-label" for="status-inactive">
                   <span class="cadd-radio-label-icon">⬜</span>
                   <span class="cadd-radio-label-title">غير نشط</span>
@@ -1257,9 +1390,32 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="cadd-countries-data" type="application/json">
+  {{ (countries_payload or {'featured': [], 'items': []}) | tojson }}
+</script>
 <script>
 (function () {
   'use strict';
+
+  /* ══════════════════════════════════════════════
+     Toast — تنبيه عائم بدل alert/confirm
+  ══════════════════════════════════════════════ */
+  function showToast(msg, kind) {
+    /* kind: 'info' (default) | 'warn' | 'error' | 'ok' */
+    var el = document.createElement('div');
+    el.className = 'cadd-toast' + (kind ? ' cadd-toast--' + kind : '');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.textContent = String(msg || '');
+    document.body.appendChild(el);
+    /* عرض → إخفاء برشاقة */
+    requestAnimationFrame(function () { el.classList.add('is-visible'); });
+    setTimeout(function () {
+      el.classList.remove('is-visible');
+      setTimeout(function () { el.remove(); }, 400);
+    }, 2400);
+  }
+  window.showToast = showToast;
 
   /* ══════════════════════════════════════════════
      متغيرات عامة
@@ -1377,11 +1533,11 @@
   };
 
   function fillReview() {
+    /* الحقول البسيطة — قيمة الإدخال كما هي */
     var fields = {
       'company_name': 'rev-company_name',
       'contact_name': 'rev-contact_name',
       'email':        'rev-email',
-      'phone':        'rev-phone',
       'runtime_url':  'rev-runtime_url',
       'realm':        'rev-realm',
       'notes':        'rev-notes'
@@ -1402,13 +1558,41 @@
     });
 
     /* الدولة + المدينة مجتمعَتان */
-    var country = (document.getElementById('country') || {}).value || '';
-    var city    = (document.getElementById('city')    || {}).value || '';
+    var countrySel = document.getElementById('country_iso');
+    var countryTxt = '';
+    if (countrySel && countrySel.selectedIndex >= 0) {
+      var copt = countrySel.options[countrySel.selectedIndex];
+      if (copt && copt.value) countryTxt = copt.textContent.trim();
+    }
+    var citySel = document.getElementById('city_select');
+    var cityTxt = '';
+    if (citySel && !citySel.disabled) cityTxt = (citySel.value || '').trim();
+    if (!cityTxt) {
+      var cityInp = document.getElementById('city_input');
+      if (cityInp && !cityInp.disabled) cityTxt = (cityInp.value || '').trim();
+    }
     var locEl   = document.getElementById('rev-location');
     if (locEl) {
-      var loc = [country, city].filter(Boolean).join(' / ');
+      var loc = [countryTxt, cityTxt].filter(Boolean).join(' / ');
       locEl.textContent = loc || 'غير محدد';
       locEl.classList.toggle('is-empty', !loc);
+    }
+
+    /* الهاتف — أظهر المقدمة مع الجزء المحلي */
+    var phoneInp = document.getElementById('phone');
+    var dialInp  = document.getElementById('dial_code');
+    var revPhone = document.getElementById('rev-phone');
+    if (revPhone) {
+      var ph = ((phoneInp && phoneInp.value) || '').trim();
+      var dl = ((dialInp  && dialInp.value)  || '').trim();
+      var full = ph ? (dl ? (dl + ' ' + ph) : ph) : '';
+      if (full) {
+        revPhone.textContent = full;
+        revPhone.classList.remove('is-empty');
+      } else {
+        revPhone.textContent = 'غير محدد';
+        revPhone.classList.add('is-empty');
+      }
     }
 
     /* العملة */
@@ -1454,6 +1638,104 @@
   window.caddPrev = function () {
     if (currentStep > 1) goToStep(currentStep - 1);
   };
+
+  /* ══════════════════════════════════════════════
+     منتقي الدولة + المدينة + مقدمة الهاتف (Dial Code)
+     - عند تغيير الدولة:
+       * تُحدَّث مقدمة الهاتف تلقائياً (يدوياً غير قابلة للتعديل)
+       * إذا للدولة قائمة مدن معروفة → تظهر قائمة منسدلة للمدن
+       * إذا لا توجد قائمة → يتحوّل حقل المدينة لإدخال نصي حرّ
+     - الـ JSON المحفوظ في #cadd-countries-data هو مصدر الحقيقة
+  ══════════════════════════════════════════════ */
+  (function setupCountryPicker() {
+    var dataEl = document.getElementById('cadd-countries-data');
+    if (!dataEl) return;
+    var payload;
+    try { payload = JSON.parse(dataEl.textContent || '{}'); } catch (_) { payload = {}; }
+    var items = (payload.items || []);
+    var byIso = {};
+    items.forEach(function (it) { byIso[it.iso] = it; });
+
+    var countrySel = document.getElementById('country_iso');
+    var citySel    = document.getElementById('city_select');
+    var cityInp    = document.getElementById('city_input');
+    var dialView   = document.getElementById('phone_dial');
+    var dialHid    = document.getElementById('dial_code');
+    if (!countrySel) return;
+
+    function setDial(dial) {
+      if (dialView) {
+        dialView.textContent = dial || '—';
+        dialView.classList.toggle('is-empty', !dial);
+      }
+      if (dialHid) dialHid.value = dial || '';
+    }
+
+    function renderCityChoices(initialCity) {
+      var iso  = countrySel.value;
+      var info = byIso[iso];
+      var cities = (info && info.cities) ? info.cities : [];
+
+      if (cities.length) {
+        /* قائمة منسدلة للمدن المعتمدة */
+        cityInp.hidden = true;
+        cityInp.disabled = true;
+        citySel.hidden = false;
+        citySel.disabled = false;
+        /* أعد بناء الخيارات */
+        citySel.innerHTML = '';
+        var optBlank = document.createElement('option');
+        optBlank.value = '';
+        optBlank.textContent = '— اختر المدينة —';
+        citySel.appendChild(optBlank);
+        var found = false;
+        cities.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          if (initialCity && c === initialCity) { opt.selected = true; found = true; }
+          citySel.appendChild(opt);
+        });
+        if (initialCity && !found) {
+          /* قيمة قديمة لا تطابق القائمة — أضفها كخيار خاص */
+          var extra = document.createElement('option');
+          extra.value = initialCity;
+          extra.textContent = initialCity;
+          extra.selected = true;
+          citySel.appendChild(extra);
+        }
+      } else {
+        /* حقل نصي حرّ — يستخدم نفس الـ name="city" */
+        citySel.hidden = true;
+        citySel.disabled = true;
+        cityInp.hidden = false;
+        cityInp.disabled = false;
+        if (initialCity) cityInp.value = initialCity;
+      }
+    }
+
+    countrySel.addEventListener('change', function () {
+      var info = byIso[countrySel.value];
+      setDial(info ? info.dial : '');
+      renderCityChoices('');
+    });
+
+    /* تهيئة عند التحميل: إذا كانت هناك دولة مختارة، رتّب الحقول حسبها */
+    if (countrySel.value) {
+      var info = byIso[countrySel.value];
+      setDial(info ? info.dial : (dialHid ? dialHid.value : ''));
+      /* القيمة الأولية للمدينة قد تكون موجودة في أحد الحقلين */
+      var initialCity = '';
+      if (citySel && citySel.value) initialCity = citySel.value;
+      else if (cityInp && cityInp.value) initialCity = cityInp.value;
+      renderCityChoices(initialCity);
+    } else {
+      /* لا دولة → ضع المدينة في وضع نصي حرّ كي يدخلها يدوياً (أفضل من قائمة فارغة) */
+      var initialCityNo = '';
+      if (citySel && citySel.value) initialCityNo = citySel.value;
+      renderCityChoices(initialCityNo);
+    }
+  })();
 
   /* ══════════════════════════════════════════════
      التحقق الفوري أثناء الكتابة
