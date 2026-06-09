@@ -15,5 +15,7 @@ build/
 .claude/
 _verify_shots/
 _verify_*.py
+_render_*.py
+_render_*.png
 *.patch
 
