@@ -248,14 +248,14 @@
   }
 
   .cd-tab-panel {
-    display: block;                 /* كل الأقسام ظاهرة تحت بعض */
+    display: none;                  /* قسم واحد فقط يظهر بالمرة (تبويبات) */
     background: var(--cc-card-bg);
     border: 1px solid var(--cc-border);
     border-radius: var(--cc-r-card);
     box-shadow: var(--cc-sh-card);
     padding: var(--cc-sp-11);
-    scroll-margin-top: 84px;        /* عشان الشريط اللاصق ما يغطّي العنوان عند القفز */
   }
+  .cd-tab-panel.is-active { display: block; }
 
   /* عنوان القسم */
   .cd-panel-heading {
@@ -1397,32 +1397,21 @@
 (function () {
   'use strict';
 
-  /* ── الأقسام مكدّسة عمودياً؛ الشريط = قفز سريع لاصق ── */
-  function cdHighlight(id) {
+  /* ── تبويبات: قسم واحد يظهر بالمرة ── */
+  window.cdSwitchTab = function (id) {
     document.querySelectorAll('.cd-tab-btn').forEach(function (b) {
       var on = b.id === 'tbtn-' + id;
       b.classList.toggle('is-active', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-  }
-
-  window.cdSwitchTab = function (id) {
-    var panel = document.getElementById('tab-' + id);
-    cdHighlight(id);
-    if (panel) { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    document.querySelectorAll('.cd-tab-panel').forEach(function (p) {
+      p.classList.toggle('is-active', p.id === 'tab-' + id);
+    });
     if (history.replaceState) { history.replaceState(null, '', '#' + id); }
+    /* ارجع لأعلى المحتوى عند تبديل القسم */
+    var nav = document.querySelector('.cd-tabs-nav');
+    if (nav && nav.scrollIntoView) { nav.scrollIntoView({ block: 'start' }); }
   };
-
-  /* تظليل الزر النشِط تلقائياً حسب القسم الظاهر أثناء التمرير */
-  (function spy() {
-    if (!('IntersectionObserver' in window)) return;
-    var obs = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) { cdHighlight(e.target.id.replace('tab-', '')); }
-      });
-    }, { rootMargin: '-40% 0px -55% 0px' });
-    document.querySelectorAll('.cd-tab-panel').forEach(function (p) { obs.observe(p); });
-  }());
 
   /* ── استعادة التاب من الـ hash عند التحميل ── */
   (function restoreTab() {
