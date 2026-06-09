@@ -21,7 +21,21 @@ are encrypted at rest with the same Fernet key the WhatsApp module uses
 from __future__ import annotations
 
 from .channels import CHANNELS, CHANNEL_LABELS, OWNER_EVENTS, OWNER_EVENT_LABELS
-from .layers import message_customer, notify_owner
+from .layers import (
+    dispatch_lifecycle,
+    message_customer,
+    notify_owner,
+    send_credentials,
+)
+from .lifecycle import (
+    LIFECYCLE_EVENTS,
+    all_event_states,
+    build_credentials_text,
+    get_event_state,
+    is_enabled as lifecycle_is_enabled,
+    render as lifecycle_render,
+    save_event as save_lifecycle_event,
+)
 from .router import SendResult, send
 from .settings_store import (
     ChannelSettingsError,
@@ -37,14 +51,23 @@ __all__ = [
     "CHANNEL_LABELS",
     "OWNER_EVENTS",
     "OWNER_EVENT_LABELS",
+    "LIFECYCLE_EVENTS",
     "ChannelSettingsError",
     "SendResult",
+    "all_event_states",
+    "build_credentials_text",
+    "dispatch_lifecycle",
     "get_channel_state",
+    "get_event_state",
     "get_owner_prefs",
+    "lifecycle_is_enabled",
+    "lifecycle_render",
     "message_customer",
     "notify_owner",
     "save_channel",
+    "save_lifecycle_event",
     "save_owner_prefs",
     "send",
+    "send_credentials",
     "test_send",
 ]

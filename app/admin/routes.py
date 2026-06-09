@@ -484,9 +484,13 @@ def customer_create():
     audit("customer_created", "customer", str(customer.id), f"Created customer {customer.company_name}")
     db.session.commit()
     # Owner notification (no-op when event/channels disabled); never blocks the request.
+    from ..services.messaging import dispatch_lifecycle as _dispatch_lifecycle
     from ..services.messaging import notify_owner as _notify_owner
     _notify_owner("customer_created", detail=f"عميل: {customer.company_name}",
                   extra={"id": customer.id})
+    # Customer-facing welcome message — silent no-op when the lifecycle event
+    # is disabled or the customer has no phone on file.
+    _dispatch_lifecycle("welcome", customer)
     flash("تم إنشاء العميل.", "success")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
@@ -887,6 +891,9 @@ def customer_user_new(customer_id: int):
 def customer_user_create(customer_id: int):
     customer = db.get_or_404(Customer, customer_id)
     customer_user = CustomerUser(customer_id=customer.id, active=True)
+    # Capture the plaintext password BEFORE _fill_customer_user hashes it.
+    # Held only on this stack frame and never persisted/logged.
+    _plain_password = (request.form.get("password") or "")
     try:
         _fill_customer_user(customer_user, require_password=True)
     except CustomerControlValidationError as exc:
@@ -903,6 +910,11 @@ def customer_user_create(customer_id: int):
         metadata={"customer_id": customer.id, "role_key": customer_user.role_key, "is_super": customer_user.is_effective_super},
     )
     db.session.commit()
+    # Send login credentials to the CUSTOMER's own phone. Silent no-op when
+    # the `credentials` lifecycle event is disabled or the customer has no
+    # phone on file. Never logs the plaintext password.
+    from ..services.messaging import send_credentials as _send_credentials
+    _send_credentials(customer, username=customer_user.username, password=_plain_password)
     flash("تم إنشاء مستخدم العميل. كلمة المرور ستصل للريدياس كنسخة مشفرة فقط عند مزامنة الهوية.", "success")
     return redirect(_customer_user_return_url(customer.id))
 
@@ -920,6 +932,9 @@ def customer_user_edit(customer_id: int, user_id: int):
 def customer_user_update(customer_id: int, user_id: int):
     customer = db.get_or_404(Customer, customer_id)
     customer_user = CustomerUser.query.filter_by(id=user_id, customer_id=customer.id).first_or_404()
+    # Capture the plaintext password BEFORE _fill_customer_user hashes it.
+    # Blank means "leave existing password unchanged" — no credential message.
+    _plain_password = (request.form.get("password") or "")
     try:
         _fill_customer_user(customer_user, require_password=False)
     except CustomerControlValidationError as exc:
@@ -934,6 +949,11 @@ def customer_user_update(customer_id: int, user_id: int):
         metadata={"customer_id": customer.id, "password_version": customer_user.password_version, "is_super": customer_user.is_effective_super},
     )
     db.session.commit()
+    if _plain_password:
+        # Password was actually changed → re-send credentials. Same gating as
+        # customer_user_create; no-op when the lifecycle event is off.
+        from ..services.messaging import send_credentials as _send_credentials
+        _send_credentials(customer, username=customer_user.username, password=_plain_password)
     flash("تم تحديث مستخدم العميل.", "success")
     return redirect(_customer_user_return_url(customer.id))
 
@@ -961,6 +981,10 @@ def customer_user_password_set(customer_id: int, user_id: int):
         metadata={"customer_id": customer.id, "password_version": customer_user.password_version},
     )
     db.session.commit()
+    # Send the NEW credentials to the customer's own phone. Silent no-op when
+    # disabled or when the customer has no phone on file.
+    from ..services.messaging import send_credentials as _send_credentials
+    _send_credentials(customer, username=customer_user.username, password=password)
     flash("تم تعيين كلمة مرور العميل. سيستلم الريدياس النسخة المشفرة الجديدة عند مزامنة الهوية.", "success")
     return redirect(_customer_user_return_url(customer.id))
 
@@ -2799,6 +2823,15 @@ def payment_request_approve(payment_request_id: int):
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
     audit("license_payment_approved", "license_payment_request", str(payment_request.id), f"Approved payment {payment_request.reference_code}")
     db.session.commit()
+    # Customer-facing "payment received" confirmation. Silent no-op when off.
+    from ..services.messaging import dispatch_lifecycle as _dispatch_lifecycle
+    if payment_request.customer:
+        _dispatch_lifecycle("payment_received", payment_request.customer, variables={
+            "company": payment_request.customer.company_name,
+            "reference_code": payment_request.reference_code,
+            "amount": str(payment_request.amount),
+            "currency": payment_request.currency,
+        })
     flash("تم قبول الدفع اليدوي. لم يتم تفعيل الترخيص تلقائيًا بعد.", "success")
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
 
@@ -2835,6 +2868,17 @@ def payment_request_apply_license(payment_request_id: int):
     except LicensePaymentValidationError as exc:
         flash(payment_error_message(exc), "error")
         return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    # Customer-facing "license activated" confirmation. Silent no-op when off.
+    from ..services.messaging import dispatch_lifecycle as _dispatch_lifecycle
+    if payment_request.customer:
+        _plan = getattr(payment_request.license, "plan", None) if payment_request.license else None
+        _expires = getattr(payment_request.license, "expires_at", "") if payment_request.license else ""
+        _dispatch_lifecycle("payment_applied", payment_request.customer, variables={
+            "company": payment_request.customer.company_name,
+            "reference_code": payment_request.reference_code,
+            "plan_name": getattr(_plan, "name", "") if _plan else "",
+            "expires_on": _expires.strftime("%Y-%m-%d") if _expires else "",
+        })
     flash(f"تم تنفيذ ربط الدفع بالترخيص: {result.get('status')}", "success")
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
 

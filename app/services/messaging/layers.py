@@ -129,4 +129,79 @@ def _customer_phone(customer: Any) -> str:
     return phone
 
 
-__all__ = ["notify_owner", "message_customer"]
+__all__ = [
+    "notify_owner",
+    "message_customer",
+    "send_credentials",
+    "dispatch_lifecycle",
+]
+
+
+# ── Layer 3: lifecycle messages (on top of message_customer) ─────────────
+
+def dispatch_lifecycle(
+    event_id: str,
+    customer: Any,
+    *,
+    variables: dict[str, Any] | None = None,
+    channels: Iterable[str] = ("whatsapp", "sms"),
+) -> list[SendResult]:
+    """Render the lifecycle template for ``event_id`` and dispatch via
+    :func:`message_customer`. Silent no-op when the event is disabled.
+
+    The standard customer-level placeholders ``{company}`` and ``{portal_url}``
+    are auto-populated from the ORM row, so route handlers only need to pass
+    event-specific variables (``reference_code``, ``plan_name``, …). Caller
+    overrides win on key collision.
+
+    The hook is the SINGLE integration point a route should call after
+    committing a business action — e.g. ``dispatch_lifecycle("welcome",
+    customer)`` right after ``db.session.commit()`` in customer_create.
+    """
+    from .lifecycle import is_enabled, render  # local import: avoid cycles
+
+    if not is_enabled(event_id):
+        return []
+    merged = {
+        "company": (getattr(customer, "company_name", "") or "").strip(),
+        "portal_url": (getattr(customer, "runtime_url", "") or "").strip(),
+    }
+    merged.update(variables or {})
+    text = render(event_id, **merged)
+    if not text.strip():
+        return []
+    return message_customer(customer, text, channels=channels)
+
+
+def send_credentials(
+    customer: Any,
+    *,
+    username: str,
+    password: str,
+    channels: Iterable[str] = ("whatsapp", "sms"),
+) -> list[SendResult]:
+    """Deliver login credentials to ONE customer's own phone.
+
+    Security contract:
+
+    * ``password`` is held only on the stack of this call; we never copy it to
+      a log, audit row, or persisted setting. The customer-facing template
+      itself is rendered locally and handed straight to the channel router.
+    * Always routed via :func:`message_customer`, which composes the customer's
+      stored ``dial_code + phone``. No alternate recipient is accepted.
+    * A silent no-op when the operator has disabled the ``credentials``
+      lifecycle event in settings — important for installs that hand passwords
+      out-of-band.
+    """
+    from .lifecycle import build_credentials_text, is_enabled  # local: cycles
+
+    if not is_enabled("credentials"):
+        return []
+    text = build_credentials_text(username=username, password=password,
+                                  customer=customer)
+    if not text.strip():
+        return []
+    # message_customer already gates on the customer's phone presence and
+    # returns a no_recipient result per channel when absent — no extra check
+    # needed here.
+    return message_customer(customer, text, channels=channels)
