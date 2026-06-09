@@ -72,6 +72,7 @@ def _node(
     public_ip: str,
     wg_mgmt_ip: str,
     score: float | None = 0.5,
+    cpu_pct: float | None = None,
     status: str = "up",
     enabled: bool = True,
     drain: bool = False,
@@ -89,31 +90,49 @@ def _node(
         enabled=enabled,
         drain=drain,
         score=score,
+        # The REAL brain recomputes from live cpu (denormalized fallback when no
+        # metric row exists); the stub ranked by the denormalized ``score``.
+        # Post-gate the real brain is the backend, so drive order via cpu_pct.
+        cpu_pct=cpu_pct,
     )
     db.session.add(n)
     return n
 
 
+def _mark_down(node: FleetChrNode) -> None:
+    """Give a node an authoritative DOWN health row — the real brain excludes
+    on FleetChrHealth.state == 'down' (not on the denormalized node.status)."""
+    from fleet.health.models_health import FleetChrHealth
+
+    db.session.add(FleetChrHealth(chr_id=node.id, state="down"))
+
+
 @pytest.fixture()
 def fleet_three(configured_app):
-    """Three nodes with distinct scores so order is deterministic."""
+    """Three nodes with distinct CPU so the REAL brain's order is deterministic:
+    lower cpu → more headroom → higher score. cpu 10 < 40 < 65 ⇒ 02 > 03 > 01."""
     _provider()
-    _node("chr-exit-01", public_ip="203.0.113.1",  wg_mgmt_ip="10.99.0.1", score=0.50)
-    _node("chr-exit-02", public_ip="203.0.113.2",  wg_mgmt_ip="10.99.0.2", score=0.91)
-    _node("chr-exit-03", public_ip="203.0.113.3",  wg_mgmt_ip="10.99.0.3", score=0.78)
+    _node("chr-exit-01", public_ip="203.0.113.1",  wg_mgmt_ip="10.99.0.1", score=0.50, cpu_pct=65)
+    _node("chr-exit-02", public_ip="203.0.113.2",  wg_mgmt_ip="10.99.0.2", score=0.91, cpu_pct=10)
+    _node("chr-exit-03", public_ip="203.0.113.3",  wg_mgmt_ip="10.99.0.3", score=0.78, cpu_pct=40)
     db.session.commit()
 
 
 @pytest.fixture()
 def fleet_with_excluded(configured_app):
-    """Some nodes the stub MUST drop: drain, disabled, non-UP."""
+    """Nodes the brain MUST drop: drain, disabled, and DOWN (authoritative
+    health). good-1 has more cpu headroom than good-2 so it ranks first."""
     _provider()
-    _node("good-1",     public_ip="203.0.113.10", wg_mgmt_ip="10.99.0.10", score=0.80)
-    _node("good-2",     public_ip="203.0.113.11", wg_mgmt_ip="10.99.0.11", score=0.60)
+    _node("good-1",     public_ip="203.0.113.10", wg_mgmt_ip="10.99.0.10", score=0.80, cpu_pct=20)
+    _node("good-2",     public_ip="203.0.113.11", wg_mgmt_ip="10.99.0.11", score=0.60, cpu_pct=50)
     _node("draining",   public_ip="203.0.113.12", wg_mgmt_ip="10.99.0.12", score=0.99, drain=True)
     _node("disabled",   public_ip="203.0.113.13", wg_mgmt_ip="10.99.0.13", score=0.99, enabled=False)
-    _node("degraded",   public_ip="203.0.113.14", wg_mgmt_ip="10.99.0.14", score=0.99, status="degraded")
-    _node("down",       public_ip="203.0.113.15", wg_mgmt_ip="10.99.0.15", score=0.99, status="down")
+    degraded = _node("degraded", public_ip="203.0.113.14", wg_mgmt_ip="10.99.0.14", score=0.99, status="degraded")
+    down = _node("down", public_ip="203.0.113.15", wg_mgmt_ip="10.99.0.15", score=0.99, status="down")
+    db.session.flush()
+    # The real brain excludes on the HEALTH row, not node.status — mark both down.
+    _mark_down(degraded)
+    _mark_down(down)
     db.session.commit()
 
 
@@ -198,9 +217,10 @@ class TestDecisionHappyPath:
         # Score order is strictly descending
         scores = [x["score"] for x in body["top_n"]]
         assert scores == sorted(scores, reverse=True)
-        # reasons carries the stub marker
+        # reasons carries the backend marker — "real" now that the brain is wired
+        # (the adapter stamps source/rank uniformly across backends).
         for entry in body["top_n"]:
-            assert entry["reasons"]["source"] == "stub"
+            assert entry["reasons"]["source"] == "real"
             assert "rank" in entry["reasons"]
 
     def test_n_clips_top_n_length(self, configured_app, client, fleet_three):
@@ -339,12 +359,12 @@ class TestServiceLayer:
 # Brain adapter — stub backend default + real-brain seam
 # ════════════════════════════════════════════════════════════════════════════
 class TestBrainAdapter:
-    def test_stub_is_default_backend(self, configured_app, fleet_three):
-        # Force a re-resolve and call.
+    def test_real_brain_is_backend_after_merge(self, configured_app, fleet_three):
+        # Post Phase-5 gate the real brain is wired (fleet.brain re-exports
+        # best_node/top_n), so the adapter resolves to the real engine.
         best = best_node()
         assert best is not None and best.name == "chr-exit-02"
-        # After a call, the backend marker is set.
-        assert brain_adapter.BRAIN_BACKEND in {"stub", "real"}
+        assert brain_adapter.BRAIN_BACKEND == "real"
 
     def test_top_n_size_zero_returns_empty(self, configured_app, fleet_three):
         assert top_n(n=0) == []

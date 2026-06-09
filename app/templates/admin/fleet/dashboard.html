@@ -302,10 +302,10 @@
       <i class="fa-solid fa-ranking-star"></i> ترتيب الأسطول — لماذا تُفضَّل كل عقدة
     </div>
     <div class="fd-card-spacer"></div>
-    <span class="fb-source {{ 'fb-source--brain' if ranking_source == 'brain' else 'fb-source--fallback' }}"
-          title="{% if ranking_source == 'brain' %}محسوب بواسطة fleet.brain.rank{% else %}مصدر التقدير: حساب محلي مؤقت ضمن اللوحة (سيُستبدَل عند دمج فرع المخّ){% endif %}">
-      <i class="fa-solid fa-{{ 'brain' if ranking_source == 'brain' else 'flask' }}"></i>
-      {% if ranking_source == 'brain' %}مصدر الترتيب: المخّ الفعلي{% else %}مصدر الترتيب: تقدير مؤقت في اللوحة{% endif %}
+    <span class="fb-source {{ 'fb-source--brain' if ranking_source == 'real' else 'fb-source--fallback' }}"
+          title="{% if ranking_source == 'real' %}محسوب بواسطة fleet.brain.rank{% else %}مصدر التقدير: حساب محلي مؤقت ضمن اللوحة (سيُستبدَل عند دمج فرع المخّ){% endif %}">
+      <i class="fa-solid fa-{{ 'brain' if ranking_source == 'real' else 'flask' }}"></i>
+      {% if ranking_source == 'real' %}مصدر الترتيب: المخّ الفعلي{% else %}مصدر الترتيب: تقدير مؤقت في اللوحة{% endif %}
     </span>
     <span class="fb-source" style="background:#f1f5f9;color:#475569" title="عقد مؤهّلة الآن لاستقبال جلسات جديدة">
       <i class="fa-solid fa-check"></i> مؤهّلة: {{ ranking_eligible }} / {{ ranking|length }}

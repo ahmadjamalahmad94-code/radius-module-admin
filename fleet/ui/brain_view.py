@@ -112,7 +112,7 @@ class RankedNode:
     eligible: bool
     excluded_reason: str | None     # Arabic short phrase when not eligible
     factors: list[FactorChip] = field(default_factory=list)
-    source: str = "fallback"        # "brain" once fleet.brain.rank lands
+    source: str = "fallback"        # "real" once fleet.brain.rank lands
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -129,7 +129,9 @@ def ranked_view_for(node_views: list[NodeView]) -> tuple[list[RankedNode], str]:
     """
     real_scores = _try_brain_rank(node_views)
     if real_scores is not None:
-        return _merge_brain_scores(real_scores, node_views), "brain"
+        # "real" = ordering came from fleet.brain.rank (unified with the
+        # placement adapter's BRAIN_BACKEND == "real"). "fallback" = local stub.
+        return _merge_brain_scores(real_scores, node_views), "real"
     return _fallback_rank(node_views), "fallback"
 
 
@@ -183,7 +185,7 @@ def _merge_brain_scores(scores: list[Any], node_views: list[NodeView]) -> list[R
                 eligible=eligible,
                 excluded_reason=_brain_excluded_reason(ns, view),
                 factors=_factors_from_brain_reasons(reasons, view),
-                source="brain",
+                source="real",
             )
         )
 
@@ -193,7 +195,7 @@ def _merge_brain_scores(scores: list[Any], node_views: list[NodeView]) -> list[R
     for v in node_views:
         if v.node.id in seen_ids:
             continue
-        out.append(_fallback_one(next_rank, v, force_eligible=False, source="brain"))
+        out.append(_fallback_one(next_rank, v, force_eligible=False, source="real"))
         next_rank += 1
 
     return out

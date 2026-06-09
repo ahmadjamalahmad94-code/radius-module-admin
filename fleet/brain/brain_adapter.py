@@ -104,7 +104,12 @@ def _coerce(raw: Any) -> NodeScore | None:
         raise TypeError(f"brain returned a node with no .name: {raw!r}")
     if not isinstance(score, (int, float)):
         raise TypeError(f"brain returned a node with non-numeric .score: {raw!r}")
-    return NodeScore(name=name, score=float(score), reasons=dict(reasons))
+    # Phase-5 gate: mark the backend so the real-brain path carries ``source``
+    # in its reasons too (the stub already does). Keeps the wire shape uniform
+    # across backends — the route serialises ``reasons`` verbatim.
+    coerced = dict(reasons)
+    coerced["source"] = "real"
+    return NodeScore(name=name, score=float(score), reasons=coerced)
 
 
 def _coerce_many(raws: Iterable[Any]) -> list[NodeScore]:
@@ -112,6 +117,9 @@ def _coerce_many(raws: Iterable[Any]) -> list[NodeScore]:
     for r in raws:
         ns = _coerce(r)
         if ns is not None:
+            # Position in the ranked list — matches the stub's ``rank`` key so
+            # downstream consumers see the same reasons shape either way.
+            ns.reasons.setdefault("rank", len(out))
             out.append(ns)
     return out
 
