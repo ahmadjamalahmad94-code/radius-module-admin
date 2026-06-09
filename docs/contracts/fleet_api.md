@@ -322,6 +322,104 @@ Implemented in `app/api/proxy_api.py`.
 
 ---
 
+## 6. Placement-decision read — `GET /api/proxy/placement-decision`
+
+The proxy's `resolve_decision` consults the panel for the brain's headline
+placement choice + the top-N ranking. **Read-only and advisory**: it does not
+move any session; the actuation contract is §2 placement ingest (proxy reports
+back what it did) and §3 CoA / Disconnect (panel asks the proxy to act). This
+endpoint closes contract gap #2 — the proxy was already calling it with a
+local fallback while the panel side was unimplemented.
+
+### Request
+
+`GET /api/proxy/placement-decision?realm=<realm>&current_node=<name>&n=<int>`
+
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `realm` | str (≤80 chars, `[A-Za-z0-9-_.@]`) | absent ⇒ global | Constrain the eligible set to nodes a realm is allowed to use. |
+| `current_node` | str (≤120 chars) | absent | Node the realm is currently served from. **Audit-only** in Phase 5 — the proxy passes it so the recorded decision row carries `from_chr_id`. The brain MAY use it for stickiness in a later revision; the local stub ignores it. |
+| `n` | int 1..32 | `3` | Size of the `top_n` array. |
+
+Auth: `X-Proxy-Token` HMAC (§0). Missing/bad ⇒ 401.
+
+### Response (success — HTTP 200)
+
+```json
+{
+  "ok": true,
+  "decision": "chr-exit-02",                // node NAME (or null when no eligible node)
+  "top_n": [
+    {
+      "node": "chr-exit-02",                // registry name
+      "score": 0.91,                        // higher = better; absolute scale is the brain's
+      "reasons": {                          // free-form per-factor breakdown from the brain
+        "cpu_headroom": 0.74,
+        "session_headroom": 0.83,
+        "cost": 0.40,
+        "stickiness": 0.30
+      }
+    },
+    {
+      "node": "chr-exit-01",
+      "score": 0.78,
+      "reasons": { "...": "..." }
+    }
+  ]
+}
+```
+
+### No eligible node
+
+```json
+{ "ok": true, "decision": null, "top_n": [] }       // HTTP 200 — empty fleet OR all draining
+```
+
+### Error envelope
+
+```json
+{ "ok": false, "error": "unauthorized" }           // HTTP 401 — bad/missing X-Proxy-Token
+{ "ok": false, "error": "bad_request",
+  "detail": "n must be in [1, 32]" }                // HTTP 400 — malformed query params
+{ "ok": false, "error": "server_error",
+  "detail": "placement decision persist failed" }   // HTTP 500 — only if persistence crashes
+```
+
+### Side effect — audit row
+
+Every served response inserts one `fleet_placement_decisions` row with
+`kind='new'`, `outcome='pending'` (the brain proposed; actuation is reported
+back via §2). `from_chr_id` resolves `current_node`; `to_chr_id` resolves
+`decision`. `reason_json` snapshots `realm`, `current_node`, `decision`, and
+the full `top_n` so the proposal is fully reconstructible after the fact.
+`username` is set to `f"realm:{realm}"` (or `"__proxy_realm_query__"` when
+realm is absent) so audit-log greps can collapse them.
+
+### Brain-API delegation
+
+The endpoint is a thin shell over `fleet.brain.brain_adapter.best_node()` +
+`top_n()`. The adapter consumes the frozen brain interface
+
+```python
+best_node(realm: str | None = None)        -> NodeScore | None
+top_n   (realm: str | None = None, n: int) -> list[NodeScore]
+
+@dataclass(frozen=True)
+class NodeScore:
+    name:    str             # fleet_chr_nodes.name
+    score:   float           # higher = better
+    reasons: dict[str, Any]  # per-factor breakdown
+```
+
+When the real brain module is available it is used as-is; otherwise the
+adapter falls back to a local stub that ranks `fleet_chr_nodes` by their
+denormalised `score` column over the eligible set (`status='up'`, `enabled`,
+not `drain`) — same shape, lower fidelity. The wire contract is identical
+either way; the dashboard inspects `fleet.brain.brain_adapter.BRAIN_BACKEND`
+to show which is live.
+
+---
+
 ## Change log
 
 - **Phase 1** — initial freeze: telemetry ingest, placement ingest, CoA/Disconnect
@@ -330,3 +428,12 @@ Implemented in `app/api/proxy_api.py`.
   `chr_nodes[].name` (gap #1) so the proxy can correlate routing-table CHRs with
   telemetry/placement (which key by node name). Telemetry's `health` field now
   defers to the monitor's authoritative hysteresis state (`monitor.state_of`).
+- **Phase 5** — froze `GET /api/proxy/placement-decision` (§6, contract gap #2):
+  proxy-facing read endpoint that returns the brain's headline `decision` (a
+  node name or `null`) plus the `top_n` ranking with `score` + `reasons` per
+  node. Same `X-Proxy-Token` auth. Every served response is recorded into
+  `fleet_placement_decisions` as `kind='new'`/`outcome='pending'` (advisory; the
+  proxy still actuates via §2 placement ingest + §3 CoA). The endpoint is a
+  thin shell over `fleet.brain.brain_adapter` which delegates to the real brain
+  when available and falls back to a score-column stub otherwise; the wire
+  shape is identical either way.
