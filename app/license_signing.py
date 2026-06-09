@@ -68,10 +68,55 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
         if per_license_secret:
             accepted = hmac.compare_digest(signature, sign_license_payload(body, per_license_secret))
     if not accepted:
+        # Final fallback: a per-license rotatable bridge token (panel-canonical,
+        # bidirectionally synced — see app/services/bridge_token_sync.py). Once
+        # the panel or the customer side rotates, signatures get made with the
+        # new value; we accept it here so the bridge keeps working without
+        # waiting for the customer to re-poll the runtime contract.
+        accepted = _verify_with_rotatable_bridge_token(app, body, signature)
+    if not accepted:
         raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     _remember_nonce(app, nonce, now)
     return "signed"
+
+
+def _verify_with_rotatable_bridge_token(app: Flask, body: dict[str, Any], signature: str) -> bool:
+    """Try the per-license rotatable bridge token (panel-canonical store).
+
+    Returns True if the signature was made with the current bridge token
+    for the license referenced in ``body``. Returns False on any miss
+    (unknown license, no state row yet, vault key missing, or just a
+    plain mismatch) — caller treats False as "keep looking / fail".
+
+    Imported lazily so this module stays usable when the app context
+    is not yet pushed (e.g. signing-only helpers in scripts/tests that
+    skip the DB).
+    """
+    license_key = str(body.get("license_key") or "").strip().upper()
+    if not license_key:
+        return False
+    try:
+        from .models import License
+        from .services.bridge_token_sync import signing_secrets_for
+    except Exception:  # pragma: no cover - defensive against partial app boots
+        return False
+    try:
+        lic = License.query.filter_by(license_key=license_key).first()
+    except Exception:  # pragma: no cover - no app/db context
+        return False
+    if lic is None:
+        return False
+    for candidate in signing_secrets_for(lic):
+        if not candidate:
+            continue
+        try:
+            expected = sign_license_payload(body, candidate)
+        except Exception:  # pragma: no cover - defensive
+            continue
+        if hmac.compare_digest(signature, expected):
+            return True
+    return False
 
 
 def _parse_timestamp(value) -> int:

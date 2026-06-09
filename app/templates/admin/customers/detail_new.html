@@ -1161,11 +1161,21 @@
           ولّد كوداً لمرة واحدة (صالح ٣٠ دقيقة) يُدخله العميل في ريديوسه ليرتبط بالجسر تلقائياً — بدون أي إعداد يدوي.
         </p>
         <form id="cd-bridge-form" style="display:none">{{ csrf_input() }}</form>
-        <button type="button" id="cd-gen-token-btn"
-                data-url="{{ url_for('admin.generate_activation_token', customer_id=customer.id) }}"
-                style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-brand);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-body-s);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
-          <i class="fa-solid fa-key" aria-hidden="true"></i> توليد كود تفعيل الجسر
-        </button>
+        <div style="display:flex;gap:var(--cc-sp-4);flex-wrap:wrap">
+          <button type="button" id="cd-gen-token-btn"
+                  data-url="{{ url_for('admin.generate_activation_token', customer_id=customer.id) }}"
+                  style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-brand);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-body-s);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+            <i class="fa-solid fa-key" aria-hidden="true"></i> توليد كود تفعيل الجسر
+          </button>
+          {# تدوير مفتاح الجسر (bidirectional sync) #}
+          <button type="button" id="cd-rotate-bridge-btn"
+                  data-url="{{ url_for('admin_bridge_token.rotate_bridge_token', customer_id=customer.id) }}"
+                  data-status-url="{{ url_for('admin_bridge_token.get_bridge_token', customer_id=customer.id) }}"
+                  style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-body-s);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+            <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> تدوير مفتاح الجسر
+          </button>
+        </div>
+        <p id="cd-bridge-fp" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute);margin-top:var(--cc-sp-4);font-family:var(--cc-font-mono)">—</p>
         <div id="cd-token-result" class="cd-cred-box" style="display:none;margin-top:var(--cc-sp-5)">
           <span class="cd-cred-label">كود التفعيل (مرة واحدة)</span>
           <span class="cd-cred-val mono" id="cd-token-val">—</span>
@@ -1207,6 +1217,70 @@
               (window.cdFlash || window.alert)('تعذّر توليد الكود (' + res.status + ') — أعد المحاولة');
             }
           }).catch(function () { btn.disabled = false; (window.cdFlash || window.alert)('تعذّر الاتصال بالخادم'); });
+        });
+      })();
+
+      /* Rotate bridge token (bidirectional sync) — fetches fingerprint on load,
+         POSTs to /bridge-token/rotate on click. Plaintext is shown once. */
+      (function () {
+        var rotBtn = document.getElementById('cd-rotate-bridge-btn');
+        var fpLine = document.getElementById('cd-bridge-fp');
+        if (!rotBtn) return;
+        var statusUrl = rotBtn.getAttribute('data-status-url');
+        var form = document.getElementById('cd-bridge-form');
+        function csrf() {
+          var tok = (form && form.querySelector('input[name="_csrf_token"]'))
+                    || document.querySelector('input[name="_csrf_token"]');
+          return tok ? tok.value : '';
+        }
+        function showFp(j) {
+          if (!fpLine) return;
+          if (j && j.fingerprint) {
+            fpLine.textContent = 'بصمة المفتاح الحالي: ' + j.fingerprint.slice(0, 8) + '… — الإصدار v' + j.version;
+          } else if (j && j.exists === false) {
+            fpLine.textContent = 'لم يتم توليد مفتاح للجسر بعد — التدوير سيُولّد أول مفتاح.';
+          }
+        }
+        if (statusUrl) {
+          fetch(statusUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json().catch(function () { return {}; }); })
+            .then(showFp).catch(function () {});
+        }
+        rotBtn.addEventListener('click', function () {
+          rotBtn.disabled = true;
+          fetch(rotBtn.getAttribute('data-url'), {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+            credentials: 'same-origin'
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
+          }).then(function (res) {
+            rotBtn.disabled = false;
+            if (res.status === 200 && res.j && res.j.ok) {
+              showFp(res.j);
+              /* Reuse the same one-time-display box as the activation code. */
+              var box = document.getElementById('cd-token-result');
+              var val = document.getElementById('cd-token-val');
+              var meta = document.getElementById('cd-token-meta');
+              if (val) val.textContent = res.j.token;
+              if (box) box.style.display = '';
+              if (meta) {
+                meta.style.display = '';
+                meta.textContent = 'مفتاح الجسر الجديد v' + res.j.version + ' — يُعرض مرة واحدة، انسخه الآن. سيظهر للعميل تلقائياً على أول اتصال.';
+              }
+              var cp = document.getElementById('cd-token-copy');
+              if (cp) cp.onclick = function () { if (typeof cdCopy === 'function') cdCopy(res.j.token); };
+              (window.cdFlash || function () {})('تم تدوير مفتاح الجسر — v' + res.j.version);
+            } else if (res.status === 403 || res.status === 401) {
+              (window.cdFlash || window.alert)('هذا الإجراء للمدير الرئيسي فقط.');
+            } else if (res.status === 404) {
+              (window.cdFlash || window.alert)('لا يوجد ترخيص نشط لهذا العميل.');
+            } else if (res.status === 503) {
+              (window.cdFlash || window.alert)('قفل التشفير غير متاح — راجع CUSTOMER_VAULT_ENCRYPTION_KEY.');
+            } else {
+              (window.cdFlash || window.alert)('تعذّر التدوير (' + res.status + ')');
+            }
+          }).catch(function () { rotBtn.disabled = false; (window.cdFlash || window.alert)('تعذّر الاتصال بالخادم'); });
         });
       })();
       </script>
