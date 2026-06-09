@@ -2022,6 +2022,7 @@ def settings_page():
     from ..services.whatsapp import cloud_settings as wac
     from ..services.whatsapp import embedded_settings as wae
     from ..services import chr_settings as chr_svc
+    from ..services import customer_vault_crypto as vc
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     return render_template(
@@ -2035,6 +2036,7 @@ def settings_page():
         chr_enabled=chr_svc.enabled(),
         chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
         proxy_route_count=ProxyRealmRoute.query.filter_by(status="active").count(),
+        vault_key_state=vc.vault_key_state(),
     )
 
 
@@ -2379,6 +2381,63 @@ def chr_settings_reveal():
         return jsonify({"ok": False, "message": str(exc)}), 400
     db.session.commit()
     return jsonify({"ok": True, "value": value})
+
+
+# ── Customer Vault encryption key (owner-managed, encrypted at rest) ───────
+def _vault_settings_redirect():
+    return redirect(url_for("admin.settings_page") + "#vault")
+
+
+@bp.post("/settings/vault/key")
+@super_admin_required
+def vault_settings_save_key():
+    """Persist a Fernet vault key in the DB, encrypted with the app master key.
+
+    Super-admin only. The previous key (if any) is overwritten in the same
+    commit. Existing ciphertext encrypted under the old key becomes unreadable
+    on key change — the form warns about this explicitly.
+    """
+    from ..services import customer_vault_crypto as vc
+    new_key = (request.form.get("new_key") or "").strip()
+    try:
+        vc.save_vault_key_in_db(new_key)
+    except vc.VaultCryptoError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _vault_settings_redirect()
+    audit("vault_key_saved", "settings", "customer_vault.encryption_key",
+          "حفظ مفتاح تشفير الخزنة عبر لوحة الإدارة", {})
+    db.session.commit()
+    flash("تم حفظ مفتاح تشفير الخزنة بنجاح.", "success")
+    return _vault_settings_redirect()
+
+
+@bp.post("/settings/vault/key/clear")
+@super_admin_required
+def vault_settings_clear_key():
+    """Remove the DB-stored vault key. Falls back to the env key (if any).
+
+    Super-admin only. Existing ciphertext stays in the DB; if the env key is
+    different, secrets become unreadable until the right key is restored.
+    """
+    from ..services import customer_vault_crypto as vc
+    vc.clear_vault_key_in_db()
+    audit("vault_key_cleared", "settings", "customer_vault.encryption_key",
+          "حذف مفتاح تشفير الخزنة من قاعدة البيانات", {})
+    db.session.commit()
+    flash("تم حذف المفتاح المخزّن في قاعدة البيانات.", "success")
+    return _vault_settings_redirect()
+
+
+@bp.post("/settings/vault/key/generate")
+@super_admin_required
+def vault_settings_generate_key():
+    """Return a freshly generated Fernet key as JSON (NOT persisted).
+
+    The UI fills it into the input so the operator can review + save.
+    """
+    from ..services import customer_vault_crypto as vc
+    return jsonify({"ok": True, "key": vc.generate_fernet_key()})
 
 
 def _payment_error(message: str, status_code: int = 400):

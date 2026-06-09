@@ -324,6 +324,35 @@
   color:      var(--tile-amber-fg);
   border:     1px solid #f5dfa5;
 }
+
+/* ── Toast (design-system floating notification) ─────────── */
+.hub-toast {
+  position: fixed;
+  inset-block-end: 24px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%) translateY(20px);
+  min-width: 240px;
+  max-width: 480px;
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  background: #0f172a;
+  color: #fff;
+  box-shadow: 0 24px 60px rgba(15,23,42,.35);
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+  z-index: 9000;
+  text-align: center;
+}
+.hub-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.hub-toast--success { background: #047857; }
+.hub-toast--error   { background: #b91c1c; }
+.hub-toast--info    { background: #1d4ed8; }
 </style>
 {% endblock %}
 
@@ -355,6 +384,10 @@
   <button class="cc-tab-btn" role="tab" data-tab="email"
           aria-controls="tab-email" id="tab-btn-email">
     <i class="fa-solid fa-envelope" aria-hidden="true"></i> البريد الإلكتروني
+  </button>
+  <button class="cc-tab-btn" role="tab" data-tab="vault"
+          aria-controls="tab-vault" id="tab-btn-vault">
+    <i class="fa-solid fa-vault" aria-hidden="true"></i> مفتاح الخزنة
   </button>
 </div>
 
@@ -720,6 +753,121 @@
 </div>
 </div>{# /cc-tab-pane#email #}
 
+{# ════════════════════════════════════════════════════════════════════
+   القسم 4 — مفتاح تشفير الخزنة
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-vault" role="tabpanel" aria-labelledby="tab-btn-vault">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-purple-bg);color:var(--tile-purple-fg)" aria-hidden="true">
+      <i class="fa-solid fa-vault"></i>
+    </span>
+    <span class="sg-card-head-title">مفتاح تشفير الخزنة</span>
+    <span class="sg-card-head-sub">يُستخدم لتشفير أسرار الخزنة الخاصة بكل عميل داخل قاعدة البيانات</span>
+  </div>
+  <div class="sg-card-body">
+
+    {# ── بطاقة الحالة ──────────────────────────────────────── #}
+    {% set _vk = vault_key_state or {} %}
+    <div class="sg-smtp-status {% if _vk.encryption_ok %}is-ok{% else %}is-warn{% endif %}"
+         style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid {% if _vk.encryption_ok %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+      {% if _vk.encryption_ok and _vk.source == 'panel' %}
+        المفتاح مضبوط من لوحة الإدارة — الأسرار تُشفَّر وتُفكّ بنجاح.
+      {% elif _vk.encryption_ok and _vk.source == 'env' %}
+        المفتاح مضبوط من متغيّر البيئة <code dir="ltr">CUSTOMER_VAULT_ENCRYPTION_KEY</code> — الأسرار تعمل. أدخل مفتاحًا في اللوحة ليحلّ محلّ متغيّر البيئة.
+      {% else %}
+        لا يوجد مفتاح مضبوط. لن تستطيع لوحة الإدارة حفظ أو فكّ أيّ سر في الخزنة الخاصة بالعملاء حتى يُضبَط مفتاح هنا.
+      {% endif %}
+    </div>
+
+    {% if not _vk.app_master_ready %}
+    <div class="sg-smtp-status is-warn" style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      تخزين المفتاح من اللوحة يتطلّب ضبط <code dir="ltr">WHATSAPP_FERNET_KEY</code> أولًا في بيئة الخادم — فهو المفتاح الذي يحمي مفتاح الخزنة داخل قاعدة البيانات.
+    </div>
+    {% endif %}
+
+    {# ── معلومات الإطار ────────────────────────────────────── #}
+    <div class="sg-grid" style="margin-block-end:var(--cc-sp-7)">
+      <div class="sg-field">
+        <label class="sg-label">حالة المفتاح</label>
+        <input class="sg-input" type="text" readonly dir="ltr"
+               value="{% if _vk.source == 'panel' %}محفوظ في اللوحة (مُشفّر){% elif _vk.source == 'env' %}من متغيّر البيئة{% else %}غير مضبوط{% endif %}">
+        <div class="sg-hint">يحدّد من أين يأتي المفتاح الحالي.</div>
+      </div>
+      <div class="sg-field">
+        <label class="sg-label">قناع المفتاح</label>
+        <input class="sg-input" type="text" readonly dir="ltr" value="{{ _vk.masked or '—' }}">
+        <div class="sg-hint">معاينة آمنة — لا يُكشف المفتاح الفعلي أبدًا في الواجهة.</div>
+      </div>
+    </div>
+
+    <div class="sg-divider"></div>
+
+    {# ── نموذج تعيين / تغيير المفتاح ──────────────────────── #}
+    <form method="post" action="{{ url_for('admin.vault_settings_save_key') }}" id="sg-vault-form">
+      {{ csrf_input() }}
+      <div class="sg-grid sg-grid--full">
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-vault-key">
+            مفتاح Fernet جديد <span class="sg-req">*</span>
+          </label>
+          <div style="display:flex; gap:var(--cc-sp-5); align-items:flex-start">
+            <input class="sg-input" id="sg-vault-key" name="new_key" type="text"
+                   autocomplete="off" spellcheck="false" dir="ltr"
+                   placeholder="مثال: base64-urlsafe بطول 44 محرفًا"
+                   style="font-family: ui-monospace, Menlo, Consolas, monospace; flex:1">
+            <button class="sg-btn-secondary" type="button" id="sg-vault-generate">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> توليد
+            </button>
+          </div>
+          <div class="sg-hint">
+            اضغط «توليد» لإنشاء مفتاح عشوائي آمن. أو الصق مفتاحًا موجودًا.
+            <strong>تنبيه:</strong> تغيير المفتاح يجعل الأسرار المحفوظة سابقًا غير قابلة للفك.
+          </div>
+        </div>
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit"
+                {% if not _vk.app_master_ready %}disabled title="WHATSAPP_FERNET_KEY غير مضبوط"{% endif %}>
+          <i class="fa-solid fa-floppy-disk"></i> حفظ المفتاح
+        </button>
+        {% if _vk.source == 'panel' %}
+        <button type="button" class="sg-btn-secondary"
+                style="color:var(--hb-red);border-color:#fecaca;background:#fef2f2"
+                data-confirm-form="sg-vault-clear"
+                data-confirm-title="حذف المفتاح المحفوظ"
+                data-confirm-msg="سيتم حذف المفتاح من قاعدة البيانات. ستعتمد الخزنة على متغيّر البيئة إن وُجد. الأسرار المشفّرة بالمفتاح الحالي قد تصبح غير قابلة للفك."
+                data-confirm-ok="حذف"
+                data-confirm-variant="danger">
+          <i class="fa-solid fa-trash"></i> حذف المفتاح من اللوحة
+        </button>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if _vk.source == 'panel' %}
+    <form id="sg-vault-clear" method="post" action="{{ url_for('admin.vault_settings_clear_key') }}" style="display:none">
+      {{ csrf_input() }}
+    </form>
+    {% endif %}
+
+    <div class="sg-hint" style="margin-block-start:var(--cc-sp-7)">
+      <strong>ملاحظة أمنية:</strong> يُخزَّن المفتاح مشفّرًا بمفتاح التطبيق العام
+      (<code dir="ltr">WHATSAPP_FERNET_KEY</code>). وجود المفتاح في نفس قاعدة البيانات
+      مع البيانات المشفَّرة يُضعف فائدة التشفير الكامن لو تعرّضت قاعدة البيانات للسرقة —
+      احرص على فصل النسخ الاحتياطية لمتغيّرات البيئة عن نسخ قاعدة البيانات.
+    </div>
+
+  </div>
+</div>
+</div>{# /cc-tab-pane#vault #}
+
+{# ── Toast container — design-system floating notifications ───────── #}
+<div class="hub-toast" id="sg-toast" role="status" aria-live="polite" hidden></div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -727,7 +875,7 @@
 (function () {
   'use strict';
 
-  var TABS    = ['site', 'payments', 'email'];
+  var TABS    = ['site', 'payments', 'email', 'vault'];
   var DEFAULT = 'site';
 
   function activateTab(id) {
@@ -765,6 +913,48 @@
       var h = (window.location.hash || '').replace('#', '');
       activateTab(h || DEFAULT);
     });
+
+    /* ── Vault key — generate + toast ─────────────────────── */
+    var toast = document.getElementById('sg-toast');
+    function showToast(msg, variant) {
+      if (!toast) return;
+      toast.className = 'hub-toast hub-toast--' + (variant || 'info') + ' is-visible';
+      toast.textContent = msg;
+      toast.hidden = false;
+      setTimeout(function () {
+        toast.classList.remove('is-visible');
+        setTimeout(function () { toast.hidden = true; }, 320);
+      }, 2400);
+    }
+
+    var genBtn = document.getElementById('sg-vault-generate');
+    if (genBtn) {
+      genBtn.addEventListener('click', function () {
+        genBtn.disabled = true;
+        var csrf = (document.querySelector('input[name="_csrf_token"]') || {}).value || '';
+        var body = new URLSearchParams(); body.append('_csrf_token', csrf);
+        fetch('{{ url_for("admin.vault_settings_generate_key") }}', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf,
+                     'Accept': 'application/json',
+                     'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+          credentials: 'same-origin',
+        }).then(function (r) { return r.json(); }).then(function (j) {
+          genBtn.disabled = false;
+          if (j && j.ok && j.key) {
+            var inp = document.getElementById('sg-vault-key');
+            if (inp) { inp.value = j.key; inp.focus(); inp.select(); }
+            showToast('تم توليد مفتاح جديد — راجِعه ثم احفظ.', 'success');
+          } else {
+            showToast((j && j.message) || 'تعذّر توليد المفتاح.', 'error');
+          }
+        }).catch(function () {
+          genBtn.disabled = false;
+          showToast('تعذّر الاتصال بالخادم.', 'error');
+        });
+      });
+    }
   });
 }());
 </script>
