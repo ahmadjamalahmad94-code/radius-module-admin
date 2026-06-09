@@ -3138,10 +3138,17 @@ def generate_activation_token(customer_id: int):
 
     record = InstanceActivationToken(
         customer_id=customer.id,
-        entity_type="customer",
-        entity_id=str(customer.id),
-        summary=f"تم إنشاء كود تفعيل Admin Bridge للعميل {customer.company_name} (token_id={record.id})",
-        metadata={
+        token_hash=token_hash,
+        expires_at=expires_at,
+        created_by_admin_id=(admin.id if admin else None),
+    )
+    db.session.add(record)
+    db.session.flush()  # assign record.id before we reference it
+
+    audit(
+        "activation_token_generate", "customer", str(customer.id),
+        f"تم إنشاء كود تفعيل Admin Bridge للعميل {customer.company_name} (token_id={record.id})",
+        {
             "token_id": record.id,
             "expires_at": expires_at.isoformat(),
             "ttl_minutes": InstanceActivationToken.ACTIVATION_TOKEN_TTL_MINUTES,

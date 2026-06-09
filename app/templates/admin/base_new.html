@@ -435,6 +435,10 @@
   }
 
   function openGroup(g) {
+    /* أكوردين: أغلق أي مجموعة أخرى مفتوحة — مجموعة واحدة مفتوحة فقط (تقليل الازدحام) */
+    document.querySelectorAll('.adm-group.is-open').forEach(function (o) {
+      if (o !== g) closeGroup(o);
+    });
     g.classList.add('is-open');
     var btn = g.querySelector('.adm-group-head');
     if (btn) btn.setAttribute('aria-expanded', 'true');
@@ -451,21 +455,23 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     var saved = getOpen();
+    var active = null, savedG = null;
 
     document.querySelectorAll('.adm-group').forEach(function (g) {
       var key = g.getAttribute('data-group');
       var btn = g.querySelector('.adm-group-head');
       if (!btn) return;
 
-      /* فتح المجموعة النشطة أو المحفوظة */
-      if (g.classList.contains('is-active') || (key && saved.indexOf(key) !== -1)) {
-        openGroup(g);
-      } else {
-        closeGroup(g);
-      }
-
+      closeGroup(g);
       btn.addEventListener('click', function () { toggleGroup(g); });
+
+      /* المرشّحون لمجموعة واحدة مفتوحة: النشطة لها الأولوية ثم أول محفوظة */
+      if (g.classList.contains('is-active') && !active) active = g;
+      if (key && saved.indexOf(key) !== -1 && !savedG) savedG = g;
     });
+
+    var target = active || savedG;
+    if (target) openGroup(target);
 
     /* drawer mobile */
     var toggle  = document.getElementById('adm-menu-btn');
