@@ -800,6 +800,39 @@ def _install_template_helpers(app: Flask) -> None:
 
         return service_label(str(value or ""))
 
+    @app.template_filter("datetimeformat")
+    def datetimeformat_filter(value, fmt="%Y-%m-%d %H:%M"):
+        """تنسيق تاريخ/وقت (UTC→محلي مثل dt_local) — اسم تستخدمه القوالب المُعاد
+        تصميمها. النصوص تمرّ كما هي، والأخطاء تُرجِع القيمة الخام بلا كسر."""
+        if not value:
+            return "—"
+        if isinstance(value, str):
+            return value
+        import os
+        from datetime import timedelta
+        try:
+            offset = float(os.environ.get("PORTAL_TZ_OFFSET_HOURS", "3"))
+        except (TypeError, ValueError):
+            offset = 3.0
+        try:
+            return (value + timedelta(hours=offset)).strftime(fmt)
+        except Exception:  # noqa: BLE001 — التنسيق لا يجب أن يكسر صفحة
+            return str(value)
+
+    # ── حل جذري لمنع التكرار: فلتر مفقود يجب ألا يكسر الصفحة (500) ──
+    # القوالب المُعاد تصميمها قد تشير أحيانًا إلى فلتر غير مسجَّل بعد (صفحة/خدمة
+    # جديدة بمساعد جديد) → Jinja يرفع TemplateRuntimeError فتسقط الصفحة كاملة.
+    # نجعل أي فلتر غير مسجَّل يتحوّل إلى تمرير القيمة كما هي (passthrough) مع تحذير
+    # في السجل، فلا يُسقِط فلترٌ واحد مفقود صفحةً كاملة بعد الآن.
+    class _FallbackFilterDict(dict):
+        def __missing__(self, key):
+            import logging
+            logging.getLogger(__name__).warning(
+                "Jinja filter '%s' غير مسجَّل — استخدام تمرير احتياطي", key)
+            return lambda value, *a, **k: value
+
+    app.jinja_env.filters = _FallbackFilterDict(app.jinja_env.filters)
+
     @app.template_filter("request_type_label")
     def request_type_label_filter(value):
         from .services.customer_control import service_request_type_label
