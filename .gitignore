@@ -11,3 +11,9 @@ htmlcov/
 dist/
 build/
 
+# Local verification artifacts & agent/editor scratch (not project source)
+.claude/
+_verify_shots/
+_verify_*.py
+*.patch
+
