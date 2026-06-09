@@ -49,6 +49,16 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
+    # Bridge-token bidirectional sync — one canonical store per license,
+    # rotatable from either side, reflected through the existing bridge:
+    #   GET/POST /admin/customers/<id>/bridge-token[/rotate]
+    #   POST    /api/integration/hoberadius/bridge-token/report
+    # Importing the service module registers the BridgeTokenState ORM
+    # on db.metadata so db.create_all() builds the bridge_token_states
+    # table on a fresh DB.
+    from .services import bridge_token_sync as _bridge_token_sync  # noqa: F401
+    from .admin.bridge_token_routes import bp as admin_bridge_token_bp
+    from .api.bridge_token_routes import bp as api_bridge_token_bp
     # CHR Fleet (Phase 3): registry/onboarding/provider APIs + admin UI.
     # Importing the modules also pulls in their ORM models so the fleet tables
     # land in db.metadata for db.create_all(). The P3-gate integrator wires all
@@ -82,6 +92,8 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_bridge_token_bp)
+    app.register_blueprint(api_bridge_token_bp)
     app.register_blueprint(admin_vault_bp)
     app.register_blueprint(admin_chr_bp)
     app.register_blueprint(admin_landing_bp)
