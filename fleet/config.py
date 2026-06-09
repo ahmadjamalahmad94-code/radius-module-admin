@@ -114,6 +114,72 @@ class PlacementConfig:
 # DNS steering (fleet.dns)
 # ──────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
+class CloudflareDnsConfig:
+    """Cloudflare front-door driver identifiers (Phase 6 Task A).
+
+    These are SAFE-IN-CONFIG identifiers — they live on the panel side, in
+    every commit. The Cloudflare API TOKEN is the only secret; it is loaded
+    from the fleet secrets vault at runtime via the
+    ``(vault_owner, vault_purpose)`` lookup, NEVER hardcoded, NEVER logged.
+
+    Two operating modes the driver supports:
+
+    * **FREE** — plain A-records on ``front_door``. Cloudflare free DNS has
+      no per-record weight, so the "weight" field in a desired origin
+      collapses to include-or-exclude (drained / down origins are filtered
+      out of the record set).
+    * **PAID** — Cloudflare Load Balancing origin pools with TRUE graduated
+      weights. The driver maintains ONE pool (``pool_name``) attached to
+      ONE LB (``lb_name`` on the zone), origins one-per-CHR with their
+      configured weight.
+
+    Task C (UI) writes the token's VaultRef into the ``Setting`` row keyed
+    by ``token_setting_key`` so a future operator rotation is one UPDATE
+    plus one re-encryption — no code change.
+    """
+
+    zone_id: str = "8bc55c137bb3eeefef4348b0b51990c5"
+    """Cloudflare zone the front-door FQDN lives in. PUBLIC IDENTIFIER."""
+
+    account_id: str = "4db5e3f4c135474a8d26638ce5c9ede4"
+    """Cloudflare account that owns the LB pool (PAID mode). PUBLIC IDENTIFIER."""
+
+    domain: str = "hoberadius.com"
+    """Apex domain — for docs / sanity checks only."""
+
+    front_door: str = "vpn.hoberadius.com"
+    """The FQDN clients resolve to reach the CHR fleet."""
+
+    api_base: str = "https://api.cloudflare.com/client/v4"
+    """Cloudflare API root. Overridable for staging / Cloudflare's API mirror."""
+
+    token_setting_key: str = "cloudflare.dns.token_ref"
+    """``Setting`` row whose value holds the VaultRef for the API token. When
+    the row is missing or empty, the driver runs in DRY-RUN mode (compute the
+    intended API calls, return them, but never send)."""
+
+    vault_owner: str = "cloudflare:dns"
+    """Vault ``owner`` slot the token lives under. Stable so Task C's UI knows
+    exactly where to write."""
+
+    vault_purpose: str = "api_token"
+    """Vault ``purpose`` slot — distinguishes the API token from any future
+    secrets the driver might park (e.g. a Webhook signing key)."""
+
+    pool_name: str = "hoberadius-chr-fleet"
+    """The PAID-mode LB pool name. Idempotency hinges on it: the driver
+    upserts the pool of this exact name on every apply."""
+
+    lb_name: str = "vpn.hoberadius.com"
+    """The PAID-mode load balancer FQDN — same as ``front_door``. The two
+    are kept as distinct fields so a deployment can split them in future."""
+
+    request_timeout_s: float = 10.0
+    """HTTP timeout per request. Cloudflare's 95th-percentile is well below
+    1 s in practice; 10 s leaves wide headroom for retried requests."""
+
+
+@dataclass(frozen=True)
 class DnsConfig:
     """How the brain's decision is published as DNS for client steering."""
 
@@ -128,6 +194,9 @@ class DnsConfig:
     min_healthy: int = 1
     """Never publish fewer than this many nodes (as long as any are UP); avoids
     accidentally black-holing a realm when scores are close to threshold."""
+
+    cloudflare: CloudflareDnsConfig = field(default_factory=CloudflareDnsConfig)
+    """Cloudflare-specific identifiers + vault keys (see :class:`CloudflareDnsConfig`)."""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
