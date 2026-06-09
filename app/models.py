@@ -807,6 +807,32 @@ class Renewal(db.Model):
     license = db.relationship("License", back_populates="renewals")
 
 
+class LicenseServiceOverride(TimestampMixin, db.Model):
+    """Per-license per-service override (اتفاق جانبي).
+
+    Layered on top of the plan's default service set: effective services for a
+    license = plan.features ∪ {overrides where status='active'}. Used by the
+    licensing panel to grant/freeze/hide a single service for one customer
+    without upgrading their plan.
+    """
+    __tablename__ = "license_service_overrides"
+    __table_args__ = (
+        db.UniqueConstraint("license_id", "service_key", name="uq_license_service_overrides_license_service"),
+        db.Index("ix_license_service_overrides_license_status", "license_id", "status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=False, index=True)
+    service_key = db.Column(db.String(80), nullable=False, index=True)
+    status = db.Column(db.String(20), default="active", nullable=False, index=True)
+    max_limit = db.Column(db.Integer, nullable=True)
+    notes = db.Column(db.Text, default="side_agreement", nullable=False)
+    granted_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+
+    license = db.relationship("License")
+    granted_by = db.relationship("Admin")
+
+
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
     __table_args__ = (

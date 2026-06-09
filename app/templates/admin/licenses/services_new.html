@@ -224,6 +224,32 @@
   background: var(--hb-bg);
   border-color: var(--cc-border-2);
 }
+.svc-card--granted { border-color: rgba(99,102,241,.35); box-shadow: 0 0 0 1px rgba(99,102,241,.12), var(--cc-sh-card); }
+
+/* الكارت كله أصبح قابلاً للنقر — نلتف رابط داخلي يغطي رأس + جسم #}
+.svc-card-link {
+  display: block; color: inherit; text-decoration: none;
+  flex: 1; display: flex; flex-direction: column;
+  cursor: pointer;
+}
+.svc-card-link:hover .svc-card-name { color: var(--cc-brand); }
+
+.svc-badge--granted {
+  background: rgba(99,102,241,.14);
+  color: #4338ca;
+}
+.svc-grant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-sp-1);
+  padding: 2px var(--cc-sp-3);
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  background: rgba(99,102,241,.14);
+  color: #4338ca;
+  margin-top: var(--cc-sp-2);
+}
 
 /* رأس الكارت */
 .svc-card-head {
@@ -391,11 +417,38 @@
   background:   var(--cc-brand-soft);
   color:        var(--cc-brand);
   border-color: var(--cc-brand-soft2);
-  width:        100%;
+  flex:         1;
   justify-content: center;
   padding-block: var(--cc-sp-3);
 }
 .svc-btn--upgrade:hover { background: var(--cc-brand-soft2); }
+
+.svc-btn--grant {
+  background:   #4338ca;
+  color:        #fff;
+  border-color: #4338ca;
+  flex:         1;
+  justify-content: center;
+  padding-block: var(--cc-sp-3);
+}
+.svc-btn--grant:hover { background: #3730a3; }
+
+.svc-btn--revoke {
+  background:   var(--cc-flash-danger-bg);
+  color:        var(--cc-flash-danger-fg);
+  border-color: rgba(239,68,68,.25);
+}
+.svc-btn--revoke:hover { background: #f8c8c8; }
+
+.svc-card-actions-row {
+  display: flex;
+  gap: var(--cc-sp-3);
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+/* نموذج CSRF مخفي بحجم صفر */
+.svc-hidden-form { display: none; }
 
 /* ── Modal تعديل الحدود ──────────────────────────────────── */
 .svc-modal-overlay {
@@ -668,107 +721,169 @@
       {% set pct = [((svc.limits.current / svc.limits.max) * 100) | int, 100] | min %}
     {% endif %}
 
-    <div class="svc-card svc-card--{{ svc.status }}"
+    {% set svc_detail_url = url_for('admin.license_service_detail', license_id=license.id, service_key=svc.key) %}
+    <div class="svc-card svc-card--{{ svc.status }}{% if svc.is_granted %} svc-card--granted{% endif %}"
          data-cat="{{ svc.category }}"
          data-key="{{ svc.key }}">
 
-      {# رأس الكارت #}
-      <div class="svc-card-head">
-        <div class="svc-card-icon" aria-hidden="true">{{ svc.icon }}</div>
-        <div class="svc-card-name-wrap">
-          <div class="svc-card-name">{{ svc.name }}</div>
-          <div class="svc-card-desc">{{ svc.description }}</div>
-        </div>
-        {# شارة الحالة #}
-        {% if svc.status == 'active' %}
-          <span class="svc-badge svc-badge--active">
-            <i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> مفعّلة
-          </span>
-        {% elif svc.status == 'frozen' %}
-          <span class="svc-badge svc-badge--frozen">
-            <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> مجمّدة
-          </span>
-        {% elif svc.status == 'hidden' %}
-          <span class="svc-badge svc-badge--hidden">
-            <i class="fa-solid fa-eye-slash fa-xs" aria-hidden="true"></i> مخفية
-          </span>
-        {% else %}
-          <span class="svc-badge svc-badge--unavailable">
-            <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> غير متاحة
-          </span>
-        {% endif %}
-      </div>
-
-      {# جسم الكارت — حدود #}
-      <div class="svc-card-body">
-        {% if svc.status == 'unavailable' %}
-          <div class="svc-no-limit">هذه الخدمة غير مضمّنة في الباقة الحالية</div>
-        {% elif svc.limits %}
-          {% set lim = svc.limits %}
-          <div class="svc-limit-row">
-            <span class="svc-limit-label">{{ lim.label }}</span>
-            <span class="svc-limit-val">
-              {{ lim.current }}
-              {% if lim.max %}/ {{ lim.max }}{% else %}<span style="font-family:var(--cc-font); font-weight:var(--cc-fw-medium); color:var(--cc-text-mute);">(غير محدود)</span>{% endif %}
-            </span>
+      {# جسم قابل للنقر يفتح شاشة التحكم بالخدمة #}
+      <a class="svc-card-link" href="{{ svc_detail_url }}"
+         aria-label="تحكم في خدمة {{ svc.name }}">
+        {# رأس الكارت #}
+        <div class="svc-card-head">
+          <div class="svc-card-icon" aria-hidden="true">{{ svc.icon }}</div>
+          <div class="svc-card-name-wrap">
+            <div class="svc-card-name">{{ svc.name }}</div>
+            <div class="svc-card-desc">{{ svc.description }}</div>
+            {% if svc.is_granted %}
+              <span class="svc-grant-chip" title="مفعّلة باتفاق جانبي خارج الباقة">
+                <i class="fa-solid fa-handshake fa-xs" aria-hidden="true"></i> اتفاق جانبي
+              </span>
+            {% endif %}
           </div>
-          {% if lim.max %}
-            <div class="svc-bar-track" role="progressbar"
-                 aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"
-                 aria-label="{{ lim.label }}: {{ pct }}%">
-              <div class="svc-bar-fill
-                {% if pct >= 90 %}svc-bar-fill--danger
-                {% elif pct >= 70 %}svc-bar-fill--warn
-                {% else %}svc-bar-fill--green{% endif %}"
-                   style="width:{{ pct }}%"></div>
-            </div>
-            <div class="svc-bar-pct">{{ pct }}%</div>
+          {# شارة الحالة #}
+          {% if svc.status == 'active' %}
+            <span class="svc-badge svc-badge--active">
+              <i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> مفعّلة
+            </span>
+          {% elif svc.status == 'frozen' %}
+            <span class="svc-badge svc-badge--frozen">
+              <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> مجمّدة
+            </span>
+          {% elif svc.status == 'hidden' %}
+            <span class="svc-badge svc-badge--hidden">
+              <i class="fa-solid fa-eye-slash fa-xs" aria-hidden="true"></i> مخفية
+            </span>
           {% else %}
-            <div class="svc-no-limit">لا يوجد حد أقصى مضبوط</div>
+            <span class="svc-badge svc-badge--unavailable">
+              <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> غير متاحة
+            </span>
           {% endif %}
-        {% else %}
-          <div class="svc-no-limit">لا تحتاج هذه الخدمة إلى حدود استخدام</div>
-        {% endif %}
-      </div>
+        </div>
 
-      {# قدم الكارت — أزرار #}
+        {# جسم الكارت — حدود #}
+        <div class="svc-card-body">
+          {% if svc.status == 'unavailable' %}
+            <div class="svc-no-limit">هذه الخدمة غير مضمّنة في الباقة الحالية</div>
+          {% elif svc.limits %}
+            {% set lim = svc.limits %}
+            <div class="svc-limit-row">
+              <span class="svc-limit-label">{{ lim.label }}</span>
+              <span class="svc-limit-val">
+                {{ lim.current }}
+                {% if lim.max %}/ {{ lim.max }}{% else %}<span style="font-family:var(--cc-font); font-weight:var(--cc-fw-medium); color:var(--cc-text-mute);">(غير محدود)</span>{% endif %}
+              </span>
+            </div>
+            {% if lim.max %}
+              <div class="svc-bar-track" role="progressbar"
+                   aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"
+                   aria-label="{{ lim.label }}: {{ pct }}%">
+                <div class="svc-bar-fill
+                  {% if pct >= 90 %}svc-bar-fill--danger
+                  {% elif pct >= 70 %}svc-bar-fill--warn
+                  {% else %}svc-bar-fill--green{% endif %}"
+                     style="width:{{ pct }}%"></div>
+              </div>
+              <div class="svc-bar-pct">{{ pct }}%</div>
+            {% else %}
+              <div class="svc-no-limit">لا يوجد حد أقصى مضبوط</div>
+            {% endif %}
+          {% else %}
+            <div class="svc-no-limit">لا تحتاج هذه الخدمة إلى حدود استخدام</div>
+          {% endif %}
+        </div>
+      </a>
+
+      {# قدم الكارت — أزرار (خارج رابط البطاقة كي لا تُفعَّل بالنقر العام) #}
       <div class="svc-card-foot">
         {% if svc.status == 'unavailable' %}
-          <button class="svc-btn svc-btn--upgrade" type="button" disabled>
-            <i class="fa-solid fa-arrow-up fa-xs" aria-hidden="true"></i>
-            ترقية الخطة للوصول
-          </button>
+          <div class="svc-card-actions-row">
+            <button class="svc-btn svc-btn--upgrade" type="button"
+                    onclick="window.location.href='{{ url_for('admin.license_detail', license_id=license.id) }}#plan'">
+              <i class="fa-solid fa-arrow-up fa-xs" aria-hidden="true"></i>
+              ترقية الخطة للوصول
+            </button>
+            {# تفعيل لهذا العميل (اتفاق جانبي) — POST مع تأكيد #}
+            <form class="svc-hidden-form" method="post" id="grant-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_grant', license_id=license.id, service_key=svc.key) }}">
+              {{ csrf_input() }}
+            </form>
+            <button class="svc-btn svc-btn--grant" type="button"
+                    data-confirm-form="grant-{{ svc.key }}"
+                    data-confirm-title="تفعيل خدمة {{ svc.name }}"
+                    data-confirm-msg="سيتم تفعيل «{{ svc.name }}» لهذا العميل خارج الباقة (اتفاق جانبي)."
+                    data-confirm-ok="تفعيل"
+                    data-confirm-variant="primary">
+              <i class="fa-solid fa-handshake fa-xs" aria-hidden="true"></i>
+              تفعيل لهذا العميل (اتفاق جانبي)
+            </button>
+          </div>
         {% else %}
           {# زر تجميد / إلغاء تجميد #}
           {% if svc.status == 'frozen' %}
+            <form class="svc-hidden-form" method="post" id="unfreeze-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_unfreeze', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
             <button class="svc-btn svc-btn--unfreeze" type="button"
-                    onclick="confirmAction('{{ svc.key }}', 'unfreeze', '{{ svc.name }}')">
+                    data-confirm-form="unfreeze-{{ svc.key }}"
+                    data-confirm-title="تفعيل خدمة {{ svc.name }}"
+                    data-confirm-msg="سيُلغى تجميد «{{ svc.name }}» وتعمل من جديد."
+                    data-confirm-ok="تفعيل"
+                    data-confirm-variant="primary">
               <i class="fa-solid fa-play fa-xs" aria-hidden="true"></i> تفعيل
             </button>
           {% else %}
+            <form class="svc-hidden-form" method="post" id="freeze-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_freeze', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
             <button class="svc-btn svc-btn--freeze" type="button"
-                    onclick="confirmAction('{{ svc.key }}', 'freeze', '{{ svc.name }}')">
+                    data-confirm-form="freeze-{{ svc.key }}"
+                    data-confirm-title="تجميد خدمة {{ svc.name }}"
+                    data-confirm-msg="سيُوقف عمل «{{ svc.name }}» مؤقتاً للعميل."
+                    data-confirm-ok="تجميد">
               <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> تجميد
             </button>
           {% endif %}
 
           {# زر إخفاء / إظهار #}
           {% if svc.status == 'hidden' %}
+            <form class="svc-hidden-form" method="post" id="show-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_show', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
             <button class="svc-btn svc-btn--show" type="button"
-                    onclick="confirmAction('{{ svc.key }}', 'show', '{{ svc.name }}')">
+                    data-confirm-form="show-{{ svc.key }}"
+                    data-confirm-title="إظهار خدمة {{ svc.name }}"
+                    data-confirm-msg="ستظهر «{{ svc.name }}» في واجهة العميل."
+                    data-confirm-ok="إظهار"
+                    data-confirm-variant="primary">
               <i class="fa-solid fa-eye fa-xs" aria-hidden="true"></i> إظهار
             </button>
           {% else %}
+            <form class="svc-hidden-form" method="post" id="hide-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_hide', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
             <button class="svc-btn svc-btn--hide" type="button"
-                    onclick="confirmAction('{{ svc.key }}', 'hide', '{{ svc.name }}')">
+                    data-confirm-form="hide-{{ svc.key }}"
+                    data-confirm-title="إخفاء خدمة {{ svc.name }}"
+                    data-confirm-msg="ستُخفى «{{ svc.name }}» عن واجهة العميل (لن تُلغى)."
+                    data-confirm-ok="إخفاء">
               <i class="fa-solid fa-eye-slash fa-xs" aria-hidden="true"></i> إخفاء
+            </button>
+          {% endif %}
+
+          {# إلغاء تفعيل الاتفاق الجانبي — يظهر فقط للخدمات المُفعّلة باتفاق جانبي #}
+          {% if svc.is_granted %}
+            <form class="svc-hidden-form" method="post" id="revoke-{{ svc.key }}"
+                  action="{{ url_for('admin.license_service_revoke', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+            <button class="svc-btn svc-btn--revoke" type="button"
+                    data-confirm-form="revoke-{{ svc.key }}"
+                    data-confirm-title="إلغاء الاتفاق الجانبي"
+                    data-confirm-msg="ستفقد «{{ svc.name }}» التفعيل لهذا العميل وتعود غير متاحة."
+                    data-confirm-ok="إلغاء التفعيل">
+              <i class="fa-solid fa-handshake-slash fa-xs" aria-hidden="true"></i> إلغاء الاتفاق
             </button>
           {% endif %}
 
           {# زر تعديل — فقط إذا كان هناك حد أقصى قابل للتعديل #}
           {% if svc.limits and svc.limits.max %}
             <button class="svc-btn svc-btn--edit" type="button"
-                    onclick="openEditModal('{{ svc.key }}', '{{ svc.name }}', {{ svc.limits.max }}, {{ svc.limits.current }}, '{{ svc.limits.label }}')">
+                    onclick="openEditModal('{{ svc.key }}', '{{ svc.name|e }}', {{ svc.limits.max }}, {{ svc.limits.current }}, '{{ svc.limits.label|e }}')">
               <i class="fa-solid fa-pen fa-xs" aria-hidden="true"></i> تعديل
             </button>
           {% endif %}
@@ -827,20 +942,45 @@
     </div>
     <div class="svc-modal-foot">
       <button class="svc-modal-cancel" type="button" onclick="closeModal()">إلغاء</button>
-      <button class="svc-modal-save"   type="button" onclick="saveLimit()">
-        <i class="fa-solid fa-floppy-disk fa-xs" aria-hidden="true"></i>
-        حفظ
-      </button>
+      <form id="modal-edit-form" method="post" action="" style="display:contents;">
+        {{ csrf_input() }}
+        <input type="hidden" name="new_limit" id="modal-new-limit-hidden" />
+        <button class="svc-modal-save" type="submit">
+          <i class="fa-solid fa-floppy-disk fa-xs" aria-hidden="true"></i>
+          حفظ
+        </button>
+      </form>
     </div>
   </div>
 </div>
 
+{# Toast صغير بدل alert() #}
+<div id="svc-toast" role="status" aria-live="polite"
+     style="position:fixed; bottom:24px; inset-inline-start:24px;
+            background:var(--cc-text); color:#fff;
+            padding:8px 16px; border-radius:var(--cc-r-pill);
+            font-size:var(--cc-fs-tiny); font-weight:700; font-family:var(--cc-font);
+            z-index:9999; box-shadow:var(--cc-sh-pop);
+            opacity:0; pointer-events:none; transition:opacity 250ms ease;">
+</div>
+
 <script>
+/* ──────────────────────────────────────────────────────────
+   Toast بسيط — بديل alert()
+   ────────────────────────────────────────────────────────── */
+function svcToast(msg) {
+  var t = document.getElementById('svc-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(svcToast._h);
+  svcToast._h = setTimeout(function () { t.style.opacity = '0'; }, 1800);
+}
+
 /* ──────────────────────────────────────────────────────────
    فلترة الفئات
    ────────────────────────────────────────────────────────── */
 function filterCat(cat, btn) {
-  /* تفعيل الزر المناسب */
   document.querySelectorAll('.svc-cat-pill').forEach(function(p) {
     p.classList.remove('is-active');
     p.setAttribute('aria-selected', 'false');
@@ -848,7 +988,6 @@ function filterCat(cat, btn) {
   btn.classList.add('is-active');
   btn.setAttribute('aria-selected', 'true');
 
-  /* إظهار / إخفاء الكروت */
   var cards   = document.querySelectorAll('.svc-card');
   var visible = 0;
   cards.forEach(function(c) {
@@ -857,40 +996,24 @@ function filterCat(cat, btn) {
     if (show) visible++;
   });
 
-  /* رسالة فارغة */
   var empty = document.getElementById('svc-empty');
   if (empty) empty.style.display = visible === 0 ? 'block' : 'none';
 }
 
 /* ──────────────────────────────────────────────────────────
-   تأكيد الإجراء (تجميد / إخفاء / …)
+   Modal تعديل الحدود — يستهدف POST إلى edit-limit endpoint
    ────────────────────────────────────────────────────────── */
-function confirmAction(key, action, name) {
-  var msgs = {
-    freeze:   'هل تريد تجميد خدمة "' + name + '"؟ سيُوقف عملها مؤقتاً.',
-    unfreeze: 'هل تريد تفعيل خدمة "' + name + '" من جديد؟',
-    hide:     'هل تريد إخفاء خدمة "' + name + '" عن واجهة العميل؟',
-    show:     'هل تريد إظهار خدمة "' + name + '" في واجهة العميل؟',
-  };
-  if (!confirm(msgs[action] || 'هل أنت متأكد؟')) return;
-
-  /* TODO: استبدل هذا بـ fetch إلى endpoint فعلي */
-  console.log('action:', action, 'service:', key);
-  alert('✅ تم تنفيذ الإجراء (mock). سيُطبَّق فعلياً بعد ربط الـ API.');
-}
-
-/* ──────────────────────────────────────────────────────────
-   Modal تعديل الحدود
-   ────────────────────────────────────────────────────────── */
-var _modalKey = null;
+var SVC_EDIT_BASE = "{{ url_for('admin.license_services', license_id=license.id) }}";
 
 function openEditModal(key, name, maxVal, currentVal, limitLabel) {
-  _modalKey = key;
   document.getElementById('modal-title').textContent      = 'تعديل حدود: ' + name;
   document.getElementById('modal-svc-name').textContent   = name;
   document.getElementById('modal-limit-label').textContent = limitLabel;
   document.getElementById('modal-current-val').textContent = maxVal;
   document.getElementById('modal-new-limit').value         = maxVal;
+  document.getElementById('modal-new-limit-hidden').value  = maxVal;
+  /* action = /licenses/<id>/services/<key>/edit-limit */
+  document.getElementById('modal-edit-form').action = SVC_EDIT_BASE + '/' + encodeURIComponent(key) + '/edit-limit';
   document.getElementById('editModal').classList.add('is-open');
   setTimeout(function() {
     document.getElementById('modal-new-limit').focus();
@@ -899,26 +1022,23 @@ function openEditModal(key, name, maxVal, currentVal, limitLabel) {
 
 function closeModal() {
   document.getElementById('editModal').classList.remove('is-open');
-  _modalKey = null;
 }
 
 function closeModalOutside(e) {
   if (e.target === document.getElementById('editModal')) closeModal();
 }
 
-function saveLimit() {
-  var newVal = parseInt(document.getElementById('modal-new-limit').value, 10);
-  if (!newVal || newVal < 1) {
-    alert('الرجاء إدخال رقم صحيح أكبر من صفر.');
+/* عند الإرسال — انسخ القيمة لحقل الـ POST المخفي وامنع القيم غير الصالحة */
+document.getElementById('modal-edit-form').addEventListener('submit', function (e) {
+  var v = parseInt(document.getElementById('modal-new-limit').value, 10);
+  if (!v || v < 1) {
+    e.preventDefault();
+    svcToast('الرجاء إدخال رقم صحيح أكبر من صفر');
     return;
   }
-  /* TODO: استبدل بـ fetch فعلي */
-  console.log('save limit:', _modalKey, '→', newVal);
-  alert('✅ تم حفظ الحد الجديد (' + newVal + ') — mock. سيُطبَّق فعلياً بعد ربط الـ API.');
-  closeModal();
-}
+  document.getElementById('modal-new-limit-hidden').value = String(v);
+});
 
-/* إغلاق بـ Escape */
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeModal();
 });
