@@ -62,7 +62,14 @@ class Customer(TimestampMixin, db.Model):
     email = db.Column(db.String(180), default="", nullable=False)
     phone = db.Column(db.String(80), default="", nullable=False)
     country = db.Column(db.String(100), default="", nullable=False)
+    # ISO-3166 alpha-2 stable key for the country picker (e.g. "PS", "JO"). Empty
+    # when the customer was created before the picker existed or had a typed-in
+    # country we can't map back. `country` stays the human-readable display string.
+    country_iso = db.Column(db.String(2), default="", nullable=False)
     city = db.Column(db.String(100), default="", nullable=False)
+    # E.164 dial-code derived from country_iso (e.g. "+970"). Stored so future
+    # WhatsApp/SMS sends can normalize the local phone number without re-deriving.
+    dial_code = db.Column(db.String(8), default="", nullable=False)
     runtime_url = db.Column(db.String(255), default="", nullable=False)
     currency = db.Column(db.String(12), default="USD", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)

@@ -273,6 +273,10 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "runtime_url": "VARCHAR(255) NOT NULL DEFAULT ''",
             "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
             "currency": "VARCHAR(12) NOT NULL DEFAULT 'USD'",
+            # ISO-3166 alpha-2 country key + E.164 dial-code, added with the
+            # country/city picker on the add-customer page.
+            "country_iso": "VARCHAR(2) NOT NULL DEFAULT ''",
+            "dial_code": "VARCHAR(8) NOT NULL DEFAULT ''",
         })
     # Customer Secure Vault: elevated-admin flag on existing admins tables.
     # The 3 vault tables themselves are created fresh by db.create_all().

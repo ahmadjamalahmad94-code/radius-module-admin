@@ -440,6 +440,7 @@ def customers_list():
 @bp.get("/customers/new")
 @login_required
 def customer_new():
+    from ..services.geo_data import picker_payload
     return render_template(
         "admin/customers/add_new.html",
         customer=Customer(),
@@ -447,18 +448,28 @@ def customer_new():
         form_data={},
         form_errors={},
         msg=None,
+        countries_payload=picker_payload(),
     )
 
 
 @bp.post("/customers/new")
 @login_required
 def customer_create():
+    from ..services.geo_data import picker_payload
     customer = Customer()
     try:
         _fill_customer(customer)
     except CustomerControlValidationError as exc:
         flash(str(exc), "error")
-        return render_template("admin/customers/add_new.html", customer=customer, is_new=True, form_data=request.form, form_errors={"_": str(exc)}, msg=str(exc)), 400
+        return render_template(
+            "admin/customers/add_new.html",
+            customer=customer,
+            is_new=True,
+            form_data=request.form,
+            form_errors={"_": str(exc)},
+            msg=str(exc),
+            countries_payload=picker_payload(),
+        ), 400
     db.session.add(customer)
     db.session.flush()
     audit("customer_created", "customer", str(customer.id), f"Created customer {customer.company_name}")
@@ -1449,12 +1460,30 @@ def customer_delete(customer_id: int):
 
 
 def _fill_customer(customer: Customer) -> None:
+    from ..services.geo_data import country_by_iso
+
     customer.company_name = (request.form.get("company_name") or "").strip()
     customer.contact_name = (request.form.get("contact_name") or "").strip()
     customer.email = normalize_contact_email(request.form.get("email") or "")
     customer.phone = normalize_contact_phone(request.form.get("phone") or "")
-    customer.country = (request.form.get("country") or "").strip()
-    customer.city = (request.form.get("city") or "").strip()
+    # Country: prefer the picker's ISO code (stable key); resolve the display
+    # name from the curated table. Free-text "country" stays for backwards
+    # compat when no ISO is provided (legacy callers / older forms).
+    iso_raw = (request.form.get("country_iso") or "").strip().upper()[:2]
+    info = country_by_iso(iso_raw) if iso_raw else None
+    if info:
+        customer.country_iso = info["iso"]
+        customer.country = info["name_ar"]
+        # Dial-code: trust the curated table over whatever the client posted.
+        customer.dial_code = info["dial"]
+    else:
+        customer.country_iso = ""
+        customer.country = (request.form.get("country") or "").strip()
+        # Dial-code may still be posted by the legacy/free-text path; keep it
+        # only if it looks like a sane "+digits" string.
+        dial_raw = (request.form.get("dial_code") or "").strip()[:8]
+        customer.dial_code = dial_raw if re.match(r"^\+\d{1,7}$", dial_raw) else ""
+    customer.city = (request.form.get("city") or "").strip()[:100]
     customer.runtime_url = _clean_runtime_url(request.form.get("runtime_url") or "")
     customer.notes = (request.form.get("notes") or "").strip()
     validate_unique_customer_contact(customer, customer.email, customer.phone)
