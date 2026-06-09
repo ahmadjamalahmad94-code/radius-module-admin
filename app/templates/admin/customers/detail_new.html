@@ -313,6 +313,11 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
+  /* عمود واحد مكدّس — الأقسام تحت بعض ومرتبة */
+  .cd-grid-stack {
+    grid-template-columns: 1fr;
+  }
+
   /* بطاقة المعلومات (قائمة المفتاح/القيمة) */
   .cd-info-card {
     background: var(--cc-tint-bg);
@@ -1067,7 +1072,7 @@
       </span>
     </div>
 
-    <div class="cd-grid">
+    <div class="cd-grid cd-grid-stack">
 
       {# RADIUS Credentials #}
       <div>
