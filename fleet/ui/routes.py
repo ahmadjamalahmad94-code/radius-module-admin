@@ -34,6 +34,7 @@ from fleet.ui.dashboard_data import (
     get_node_view,
     health_state_counts,
 )
+from fleet.ui.brain_view import brain_available, ranked_view_for
 
 
 bp = Blueprint(
@@ -71,6 +72,13 @@ def fleet_dashboard():
     # Phase-4 addition: health-dimension counts (unknown/up/degraded/down).
     by_health = health_state_counts(node_views)
 
+    # Phase-5 task C: explainable ranking. Prefer the real brain
+    # (fleet.brain.rank) when importable, otherwise fall back to a local
+    # computation that mirrors fleet.config.ScoringWeights so the dashboard
+    # is meaningful on every branch of the parallel build matrix.
+    ranking, ranking_source = ranked_view_for(node_views)
+    eligible_count = sum(1 for r in ranking if r.eligible)
+
     return render_template(
         "admin/fleet/dashboard.html",
         nodes=nodes,                  # kept for backwards-compat refs
@@ -78,6 +86,10 @@ def fleet_dashboard():
         providers=providers,
         by_status=by_status,
         by_health=by_health,
+        ranking=ranking,
+        ranking_source=ranking_source,
+        ranking_eligible=eligible_count,
+        brain_imported=brain_available(),
         total_nodes=FleetChrNode.query.count(),
         total_providers=len(providers),
     )

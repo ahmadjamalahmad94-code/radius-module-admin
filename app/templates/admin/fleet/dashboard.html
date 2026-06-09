@@ -145,6 +145,96 @@
   .fd-confirm-actions .fd-rowbtn { height: 36px; padding-inline: 14px; font-size: 13px; }
   .fd-confirm-cancel { background: #fff; color: #374151; border-color: #e5e7eb; }
   .fd-confirm-cancel:hover { background: #f1f5f9; }
+
+  /* ─── Phase-5: brain ranking «ترتيب الأسطول» ─── */
+  .fb-source {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+    background: #eef2ff; color: #4338ca;
+  }
+  .fb-source--brain   { background: #ecfdf5; color: #047857; }
+  .fb-source--fallback { background: #fef3c7; color: #92400e; }
+  .fb-source i { font-size: 11px; }
+
+  .fb-list { display: flex; flex-direction: column; gap: 10px; }
+  .fb-row {
+    display: grid;
+    grid-template-columns: 56px 1.4fr 0.8fr 2fr;
+    gap: 14px; align-items: center;
+    padding: 14px; border: 1px solid #e5e7eb; border-radius: 14px;
+    background: #fff;
+  }
+  .fb-row.is-excluded {
+    background: repeating-linear-gradient(
+      135deg, #fafafa, #fafafa 12px, #fff 12px, #fff 24px);
+    border-color: #fecaca;
+  }
+  .fb-row.is-best { border-color: #4ade80; box-shadow: 0 0 0 2px #ecfdf5 inset; }
+
+  .fb-rank {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+    background: #eef2ff; color: #1e40af;
+  }
+  .fb-row.is-best .fb-rank { background: #047857; color: #fff; }
+  .fb-row.is-excluded .fb-rank { background: #fee2e2; color: #991b1b; }
+  .fb-rank-sup { font-size: 9px; font-weight: 700; margin-block-end: -2px; }
+
+  .fb-id-name { font-weight: 800; font-size: 14px; color: #0f172a; }
+  .fb-id-meta { font-size: 11.5px; color: #6b7280; margin-top: 3px; }
+  .fb-id-meta .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .fb-excluded-reason {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fee2e2; color: #991b1b;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; margin-top: 6px;
+  }
+
+  .fb-score-num {
+    font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .fb-score-cap { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .fb-score-bar {
+    margin-top: 6px; height: 6px; border-radius: 999px;
+    background: #f1f5f9; overflow: hidden;
+  }
+  .fb-score-bar > span {
+    display: block; height: 100%; background: linear-gradient(90deg, #1e40af, #4ade80);
+    border-radius: inherit;
+  }
+  .fb-row.is-excluded .fb-score-bar > span { background: #94a3b8; }
+
+  .fb-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fb-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 700;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .fb-chip i { font-size: 9px; }
+  .fb-chip--ok   { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+  .fb-chip--warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .fb-chip--bad  { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+  .fb-chip--info { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+  .fb-chip-detail {
+    display: block; font-size: 11px; color: #6b7280; font-weight: 500;
+    margin-top: 2px; padding-inline-start: 2px;
+  }
+  .fb-chip-wrap { display: flex; flex-direction: column; }
+
+  .fb-section-sub {
+    margin-block-start: 14px; margin-block-end: 6px;
+    font-size: 12.5px; font-weight: 700; color: #475569;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .fb-section-sub i { color: #b91c1c; }
+
+  @media (max-width: 900px) {
+    .fb-row { grid-template-columns: 56px 1fr; }
+    .fb-row > div:nth-child(3), .fb-row > div:nth-child(4) { grid-column: 1 / -1; }
+  }
 </style>
 {% endblock %}
 
@@ -201,6 +291,116 @@
     <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
     <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
   </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════════════
+   Phase-5 task C — «ترتيب الأسطول» (brain explainability)
+   ═══════════════════════════════════════════════════════════════════════ #}
+<div class="fd-card">
+  <div class="fd-card-head">
+    <div class="fd-card-title">
+      <i class="fa-solid fa-ranking-star"></i> ترتيب الأسطول — لماذا تُفضَّل كل عقدة
+    </div>
+    <div class="fd-card-spacer"></div>
+    <span class="fb-source {{ 'fb-source--brain' if ranking_source == 'brain' else 'fb-source--fallback' }}"
+          title="{% if ranking_source == 'brain' %}محسوب بواسطة fleet.brain.rank{% else %}مصدر التقدير: حساب محلي مؤقت ضمن اللوحة (سيُستبدَل عند دمج فرع المخّ){% endif %}">
+      <i class="fa-solid fa-{{ 'brain' if ranking_source == 'brain' else 'flask' }}"></i>
+      {% if ranking_source == 'brain' %}مصدر الترتيب: المخّ الفعلي{% else %}مصدر الترتيب: تقدير مؤقت في اللوحة{% endif %}
+    </span>
+    <span class="fb-source" style="background:#f1f5f9;color:#475569" title="عقد مؤهّلة الآن لاستقبال جلسات جديدة">
+      <i class="fa-solid fa-check"></i> مؤهّلة: {{ ranking_eligible }} / {{ ranking|length }}
+    </span>
+  </div>
+
+  <div style="font-size:12.5px;color:#475569;margin-block-end:14px;line-height:1.7">
+    الترتيب مبني على وزن أربعة عوامل — الصحّة، استهلاك المعالج، الكلفة، والسعة. الأعلى نقاطاً يستلم
+    حركة جديدة أولاً في DNS الذكي. العقد المُستبعَدة تبقى ظاهرة لتعرف سبب استبعادها.
+  </div>
+
+  {% if ranking %}
+    {# Eligible nodes first #}
+    {% set _eligible = ranking|selectattr('eligible')|list %}
+    {% set _excluded = ranking|rejectattr('eligible')|list %}
+
+    <div class="fb-list">
+      {% for r in _eligible %}
+        <div class="fb-row {% if loop.first %}is-best{% endif %}" data-node-id="{{ r.node_id }}">
+          <div class="fb-rank" title="الرتبة {{ r.rank }}">
+            <div style="display:flex;flex-direction:column;align-items:center">
+              <span class="fb-rank-sup">رتبة</span>
+              <span>#{{ r.rank }}</span>
+            </div>
+          </div>
+          <div>
+            <div class="fb-id-name">{{ r.name }}{% if loop.first %} · <span style="color:#047857">الأفضل حالياً</span>{% endif %}</div>
+            <div class="fb-id-meta">
+              <span class="mono">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="fb-score-num">{{ '%.0f'|format(r.score * 100) }}</div>
+            <div class="fb-score-cap">نقاط من 100</div>
+            <div class="fb-score-bar"><span style="width:{{ (r.score * 100)|round|int }}%"></span></div>
+          </div>
+          <div class="fb-chips">
+            {% for chip in r.factors %}
+              <span class="fb-chip-wrap">
+                <span class="fb-chip fb-chip--{{ chip.level }}">
+                  <i class="fa-solid fa-circle"></i> {{ chip.label }}
+                </span>
+                {% if chip.detail %}<span class="fb-chip-detail">{{ chip.detail }}</span>{% endif %}
+              </span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if _excluded %}
+      <div class="fb-section-sub">
+        <i class="fa-solid fa-ban"></i> عقد مُستبعَدة من الترتيب الفعّال ({{ _excluded|length }})
+      </div>
+      <div class="fb-list">
+        {% for r in _excluded %}
+          <div class="fb-row is-excluded" data-node-id="{{ r.node_id }}">
+            <div class="fb-rank" title="مُستبعَدة">
+              <i class="fa-solid fa-ban"></i>
+            </div>
+            <div>
+              <div class="fb-id-name">{{ r.name }}</div>
+              <div class="fb-id-meta">
+                <span class="mono">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
+              </div>
+              <span class="fb-excluded-reason">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                مُستبعَد: {{ r.excluded_reason or 'سبب غير معروف' }}
+              </span>
+            </div>
+            <div>
+              <div class="fb-score-num" style="color:#94a3b8">{{ '%.0f'|format(r.score * 100) }}</div>
+              <div class="fb-score-cap">لن تُختار للجلسات الجديدة</div>
+              <div class="fb-score-bar"><span style="width:{{ (r.score * 100)|round|int }}%"></span></div>
+            </div>
+            <div class="fb-chips">
+              {% for chip in r.factors %}
+                <span class="fb-chip-wrap">
+                  <span class="fb-chip fb-chip--{{ chip.level }}">
+                    <i class="fa-solid fa-circle"></i> {{ chip.label }}
+                  </span>
+                  {% if chip.detail %}<span class="fb-chip-detail">{{ chip.detail }}</span>{% endif %}
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="fd-empty">
+      <i class="fa-solid fa-ranking-star"></i>
+      لا توجد عقد لترتيبها بعد. أضف أول عقدة عبر «معالج إضافة CHR».
+    </div>
+  {% endif %}
 </div>
 
 <div class="fd-card">
