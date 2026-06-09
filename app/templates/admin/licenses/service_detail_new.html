@@ -1,0 +1,407 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}{{ svc.name }} — {{ license.license_key }}{% endblock %}
+{% block page_title %}تحكم بخدمة: {{ svc.name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ============================================================
+   licenses/service_detail_new.html — تحكم بخدمة واحدة لترخيص
+   يرث من admin_tokens.css و services_new.html
+   ============================================================ */
+
+.sd-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-gap-section);
+}
+
+.sd-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+  font-size: var(--cc-fs-small);
+  color: var(--cc-text-mute);
+}
+.sd-breadcrumb a { color: var(--cc-text-mute); text-decoration: none; }
+.sd-breadcrumb a:hover { color: var(--cc-brand); }
+
+/* Hero مع تنفّس وافٍ */
+.sd-hero {
+  background: var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow: var(--cc-sh-hero);
+  padding: var(--cc-sp-11) var(--cc-sp-13);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-9);
+  position: relative;
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+.sd-hero::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: -40px;
+  inset-block-end: -40px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.sd-hero-icon {
+  width: 56px; height: 56px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+.sd-hero-body { flex: 1; min-width: 220px; }
+.sd-hero-title {
+  font-size: var(--cc-fs-h2);
+  font-weight: var(--cc-fw-bold);
+  margin-block-end: var(--cc-sp-2);
+}
+.sd-hero-sub { font-size: var(--cc-fs-body-s); opacity: .9; }
+.sd-hero-badges { display: inline-flex; gap: var(--cc-sp-3); flex-wrap: wrap; }
+.sd-hero-chip {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-2);
+  padding: 4px var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+}
+
+/* الشبكة 2 أعمدة: حالة + إجراءات */
+.sd-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--cc-gap-inline);
+}
+@media (max-width: 880px) { .sd-grid { grid-template-columns: 1fr; } }
+
+.sd-card {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  overflow: hidden;
+}
+.sd-card-head {
+  display: flex; align-items: center; gap: var(--cc-sp-4);
+  padding: var(--cc-sp-6) var(--cc-sp-9);
+  border-block-end: 1px solid var(--cc-border);
+}
+.sd-card-head h2 {
+  margin: 0;
+  font-size: var(--cc-fs-h3);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+}
+.sd-card-body {
+  padding: var(--cc-sp-8) var(--cc-sp-9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-sp-6);
+}
+
+.sd-meta-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--cc-sp-4) var(--cc-sp-6);
+  background: var(--hb-bg);
+  border-radius: var(--cc-r-lg);
+  font-size: var(--cc-fs-body-s);
+}
+.sd-meta-label { color: var(--cc-text-mute); }
+.sd-meta-val { color: var(--cc-text); font-weight: var(--cc-fw-bold); }
+.sd-meta-val.mono { font-family: var(--cc-font-mono); }
+
+.sd-status {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-2);
+  padding: 2px var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+}
+.sd-status--active      { background: var(--pill-green-bg); color: var(--pill-green-fg); }
+.sd-status--frozen      { background: var(--pill-amber-bg); color: var(--pill-amber-fg); }
+.sd-status--hidden      { background: var(--pill-grey-bg);  color: var(--pill-grey-fg);  }
+.sd-status--unavailable { background: var(--pill-grey-bg);  color: var(--pill-grey-fg);  }
+
+/* عمود الإجراءات */
+.sd-actions { display: flex; flex-direction: column; gap: var(--cc-sp-4); }
+.sd-action-btn {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  padding: var(--cc-sp-4) var(--cc-sp-6);
+  border-radius: var(--cc-r-lg);
+  border: 1px solid transparent;
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+  text-decoration: none;
+  justify-content: center;
+  width: 100%;
+  transition: background var(--cc-anim-fast);
+}
+.sd-action-btn--primary  { background: var(--cc-brand); color: #fff; border-color: var(--cc-brand-deep); }
+.sd-action-btn--primary:hover { background: var(--cc-brand-deep); }
+.sd-action-btn--neutral  { background: var(--hb-bg); color: var(--cc-text-soft); border-color: var(--cc-border-2); }
+.sd-action-btn--neutral:hover { background: var(--cc-brand-softer); color: var(--cc-brand); }
+.sd-action-btn--warn     { background: var(--pill-amber-bg); color: var(--pill-amber-fg); border-color: rgba(245,158,11,.2); }
+.sd-action-btn--warn:hover { background: #f9dfa0; }
+.sd-action-btn--danger   { background: var(--cc-flash-danger-bg); color: var(--cc-flash-danger-fg); border-color: rgba(239,68,68,.25); }
+.sd-action-btn--danger:hover { background: #f8c8c8; }
+
+.sd-action-form { display: block; }
+.sd-action-form + .sd-action-form { margin-block-start: 0; }
+
+/* تعديل الحد inline */
+.sd-edit-row {
+  display: flex; gap: var(--cc-sp-3); align-items: stretch;
+}
+.sd-edit-input {
+  flex: 1;
+  height: var(--cc-input-h);
+  padding: 0 var(--cc-sp-6);
+  border-radius: var(--cc-input-radius);
+  border: 1px solid var(--cc-input-border);
+  background: var(--cc-input-bg);
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  box-sizing: border-box;
+}
+.sd-edit-input:focus {
+  outline: none;
+  border-color: var(--cc-brand);
+  background: var(--cc-input-bg-focus);
+  box-shadow: var(--cc-input-ring);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sd-page">
+
+  <nav class="sd-breadcrumb" aria-label="مسار التنقل">
+    <a href="{{ url_for('admin.licenses_list') }}">التراخيص</a>
+    <i class="fa-solid fa-chevron-left fa-xs" aria-hidden="true" style="font-size:9px;"></i>
+    <a href="{{ url_for('admin.license_detail', license_id=license.id) }}#info">{{ license.license_key }}</a>
+    <i class="fa-solid fa-chevron-left fa-xs" aria-hidden="true" style="font-size:9px;"></i>
+    <a href="{{ url_for('admin.license_services', license_id=license.id) }}">الخدمات</a>
+    <i class="fa-solid fa-chevron-left fa-xs" aria-hidden="true" style="font-size:9px;"></i>
+    <span style="color: var(--cc-text);">{{ svc.name }}</span>
+  </nav>
+
+  {# Hero #}
+  <div class="sd-hero">
+    <div class="sd-hero-icon" aria-hidden="true">{{ svc.icon }}</div>
+    <div class="sd-hero-body">
+      <div class="sd-hero-title">{{ svc.name }}</div>
+      <div class="sd-hero-sub">{{ svc.description }}</div>
+      <div class="sd-hero-badges" style="margin-block-start: var(--cc-sp-4);">
+        <span class="sd-hero-chip">
+          <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
+          {{ svc.cat_label }}
+        </span>
+        {% if svc.is_granted %}
+          <span class="sd-hero-chip" title="مفعّلة بالاتفاق الجانبي">
+            <i class="fa-solid fa-handshake fa-xs" aria-hidden="true"></i>
+            اتفاق جانبي
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <a class="sd-action-btn sd-action-btn--neutral"
+       style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28); width:auto;"
+       href="{{ url_for('admin.license_services', license_id=license.id) }}">
+      <i class="fa-solid fa-arrow-right fa-xs" aria-hidden="true"></i>
+      رجوع للخدمات
+    </a>
+  </div>
+
+  {# الحالة + الإجراءات #}
+  <div class="sd-grid">
+
+    {# عمود الحالة + تعديل الحدّ #}
+    <section class="sd-card">
+      <div class="sd-card-head">
+        <i class="fa-solid fa-info-circle" style="color: var(--cc-brand);"></i>
+        <h2>الحالة الحالية</h2>
+      </div>
+      <div class="sd-card-body">
+        <div class="sd-meta-row">
+          <span class="sd-meta-label">المفتاح</span>
+          <span class="sd-meta-val mono">{{ svc.key }}</span>
+        </div>
+        <div class="sd-meta-row">
+          <span class="sd-meta-label">الحالة</span>
+          <span class="sd-status sd-status--{{ svc.status }}">
+            {% if svc.status == 'active' %}
+              <i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> مفعّلة
+            {% elif svc.status == 'frozen' %}
+              <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> مجمّدة
+            {% elif svc.status == 'hidden' %}
+              <i class="fa-solid fa-eye-slash fa-xs" aria-hidden="true"></i> مخفية
+            {% else %}
+              <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i> غير متاحة
+            {% endif %}
+          </span>
+        </div>
+        <div class="sd-meta-row">
+          <span class="sd-meta-label">المصدر</span>
+          <span class="sd-meta-val">
+            {% if svc.is_granted %}
+              اتفاق جانبي (خارج الباقة)
+            {% elif svc.status == 'unavailable' %}
+              غير مضمّنة في الباقة
+            {% else %}
+              {{ license.plan.name }}
+            {% endif %}
+          </span>
+        </div>
+
+        {% if svc.limits and svc.limits.max %}
+          <div class="sd-meta-row">
+            <span class="sd-meta-label">{{ svc.limits.label }}</span>
+            <span class="sd-meta-val mono">{{ svc.limits.current }} / {{ svc.limits.max }}</span>
+          </div>
+
+          {# تعديل الحدّ inline — POST #}
+          <form class="sd-action-form" method="post"
+                action="{{ url_for('admin.license_service_edit_limit', license_id=license.id, service_key=svc.key) }}">
+            {{ csrf_input() }}
+            <label for="sd-new-limit"
+                   style="display:block; font-size: var(--cc-fs-small); color: var(--cc-text-mute); margin-block-end: var(--cc-sp-2);">
+              تعديل {{ svc.limits.label }}
+            </label>
+            <div class="sd-edit-row">
+              <input id="sd-new-limit" class="sd-edit-input" type="number" name="new_limit"
+                     min="1" step="1" value="{{ svc.limits.max }}" />
+              <button type="submit" class="sd-action-btn sd-action-btn--primary" style="width:auto;">
+                <i class="fa-solid fa-floppy-disk fa-xs" aria-hidden="true"></i>
+                حفظ
+              </button>
+            </div>
+          </form>
+        {% elif svc.limits %}
+          <div class="sd-meta-row">
+            <span class="sd-meta-label">{{ svc.limits.label }}</span>
+            <span class="sd-meta-val mono">{{ svc.limits.current }} (غير محدود)</span>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    {# عمود الإجراءات #}
+    <section class="sd-card">
+      <div class="sd-card-head">
+        <i class="fa-solid fa-sliders" style="color: var(--cc-brand);"></i>
+        <h2>الإجراءات</h2>
+      </div>
+      <div class="sd-card-body">
+        <div class="sd-actions">
+
+          {% if svc.status == 'unavailable' %}
+            <form class="sd-action-form" method="post" id="sd-grant-form"
+                  action="{{ url_for('admin.license_service_grant', license_id=license.id, service_key=svc.key) }}">
+              {{ csrf_input() }}
+            </form>
+            <button class="sd-action-btn sd-action-btn--primary" type="button"
+                    data-confirm-form="sd-grant-form"
+                    data-confirm-title="تفعيل خدمة {{ svc.name }}"
+                    data-confirm-msg="سيتم تفعيل «{{ svc.name }}» لهذا العميل خارج الباقة (اتفاق جانبي)."
+                    data-confirm-ok="تفعيل"
+                    data-confirm-variant="primary">
+              <i class="fa-solid fa-handshake fa-xs" aria-hidden="true"></i>
+              تفعيل لهذا العميل (اتفاق جانبي)
+            </button>
+
+            <a class="sd-action-btn sd-action-btn--neutral"
+               href="{{ url_for('admin.license_detail', license_id=license.id) }}#plan">
+              <i class="fa-solid fa-arrow-up fa-xs" aria-hidden="true"></i>
+              ترقية الخطة بدلاً من ذلك
+            </a>
+
+          {% else %}
+            {# تفعيل / تجميد #}
+            {% if svc.status == 'frozen' %}
+              <form class="sd-action-form" method="post" id="sd-unfreeze-form"
+                    action="{{ url_for('admin.license_service_unfreeze', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+              <button class="sd-action-btn sd-action-btn--primary" type="button"
+                      data-confirm-form="sd-unfreeze-form"
+                      data-confirm-title="تفعيل الخدمة"
+                      data-confirm-msg="سيُلغى تجميد «{{ svc.name }}» وتعمل من جديد."
+                      data-confirm-ok="تفعيل"
+                      data-confirm-variant="primary">
+                <i class="fa-solid fa-play fa-xs" aria-hidden="true"></i>
+                تفعيل الخدمة
+              </button>
+            {% else %}
+              <form class="sd-action-form" method="post" id="sd-freeze-form"
+                    action="{{ url_for('admin.license_service_freeze', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+              <button class="sd-action-btn sd-action-btn--warn" type="button"
+                      data-confirm-form="sd-freeze-form"
+                      data-confirm-title="تجميد الخدمة"
+                      data-confirm-msg="سيُوقف عمل «{{ svc.name }}» مؤقتاً للعميل."
+                      data-confirm-ok="إيقاف">
+                <i class="fa-solid fa-lock fa-xs" aria-hidden="true"></i>
+                إيقاف (تجميد)
+              </button>
+            {% endif %}
+
+            {# إظهار / إخفاء #}
+            {% if svc.status == 'hidden' %}
+              <form class="sd-action-form" method="post" id="sd-show-form"
+                    action="{{ url_for('admin.license_service_show', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+              <button class="sd-action-btn sd-action-btn--neutral" type="button"
+                      data-confirm-form="sd-show-form"
+                      data-confirm-title="إظهار الخدمة"
+                      data-confirm-msg="ستظهر «{{ svc.name }}» في واجهة العميل."
+                      data-confirm-ok="إظهار"
+                      data-confirm-variant="primary">
+                <i class="fa-solid fa-eye fa-xs" aria-hidden="true"></i>
+                إظهار للعميل
+              </button>
+            {% else %}
+              <form class="sd-action-form" method="post" id="sd-hide-form"
+                    action="{{ url_for('admin.license_service_hide', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+              <button class="sd-action-btn sd-action-btn--neutral" type="button"
+                      data-confirm-form="sd-hide-form"
+                      data-confirm-title="إخفاء الخدمة"
+                      data-confirm-msg="ستُخفى «{{ svc.name }}» عن واجهة العميل (لن تُلغى)."
+                      data-confirm-ok="إخفاء">
+                <i class="fa-solid fa-eye-slash fa-xs" aria-hidden="true"></i>
+                إخفاء عن العميل
+              </button>
+            {% endif %}
+
+            {# إلغاء الاتفاق الجانبي #}
+            {% if svc.is_granted %}
+              <form class="sd-action-form" method="post" id="sd-revoke-form"
+                    action="{{ url_for('admin.license_service_revoke', license_id=license.id, service_key=svc.key) }}">{{ csrf_input() }}</form>
+              <button class="sd-action-btn sd-action-btn--danger" type="button"
+                      data-confirm-form="sd-revoke-form"
+                      data-confirm-title="إلغاء الاتفاق الجانبي"
+                      data-confirm-msg="ستفقد «{{ svc.name }}» التفعيل لهذا العميل وتعود غير متاحة."
+                      data-confirm-ok="إلغاء التفعيل">
+                <i class="fa-solid fa-handshake-slash fa-xs" aria-hidden="true"></i>
+                إلغاء الاتفاق الجانبي
+              </button>
+            {% endif %}
+          {% endif %}
+
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+{% endblock %}

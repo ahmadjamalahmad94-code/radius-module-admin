@@ -25,6 +25,7 @@ from ..models import (
     LicensePaymentProof,
     LicensePaymentRequest,
     LicensePaymentTransaction,
+    LicenseServiceOverride,
     Plan,
     ProvisioningOrder,
     Renewal,
@@ -1852,18 +1853,234 @@ def license_detail(license_id: int):
     )
 
 
+def _effective_services_for_license(lic: License) -> list[dict]:
+    """يبني قائمة الخدمات الفعّالة للترخيص = خدمات الباقة ∪ التفعيلات بالاتفاق الجانبي.
+
+    يبدأ من قائمة الخدمات الافتراضية (SERVICES_MOCK) كقاعدة، ثم يطبق فوقها
+    سجلات LicenseServiceOverride الخاصة بهذا الترخيص. القاعدة في كل override:
+      - status='active' على خدمة 'unavailable' ⇒ تفعيل بالاتفاق الجانبي (is_granted=True)
+      - أي status آخر يستبدل الحالة الافتراضية للخدمة
+      - max_limit يستبدل الحد الأقصى الافتراضي
+    """
+    from .services_data import SERVICES_MOCK
+    import copy
+
+    services = copy.deepcopy(SERVICES_MOCK)
+    for svc in services:
+        svc.setdefault("is_granted", False)
+        svc["plan_status"] = svc.get("status", "unavailable")
+
+    overrides = LicenseServiceOverride.query.filter_by(license_id=lic.id).all()
+    by_key = {o.service_key: o for o in overrides}
+
+    for svc in services:
+        ov = by_key.get(svc["key"])
+        if not ov:
+            continue
+        plan_status = svc["plan_status"]
+        if ov.status == "active" and plan_status == "unavailable":
+            svc["is_granted"] = True
+        svc["status"] = ov.status
+        if ov.max_limit is not None and svc.get("limits"):
+            svc["limits"] = dict(svc["limits"])
+            svc["limits"]["max"] = ov.max_limit
+
+    return services
+
+
+def _get_service_def(service_key: str) -> dict | None:
+    from .services_data import SERVICES_MOCK
+    for svc in SERVICES_MOCK:
+        if svc["key"] == service_key:
+            return svc
+    return None
+
+
+def _upsert_override(lic: License, service_key: str, *, status: str | None = None,
+                     max_limit: int | None = None, mark_grant: bool = False) -> LicenseServiceOverride:
+    """ينشئ أو يحدّث override خدمة واحدة لترخيص."""
+    ov = LicenseServiceOverride.query.filter_by(
+        license_id=lic.id, service_key=service_key
+    ).one_or_none()
+    if ov is None:
+        ov = LicenseServiceOverride(
+            license_id=lic.id,
+            service_key=service_key,
+            status=status or "active",
+            granted_by_admin_id=session.get("admin_id"),
+        )
+        db.session.add(ov)
+    if status is not None:
+        ov.status = status
+    if max_limit is not None:
+        ov.max_limit = max_limit
+    if mark_grant:
+        ov.notes = "side_agreement"
+        ov.granted_by_admin_id = session.get("admin_id")
+    return ov
+
+
 @bp.get("/licenses/<int:license_id>/services")
 @login_required
 def license_services(license_id: int):
-    """صفحة إدارة خدمات الترخيص — mock data، ستُستبدل بـ DB query لاحقاً."""
-    from .services_data import SERVICES_MOCK
+    """صفحة إدارة خدمات الترخيص: خدمات الباقة + تفعيلات الاتفاق الجانبي."""
     lic = db.get_or_404(License, license_id)
+    services = _effective_services_for_license(lic)
     return render_template(
         "admin/licenses/services_new.html",
-        services=SERVICES_MOCK,
+        services=services,
         license=lic,
         license_id=license_id,
     )
+
+
+@bp.get("/licenses/<int:license_id>/services/<service_key>")
+@login_required
+def license_service_detail(license_id: int, service_key: str):
+    """شاشة تحكم لخدمة واحدة — تعديل/تفعيل/إيقاف."""
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    services = _effective_services_for_license(lic)
+    svc = next((s for s in services if s["key"] == service_key), None)
+    if svc is None:
+        abort(404)
+    return render_template(
+        "admin/licenses/service_detail_new.html",
+        license=lic,
+        license_id=license_id,
+        svc=svc,
+    )
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/grant")
+@login_required
+def license_service_grant(license_id: int, service_key: str):
+    """تفعيل خدمة لترخيص واحد بالاتفاق الجانبي — دون ترقية الباقة."""
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    _upsert_override(lic, service_key, status="active", mark_grant=True)
+    audit(
+        "license.service.grant", "license", lic.id,
+        f"تفعيل خدمة {base['name']} بالاتفاق الجانبي",
+        metadata={"service_key": service_key},
+    )
+    db.session.commit()
+    flash(f"تم تفعيل خدمة «{base['name']}» لهذا العميل بالاتفاق الجانبي.", "success")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/revoke")
+@login_required
+def license_service_revoke(license_id: int, service_key: str):
+    """إلغاء تفعيل الاتفاق الجانبي لخدمة — تعود الخدمة للحالة الافتراضية."""
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    ov = LicenseServiceOverride.query.filter_by(
+        license_id=lic.id, service_key=service_key
+    ).one_or_none()
+    if ov is not None:
+        db.session.delete(ov)
+        audit(
+            "license.service.revoke", "license", lic.id,
+            f"إلغاء تفعيل خدمة {base['name']} (اتفاق جانبي)",
+            metadata={"service_key": service_key},
+        )
+        db.session.commit()
+        flash(f"تم إلغاء تفعيل خدمة «{base['name']}».", "warning")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/freeze")
+@login_required
+def license_service_freeze(license_id: int, service_key: str):
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    _upsert_override(lic, service_key, status="frozen")
+    audit("license.service.freeze", "license", lic.id,
+          f"تجميد خدمة {base['name']}",
+          metadata={"service_key": service_key})
+    db.session.commit()
+    flash(f"تم تجميد خدمة «{base['name']}».", "warning")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/unfreeze")
+@login_required
+def license_service_unfreeze(license_id: int, service_key: str):
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    _upsert_override(lic, service_key, status="active")
+    audit("license.service.unfreeze", "license", lic.id,
+          f"تفعيل خدمة {base['name']} بعد التجميد",
+          metadata={"service_key": service_key})
+    db.session.commit()
+    flash(f"تم تفعيل خدمة «{base['name']}».", "success")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/hide")
+@login_required
+def license_service_hide(license_id: int, service_key: str):
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    _upsert_override(lic, service_key, status="hidden")
+    audit("license.service.hide", "license", lic.id,
+          f"إخفاء خدمة {base['name']}",
+          metadata={"service_key": service_key})
+    db.session.commit()
+    flash(f"تم إخفاء خدمة «{base['name']}» عن واجهة العميل.", "info")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/show")
+@login_required
+def license_service_show(license_id: int, service_key: str):
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    _upsert_override(lic, service_key, status="active")
+    audit("license.service.show", "license", lic.id,
+          f"إظهار خدمة {base['name']}",
+          metadata={"service_key": service_key})
+    db.session.commit()
+    flash(f"تم إظهار خدمة «{base['name']}» للعميل.", "success")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
+
+
+@bp.post("/licenses/<int:license_id>/services/<service_key>/edit-limit")
+@login_required
+def license_service_edit_limit(license_id: int, service_key: str):
+    lic = db.get_or_404(License, license_id)
+    base = _get_service_def(service_key)
+    if base is None:
+        abort(404)
+    try:
+        new_limit = int(request.form.get("new_limit") or 0)
+    except (TypeError, ValueError):
+        new_limit = 0
+    if new_limit < 1:
+        flash("الرجاء إدخال رقم صحيح أكبر من صفر.", "error")
+        return redirect(url_for("admin.license_services", license_id=lic.id))
+    _upsert_override(lic, service_key, max_limit=new_limit)
+    audit("license.service.edit_limit", "license", lic.id,
+          f"تعديل حد {base['name']} → {new_limit}",
+          metadata={"service_key": service_key, "new_limit": new_limit})
+    db.session.commit()
+    flash(f"تم تعديل حد خدمة «{base['name']}» إلى {new_limit}.", "success")
+    return redirect(url_for("admin.license_services", license_id=lic.id))
 
 
 @bp.post("/licenses/<int:license_id>/renew")

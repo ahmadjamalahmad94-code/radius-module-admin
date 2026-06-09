@@ -1,9 +1,70 @@
 {% extends "admin/base_new.html" %}
 {% block title %}تخصيصات الخدمات{% endblock %}
-{% block page_title %}تخصيصات الخدمات — كل العملاء{% endblock %}
-{% block page_subtitle %}نظرة إجمالية على جميع خدمات SSTP / L2TP / IPsec / WireGuard المخصّصة{% endblock %}
+{% block page_title %}تخصيصات الخدمات{% endblock %}
+
+{% block head_extra %}
+<style>
+/* Hub-hero مع تنفّس وافٍ — يستخدم متغيّرات --cc-* بدلاً من الأرقام الصلبة. */
+.sa-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-9);
+  position:      relative;
+  overflow:      hidden;
+  flex-wrap:     wrap;
+  margin-block-end: var(--cc-gap-section);
+}
+.sa-hero::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: -40px;
+  inset-block-end: -40px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.sa-hero-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.sa-hero-body { flex: 1; min-width: 220px; }
+.sa-hero-title {
+  font-size: var(--cc-fs-h2);
+  font-weight: var(--cc-fw-bold);
+  margin-block-end: var(--cc-sp-2);
+  line-height: 1.2;
+}
+.sa-hero-sub {
+  font-size: var(--cc-fs-body-s);
+  opacity: .9;
+  line-height: 1.5;
+}
+</style>
+{% endblock %}
 
 {% block content %}
+
+{# ── Hero — يحل محل subtitle المضغوط في الشريط العلوي ── #}
+<div class="sa-hero">
+  <div class="sa-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-list-check"></i>
+  </div>
+  <div class="sa-hero-body">
+    <div class="sa-hero-title">تخصيصات الخدمات — كل العملاء</div>
+    <div class="sa-hero-sub">نظرة إجمالية على جميع خدمات SSTP / L2TP / IPsec / WireGuard المخصّصة</div>
+  </div>
+</div>
 
 {# ── ملخص بالأرقام ── #}
 {% set active_count = allocations|selectattr('status','eq','active')|list|length %}
