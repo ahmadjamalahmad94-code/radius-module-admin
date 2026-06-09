@@ -474,6 +474,10 @@ def customer_create():
     db.session.flush()
     audit("customer_created", "customer", str(customer.id), f"Created customer {customer.company_name}")
     db.session.commit()
+    # Owner notification (no-op when event/channels disabled); never blocks the request.
+    from ..services.messaging import notify_owner as _notify_owner
+    _notify_owner("customer_created", detail=f"عميل: {customer.company_name}",
+                  extra={"id": customer.id})
     flash("تم إنشاء العميل.", "success")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
@@ -2442,6 +2446,11 @@ def payment_requests_api_create():
         return _payment_error(str(exc), 400)
     audit("payment_request_created", "license_payment_request", str(payment_request.id), f"Created payment request {payment_request.reference_code}")
     db.session.commit()
+    # Owner notification (no-op when event/channels disabled); never blocks the response.
+    from ..services.messaging import notify_owner as _notify_owner
+    _notify_owner("payment_request_created",
+                  detail=f"طلب دفع: {payment_request.reference_code}",
+                  extra={"id": payment_request.id})
     return jsonify({"ok": True, "payment_request": LicensePaymentRequestService().portal_payload(payment_request)}), 201
 
 
