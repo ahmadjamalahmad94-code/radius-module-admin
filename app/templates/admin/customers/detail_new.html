@@ -1110,7 +1110,8 @@
         if (!btn) return;
         btn.addEventListener('click', function () {
           var form = document.getElementById('cd-bridge-form');
-          var tokInput = form ? form.querySelector('input[name="csrf_token"]') : null;
+          var tokInput = (form && form.querySelector('input[name="_csrf_token"]'))
+                         || document.querySelector('input[name="_csrf_token"]');
           btn.disabled = true;
           fetch(btn.getAttribute('data-url'), {
             method: 'POST',
