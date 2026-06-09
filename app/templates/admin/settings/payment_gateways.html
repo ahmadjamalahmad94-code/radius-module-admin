@@ -1,0 +1,255 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}بوابات الدفع{% endblock %}
+{% block page_title %}بوابات الدفع{% endblock %}
+{% block page_subtitle %}بيانات الـ API لكل بوابة (مشفرة، مقنّعة في العرض){% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ================================================================
+     Payment-gateway settings — local styles aligned with --cc-sp-*
+     ================================================================ */
+  .pgw-page { max-width: 980px; margin-inline: auto; display: grid; gap: var(--cc-gap-section, 16px); }
+
+  .pgw-card {
+    background: var(--cc-card-bg, #fff);
+    border: 1px solid var(--cc-border, #EEEDF3);
+    border-radius: var(--cc-r-card, 18px);
+    box-shadow: var(--cc-sh-card, 0 1px 0 rgba(15,23,42,.03), 0 6px 18px rgba(15,23,42,.05));
+    overflow: hidden;
+  }
+  .pgw-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-6, 12px);
+    padding: var(--cc-sp-9, 18px) var(--cc-sp-11, 24px);
+    border-block-end: 1px solid var(--cc-border, #EEEDF3);
+  }
+  .pgw-card-head-icon {
+    width: 34px; height: 34px;
+    border-radius: var(--cc-r-lg, 10px);
+    background: var(--tile-purple-bg, #EEE9FE);
+    color: var(--tile-purple-fg, #2E1F8C);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .pgw-card-head-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--cc-text, #1F2937);
+  }
+  .pgw-card-head-status {
+    margin-inline-start: auto;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+  }
+  .pgw-card-head-status.on  { background: var(--tile-green-bg, #DEF3E5); color: var(--tile-green-fg, #157F4E); }
+  .pgw-card-head-status.off { background: var(--tile-grey-bg,  #EDEAE1); color: var(--tile-grey-fg,  #5B6470); }
+  .pgw-card-head-status.partial { background: var(--tile-amber-bg, #FCEFC9); color: var(--tile-amber-fg, #7A4F02); }
+
+  .pgw-card-body { padding: var(--cc-sp-11, 24px); }
+
+  .pgw-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cc-gap-section, 16px);
+  }
+  @media (max-width: 640px) { .pgw-grid { grid-template-columns: 1fr; } }
+
+  .pgw-field { display: flex; flex-direction: column; gap: var(--cc-sp-3, 6px); }
+  .pgw-label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--cc-text-soft, #475569);
+    display: flex; align-items: center; gap: var(--cc-sp-2, 4px);
+  }
+  .pgw-label-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: var(--tile-amber-bg, #FCEFC9);
+    color: var(--tile-amber-fg, #7A4F02);
+    font-weight: 700;
+  }
+  .pgw-input {
+    width: 100%;
+    height: 40px;
+    padding-inline: var(--cc-sp-6, 12px);
+    background: var(--cc-input-bg, #F4F1FE);
+    border: 1px solid var(--cc-input-border, #E3E1EC);
+    border-radius: var(--cc-r, 8px);
+    font-family: var(--cc-font, "Cairo", sans-serif);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--cc-text, #1F2937);
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+  .pgw-input:focus {
+    outline: none;
+    border-color: var(--cc-brand, #6B5AED);
+    box-shadow: var(--cc-input-ring, 0 0 0 3px rgba(107,90,237,.12));
+    background: #fff;
+  }
+  .pgw-input.is-mask::placeholder { color: var(--cc-text-faint, #B6BCC8); font-family: var(--cc-font-mono, monospace); }
+  .pgw-hint {
+    font-size: 11px;
+    color: var(--cc-text-mute, #94A3B8);
+    line-height: 1.5;
+  }
+
+  /* Enable toggle */
+  .pgw-toggle {
+    display: flex; align-items: center; gap: var(--cc-sp-6, 12px);
+    padding: var(--cc-sp-6, 12px) var(--cc-sp-7, 14px);
+    background: var(--cc-tint-bg, #FAFAFA);
+    border: 1px solid var(--cc-border, #EEEDF3);
+    border-radius: var(--cc-r-lg, 10px);
+    margin-block-end: var(--cc-gap-section, 16px);
+  }
+  .pgw-toggle-switch {
+    position: relative;
+    width: 38px; height: 22px;
+    background: var(--cc-border-2, #E3E1EC);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .14s ease;
+    flex-shrink: 0;
+  }
+  .pgw-toggle-switch::after {
+    content: ''; position: absolute; top: 2px; inset-inline-start: 2px;
+    width: 18px; height: 18px; background: #fff; border-radius: 50%;
+    transition: inset-inline-start .14s ease;
+  }
+  .pgw-toggle input { display: none; }
+  .pgw-toggle input:checked ~ .pgw-toggle-switch { background: var(--cc-brand, #6B5AED); }
+  .pgw-toggle input:checked ~ .pgw-toggle-switch::after { inset-inline-start: 18px; }
+  .pgw-toggle-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--cc-text, #1F2937);
+  }
+  .pgw-toggle-sub {
+    font-size: 11px;
+    color: var(--cc-text-mute, #94A3B8);
+  }
+
+  .pgw-save {
+    display: flex; justify-content: flex-end; margin-block-start: var(--cc-sp-7, 14px);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pgw-page">
+
+  {{ hub.hero("بوابات الدفع",
+              subtitle="بيانات الـ API لكل بوابة. القيم الحساسة (المفاتيح/الأسرار) مشفّرة في قاعدة البيانات ومقنّعة في العرض.",
+              icon="credit-card") }}
+
+  <div class="hub-flash hub-flash--info" style="margin:0">
+    <i class="fa-solid fa-circle-info"></i>
+    التحويل البنكي اليدوي + الإيصال يعمل بدون أي إعدادات هنا. هذه الصفحة فقط للبوابات الإلكترونية الثلاث.
+  </div>
+
+  {% for gw in gateways %}
+    <div class="pgw-card" id="gw-{{ gw.name }}">
+      <div class="pgw-card-head">
+        <div class="pgw-card-head-icon" aria-hidden="true">
+          {% if gw.name == "jawalpay" %}<i class="fa-solid fa-mobile-screen"></i>
+          {% elif gw.name == "palpay" %}<i class="fa-solid fa-wallet"></i>
+          {% elif gw.name == "bank_of_palestine" %}<i class="fa-solid fa-landmark"></i>
+          {% else %}<i class="fa-solid fa-credit-card"></i>{% endif %}
+        </div>
+        <div>
+          <div class="pgw-card-head-title">{{ gw.label_ar }}</div>
+        </div>
+        <span class="pgw-card-head-status {{ 'on' if gw.enabled and gw.configured else ('partial' if gw.configured else 'off') }}">
+          {% if gw.enabled and gw.configured %}مفعّلة
+          {% elif gw.configured %}مهيأة (غير مفعّلة)
+          {% else %}بانتظار المفاتيح{% endif %}
+        </span>
+      </div>
+
+      <div class="pgw-card-body">
+        <form method="post"
+              action="{{ url_for('admin.settings_payment_gateway_save', gateway=gw.name) }}"
+              autocomplete="off"
+              spellcheck="false">
+          {{ csrf_input() }}
+
+          <label class="pgw-toggle">
+            <input type="checkbox" name="enabled" value="1" {{ 'checked' if gw.enabled }}>
+            <span class="pgw-toggle-switch" aria-hidden="true"></span>
+            <span>
+              <span class="pgw-toggle-label">تفعيل البوابة</span><br>
+              <span class="pgw-toggle-sub">عند التفعيل، تظهر هذه البوابة كخيار في صفحة دفع العميل.</span>
+            </span>
+          </label>
+
+          <div class="pgw-grid">
+            {% for f in gw.fields %}
+              <div class="pgw-field">
+                <label class="pgw-label" for="{{ gw.name }}-{{ f.key }}">
+                  {{ f.key|replace('_', ' ')|upper }}
+                  {% if f.is_secret %}<span class="pgw-label-tag">مشفّر</span>{% endif %}
+                </label>
+                {% if f.is_secret %}
+                  <input class="pgw-input is-mask"
+                         id="{{ gw.name }}-{{ f.key }}"
+                         name="{{ f.key }}"
+                         type="password"
+                         placeholder="{{ f.value or '— لم يُضبط بعد —' }}"
+                         value=""
+                         autocomplete="new-password">
+                  <div class="pgw-hint">
+                    اتركه فارغًا للإبقاء على القيمة الحالية. لا تُعرض القيمة الكاملة أبدًا.
+                  </div>
+                {% else %}
+                  <input class="pgw-input"
+                         id="{{ gw.name }}-{{ f.key }}"
+                         name="{{ f.key }}"
+                         type="text"
+                         value="{{ f.value or '' }}"
+                         placeholder="{% if 'url' in f.key %}https://api.example.com{% else %}—{% endif %}">
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+
+          <div class="pgw-save">
+            <button class="hub-btn hub-btn--primary" type="submit">
+              <i class="fa-solid fa-floppy-disk"></i>
+              حفظ إعدادات {{ gw.label_ar }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+
+</div>
+
+<div class="hub-toast" id="pgw-toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  /* Toast — used by any future inline notice on this page. */
+  window.showToast = function (msg, variant) {
+    var t = document.getElementById('pgw-toast');
+    if (!t) return;
+    t.className = 'hub-toast hub-toast--' + (variant || 'info') + ' is-visible';
+    t.textContent = String(msg || '');
+    t.hidden = false;
+    setTimeout(function () {
+      t.classList.remove('is-visible');
+      setTimeout(function () { t.hidden = true; }, 320);
+    }, 2400);
+  };
+})();
+</script>
+{% endblock %}
