@@ -180,11 +180,16 @@
     gap: 2px;
     background: var(--cc-card-bg);
     border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-card) var(--cc-r-card) 0 0;
+    border-radius: var(--cc-r-card);
     padding: var(--cc-sp-4) var(--cc-sp-7);
-    border-block-end: none;
     overflow-x: auto;
     scrollbar-width: none;
+    /* شريط قفز سريع لاصق فوق الأقسام */
+    position: sticky;
+    top: var(--cc-sp-6);
+    z-index: 20;
+    margin-block-end: var(--cc-gap-section);
+    box-shadow: var(--cc-sh-card);
   }
 
   .cd-tabs-nav::-webkit-scrollbar { display: none; }
@@ -235,20 +240,44 @@
     color: #fff;
   }
 
-  /* محتوى التاب */
+  /* المحتوى — أقسام عمودية مكدّسة، كل قسم بطاقة مستقلة */
   .cd-tabs-content {
-    background: var(--cc-card-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: 0 0 var(--cc-r-card) var(--cc-r-card);
-    box-shadow: var(--cc-sh-card);
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-gap-section);
   }
 
   .cd-tab-panel {
-    display: none;
+    display: block;                 /* كل الأقسام ظاهرة تحت بعض */
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
     padding: var(--cc-sp-11);
+    scroll-margin-top: 84px;        /* عشان الشريط اللاصق ما يغطّي العنوان عند القفز */
   }
 
-  .cd-tab-panel.is-active { display: block; }
+  /* عنوان القسم */
+  .cd-panel-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+    font-size: var(--cc-fs-h3, 1.15rem);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text);
+    margin: 0 0 var(--cc-sp-9);
+    padding-block-end: var(--cc-sp-6);
+    border-block-end: 1px solid var(--cc-border);
+  }
+  .cd-panel-heading i { color: var(--cc-brand); }
+  .cd-panel-heading .cd-tab-count {
+    margin-inline-start: auto;
+    width: 22px; height: 22px;
+    border-radius: var(--cc-r-pill);
+    background: var(--cc-brand-soft); color: var(--cc-brand);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  }
 
   /* ======================================================
      Section داخل التاب
@@ -767,6 +796,8 @@
      ========================================================= #}
   <div class="cd-tab-panel is-active" id="tab-info" role="tabpanel" aria-labelledby="tbtn-info">
 
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-id-card" aria-hidden="true"></i> المعلومات الأساسية</h2>
+
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       <span>
@@ -910,6 +941,8 @@
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-licenses" role="tabpanel" aria-labelledby="tbtn-licenses">
 
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-key" aria-hidden="true"></i> التراخيص والاشتراكات<span class="cd-tab-count">{{ licenses|length }}</span></h2>
+
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       <span>
@@ -1023,6 +1056,8 @@
      TAB 3 — إعدادات الشبكة
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-network" role="tabpanel" aria-labelledby="tbtn-network">
+
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-network-wired" aria-hidden="true"></i> إعدادات الشبكة</h2>
 
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -1192,6 +1227,8 @@
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-payments" role="tabpanel" aria-labelledby="tbtn-payments">
 
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-receipt" aria-hidden="true"></i> المدفوعات{% if payment_requests %}<span class="cd-tab-count">{{ payment_requests|length }}</span>{% endif %}</h2>
+
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       <span>
@@ -1295,6 +1332,8 @@
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-activity" role="tabpanel" aria-labelledby="tbtn-activity">
 
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> السجل والنشاط</h2>
+
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       <span>
@@ -1358,28 +1397,32 @@
 (function () {
   'use strict';
 
-  /* ── تبديل التاب ── */
-  window.cdSwitchTab = function (id) {
-    /* إزالة is-active من الأزرار والـ panels #}*/
+  /* ── الأقسام مكدّسة عمودياً؛ الشريط = قفز سريع لاصق ── */
+  function cdHighlight(id) {
     document.querySelectorAll('.cd-tab-btn').forEach(function (b) {
-      b.classList.remove('is-active');
-      b.setAttribute('aria-selected', 'false');
+      var on = b.id === 'tbtn-' + id;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    document.querySelectorAll('.cd-tab-panel').forEach(function (p) {
-      p.classList.remove('is-active');
-    });
+  }
 
-    /* تفعيل المطلوب */
-    var btn   = document.getElementById('tbtn-' + id);
+  window.cdSwitchTab = function (id) {
     var panel = document.getElementById('tab-' + id);
-    if (btn)   { btn.classList.add('is-active');   btn.setAttribute('aria-selected', 'true'); }
-    if (panel) { panel.classList.add('is-active'); }
-
-    /* حفظ الاختيار في URL hash */
-    if (history.replaceState) {
-      history.replaceState(null, '', '#' + id);
-    }
+    cdHighlight(id);
+    if (panel) { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    if (history.replaceState) { history.replaceState(null, '', '#' + id); }
   };
+
+  /* تظليل الزر النشِط تلقائياً حسب القسم الظاهر أثناء التمرير */
+  (function spy() {
+    if (!('IntersectionObserver' in window)) return;
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { cdHighlight(e.target.id.replace('tab-', '')); }
+      });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    document.querySelectorAll('.cd-tab-panel').forEach(function (p) { obs.observe(p); });
+  }());
 
   /* ── استعادة التاب من الـ hash عند التحميل ── */
   (function restoreTab() {
