@@ -114,12 +114,26 @@
       });
   });
 
+  // ── Toast helper (design-system floating notification, replaces native alert) ──
+  var toastEl = document.getElementById("vaultToast");
+  function showToast(msg, variant) {
+    if (!toastEl) return;
+    toastEl.className = "hub-toast hub-toast--" + (variant || "info") + " is-visible";
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    setTimeout(function () {
+      toastEl.classList.remove("is-visible");
+      setTimeout(function () { toastEl.hidden = true; }, 320);
+    }, 2200);
+  }
+
   copyBtn.addEventListener("click", function () {
     var v = elValue.value;
     if (!v) return;
     var done = function () {
       var t = copyBtn.innerHTML; copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> تم النسخ';
       setTimeout(function () { copyBtn.innerHTML = t; }, 1500);
+      showToast("تم نسخ السر إلى الحافظة.", "success");
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(v).then(done).catch(function () { elValue.select(); document.execCommand("copy"); done(); });
