@@ -1080,6 +1080,64 @@
         {% endif %}
       </div>
 
+      {# ربط الجسر (Admin Bridge) — توليد كود تفعيل لمرة واحدة #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-link" aria-hidden="true"></i>
+          ربط الجسر (Admin Bridge)
+        </div>
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          ولّد كوداً لمرة واحدة (صالح ٣٠ دقيقة) يُدخله العميل في ريديوسه ليرتبط بالجسر تلقائياً — بدون أي إعداد يدوي.
+        </p>
+        <form id="cd-bridge-form" style="display:none">{{ csrf_input() }}</form>
+        <button type="button" id="cd-gen-token-btn"
+                data-url="{{ url_for('admin.generate_activation_token', customer_id=customer.id) }}"
+                style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-brand);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-body-s);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+          <i class="fa-solid fa-key" aria-hidden="true"></i> توليد كود تفعيل الجسر
+        </button>
+        <div id="cd-token-result" class="cd-cred-box" style="display:none;margin-top:var(--cc-sp-5)">
+          <span class="cd-cred-label">كود التفعيل (مرة واحدة)</span>
+          <span class="cd-cred-val mono" id="cd-token-val">—</span>
+          <button type="button" class="cd-cred-copy" id="cd-token-copy" title="نسخ" aria-label="نسخ الكود">
+            <i class="fa-solid fa-copy" aria-hidden="true"></i>
+          </button>
+        </div>
+        <p id="cd-token-meta" style="display:none;font-size:var(--cc-fs-small);color:var(--cc-text-mute);margin-top:var(--cc-sp-3)"></p>
+      </div>
+      <script>
+      (function () {
+        var btn = document.getElementById('cd-gen-token-btn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          var form = document.getElementById('cd-bridge-form');
+          var tokInput = form ? form.querySelector('input[name="csrf_token"]') : null;
+          btn.disabled = true;
+          fetch(btn.getAttribute('data-url'), {
+            method: 'POST',
+            headers: { 'X-CSRFToken': tokInput ? tokInput.value : '', 'Accept': 'application/json' },
+            credentials: 'same-origin'
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
+          }).then(function (res) {
+            btn.disabled = false;
+            if (res.status === 200 && res.j && res.j.ok && res.j.token) {
+              document.getElementById('cd-token-val').textContent = res.j.token;
+              document.getElementById('cd-token-result').style.display = '';
+              var meta = document.getElementById('cd-token-meta');
+              meta.style.display = '';
+              meta.textContent = 'صالح حتى: ' + (res.j.expires_at || '') + ' — يُعرض مرة واحدة فقط، انسخه الآن.';
+              var cp = document.getElementById('cd-token-copy');
+              if (cp) cp.onclick = function () { if (typeof cdCopy === 'function') cdCopy(res.j.token); };
+            } else if (res.status === 403) {
+              alert('هذا الإجراء للمدير الرئيسي فقط.');
+            } else {
+              alert('تعذّر توليد الكود (' + res.status + '). أعد المحاولة.');
+            }
+          }).catch(function () { btn.disabled = false; alert('تعذّر الاتصال بالخادم.'); });
+        });
+      })();
+      </script>
+
       {# أجهزة NAS #}
       <div>
         <div class="cd-section-title">
