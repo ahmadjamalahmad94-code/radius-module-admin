@@ -64,6 +64,11 @@ def create_app(config_object=None, **overrides) -> Flask:
     # docs/contracts/fleet_api.md §1). Reuses the existing X-Proxy-Token
     # HMAC; persists into fleet_chr_metrics.
     from fleet.health.routes_telemetry import bp as fleet_telemetry_bp
+    # P5-B: proxy-facing placement-decision read endpoint
+    # (GET /api/proxy/placement-decision, contract §6). Same X-Proxy-Token
+    # auth; delegates ranking to fleet.brain (real impl) or local stub
+    # adapter; audits each served decision into fleet_placement_decisions.
+    from fleet.brain.routes_placement_decision import bp as fleet_placement_decision_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -90,6 +95,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_onboarding_bp)
     app.register_blueprint(fleet_ui_bp)
     app.register_blueprint(fleet_telemetry_bp)
+    app.register_blueprint(fleet_placement_decision_bp)
 
     @app.get("/")
     def root():
