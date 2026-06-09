@@ -1129,12 +1129,13 @@
               meta.textContent = 'صالح حتى: ' + (res.j.expires_at || '') + ' — يُعرض مرة واحدة فقط، انسخه الآن.';
               var cp = document.getElementById('cd-token-copy');
               if (cp) cp.onclick = function () { if (typeof cdCopy === 'function') cdCopy(res.j.token); };
+              (window.cdFlash || function () {})('تم توليد كود التفعيل — انسخه الآن');
             } else if (res.status === 403) {
-              alert('هذا الإجراء للمدير الرئيسي فقط.');
+              (window.cdFlash || window.alert)('هذا الإجراء للمدير الرئيسي فقط.');
             } else {
-              alert('تعذّر توليد الكود (' + res.status + '). أعد المحاولة.');
+              (window.cdFlash || window.alert)('تعذّر توليد الكود (' + res.status + ') — أعد المحاولة');
             }
-          }).catch(function () { btn.disabled = false; alert('تعذّر الاتصال بالخادم.'); });
+          }).catch(function () { btn.disabled = false; (window.cdFlash || window.alert)('تعذّر الاتصال بالخادم'); });
         });
       })();
       </script>
@@ -1446,6 +1447,7 @@
       setTimeout(function () { el.remove(); }, 350);
     }, 1800);
   }
+  window.cdFlash = cdFlash;
 
 }());
 </script>
