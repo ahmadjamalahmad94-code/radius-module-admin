@@ -412,6 +412,79 @@
   </div>
 </div>
 
+{# ─────────── lifecycle messages ─────────── #}
+<div class="sm-card" id="lifecycle">
+  <div class="sm-card-head">
+    <span class="sm-card-head-icon is-owner" aria-hidden="true">
+      <i class="fa-solid fa-message"></i>
+    </span>
+    <span class="sm-card-head-title">رسائل دورة حياة العميل</span>
+  </div>
+  <div class="sm-card-body">
+    <p class="sm-hint" style="margin:0 0 var(--cc-sp-7)">
+      رسائل تلقائية تُرسل للعميل في لحظات محددة (إرسال بيانات الدخول، الترحيب، تأكيد الدفع…). يمكن تعطيل أي حدث أو تعديل نصه. المتغيرات مثل <code dir="ltr">{username}</code> تُستبدل تلقائياً.
+      <strong>الأمان:</strong> رسالة «إرسال بيانات الدخول» تُرسل فقط إلى رقم العميل المسجَّل، ولا تُحفظ كلمة المرور أبداً.
+    </p>
+
+    {% for ev in lifecycle_events %}
+    <div class="sm-card" id="lc-{{ ev.event_id }}" style="margin-block-end:var(--cc-sp-7);box-shadow:none">
+      <div class="sm-card-head" style="background:var(--cc-tint-bg)">
+        <span class="sm-card-head-title" style="font-size:var(--cc-fs-body)">{{ ev.label }}</span>
+        <div class="sm-status-row">
+          <span class="sm-pill {% if ev.enabled %}is-on{% else %}is-off{% endif %}">
+            {% if ev.enabled %}مفعّلة{% else %}متوقّفة{% endif %}
+          </span>
+          {% if ev.is_custom %}
+          <span class="sm-pill is-ok">قالب مخصّص</span>
+          {% else %}
+          <span class="sm-pill is-off">قالب افتراضي</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="sm-card-body">
+        <form method="post" action="{{ url_for('admin_messaging.settings_save_lifecycle', event_id=ev.event_id) }}">
+          {{ csrf_input() }}
+          <label class="sm-toggle-row" for="lc-enabled-{{ ev.event_id }}">
+            <div class="sm-toggle-info">
+              <div class="sm-toggle-name">تفعيل هذا الحدث</div>
+              <div class="sm-toggle-desc">{{ ev.description }}</div>
+            </div>
+            <input class="sm-toggle" type="checkbox"
+                   id="lc-enabled-{{ ev.event_id }}"
+                   name="enabled" value="1" role="switch"
+                   {% if ev.enabled %}checked{% endif %}>
+          </label>
+
+          <div class="sm-field is-full">
+            <label class="sm-label" for="lc-template-{{ ev.event_id }}">نص الرسالة</label>
+            <textarea class="sm-input" id="lc-template-{{ ev.event_id }}"
+                      name="template" rows="5" dir="auto"
+                      style="height:auto;padding:var(--cc-sp-5) var(--cc-sp-6);min-height:96px"
+                      placeholder="اتركه فارغاً لاستخدام الافتراضي">{{ ev.template if ev.is_custom else '' }}</textarea>
+            <div class="sm-hint">
+              {% if not ev.is_custom %}
+              <strong>القالب الحالي (افتراضي):</strong>
+              <pre style="margin:4px 0 0;padding:6px 10px;background:var(--cc-tint-bg);border-radius:6px;white-space:pre-wrap;font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">{{ ev.template }}</pre>
+              {% endif %}
+              <strong>المتغيرات المتاحة:</strong>
+              {% for v in ev.variables %}
+              <code dir="ltr" style="background:var(--cc-brand-softer);color:var(--cc-brand-ink);padding:1px 5px;border-radius:4px;margin-inline-end:4px">{{ '{' + v + '}' }}</code>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="sm-foot">
+            <button class="sm-btn-primary" type="submit">
+              <i class="fa-solid fa-floppy-disk"></i> حفظ
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
 <script>
 async function smTestSend(ev, channel) {
   ev.preventDefault();

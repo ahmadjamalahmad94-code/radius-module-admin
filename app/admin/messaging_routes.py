@@ -33,6 +33,7 @@ def _state() -> dict:
         "owner_prefs": messaging.get_owner_prefs(),
         "owner_events": OWNER_EVENTS,
         "owner_event_labels": OWNER_EVENT_LABELS,
+        "lifecycle_events": messaging.all_event_states(),
     }
 
 
@@ -83,3 +84,25 @@ def settings_test_channel(channel: str):
     result = messaging.test_send(channel, recipient, actor_audit=audit)
     db.session.commit()
     return jsonify(result)
+
+
+@bp.post("/settings/lifecycle/<event_id>")
+@login_required
+def settings_save_lifecycle(event_id: str):
+    """Save per-event toggle + custom template. Blank template ⇒ default."""
+    from ..services.messaging import LIFECYCLE_EVENTS
+    if event_id not in LIFECYCLE_EVENTS:
+        flash("حدث غير معروف.", "error")
+        return _redirect()
+    enabled = (request.form.get("enabled") or "").strip().lower() in ("1", "on", "true", "yes")
+    template = request.form.get("template") or ""
+    try:
+        messaging.save_lifecycle_event(event_id, enabled=enabled, template=template,
+                                       actor_audit=audit)
+    except Exception as exc:  # pragma: no cover - defensive
+        db.session.rollback()
+        flash(f"تعذّر حفظ الحدث: {exc}", "error")
+        return _redirect()
+    db.session.commit()
+    flash(f"تم حفظ إعدادات الحدث «{LIFECYCLE_EVENTS[event_id].label}».", "success")
+    return _redirect()
