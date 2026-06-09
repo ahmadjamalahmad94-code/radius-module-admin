@@ -161,6 +161,14 @@ def _set_setting(key: str, value: str) -> None:
     db.session.add(row)
 
 
+def _customer_user_return_url(customer_id: int) -> str:
+    """عند العمل من صفحة «مستخدمو العميل» المستقلة نعود إليها بدل صفحة العميل 360."""
+    target = (request.form.get("return_to") or request.args.get("return_to") or "").strip()
+    if target == "users":
+        return url_for("admin.customer_users", customer_id=customer_id)
+    return url_for("admin.customer_detail", customer_id=customer_id)
+
+
 def _fill_customer_user(customer_user: CustomerUser, *, require_password: bool) -> None:
     username = clean_username(request.form.get("username") or "")
     with db.session.no_autoflush:
@@ -844,6 +852,25 @@ def customer_backup_download(customer_id: int, artifact_id: int):
     return send_file(str(path), as_attachment=True, download_name=download_name)
 
 
+@bp.get("/customers/<int:customer_id>/users")
+@login_required
+def customer_users(customer_id: int):
+    """صفحة مستقلة لمستخدمي العميل — نظير للمعلومات الأساسية.
+
+    تجمع بين مستخدمي البوابة (CustomerUser) ولقطة هويات الراديوس
+    (CustomerRadiusAdmin) المستوردة عبر الجسر.
+    """
+    customer = db.get_or_404(Customer, customer_id)
+    portal_users = customer.users.order_by(CustomerUser.created_at.desc()).all()
+    return render_template(
+        "admin/customers/users_new.html",
+        customer=customer,
+        customer_users=portal_users,
+        radius_admins=radius_admins_for_customer(customer),
+        users_version=customer_users_version(customer),
+    )
+
+
 @bp.get("/customers/<int:customer_id>/users/new")
 @login_required
 def customer_user_new(customer_id: int):
@@ -873,7 +900,7 @@ def customer_user_create(customer_id: int):
     )
     db.session.commit()
     flash("تم إنشاء مستخدم العميل. كلمة المرور ستصل للريدياس كنسخة مشفرة فقط عند مزامنة الهوية.", "success")
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.get("/customers/<int:customer_id>/users/<int:user_id>/edit")
@@ -904,7 +931,7 @@ def customer_user_update(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تحديث مستخدم العميل.", "success")
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/users/<int:user_id>/password")
@@ -916,10 +943,10 @@ def customer_user_password_set(customer_id: int, user_id: int):
     password_confirm = request.form.get("password_confirm") or ""
     if len(password) < 8:
         flash("كلمة المرور يجب أن تكون 8 أحرف على الأقل.", "error")
-        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+        return redirect(_customer_user_return_url(customer.id))
     if password != password_confirm:
         flash("تأكيد كلمة المرور غير مطابق.", "error")
-        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+        return redirect(_customer_user_return_url(customer.id))
     customer_user.set_password(password, increment_version=True)
     audit_customer_control(
         actor_admin_id=session.get("admin_id"),
@@ -931,7 +958,7 @@ def customer_user_password_set(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تعيين كلمة مرور العميل. سيستلم الريدياس النسخة المشفرة الجديدة عند مزامنة الهوية.", "success")
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/users/<int:user_id>/disable")
@@ -950,7 +977,7 @@ def customer_user_disable(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تعطيل مستخدم العميل. بعد المزامنة لن يستطيع الدخول للريدياس.", "warning")
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/users/<int:user_id>/enable")
@@ -969,7 +996,7 @@ def customer_user_enable(customer_id: int, user_id: int):
     )
     db.session.commit()
     flash("تم تفعيل مستخدم العميل.", "success")
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/radius-admins/<int:row_id>/super")
@@ -1001,7 +1028,7 @@ def customer_radius_admin_super(customer_id: int, row_id: int):
         else "تم إلغاء فرض «سوبر يوزر» لهذا الأدمن.",
         "success",
     )
-    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    return redirect(_customer_user_return_url(customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/services/<service_key>")

@@ -83,11 +83,17 @@
       {% endif %}
     {% endcall %}
 
+    {% set _return_to = request.args.get('return_to') or '' %}
+    {% if _return_to == 'users' %}<input type="hidden" name="return_to" value="users">{% endif %}
     <div class="hub-form-foot" style="padding-top:16px">
       <button class="hub-btn hub-btn--primary" type="submit">
         <i class="fa-solid fa-floppy-disk"></i> حفظ
       </button>
-      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">رجوع</a>
+      {% if _return_to == 'users' %}
+        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_users', customer_id=customer.id) }}">رجوع</a>
+      {% else %}
+        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">رجوع</a>
+      {% endif %}
     </div>
   </form>
 {% endcall %}
