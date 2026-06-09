@@ -1,0 +1,435 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}قنوات التواصل والإشعارات{% endblock %}
+{% block page_title %}قنوات التواصل والإشعارات{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ═══════════════════════════════════════════════════════
+   settings/messaging_new.html — قنوات التواصل والإشعارات
+   يرث المتغيرات من admin_tokens.css
+   ═══════════════════════════════════════════════════════ */
+
+.sm-hero {
+  background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  border-radius: var(--cc-r-hero);
+  box-shadow: 0 14px 30px rgba(67,56,202,.22), 0 4px 10px rgba(67,56,202,.12);
+  padding: var(--cc-sp-10) var(--cc-sp-13);
+  color: #fff;
+  display: flex; align-items: center; gap: var(--cc-sp-10);
+  margin-block-end: var(--cc-gap-section);
+  position: relative; overflow: hidden;
+}
+.sm-hero::before {
+  content: ''; position: absolute;
+  inset-inline-start: -40px; inset-block-end: -40px;
+  width: 180px; height: 180px; border-radius: var(--cc-r-pill);
+  background: rgba(255,255,255,.06); pointer-events: none;
+}
+.sm-hero-icon {
+  width: 60px; height: 60px; border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; flex-shrink: 0;
+}
+.sm-hero-title { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); line-height: var(--cc-lh-tight); margin-block-end: var(--cc-sp-2); }
+.sm-hero-sub { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); opacity: .9; max-width: 600px; line-height: var(--cc-lh-default); }
+
+.sm-explain {
+  display: flex; align-items: flex-start; gap: var(--cc-sp-6);
+  padding: var(--cc-sp-7) var(--cc-sp-8);
+  background: #eef2ff; border: 1px solid #c7d2fe;
+  border-radius: var(--cc-r-lg);
+  margin-block-end: var(--cc-gap-section);
+}
+.sm-explain-icon { font-size: 20px; color: #4338ca; flex-shrink: 0; margin-block-start: 2px; }
+.sm-explain-text { font-size: var(--cc-fs-body-s); color: var(--cc-text-soft); line-height: var(--cc-lh-loose); }
+.sm-explain-text strong { color: var(--cc-text); }
+
+.sm-card {
+  background: var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  border: 1px solid var(--cc-border);
+  overflow: hidden;
+  margin-block-end: var(--cc-gap-section);
+}
+.sm-card-head {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-7) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+.sm-card-head-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--cc-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s); flex-shrink: 0;
+}
+.sm-card-head-icon.is-sms { background: #fef3c7; color: #92400e; }
+.sm-card-head-icon.is-whatsapp { background: #dcfce7; color: #166534; }
+.sm-card-head-icon.is-telegram { background: #dbeafe; color: #1e40af; }
+.sm-card-head-icon.is-owner { background: #fce7f3; color: #9d174d; }
+.sm-card-head-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text); flex: 1; }
+.sm-card-body { padding: var(--cc-sp-8); }
+
+.sm-status-row {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  margin-inline-start: auto;
+}
+.sm-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+}
+.sm-pill.is-on  { background: #dcfce7; color: #166534; }
+.sm-pill.is-off { background: var(--cc-tint-bg); color: var(--cc-text-mute); }
+.sm-pill.is-ok  { background: #d1fae5; color: #065f46; }
+.sm-pill.is-no  { background: #fee2e2; color: #991b1b; }
+
+.sm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--cc-sp-7) var(--cc-sp-8);
+  margin-block-end: var(--cc-sp-7);
+}
+.sm-field { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.sm-field.is-full { grid-column: 1 / -1; }
+.sm-label {
+  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text-soft); text-transform: uppercase; letter-spacing: .4px;
+}
+.sm-input, .sm-select {
+  height: var(--cc-input-h);
+  padding: 0 var(--cc-sp-6);
+  border-radius: var(--cc-r);
+  border: 1px solid var(--cc-input-border);
+  background: var(--cc-input-bg);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+  width: 100%; outline: none;
+}
+.sm-input:focus, .sm-select:focus {
+  background: var(--cc-input-bg-focus);
+  border-color: var(--cc-brand);
+  box-shadow: var(--cc-input-ring);
+}
+.sm-hint { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); line-height: var(--cc-lh-default); }
+
+.sm-toggle-row {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-5) var(--cc-sp-6);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  background: var(--cc-tint-bg);
+  margin-block-end: var(--cc-sp-7);
+}
+.sm-toggle-row .sm-toggle-info { flex: 1; }
+.sm-toggle-name { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); }
+.sm-toggle-desc { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); margin-block-start: 2px; }
+.sm-toggle {
+  position: relative; width: 42px; height: 22px; appearance: none;
+  background: var(--cc-border-2); border-radius: var(--cc-r-pill);
+  cursor: pointer; flex-shrink: 0; outline: none;
+  transition: background var(--cc-anim-fast);
+}
+.sm-toggle::after {
+  content: ''; position: absolute; inset-block-start: 3px; inset-inline-end: 3px;
+  width: 16px; height: 16px; border-radius: var(--cc-r-pill);
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  transition: inset-inline-end var(--cc-anim-fast);
+}
+.sm-toggle:checked { background: #16a34a; }
+.sm-toggle:checked::after { inset-inline-end: calc(100% - 19px); }
+
+.sm-foot {
+  display: flex; align-items: center; gap: var(--cc-sp-6); flex-wrap: wrap;
+  padding-block-start: var(--cc-sp-7);
+  border-block-start: 1px solid var(--cc-border);
+  margin-block-start: var(--cc-sp-4);
+}
+.sm-btn-primary {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-4);
+  height: var(--cc-btn-h); padding: 0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background: var(--cc-brand); color: #fff;
+  font-family: var(--cc-font); font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold);
+  border: none; cursor: pointer;
+  transition: background var(--cc-anim-fast), box-shadow var(--cc-anim-fast);
+}
+.sm-btn-primary:hover { background: var(--cc-brand-ink); box-shadow: 0 4px 12px rgba(67,56,202,.28); }
+.sm-btn-test {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-4);
+  height: var(--cc-btn-h); padding: 0 var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  background: #eef2ff; color: #4338ca;
+  border: 1px solid #c7d2fe; cursor: pointer;
+  font-family: var(--cc-font); font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold);
+  transition: background var(--cc-anim-fast);
+}
+.sm-btn-test:hover { background: #e0e7ff; }
+
+.sm-event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--cc-sp-5);
+  margin-block-end: var(--cc-sp-7);
+}
+.sm-event-check {
+  display: flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-5) var(--cc-sp-6);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  background: var(--cc-card-bg);
+}
+.sm-event-check input[type=checkbox] { width: 18px; height: 18px; accent-color: #4338ca; }
+.sm-event-label { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text); }
+
+.sm-channel-check {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--cc-r-pill);
+  background: var(--cc-tint-bg); border: 1px solid var(--cc-border);
+  font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold);
+  cursor: pointer; margin-inline-end: var(--cc-sp-4);
+}
+.sm-channel-check input { margin: 0; accent-color: #4338ca; }
+.sm-channel-check:has(input:checked) { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="sm-hero">
+  <div class="sm-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-paper-plane"></i>
+  </div>
+  <div>
+    <div class="sm-hero-title">قنوات التواصل والإشعارات</div>
+    <div class="sm-hero-sub">
+      مكان واحد لإدارة قنوات الإرسال (SMS / واتساب / تيليجرام) — لتنبيه المالك بأي تحديث على اللوحة، ولإرسال رسائل للعملاء عند الحاجة.
+    </div>
+  </div>
+</div>
+
+<div class="sm-explain">
+  <div class="sm-explain-icon" aria-hidden="true"><i class="fa-solid fa-circle-info"></i></div>
+  <div class="sm-explain-text">
+    <strong>كيف يعمل؟</strong> فعّل القناة، أدخل بياناتها (يمكن إكمالها لاحقًا)، ثم استخدم زر «اختبار» للتأكّد. قسم «إشعارات المالك» يحدّد أي الأحداث ستصلك على أي قناة. الأسرار (المفاتيح/الرموز) تُخزَّن مشفّرة في قاعدة البيانات ولا تظهر بعد الحفظ.
+  </div>
+</div>
+
+{# ─────────── per-channel cards ─────────── #}
+{% for ch in channels %}
+<div class="sm-card" id="channel-{{ ch.channel }}">
+  <div class="sm-card-head">
+    <span class="sm-card-head-icon is-{{ ch.channel }}" aria-hidden="true">
+      {% if ch.channel == 'sms' %}<i class="fa-solid fa-comment-sms"></i>
+      {% elif ch.channel == 'whatsapp' %}<i class="fa-brands fa-whatsapp"></i>
+      {% else %}<i class="fa-brands fa-telegram"></i>{% endif %}
+    </span>
+    <span class="sm-card-head-title">{{ ch.label }}</span>
+    <div class="sm-status-row">
+      <span class="sm-pill {% if ch.enabled %}is-on{% else %}is-off{% endif %}">
+        {% if ch.enabled %}مفعّلة{% else %}متوقّفة{% endif %}
+      </span>
+      <span class="sm-pill {% if ch.configured %}is-ok{% else %}is-no{% endif %}">
+        {% if ch.configured %}مُهيَّأة{% else %}غير مُهيَّأة{% endif %}
+      </span>
+    </div>
+  </div>
+  <div class="sm-card-body">
+
+    <form method="post" action="{{ url_for('admin_messaging.settings_save_channel', channel=ch.channel) }}">
+      {{ csrf_input() }}
+
+      <label class="sm-toggle-row" for="sm-enabled-{{ ch.channel }}">
+        <div class="sm-toggle-info">
+          <div class="sm-toggle-name">تفعيل القناة</div>
+          <div class="sm-toggle-desc">عند الإيقاف لا تُرسَل أي رسالة عبر هذه القناة حتى لو كانت البيانات مكتملة.</div>
+        </div>
+        <input class="sm-toggle" type="checkbox"
+               id="sm-enabled-{{ ch.channel }}"
+               name="enabled" value="1" role="switch"
+               {% if ch.enabled %}checked{% endif %}>
+      </label>
+
+      {% if ch.channel == 'sms' %}
+      <div class="sm-grid">
+        <div class="sm-field is-full">
+          <label class="sm-label" for="sms-base-url">عنوان مزود الـ SMS (Base URL)</label>
+          <input class="sm-input" id="sms-base-url" name="base_url" type="url" dir="ltr"
+                 value="{{ ch.fields.base_url.value }}"
+                 placeholder="https://api.your-sms-provider.com/v1/send">
+          <div class="sm-hint">رابط نقطة الإرسال — يُكمل لاحقًا بحسب المزوّد المختار.</div>
+        </div>
+        <div class="sm-field">
+          <label class="sm-label" for="sms-api-key">مفتاح API</label>
+          <input class="sm-input" id="sms-api-key" name="api_key" type="password" dir="ltr"
+                 autocomplete="new-password"
+                 placeholder="{% if ch.fields.api_key.present %}{{ ch.fields.api_key.masked }} — اتركه فارغًا للإبقاء{% else %}الصق مفتاح المزوّد{% endif %}">
+          <div class="sm-hint">يُخزَّن مشفّرًا، ولا يُعرض بعد الحفظ.</div>
+        </div>
+        <div class="sm-field">
+          <label class="sm-label" for="sms-sender">معرّف المُرسِل</label>
+          <input class="sm-input" id="sms-sender" name="sender_id" type="text" dir="ltr"
+                 value="{{ ch.fields.sender_id.value }}"
+                 placeholder="MyBrand">
+          <div class="sm-hint">اسم/رقم يظهر للمستلم (اختياري بحسب المزوّد).</div>
+        </div>
+      </div>
+
+      {% elif ch.channel == 'whatsapp' %}
+      <div class="sm-grid">
+        <div class="sm-field is-full">
+          <label class="sm-label" for="wa-mode">الوضع</label>
+          <select class="sm-select" id="wa-mode" name="mode">
+            <option value="panel" {% if ch.fields.mode.value in ('', 'panel') %}selected{% endif %}>
+              استخدام إعدادات واتساب الموجودة في اللوحة
+            </option>
+            <option value="direct" {% if ch.fields.mode.value == 'direct' %}selected{% endif %}>
+              إدخال بيانات Meta Cloud مباشرة
+            </option>
+          </select>
+          <div class="sm-hint">الوضع الافتراضي يعيد استخدام «إعدادات واتساب» الموجودة لتفادي تكرار إدخال الرمز.</div>
+        </div>
+        <div class="sm-field">
+          <label class="sm-label" for="wa-phone-id">Phone Number ID (لوضع المباشر)</label>
+          <input class="sm-input" id="wa-phone-id" name="phone_number_id" type="text" dir="ltr"
+                 value="{{ ch.fields.phone_number_id.value }}"
+                 placeholder="123456789012345">
+        </div>
+        <div class="sm-field">
+          <label class="sm-label" for="wa-token">Access Token (لوضع المباشر)</label>
+          <input class="sm-input" id="wa-token" name="access_token" type="password" dir="ltr"
+                 autocomplete="new-password"
+                 placeholder="{% if ch.fields.access_token.present %}{{ ch.fields.access_token.masked }} — اتركه فارغًا للإبقاء{% else %}الصق Access Token{% endif %}">
+        </div>
+      </div>
+
+      {% else %}{# telegram #}
+      <div class="sm-grid">
+        <div class="sm-field is-full">
+          <label class="sm-label" for="tg-bot-token">Bot Token</label>
+          <input class="sm-input" id="tg-bot-token" name="bot_token" type="password" dir="ltr"
+                 autocomplete="new-password"
+                 placeholder="{% if ch.fields.bot_token.present %}{{ ch.fields.bot_token.masked }} — اتركه فارغًا للإبقاء{% else %}الصق Bot Token من @BotFather{% endif %}">
+          <div class="sm-hint">أنشئ بوتًا عبر <code dir="ltr">@BotFather</code> وانسخ رمزه هنا.</div>
+        </div>
+        <div class="sm-field is-full">
+          <label class="sm-label" for="tg-chat-id">Default Chat ID</label>
+          <input class="sm-input" id="tg-chat-id" name="default_chat_id" type="text" dir="ltr"
+                 value="{{ ch.fields.default_chat_id.value }}"
+                 placeholder="123456789 أو @username">
+          <div class="sm-hint">يُستخدم كمعرّف افتراضي للوجهة عند اختبار الإرسال.</div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="sm-foot">
+        <button class="sm-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ
+        </button>
+
+        <form method="post" action="{{ url_for('admin_messaging.settings_test_channel', channel=ch.channel) }}"
+              style="display:inline" onsubmit="return smTestSend(event, '{{ ch.channel }}')">
+          {{ csrf_input() }}
+          <input type="text" name="recipient" placeholder="رقم/مُعرّف الاختبار" dir="ltr"
+                 class="sm-input" style="display:inline-block;width:auto;height:36px;margin-inline-end:var(--cc-sp-4)">
+          <button class="sm-btn-test" type="submit">
+            <i class="fa-solid fa-vial"></i> اختبار
+          </button>
+        </form>
+        <span class="sm-hint sm-test-result" id="sm-test-{{ ch.channel }}" style="margin:0"></span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+{# ─────────── owner-side notifications ─────────── #}
+<div class="sm-card" id="owner">
+  <div class="sm-card-head">
+    <span class="sm-card-head-icon is-owner" aria-hidden="true">
+      <i class="fa-solid fa-bell"></i>
+    </span>
+    <span class="sm-card-head-title">إشعارات المالك</span>
+  </div>
+  <div class="sm-card-body">
+    <p class="sm-hint" style="margin:0 0 var(--cc-sp-7)">
+      اختر القنوات التي تستخدمها للحصول على تنبيهات اللوحة وأنواع الأحداث المهتم بها.
+    </p>
+    <form method="post" action="{{ url_for('admin_messaging.settings_save_owner_prefs') }}">
+      {{ csrf_input() }}
+
+      <div class="sm-field is-full" style="margin-block-end:var(--cc-sp-7)">
+        <span class="sm-label">القنوات المُستخدَمة للتنبيه</span>
+        <div>
+          {% for c in channels %}
+          <label class="sm-channel-check">
+            <input type="checkbox" name="owner_channels" value="{{ c.channel }}"
+                   {% if c.channel in owner_prefs.channels %}checked{% endif %}>
+            {{ c.label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <span class="sm-label">أنواع الأحداث</span>
+      <div class="sm-event-grid">
+        {% for ev in owner_events %}
+        <label class="sm-event-check">
+          <input type="checkbox" name="owner_events" value="{{ ev }}"
+                 {% if ev in owner_prefs.events %}checked{% endif %}>
+          <span class="sm-event-label">{{ owner_event_labels[ev] }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="sm-grid">
+        <div class="sm-field">
+          <label class="sm-label" for="owner-phone">رقم هاتفك (لـ SMS وواتساب)</label>
+          <input class="sm-input" id="owner-phone" name="owner_phone" type="text" dir="ltr"
+                 value="{{ owner_prefs.owner_phone }}"
+                 placeholder="970599123456">
+          <div class="sm-hint">صيغة دولية بدون «+».</div>
+        </div>
+        <div class="sm-field">
+          <label class="sm-label" for="owner-tg-chat">Telegram Chat ID</label>
+          <input class="sm-input" id="owner-tg-chat" name="owner_telegram_chat_id" type="text" dir="ltr"
+                 value="{{ owner_prefs.owner_telegram_chat_id }}"
+                 placeholder="123456789">
+        </div>
+      </div>
+
+      <div class="sm-foot">
+        <button class="sm-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ التفضيلات
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+async function smTestSend(ev, channel) {
+  ev.preventDefault();
+  const form = ev.target;
+  const data = new FormData(form);
+  const out = document.getElementById('sm-test-' + channel);
+  out.textContent = 'جارٍ الإرسال…';
+  try {
+    const resp = await fetch(form.action, { method: 'POST', body: data, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const j = await resp.json();
+    out.textContent = (j.ok ? '✓ ' : '✗ ') + (j.message || '');
+    out.style.color = j.ok ? '#166534' : '#991b1b';
+  } catch (e) {
+    out.textContent = '✗ تعذّر الاتصال';
+    out.style.color = '#991b1b';
+  }
+  return false;
+}
+</script>
+
+{% endblock %}

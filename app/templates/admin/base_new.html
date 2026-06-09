@@ -291,7 +291,7 @@
 
       {# ── ⑧ الإعدادات ─────────────────────────────────────────────── #}
       {% if 'settings' not in hidden_sections %}
-      {% set _g8 = ep in ['admin.settings_page','admin.settings_admins','admin.settings_whatsapp','admin.sections_settings'] %}
+      {% set _g8 = ep in ['admin.settings_page','admin.settings_admins','admin.settings_whatsapp','admin.sections_settings','admin_messaging.settings'] %}
       <div class="adm-group {% if _g8 %}is-active is-open{% endif %}" data-group="settings">
         <button class="adm-group-head"
                 type="button"
@@ -320,6 +320,13 @@
           <a href="{{ url_for('admin.settings_whatsapp') }}"
              class="adm-link {% if ep == 'admin.settings_whatsapp' %}is-active{% endif %}">
             إعدادات واتساب
+          </a>
+          {% endif %}
+          {% if 'settings.messaging' not in hidden_sections %}
+          <a href="{{ url_for('admin_messaging.settings') }}"
+             class="adm-link {% if ep == 'admin_messaging.settings' %}is-active{% endif %}">
+            <i class="fa-solid fa-paper-plane fa-xs" aria-hidden="true"></i>
+            قنوات التواصل والإشعارات
           </a>
           {% endif %}
           <a href="{{ url_for('admin.sections_settings') }}"

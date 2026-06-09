@@ -45,6 +45,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .admin.chr_console_routes import bp as admin_chr_bp
     from .admin.landing_routes import bp as admin_landing_bp
     from .admin.infra_routes import bp as admin_infra_bp
+    from .admin.messaging_routes import bp as admin_messaging_bp
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
@@ -55,6 +56,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(admin_chr_bp)
     app.register_blueprint(admin_landing_bp)
     app.register_blueprint(admin_infra_bp)
+    app.register_blueprint(admin_messaging_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(proxy_api_bp)
     app.register_blueprint(public_bp)
