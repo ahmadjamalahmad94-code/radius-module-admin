@@ -395,13 +395,33 @@ def view_script(job_id: int):
         # again is safe + cheap. We bypass service.render_script() to avoid
         # re-advancing the state machine — that would error from any state
         # past script_generated.
-        script = service.renderer.render(service._build_bindings(job))
+        bindings = service._build_bindings(job)
     except OnboardingDependencyError as exc:
         return jsonify({"ok": False, "error": "dependency_unavailable",
                         "message": str(exc)}), 503
     except OnboardingError as exc:
         return jsonify({"ok": False, "error": "onboarding_error",
                         "message": str(exc)}), 400
+
+    # Defence in depth — re-validate even on an old job that already has
+    # ``status = script_generated`` from before the bindings check landed.
+    # The owner's first install came from exactly such a job; we refuse to
+    # serve a syntactically-broken .rsc again.
+    from fleet.registry.script_bindings_check import check_bindings, summary_ar
+    missing = check_bindings(bindings)
+    if missing:
+        return jsonify({
+            "ok": False,
+            "error": "bindings_incomplete",
+            "message": summary_ar(missing),
+            "missing": [
+                {"key": m.key, "label_ar": m.label_ar, "setup_hint_ar": m.setup_hint_ar}
+                for m in missing
+            ],
+        }), 412   # Precondition Required — operator must wire panel/proxy/secret first
+
+    try:
+        script = service.renderer.render(bindings)
     except Exception as exc:  # noqa: BLE001 — never leak the body in errors
         return jsonify({"ok": False, "error": "internal_error",
                         "message": f"تعذّر توليد السكربت: {exc}"}), 500

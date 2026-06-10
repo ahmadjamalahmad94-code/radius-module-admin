@@ -313,8 +313,14 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
     "PROXY_WG_ENDPOINT": "",
     "PROXY_WG_ADDR": "10.98.0.1",
     "CHR_SHARED_SECRET": "",
-    "SSTP_CERT_NAME": "vpn-hoberadius",
-    "IKE_CERT_NAME": "vpn-hoberadius",
+    # SSTP/IKE certs default to EMPTY — the unified template skips the
+    # cert-bound server blocks when these are unset (fix/fleet-script-real-
+    # bindings). Setting them implies the matching /certificate row is
+    # already imported on every CHR; until that's true, leaving them blank
+    # produces a script that installs cleanly without exposing dangling
+    # ports for protocols whose certs aren't ready.
+    "SSTP_CERT_NAME": "",
+    "IKE_CERT_NAME": "",
     "CLIENT_SUPERNET": "10.0.0.0/8",
     "DNS_PUSH": "1.1.1.1",
     "GW_LOCAL_ADDR": "10.255.255.1",
@@ -498,9 +504,25 @@ class OnboardingService:
 
         Returns the script for the caller, but persists only a content hash as
         ``generated_script_ref`` (the script embeds private keys — never stored).
+
+        BEFORE rendering, the bindings are validated against
+        :mod:`fleet.registry.script_bindings_check`. If ANY critical fleet-
+        infra binding is missing (panel WireGuard pubkey/endpoint, proxy
+        pubkey/endpoint, shared RADIUS secret, or per-CHR keys), we refuse
+        to produce a script — emitting a broken ``.rsc`` was the bug that
+        burned the owner on his first real CHR install. The job stays at
+        ``keys_generated`` and ``form_input.last_error`` carries the precise
+        Arabic «بانتظار: …» so the dashboard surfaces exactly what to
+        set up before the next attempt.
         """
         self._require(job, "script_generated")
-        script = self.renderer.render(self._build_bindings(job))
+        bindings = self._build_bindings(job)
+        from fleet.registry.script_bindings_check import check_bindings, summary_ar
+        missing = check_bindings(bindings)
+        if missing:
+            reason = summary_ar(missing)
+            raise OnboardingError(reason)
+        script = self.renderer.render(bindings)
         job.generated_script_ref = "sha256:" + hashlib.sha256(script.encode("utf-8")).hexdigest()
         job.advance("script_generated")
         db.session.commit()

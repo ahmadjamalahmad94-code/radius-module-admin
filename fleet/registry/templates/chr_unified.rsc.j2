@@ -80,11 +80,23 @@ set enabled=yes authentication=mschap2 default-profile=default-encryption \
     keepalive-timeout=30
 
 # ---- 6. SSTP server (TLS 443) -----------------------------
-# Shared cert valid for vpn.hoberadius.com installed on EVERY CHR.
+{# Cert-conditional: SSTP requires a TLS cert pre-imported on the CHR. We
+   skip the whole sub-section when no cert name is configured on the panel
+   — emitting `certificate=` empty would fail with "input does not match
+   any value of certificate". The owner can ship cert provisioning + a
+   re-render later. #}
+{% if SSTP_CERT_NAME %}
+# Shared cert installed on EVERY CHR (must exist as a /certificate row
+# named below before this section runs).
 /interface sstp-server server
 set enabled=yes port=443 authentication=mschap2 \
     certificate={{ SSTP_CERT_NAME }} tls-version=only-1.2 \
     default-profile=default-encryption verify-client-certificate=no
+{% else %}
+# SSTP skipped: no TLS certificate configured on the panel yet.
+# Set SSTP_CERT_NAME in /admin/fleet config (and pre-install the matching
+# /certificate row on each CHR) to enable the SSTP server block here.
+{% endif %}
 
 # ---- 7. IPsec / IKEv2 server ------------------------------
 /ip ipsec profile
@@ -94,11 +106,17 @@ add name=hobe-prop enc-algorithms=aes-256-cbc,aes-256-gcm pfs-group=modp2048
 /ip ipsec mode-config
 # Address ALSO via RADIUS for IKEv2 (no local pool); identity = vpn.hoberadius.com
 add name=hobe-mc responder=yes
+{% if IKE_CERT_NAME %}
 /ip ipsec identity
 add auth-method=eap-radius generate-policy=port-strict mode-config=hobe-mc \
     peer=hobe-peer certificate={{ IKE_CERT_NAME }}
 /ip ipsec peer
 add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
+{% else %}
+# IPsec identity + peer skipped: no IKEv2 certificate configured on the
+# panel yet. Set IKE_CERT_NAME in /admin/fleet config (and pre-install the
+# matching /certificate row on each CHR) to enable IKEv2.
+{% endif %}
 
 # ---- 8. NAT / masquerade to the internet ------------------
 # Client (RADIUS-assigned) range egresses via this CHR's public IP.
@@ -112,11 +130,17 @@ add chain=input in-interface=wg-data protocol=udp dst-port=1812,1813 action=acce
 add chain=input in-interface=wg-data protocol=udp dst-port=3799 action=accept
 add chain=input in-interface=wg-mgmt action=accept comment="control plane"
 add chain=input protocol=udp dst-port=1812,1813,3799 action=drop comment="never public"
-# Allow VPN protocols inbound on WAN:
+# Allow VPN protocols inbound on WAN — each gate matches the corresponding
+# server block above (skip the SSTP/IKE openings when their certs aren't
+# configured so we don't expose a dangling port to the internet).
+{% if SSTP_CERT_NAME %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 action=accept ;# SSTP
+{% endif %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 action=accept ;# PPTP ctrl
 add chain=input in-interface={{ WAN_IFACE }} protocol=gre action=accept               ;# PPTP data
+{% if IKE_CERT_NAME %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 action=accept ;# IKE
+{% endif %}
 
 # ---- 10. control-plane is NOT a data route ----------------
 # Ensure wg-mgmt carries no default route / no forwarding (invariant).
