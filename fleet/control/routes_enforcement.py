@@ -175,6 +175,14 @@ def enforcement_ingest():
     db.session.add(ev)
     db.session.commit()
 
+    # Phase-9 owner alert dispatch — best-effort, never breaks the ingest.
+    try:
+        from fleet.notify.notifier import dispatch_event
+        dispatch_event(ev)
+        db.session.commit()
+    except Exception:
+        pass
+
     return jsonify({
         "ok": True,
         "idempotent": False,

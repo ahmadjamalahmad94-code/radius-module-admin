@@ -82,6 +82,8 @@ def create_app(config_object=None, **overrides) -> Flask:
     # Phase 7 panel: enforcement-outcome ingest + UI dashboard.
     from fleet.control.routes_enforcement import bp as fleet_p7_enforcement_bp
     from fleet.ui.routes_p7 import bp as fleet_p7_ui_bp
+    # Phase 9 owner alerts (recent alerts + per-kind settings).
+    from fleet.notify.ui_routes import bp as fleet_p9_alerts_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -113,6 +115,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_placement_decision_bp)
     app.register_blueprint(fleet_p7_enforcement_bp)
     app.register_blueprint(fleet_p7_ui_bp)
+    app.register_blueprint(fleet_p9_alerts_bp)
 
     @app.get("/")
     def root():

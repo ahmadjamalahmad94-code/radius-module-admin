@@ -322,10 +322,21 @@ def _within_reapply_window(
 
 
 def _emit_event(*, kind: str, severity: str, detail: dict[str, Any]) -> Event:
-    """Append a row to ``fleet_events`` for the operator audit feed."""
+    """Append a row to ``fleet_events`` for the operator audit feed.
+
+    Also runs the Phase-9 notifier so an owner alert is queued/sent. The
+    notifier is best-effort: never raises, never blocks the reconcile
+    cycle.
+    """
     row = Event(ts=utcnow(), chr_id=None, kind=kind, severity=severity)
     row.detail = detail
     db.session.add(row)
+    db.session.flush()  # so the alert row's FK can point at this event
+    try:
+        from fleet.notify.notifier import dispatch_event
+        dispatch_event(row)
+    except Exception:  # never let alerting break the reconcile cycle
+        pass
     return row
 
 

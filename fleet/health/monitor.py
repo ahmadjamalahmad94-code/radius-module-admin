@@ -373,12 +373,16 @@ def _emit_event(transition: Transition, node_name: str, *, latency_ms: float | N
 
 
 def _notify_hook(event: Event) -> None:
-    """TODO(P9-T1, fleet.notify): hand ``event`` to the alert rule matrix.
+    """Hand ``event`` to the Phase-9 alert rule matrix.
 
-    Phase 4 is pure sensing — no notifications go out from here. The hook
-    exists so a later wiring touch is a one-line import-and-call, with
-    the body of THIS module unchanged.
+    The notifier is best-effort: never raises, never blocks the health
+    cycle. Disabled kinds and unconfigured channels are a no-op.
     """
+    try:
+        from fleet.notify.notifier import dispatch_event
+        dispatch_event(event)
+    except Exception:  # never let alerting break the health cycle
+        logger.exception("fleet.notify dispatch failed for kind=%s", event.kind)
     logger.debug(
         "fleet.health: event %s for chr_id=%s queued for future notifier",
         event.kind, event.chr_id,
