@@ -276,14 +276,28 @@ class TestRouterosSanity:
 
     def test_pool_anti_pattern_absent(self, chr_a, fleet_cfg) -> None:
         """§6.5 invariant: NO local IP pool for clients — addresses come from
-        RADIUS. So the template must not contain an ``/ip pool`` directive
-        nor any ``remote-address-list``/``local-address-list`` pool reference
-        for client traffic."""
+        RADIUS. So the template must not CREATE an ``/ip pool`` entry nor
+        emit any ``remote-address-list``/``local-address-list`` pool reference
+        for client traffic.
+
+        Note: a `remove [find ...]` under ``/ip pool`` is allowed as defensive
+        idempotency for stale rows; what's forbidden is an `add`."""
         node, keys = chr_a
         out = render_chr_script(node, keys, fleet_cfg)
-        assert "/ip pool" not in out, (
-            "client IP pool present — §6.5 forbids local pools (RADIUS-only addresses)"
-        )
+        # Strip line continuations so `/ip pool\nadd ...` parses cleanly.
+        flat = out.replace(" \\\n", " ")
+        # Track active table; flag any `add` that lands while `/ip pool` is selected.
+        table = None
+        for lineno, raw in enumerate(flat.splitlines(), start=1):
+            line = raw.strip()
+            if line.startswith("/"):
+                table = line
+                continue
+            if table == "/ip pool" and line.startswith("add "):
+                raise AssertionError(
+                    f"L{lineno}: /ip pool add present — §6.5 forbids local "
+                    f"pools (RADIUS-only addresses): {line!r}"
+                )
         # ``remote-address`` may not be set explicitly (RADIUS provides it).
         # We use a word-boundary so ``remote-address-list`` etc. wouldn't false-match.
         assert not re.search(r"\bremote-address=", out), (

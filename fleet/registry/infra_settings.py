@@ -249,31 +249,100 @@ class InfraSettingsError(ValueError):
     """Validation / encryption error surfaced to the UI with an Arabic message."""
 
 
-_HOST_PORT_RE = re.compile(
-    r"^"
-    # host: domain (letters/digits/dots/hyphens) OR IPv4 OR bracketed IPv6
-    r"(?:"
-    r"  (?:\[[0-9a-fA-F:.]+\])"           # [IPv6]
-    r"  | (?:\d{1,3}(?:\.\d{1,3}){3})"   # IPv4
+#: Default ports per plane. Used when the operator types just a host without
+#: a ``:port`` suffix. These match what the unified RouterOS template's
+#: ``listen-port`` lines bind on the CHR side, so the two ends agree.
+_DEFAULT_PORTS = {
+    "PANEL_WG_ENDPOINT": 51820,
+    "PROXY_WG_ENDPOINT": 51821,
+}
+
+#: Host-only regex (no ``:port`` — the port lives in a separate group).
+#: IPv6 must be wrapped in ``[...]`` so we can split on the last ``:`` safely.
+_HOST_RE = re.compile(
+    r"^(?:"
+    r"  (?:\[[0-9a-fA-F:.]+\])"                                   # [IPv6]
+    r"  | (?:\d{1,3}(?:\.\d{1,3}){3})"                            # IPv4
     r"  | (?:[A-Za-z0-9](?:[A-Za-z0-9.\-]{0,253}[A-Za-z0-9])?)"  # FQDN
-    r")"
-    r":"
-    r"(?:[1-9]\d{0,4})"                  # port 1..65535
-    r"$",
+    r")$",
     re.VERBOSE,
 )
 
 
-def _validate_host_port(value: str, field_label: str) -> str:
-    value = (value or "").strip()
-    if not value:
-        raise InfraSettingsError(f"{field_label} مطلوب.")
-    if not _HOST_PORT_RE.match(value):
+def split_endpoint(value: str, *, default_port: int) -> tuple[str, int]:
+    """Parse an endpoint into ``(host, port)``.
+
+    Accepts ``host``, ``host:port``, or ``[ipv6]:port``. Anything else (extra
+    colons, empty parts, port out of 1..65535) raises ``InfraSettingsError``.
+    The single canonical parser used by both the UI validator and the
+    renderer, so the two paths can never disagree on what an endpoint means.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise InfraSettingsError("نقطة الوصول مطلوبة.")
+
+    # IPv6 literal must be bracketed; rsplit at the last ']' / ':' boundary.
+    if raw.startswith("["):
+        if "]" not in raw:
+            raise InfraSettingsError(
+                "صيغة عنوان IPv6 يجب أن تكون داخل أقواس مربعة، مثل "
+                "`[2001:db8::1]:51820`."
+            )
+        close = raw.index("]")
+        host = raw[: close + 1]
+        rest = raw[close + 1 :]
+        if rest == "":
+            port_str = ""
+        elif rest.startswith(":"):
+            port_str = rest[1:]
+        else:
+            raise InfraSettingsError(
+                "صيغة عنوان IPv6 يجب أن تتبع الأقواس بـ `:port` أو لا شيء."
+            )
+    else:
+        if raw.count(":") > 1:
+            raise InfraSettingsError(
+                "صيغة نقطة الوصول غير صحيحة — استخدم `host` أو `host:port` "
+                "فقط (للـ IPv6 ضع العنوان داخل أقواس مربعة)."
+            )
+        if ":" in raw:
+            host, _, port_str = raw.partition(":")
+        else:
+            host, port_str = raw, ""
+
+    if not _HOST_RE.match(host):
         raise InfraSettingsError(
-            f"{field_label} يجب أن يكون بصيغة host:port مثل "
-            f"`control.example.com:51820`."
+            "اسم المضيف غير صالح — استخدم اسم نطاق أو عنوان IP."
         )
-    return value
+
+    if port_str == "":
+        port = default_port
+    else:
+        if not port_str.isdigit():
+            raise InfraSettingsError("المنفذ يجب أن يكون رقماً.")
+        port = int(port_str)
+        if not (1 <= port <= 65535):
+            raise InfraSettingsError("المنفذ يجب أن يكون بين 1 و 65535.")
+    return host, port
+
+
+def _validate_host_port(value: str, field_label: str, *, template_var: str | None = None) -> str:
+    """Normalize an endpoint to canonical ``host:port`` for storage.
+
+    The stored Setting row keeps the combined form (so the operator sees what
+    they typed, with any defaulted port made explicit). The renderer splits
+    again at render time via :func:`split_endpoint` — single source of truth.
+    """
+    default_port = _DEFAULT_PORTS.get(template_var or "", 51820)
+    raw = (value or "").strip()
+    if not raw:
+        raise InfraSettingsError(f"{field_label} مطلوب.")
+    try:
+        host, port = split_endpoint(raw, default_port=default_port)
+    except InfraSettingsError as exc:
+        # Re-label with the field's Arabic name for a clearer UI error.
+        raise InfraSettingsError(f"{field_label}: {exc}") from None
+    return f"{host}:{port}"
 
 
 def _validate_pubkey(value: str, field_label: str) -> str:
@@ -316,7 +385,8 @@ def _require_crypto() -> None:
 
 
 def set_panel_endpoint(value: str) -> None:
-    clean = _validate_host_port(value, "نقطة وصول اللوحة")
+    clean = _validate_host_port(value, "نقطة وصول اللوحة",
+                                template_var="PANEL_WG_ENDPOINT")
     _raw_set("PANEL_WG_ENDPOINT", clean)
     db.session.commit()
 
@@ -328,7 +398,8 @@ def set_proxy_pubkey(value: str) -> None:
 
 
 def set_proxy_endpoint(value: str) -> None:
-    clean = _validate_host_port(value, "نقطة وصول الوكيل")
+    clean = _validate_host_port(value, "نقطة وصول الوكيل",
+                                template_var="PROXY_WG_ENDPOINT")
     _raw_set("PROXY_WG_ENDPOINT", clean)
     db.session.commit()
 
@@ -433,6 +504,7 @@ __all__ = [
     "set_panel_endpoint",
     "set_proxy_pubkey",
     "set_proxy_endpoint",
+    "split_endpoint",
     "set_chr_shared_secret",
     "generate_chr_shared_secret",
     "set_cert_name",
