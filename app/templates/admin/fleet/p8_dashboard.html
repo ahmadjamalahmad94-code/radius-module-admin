@@ -1,0 +1,563 @@
+{% extends "admin/base_new.html" %}
+{% block title %}إعادة التوازن والإخلاء — أسطول CHR{% endblock %}
+{% block page_title %}إعادة التوازن والإخلاء{% endblock %}
+
+{# Arabic labels for outcomes / kinds — kept here so the route can stay
+   identifier-only. #}
+{% set kind_labels = {
+  'rebalance':       'إعادة توازن',
+  'forced_failover': 'إخلاء قسري',
+  'manual':          'يدوي',
+  'new':             'جلسة جديدة',
+} %}
+{% set outcome_labels = {
+  'pending': 'قيد التنفيذ',
+  'applied': 'نجح',
+  'failed':  'فشل',
+  'skipped': 'مُتجاهل',
+  'partial': 'جزئي',
+} %}
+{% set event_labels = {
+  'rebalance_planned':      'خطة إعادة توازن',
+  'rebalance_started':      'بدء إعادة توازن',
+  'rebalance_completed':    'اكتمل التوازن',
+  'rebalance_failed':       'فشل التوازن',
+  'failover_started':       'بدء إخلاء قسري',
+  'failover_completed':     'اكتمل الإخلاء',
+  'evacuation_started':     'بدء إخلاء عقدة',
+  'evacuation_completed':   'اكتمل إخلاء العقدة',
+} %}
+
+{% block head_extra %}
+<style>
+  /* ── KPI hero ───────────────────────────────────────────────────────── */
+  .p8-hero{
+    background: var(--cc-hero-grad);
+    border-radius: var(--cc-r-hero);
+    box-shadow: var(--cc-sh-hero);
+    color:#fff;
+    padding: var(--cc-sp-9) var(--cc-sp-11);
+    display:flex; align-items:center; gap: var(--cc-sp-9);
+    flex-wrap:wrap;
+    margin-block-end: var(--cc-gap-section);
+  }
+  .p8-hero-icon{
+    width:64px; height:64px; border-radius:50%;
+    background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.30);
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; flex-shrink:0;
+  }
+  .p8-hero-body{ flex:1; min-width:240px; }
+  .p8-hero-title{ font-size:24px; font-weight:900; margin-block-end:6px; }
+  .p8-hero-sub{ font-size:13.5px; opacity:.92; line-height:1.7; max-width:62ch; }
+  .p8-hero-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+  .p8-btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding: 10px 18px;
+    border-radius: var(--cc-btn-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s); font-weight: 800;
+    cursor: pointer;
+    border: 1px solid transparent;
+    text-decoration: none;
+    transition: background var(--cc-anim-fast), border-color var(--cc-anim-fast);
+  }
+  .p8-btn--primary{ background:#fff; color: var(--cc-brand-deep);
+                    border-color:#fff; }
+  .p8-btn--primary:hover{ background:#f1f5f9; }
+  .p8-btn--ghost{ background: rgba(255,255,255,.12); color:#fff;
+                  border-color: rgba(255,255,255,.32); }
+  .p8-btn--ghost:hover{ background: rgba(255,255,255,.22); }
+
+  /* ── Live-apply gate banner ────────────────────────────────────────── */
+  .p8-gate{
+    display:flex; align-items:center; gap: var(--cc-sp-5);
+    padding: var(--cc-sp-5) var(--cc-sp-8);
+    border-radius: var(--cc-r-card);
+    border: 1px solid var(--cc-border-2);
+    background: var(--cc-flash-warning-bg);
+    color: var(--cc-flash-warning-fg);
+    margin-block-end: var(--cc-gap-section);
+    font-size: var(--cc-fs-body-s);
+    line-height: 1.7;
+  }
+  .p8-gate--on{
+    background: var(--cc-flash-success-bg);
+    color: var(--cc-flash-success-fg);
+  }
+  .p8-gate--engine-off{
+    background: var(--cc-flash-info-bg);
+    color: var(--cc-flash-info-fg);
+  }
+  .p8-gate a{ color: inherit; font-weight: 800; }
+
+  /* ── KPI strip ─────────────────────────────────────────────────────── */
+  .p8-kpis{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--cc-gap-inline);
+    margin-block-end: var(--cc-gap-section);
+  }
+  .p8-kpi{
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+    display: flex; flex-direction: column; gap: var(--cc-sp-2);
+  }
+  .p8-kpi-label{ font-size: var(--cc-fs-small); color: var(--cc-text-mute); }
+  .p8-kpi-value{ font-size: var(--cc-fs-h1); font-weight: 900; color: var(--cc-text); line-height: 1; }
+  .p8-kpi-sub{ font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); }
+  .p8-kpi-value--bad{ color: var(--cc-flash-danger-fg); }
+  .p8-kpi-value--warn{ color: #b45309; }
+  .p8-kpi-value--ok{ color: #15803d; }
+
+  /* ── Section panels ─────────────────────────────────────────────────── */
+  .p8-panel{
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    margin-block-end: var(--cc-gap-section);
+    overflow: hidden;
+  }
+  .p8-panel-head{
+    display:flex; align-items:center; gap: var(--cc-sp-4);
+    padding: var(--cc-sp-6) var(--cc-sp-9);
+    border-block-end: 1px solid var(--cc-border);
+    background: var(--hb-bg);
+  }
+  .p8-panel-head h2{
+    margin: 0;
+    font-size: var(--cc-fs-h3); font-weight: 800;
+    color: var(--cc-text);
+  }
+  .p8-panel-head .p8-panel-icon{ color: var(--cc-brand); font-size: 16px; }
+  .p8-panel-head .p8-panel-meta{ margin-inline-start: auto; font-size: var(--cc-fs-small); color: var(--cc-text-mute); }
+  .p8-panel-body{ padding: var(--cc-sp-7) var(--cc-sp-9); }
+
+  /* ── Table ──────────────────────────────────────────────────────────── */
+  .p8-table{
+    width: 100%;
+    border-collapse: separate; border-spacing: 0;
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text);
+  }
+  .p8-table thead th{
+    text-align: start; font-weight: 800;
+    color: var(--cc-text-mute);
+    padding: var(--cc-sp-4) var(--cc-sp-6);
+    border-block-end: 1px solid var(--cc-border);
+    background: var(--hb-bg);
+    font-size: var(--cc-fs-small);
+  }
+  .p8-table tbody td{
+    padding: var(--cc-sp-5) var(--cc-sp-6);
+    border-block-end: 1px solid var(--cc-border);
+    vertical-align: middle;
+  }
+  .p8-table tbody tr:last-child td{ border-block-end: none; }
+  .p8-table .mono{ font-family: var(--cc-font-mono); }
+
+  /* ── Headroom bar ───────────────────────────────────────────────────── */
+  .p8-bar-row{ display:flex; align-items:center; gap: var(--cc-sp-3); }
+  .p8-bar{
+    flex: 1;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--cc-border-2);
+    overflow: hidden;
+    position: relative;
+  }
+  .p8-bar-fill{
+    height: 100%;
+    background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%);
+    transition: width 240ms ease-out;
+  }
+  .p8-bar-fill--warn{ background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+  .p8-bar-fill--bad { background: linear-gradient(90deg, #b91c1c 0%, #ef4444 100%); }
+  .p8-bar-cap{ font-family: var(--cc-font-mono); font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); white-space: nowrap; }
+
+  /* ── Pills ──────────────────────────────────────────────────────────── */
+  .p8-pill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding: 3px 10px; border-radius: var(--cc-r-pill);
+    font-size: 11.5px; font-weight: 800; white-space: nowrap;
+  }
+  .p8-pill--applied{ background:#dcfce7; color:#15803d; }
+  .p8-pill--pending{ background:#eff6ff; color:#1d4ed8; }
+  .p8-pill--failed { background:#fef2f2; color:#b91c1c; }
+  .p8-pill--skipped{ background:#f1f5f9; color:#475569; }
+  .p8-pill--partial{ background:#fef3c7; color:#92400e; }
+  .p8-pill--rebalance{ background:#ede9fe; color:#5b21b6; }
+  .p8-pill--forced_failover{ background:#fee2e2; color:#991b1b; }
+  .p8-pill--manual{ background:#dbeafe; color:#1e40af; }
+  .p8-pill--info { background:#eff6ff; color:#1d4ed8; }
+  .p8-pill--warn { background:#fef3c7; color:#92400e; }
+  .p8-pill--crit { background:#fef2f2; color:#b91c1c; }
+  .p8-pill--up   { background:#dcfce7; color:#15803d; }
+  .p8-pill--down { background:#fef2f2; color:#b91c1c; }
+  .p8-pill--drain{ background:#fef3c7; color:#92400e; }
+  .p8-pill--off  { background:#f1f5f9; color:#475569; }
+
+  /* ── Inline actions ─────────────────────────────────────────────────── */
+  .p8-action-btn{
+    background: var(--cc-flash-danger-bg);
+    color: var(--cc-flash-danger-fg);
+    border: 1px solid rgba(239,68,68,.25);
+    padding: 6px 12px;
+    border-radius: var(--cc-r-lg);
+    font-size: 12px; font-weight: 800;
+    cursor: pointer;
+    font-family: var(--cc-font);
+  }
+  .p8-action-btn:hover{ background:#fecaca; }
+  .p8-action-btn[disabled]{ opacity:.5; cursor:not-allowed; }
+
+  /* ── Empty state ────────────────────────────────────────────────────── */
+  .p8-empty{
+    padding: var(--cc-sp-11);
+    text-align: center;
+    color: var(--cc-text-mute);
+  }
+  .p8-empty-icon{ font-size: 32px; opacity:.35; margin-block-end: var(--cc-sp-4); }
+
+  /* ── Toast ──────────────────────────────────────────────────────────── */
+  #p8-toast{
+    position: fixed; inset-block-end: 24px; inset-inline-start: 24px;
+    background: var(--cc-text); color:#fff;
+    padding: 10px 18px; border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny); font-weight: 800; font-family: var(--cc-font);
+    z-index: 9999; box-shadow: var(--cc-sh-pop);
+    opacity: 0; pointer-events: none;
+    transition: opacity 250ms ease;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Hero ─────────────────────────────────────────────────────────────── #}
+<div class="p8-hero">
+  <div class="p8-hero-icon" aria-hidden="true">
+    <i class="fa-solid fa-arrows-rotate"></i>
+  </div>
+  <div class="p8-hero-body">
+    <div class="p8-hero-title">إعادة التوازن والإخلاء القسري</div>
+    <div class="p8-hero-sub">
+      اضغط «إعادة توازن الآن» لتوليد خطة جديدة وتنفيذها، أو «إخلاء» لجدولة نقل كل
+      جلسات عقدة معينة إلى عقدات أخرى. الخطط الأخيرة وحالتها معروضة أدناه.
+    </div>
+  </div>
+  <div class="p8-hero-actions">
+    {# تأكيد عبر النموذج المخفي + المودال — لا alert/confirm. #}
+    <form id="p8-rebalance-form" method="post"
+          action="{{ url_for('fleet_p8.rebalance_now') }}"
+          style="display:none">{{ csrf_input() }}</form>
+    <button type="button" class="p8-btn p8-btn--primary"
+            data-confirm-form="p8-rebalance-form"
+            data-confirm-title="إعادة توازن الآن"
+            data-confirm-msg="سيتم توليد خطة إعادة توازن وتنفيذها فوراً. تابع؟"
+            data-confirm-ok="نعم، شغّل التوازن"
+            data-confirm-variant="primary">
+      <i class="fa-solid fa-bolt"></i>
+      إعادة توازن الآن
+    </button>
+    <a href="{{ url_for('fleet_p7.dashboard') }}"
+       class="p8-btn p8-btn--ghost">
+      <i class="fa-solid fa-toggle-on"></i>
+      صفحة «التطبيق الحي»
+    </a>
+  </div>
+</div>
+
+{# ── Honest live-apply gate banner ─────────────────────────────────────── #}
+{% if live_apply_on %}
+  <div class="p8-gate p8-gate--on" role="status">
+    <i class="fa-solid fa-circle-check"></i>
+    <div>
+      «التطبيق الحي» مُفعَّل — الخطط هنا تُنفَّذ فعلياً على الأسطول.
+      <a href="{{ url_for('fleet_p7.dashboard') }}">إدارة الإعداد</a>.
+    </div>
+  </div>
+{% else %}
+  <div class="p8-gate" role="status">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <div>
+      «التطبيق الحي» مغلق — أي خطة هنا تُسجَّل للمراجعة فقط، ولا يُنقل أي مستخدم.
+      <a href="{{ url_for('fleet_p7.dashboard') }}">فعِّله من صفحة التطبيق الحي</a>.
+    </div>
+  </div>
+{% endif %}
+
+{% if not orchestrator_ready %}
+  <div class="p8-gate p8-gate--engine-off" role="status">
+    <i class="fa-solid fa-circle-info"></i>
+    <div>
+      محرّك إعادة التوازن (Phase-8 task A) غير مرتبط بعد. الواجهة تعمل،
+      لكن الأزرار تسجِّل النية فقط حتى يصل المحرك الحقيقي.
+      <span class="p8-pill p8-pill--info">backend: {{ orchestrator_backend }}</span>
+    </div>
+  </div>
+{% endif %}
+
+{# ── Fleet KPI strip ──────────────────────────────────────────────────── #}
+<div class="p8-kpis">
+  <div class="p8-kpi">
+    <div class="p8-kpi-label">عقدات صحية</div>
+    <div class="p8-kpi-value">{{ capacity.healthy_nodes }}<span style="color:var(--cc-text-mute);font-size:14px;font-weight:600"> / {{ capacity.nodes }}</span></div>
+    <div class="p8-kpi-sub">إجمالي أسطول CHR</div>
+  </div>
+  <div class="p8-kpi">
+    <div class="p8-kpi-label">استخدام الأسطول</div>
+    <div class="p8-kpi-value {% if capacity.utilization_pct >= 85 %}p8-kpi-value--bad{% elif capacity.utilization_pct >= 70 %}p8-kpi-value--warn{% else %}p8-kpi-value--ok{% endif %}">{{ capacity.utilization_pct }}%</div>
+    <div class="p8-kpi-sub">{{ capacity.total_active }} / {{ capacity.total_capacity }} جلسة</div>
+  </div>
+  <div class="p8-kpi">
+    <div class="p8-kpi-label">سعة فائضة</div>
+    <div class="p8-kpi-value p8-kpi-value--ok">{{ capacity.total_free }}</div>
+    <div class="p8-kpi-sub">جلسات متاحة على مستوى الأسطول</div>
+  </div>
+  <div class="p8-kpi">
+    <div class="p8-kpi-label">يستوعب أكبر عقدة؟</div>
+    {% if capacity.can_absorb_biggest %}
+      <div class="p8-kpi-value p8-kpi-value--ok">نعم</div>
+    {% else %}
+      <div class="p8-kpi-value p8-kpi-value--bad">لا</div>
+    {% endif %}
+    <div class="p8-kpi-sub">حمل الأكبر = {{ capacity.biggest_node_load }} جلسة</div>
+  </div>
+</div>
+
+{# ── Per-node headroom ────────────────────────────────────────────────── #}
+<section class="p8-panel">
+  <div class="p8-panel-head">
+    <i class="fa-solid fa-gauge-high p8-panel-icon"></i>
+    <h2>سعة فائضة لكل عقدة</h2>
+    <span class="p8-panel-meta">مرتبة بالاستخدام تنازلياً</span>
+  </div>
+  <div class="p8-panel-body">
+    {% if not headrooms %}
+      <div class="p8-empty">
+        <div class="p8-empty-icon"><i class="fa-solid fa-server"></i></div>
+        لا توجد عقدات CHR مسجَّلة بعد.
+      </div>
+    {% else %}
+    <table class="p8-table">
+      <thead>
+        <tr>
+          <th>العقدة</th>
+          <th>الحالة</th>
+          <th>السعة المستخدمة</th>
+          <th>الجلسات</th>
+          <th>متاح</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in headrooms %}
+          {% set fill_class =
+            'p8-bar-fill--bad' if h.utilization_pct >= 85
+            else ('p8-bar-fill--warn' if h.utilization_pct >= 70 else '') %}
+          <tr>
+            <td>
+              <div style="font-weight:800">{{ h.name }}</div>
+              <div class="mono" style="color:var(--cc-text-mute);font-size:11.5px">{{ h.public_ip }}</div>
+            </td>
+            <td>
+              {% if not h.enabled %}
+                <span class="p8-pill p8-pill--off">معطّلة</span>
+              {% elif h.drain %}
+                <span class="p8-pill p8-pill--drain">إخلاء جارٍ</span>
+              {% elif h.status == 'up' %}
+                <span class="p8-pill p8-pill--up">نشطة</span>
+              {% elif h.status == 'down' %}
+                <span class="p8-pill p8-pill--down">معطوبة</span>
+              {% else %}
+                <span class="p8-pill p8-pill--warn">{{ h.status }}</span>
+              {% endif %}
+            </td>
+            <td style="min-width:180px">
+              <div class="p8-bar-row">
+                <div class="p8-bar" role="progressbar"
+                     aria-valuenow="{{ h.utilization_pct }}" aria-valuemin="0" aria-valuemax="100"
+                     aria-label="{{ h.name }} استخدام {{ h.utilization_pct }}%">
+                  <div class="p8-bar-fill {{ fill_class }}" style="width: {{ h.utilization_pct }}%"></div>
+                </div>
+                <span class="mono">{{ h.utilization_pct }}%</span>
+              </div>
+            </td>
+            <td class="mono">{{ h.active_sessions }} / {{ h.max_sessions }}</td>
+            <td class="mono">{{ h.free_sessions }}</td>
+            <td>
+              <form id="p8-evac-{{ h.node_id }}" method="post"
+                    action="{{ url_for('fleet_p8.evacuate_node', node_id=h.node_id) }}"
+                    style="display:none">{{ csrf_input() }}</form>
+              <button type="button" class="p8-action-btn"
+                      data-confirm-form="p8-evac-{{ h.node_id }}"
+                      data-confirm-title="إخلاء العقدة {{ h.name }}"
+                      data-confirm-msg="سيتم تجهيز خطة لنقل كل جلسات «{{ h.name }}» إلى عقدات أخرى. تابع؟"
+                      data-confirm-ok="نعم، أخلِ العقدة">
+                <i class="fa-solid fa-truck-arrow-right"></i>
+                إخلاء
+              </button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Recent plans ─────────────────────────────────────────────────────── #}
+<section class="p8-panel">
+  <div class="p8-panel-head">
+    <i class="fa-solid fa-clock-rotate-left p8-panel-icon"></i>
+    <h2>آخر الخطط</h2>
+    <span class="p8-panel-meta">{{ plans|length }} خطة</span>
+  </div>
+  <div class="p8-panel-body">
+    {% if not plans %}
+      <div class="p8-empty">
+        <div class="p8-empty-icon"><i class="fa-solid fa-list-check"></i></div>
+        لا توجد خطط مسجَّلة بعد.
+      </div>
+    {% else %}
+    <table class="p8-table">
+      <thead>
+        <tr>
+          <th>الخطة</th>
+          <th>النوع</th>
+          <th>المصدر</th>
+          <th>الحركات</th>
+          <th>النتيجة</th>
+          <th>الوقت</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in plans %}
+          <tr>
+            <td>
+              <div class="mono" style="font-weight:800">{{ p.plan_id }}</div>
+              {% if p.trigger %}
+                <div class="mono" style="color:var(--cc-text-mute);font-size:11.5px">trigger={{ p.trigger }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="p8-pill p8-pill--{{ p.kind }}">
+                {{ kind_labels.get(p.kind, p.kind) }}
+              </span>
+            </td>
+            <td>
+              {% if p.source_node %}
+                <span class="mono">{{ p.source_node }}</span>
+              {% else %}
+                <span style="color:var(--cc-text-mute);font-style:italic">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <span style="font-weight:800">{{ p.moves_attempted }}</span>
+              <span style="font-size:11px;color:var(--cc-text-mute)">
+                ({{ p.moves_applied }} نجحت / {{ p.moves_failed }} فشلت / {{ p.moves_pending }} قيد التنفيذ)
+              </span>
+            </td>
+            <td>
+              <span class="p8-pill p8-pill--{{ p.headline_outcome }}">
+                {{ outcome_labels.get(p.headline_outcome, p.headline_outcome) }}
+              </span>
+            </td>
+            <td style="color:var(--cc-text-mute);font-size:12px">
+              {{ p.latest.strftime('%Y-%m-%d %H:%M') if p.latest else '—' }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Recent events ────────────────────────────────────────────────────── #}
+<section class="p8-panel">
+  <div class="p8-panel-head">
+    <i class="fa-solid fa-bell p8-panel-icon"></i>
+    <h2>آخر الأحداث</h2>
+    <span class="p8-panel-meta">{{ events|length }} حدث</span>
+  </div>
+  <div class="p8-panel-body">
+    {% if not events %}
+      <div class="p8-empty">
+        <div class="p8-empty-icon"><i class="fa-solid fa-bell-slash"></i></div>
+        لم يصل أي حدث بعد.
+      </div>
+    {% else %}
+    <table class="p8-table">
+      <thead>
+        <tr>
+          <th>النوع</th>
+          <th>العقدة</th>
+          <th>الخطورة</th>
+          <th>تفاصيل</th>
+          <th>الوقت</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+          <tr>
+            <td>{{ event_labels.get(e.kind, e.kind) }}</td>
+            <td>
+              {% if e.node_name %}
+                <span class="mono">{{ e.node_name }}</span>
+              {% else %}
+                <span style="color:var(--cc-text-mute)">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if e.severity == 'crit' %}
+                <span class="p8-pill p8-pill--crit">حرج</span>
+              {% elif e.severity == 'warn' %}
+                <span class="p8-pill p8-pill--warn">تحذير</span>
+              {% else %}
+                <span class="p8-pill p8-pill--info">معلومة</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;color:var(--cc-text-soft)">
+              {% set d = e.detail %}
+              {% if d.get('plan_id') %}plan={{ d['plan_id'] }}{% endif %}
+              {% if d.get('moves_applied') is not none %} مُطبَّق={{ d['moves_applied'] }}{% endif %}
+              {% if d.get('moves_failed') is not none %} فشل={{ d['moves_failed'] }}{% endif %}
+              {% if d.get('source_node') %} من={{ d['source_node'] }}{% endif %}
+            </td>
+            <td style="color:var(--cc-text-mute);font-size:12px">
+              {{ e.ts.strftime('%Y-%m-%d %H:%M') if e.ts else '—' }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+
+{# ── Toast slot (for any JS feedback besides flash) ───────────────────── #}
+<div id="p8-toast" role="status" aria-live="polite"></div>
+
+<script>
+/* Small helper toast (used only when JS wants to show non-flash feedback;
+   the design-system confirm modal in hub.js handles destructive intents.) */
+(function(){
+  var t = document.getElementById('p8-toast');
+  if(!t) return;
+  window.p8Toast = function(msg){
+    t.textContent = msg;
+    t.style.opacity = '1';
+    clearTimeout(window.p8Toast._h);
+    window.p8Toast._h = setTimeout(function(){ t.style.opacity = '0'; }, 2000);
+  };
+})();
+</script>
+
+{% endblock %}
