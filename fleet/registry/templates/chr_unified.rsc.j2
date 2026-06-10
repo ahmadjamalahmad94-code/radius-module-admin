@@ -73,6 +73,26 @@
      The renderer splits the operator-supplied "host:port" Setting into
      HOST + PORT bindings before this template runs; the template itself
      must never emit a ``:`` inside ``endpoint-address=``.
+
+   DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
+     A second field finding: even with host-only endpoint-address,
+     ``endpoint-address=proxy.hoberadius.com`` left wg-data with
+     current-endpoint-address="" and no handshake — replacing with the
+     resolved IP literal worked instantly. RouterOS does not always
+     resolve the peer host into a working endpoint at peer-add time
+     (the peer is created before DNS is usable, or RouterOS caches an
+     empty resolve).
+     The script now:
+       (a) ensures /ip dns has at least one server (sets 1.1.1.1,8.8.8.8
+           as fallback — does NOT clobber an operator-set list);
+       (b) tags each peer with a stable comment (``hobe-fleet-mgmt`` /
+           ``hobe-fleet-data``);
+       (c) runs ``:resolve`` against PANEL_WG_HOST / PROXY_WG_HOST with
+           up to 5 retries (2-second back-off) and ``set [find
+           comment="…"] endpoint-address=<resolved-ip>`` on each peer.
+     If ``:resolve`` ultimately fails (no network at all), we leave the
+     hostname endpoint in place and ``:log error`` — that's no worse than
+     the prior behaviour, and the operator sees the cause in the log.
    ============================================================================ #}
 # ============================================================
 # HobeRadius unified CHR provisioning script  (v2, idempotent)
@@ -80,6 +100,15 @@
 # ============================================================
 
 /system identity set name="{{ ROUTER_IDENTITY }}"
+
+# ---- 0. DNS bootstrap (so :resolve works in section 2b) ----
+# If the CHR has no DNS servers configured yet (fresh install / cloud image
+# without DHCP-pushed DNS), set a public fallback so :resolve below can run.
+# We DO NOT overwrite operator-set DNS — checked via :len of current list.
+:if ([:len [/ip dns get servers]] = 0) do={
+    /ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=no
+    :log info "hobe-fleet: bootstrapped /ip dns servers=1.1.1.1,8.8.8.8 (was empty)"
+}
 
 # ---- 1. WireGuard CONTROL tunnel (wg-mgmt) -----------------
 # Control/telemetry ONLY. No default route, no NAT, no forwarding over this.
@@ -97,7 +126,8 @@ add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
    fleet.registry.script_render._split_endpoint. #}
 add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
     endpoint-address={{ PANEL_WG_HOST }} endpoint-port={{ PANEL_WG_PORT }} \
-    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s
+    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s \
+    comment="hobe-fleet-mgmt"
 /ip address
 add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/32
 
@@ -114,9 +144,42 @@ add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
 {# Same as the wg-mgmt block — host-only endpoint-address, port separate. #}
 add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
     endpoint-address={{ PROXY_WG_HOST }} endpoint-port={{ PROXY_WG_PORT }} \
-    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s
+    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
+    comment="hobe-fleet-data"
 /ip address
 add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/32
+
+# ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
+# Field finding (fix/fleet-endpoint-resolve): even with host-only
+# endpoint-address=proxy.hoberadius.com on the wg-data peer, RouterOS left
+# current-endpoint-address="" and never handshaked. Replacing with the
+# resolved IP literal (178.105.251.67) made the handshake fire instantly.
+# So we explicitly resolve at import time and overwrite endpoint-address.
+# Retries 5x with 2s back-off (handles a cold WAN that's not up at import).
+# If :resolve never succeeds we leave the hostname in place + :log error;
+# that is no worse than the prior behaviour and the operator sees why.
+:local hobeResolve do={
+    :local host $1
+    :for i from=1 to=5 do={
+        :do {
+            :local ip [:resolve $host]
+            :log info ("hobe-fleet: resolved " . $host . " -> " . $ip . " (attempt " . $i . ")")
+            :return $ip
+        } on-error={
+            :log warning ("hobe-fleet: :resolve " . $host . " failed (attempt " . $i . "/5)")
+            :delay 2s
+        }
+    }
+    :log error ("hobe-fleet: :resolve " . $host . " gave up after 5 attempts; leaving hostname on peer")
+    :return $host
+}
+
+:local panelIP [$hobeResolve "{{ PANEL_WG_HOST }}"]
+:local proxyIP [$hobeResolve "{{ PROXY_WG_HOST }}"]
+
+/interface wireguard peers
+set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port={{ PANEL_WG_PORT }}
+set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ PROXY_WG_PORT }}
 
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
