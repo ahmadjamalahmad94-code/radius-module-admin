@@ -202,43 +202,79 @@
     newProviderPanel.style.display = isNew ? "block" : "none";
   });
 
+  // Toggle the overage-price field's visibility + required-ness from the
+  // overage-allowed checkbox. The service layer requires the price whenever
+  // overage is allowed on a metered provider, so the input must appear
+  // exactly when the operator commits to that policy.
+  const overageCheckbox = document.getElementById("np_overage_allowed");
+  const overagePriceField = document.getElementById("np_overage_price_field");
+  const overagePriceInput = document.getElementById("np_overage_price_per_tb");
+  function syncOveragePriceVisibility() {
+    const on = !!(overageCheckbox && overageCheckbox.checked);
+    if (overagePriceField) overagePriceField.style.display = on ? "flex" : "none";
+    if (overagePriceInput) overagePriceInput.required = on;
+    if (!on && overagePriceInput) overagePriceInput.value = "";
+  }
+  if (overageCheckbox) overageCheckbox.addEventListener("change", syncOveragePriceVisibility);
+  syncOveragePriceVisibility();
+
   document.getElementById("fw-new-provider-save").addEventListener("click", async () => {
     const name = document.getElementById("np_name").value.trim();
     const costModel = document.getElementById("np_cost_model").value;
     const cap = document.getElementById("np_monthly_cap_tb").value;
     const price = document.getElementById("np_price_per_tb").value;
     const overage = document.getElementById("np_overage_allowed").checked;
+    const overagePrice = overagePriceInput ? overagePriceInput.value : "";
     if (!name) { toast("error", "اسم المزود مطلوب."); return; }
     if (costModel === "metered" && (!cap || parseFloat(cap) <= 0)) {
       toast("error", "المزود «محدود» يتطلب سقفاً شهرياً موجباً (TB).");
       return;
     }
+    if (costModel === "metered" && !price) {
+      toast("error", "المزود «محدود» يتطلب سعر TB.");
+      return;
+    }
+    // Match the service-layer guard exactly: «عند السماح بالتجاوز يجب تحديد
+    // سعر التجاوز لكل TB». Catching it client-side gives the operator a
+    // pre-network hint instead of a round-trip.
+    if (overage && (!overagePrice || parseFloat(overagePrice) <= 0)) {
+      toast("error", "عند السماح بالتجاوز يجب تحديد سعر التجاوز لكل TB.");
+      return;
+    }
     try {
+      const payload = {
+        name: name,
+        cost_model: costModel,
+        monthly_cap_tb: cap || null,
+        price_per_tb: price || null,
+        overage_allowed: overage,
+      };
+      if (overage) payload.overage_price_per_tb = overagePrice;
       const res = await fetch(providersUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-        body: JSON.stringify({
-          name: name,
-          cost_model: costModel,
-          monthly_cap_tb: cap || null,
-          price_per_tb: price || null,
-          overage_allowed: overage,
-        }),
+        body: JSON.stringify(payload),
       });
       const body = await safeJson(res);
       if (!res.ok || !body.ok) {
-        toast("error", "تعذّر إنشاء المزود: " + (body.detail || body.error || res.status));
+        // The provider API returns the human reason in `body.message`; older
+        // routes use `body.detail`. Fall through to `body.error` only as a
+        // last resort so the toast never reads a bare class name.
+        const reason = body.message || body.detail || body.error || ("HTTP " + res.status);
+        toast("error", "تعذّر إنشاء المزود: " + reason);
         return;
       }
-      // Inject the new option, select it, hide the inline panel.
-      // T6 provider API (admin_fleet_provider) returns the row under `provider`.
+      // T6 provider API (admin_fleet_provider) returns the row under `provider`;
+      // older provider routes use `item`. Accept either, then use the resolved
+      // reference everywhere (the old code re-read body.item.id after picking
+      // body.provider — that would have crashed on success in the T6 path).
       const created = body.provider || body.item;
       const opt = document.createElement("option");
       opt.value = String(created.id);
       opt.textContent = created.name + " (جديد)";
       opt.dataset.costModel = costModel;
       providerSelect.insertBefore(opt, providerSelect.querySelector('option[value="__new__"]'));
-      providerSelect.value = String(body.item.id);
+      providerSelect.value = String(created.id);
       newProviderPanel.style.display = "none";
       toast("success", "تم حفظ المزود وتعيينه.");
     } catch (err) {
