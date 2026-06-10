@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required, super_admin_required
@@ -515,6 +515,16 @@ def service_allocation_edit(alloc_id: int):
 @bp.get("/proxy-routes")
 @login_required
 def proxy_routes_list():
+    """List proxy-realm routes + render the create modal.
+
+    The modal exposes BOTH CHR sources side by side: the legacy
+    CHR-console table (``app.models.ChrNode``) and the fleet registry
+    (``fleet.registry.models_chr.FleetChrNode``, populated by the
+    onboarding wizard). Prior to this fix the modal only listed legacy
+    nodes — a fleet CHR onboarded via the wizard was invisible, which
+    is why the live deployment debug needed manual SQL on
+    ``allowed_chr_node_ids_json``.
+    """
     routes = (
         ProxyRealmRoute.query
         .join(Customer)
@@ -522,13 +532,45 @@ def proxy_routes_list():
         .all()
     )
     chr_nodes = ChrNode.query.filter_by(status="active").order_by(ChrNode.name).all()
+    fleet_chr_nodes = []
+    try:
+        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+        fleet_chr_nodes = (
+            FleetChrNode.query
+            .filter(FleetChrNode.enabled.is_(True))
+            .filter(FleetChrNode.status.notin_(("disabled",)))
+            .order_by(FleetChrNode.name.asc())
+            .all()
+        )
+    except Exception as exc:  # noqa: BLE001 — defensive
+        current_app.logger.warning(
+            "proxy_routes_list: fleet_chr_nodes load failed (%s); skipping fleet source",
+            exc.__class__.__name__,
+        )
+    customers_without_instance = (
+        Customer.query
+        .outerjoin(CustomerRadiusInstance, CustomerRadiusInstance.customer_id == Customer.id)
+        .filter(CustomerRadiusInstance.id.is_(None))
+        .order_by(Customer.company_name)
+        .all()
+    )
     instances = CustomerRadiusInstance.query.order_by(CustomerRadiusInstance.realm).all()
     return render_template(
         "admin/infra/proxy_routes_new.html",
         routes=routes,
         chr_nodes=chr_nodes,
+        fleet_chr_nodes=fleet_chr_nodes,
         instances=instances,
+        customers_without_instance=customers_without_instance,
     )
+
+
+# Accepted status values for the create form. Default is ``active`` so
+# the create-and-activate flow is one click (operators were having to
+# create as "draft" then POST status=active separately — that two-step
+# is what the live debug ran into; the routing-table query filters by
+# status=active, so a freshly-created "draft" route published zero realms).
+_PROXY_ROUTE_STATUSES = {"active", "suspended", "draft"}
 
 
 @bp.post("/proxy-routes/create")
@@ -543,7 +585,14 @@ def proxy_route_create():
         flash(f"مسار الـ Realm \u00ab{realm}\u00bb موجود مسبقًا.", "error")
         return redirect(url_for("admin_infra.proxy_routes_list"))
     instance = CustomerRadiusInstance.query.get_or_404(radius_instance_id)
+    # Two separate allow-lists \u2014 legacy and fleet \u2014 because the two
+    # tables have independent autoincrement sequences and their ids
+    # would otherwise collide. routing-table queries union both at
+    # resolve time.
     allowed_node_ids = [_int(x) for x in request.form.getlist("allowed_chr_node_ids") if _int(x)]
+    allowed_fleet_node_ids = [_int(x) for x in request.form.getlist("allowed_fleet_chr_node_ids") if _int(x)]
+    raw_status = _str(request.form.get("status"), 20) or "active"
+    status = raw_status if raw_status in _PROXY_ROUTE_STATUSES else "active"
     route = ProxyRealmRoute(
         realm=realm,
         customer_id=instance.customer_id,
@@ -552,14 +601,27 @@ def proxy_route_create():
         target_auth_port=_int(request.form.get("target_auth_port"), 1812),
         target_acct_port=_int(request.form.get("target_acct_port"), 1813),
         secret_vault_ref=_str(request.form.get("secret_vault_ref"), 120),
-        status="draft",
+        status=status,
     )
     route.allowed_chr_node_ids = allowed_node_ids
+    route.allowed_fleet_chr_node_ids = allowed_fleet_node_ids
     db.session.add(route)
     db.session.flush()
-    audit("proxy_route_create", "proxy_realm_route", route.id, f"\u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Proxy \u0644\u0644\u0640 Realm: {realm}", {})
+    audit(
+        "proxy_route_create", "proxy_realm_route", route.id,
+        f"\u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Proxy \u0644\u0644\u0640 Realm: {realm}",
+        {
+            "status": status,
+            "allowed_legacy_chr_ids": allowed_node_ids,
+            "allowed_fleet_chr_ids": allowed_fleet_node_ids,
+        },
+    )
     db.session.commit()
-    flash(f"\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Realm \u00ab{realm}\u00bb.", "success")
+    flash(
+        f"\u062a\u0645 \u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Realm \u00ab{realm}\u00bb"
+        + (" \u0648\u062a\u0641\u0639\u064a\u0644\u0647." if status == "active" else f" \u0628\u062d\u0627\u0644\u0629 {status}."),
+        "success",
+    )
     return redirect(url_for("admin_infra.proxy_routes_list"))
 
 

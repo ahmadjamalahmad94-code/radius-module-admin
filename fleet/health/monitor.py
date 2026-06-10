@@ -28,7 +28,10 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import platform
+import shutil
 import socket
+import subprocess
 import time
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
@@ -57,19 +60,28 @@ logger = logging.getLogger(__name__)
 class PingTarget:
     """Where to ping a CHR node.
 
-    ``host`` is the panel's preferred reach (``public_ip``; the
-    ``wg_mgmt_ip`` is used as a fallback when public IP is blank).
-    ``port`` is the RouterOS control endpoint (``routeros_api_port``).
-    A pinger MAY ignore the port (e.g. an ICMP pinger), but the TCP
-    pinger uses it as its connect target — a successful TCP handshake to
-    the api-ssl port is a strong "node is reachable AND its control plane
-    is alive" signal in one probe.
+    ``host`` is the panel's preferred reach over the **control plane**
+    (``wg_mgmt_ip``, e.g. ``10.99.0.11``); ``public_ip`` is only used as
+    a last-resort fallback when ``wg_mgmt_ip`` is empty. Probing the
+    public IP for liveness is wrong in two ways: the operator's CHR
+    firewall blocks RouterOS api-ssl on the WAN (so the probe always
+    fails and the node looks down), and it exposes the control port to
+    the internet if it ever stops being blocked. ``wg-mgmt`` is the
+    documented control plane and the only place the panel should reach
+    the CHR for health.
+
+    ``port`` is the RouterOS control endpoint (``routeros_api_port``);
+    ICMP pingers ignore it. The default :class:`IcmpPinger` does an
+    ICMP echo to ``host`` and treats a reply as "the CHR is up" — that
+    is the documented control-plane liveness contract (the CHR firewall
+    accepts ICMP on wg-mgmt; api-ssl/cert are not needed to know it's
+    alive).
     """
 
     chr_id: int
     name: str
     host: str
-    port: int = 8729           # RouterOS api-ssl default; see fleet_chr_nodes.routeros_api_port
+    port: int = 8729           # RouterOS api-ssl default; ICMP pingers ignore this.
 
 
 @dataclasses.dataclass(frozen=True)
@@ -100,19 +112,14 @@ class Pinger(Protocol):
 
 
 class TcpConnectPinger:
-    """Default probe: TCP connect to ``target.host:target.port``.
+    """Legacy probe: TCP connect to ``target.host:target.port``.
 
-    Chosen over raw-ICMP because:
-
-    * It requires no privileged sockets (works as a normal user / inside
-      a Docker container / on Windows where ICMP needs admin).
-    * A successful handshake to the RouterOS api-ssl port confirms both
-      reachability AND that the control plane is up (ICMP can succeed
-      while RouterOS is wedged).
-    * "ICMP or TCP-connect" is explicitly allowed by the Phase-4 spec.
-
-    The connect socket is closed in a ``finally`` block so a failed probe
-    never leaks a half-open fd.
+    Kept for back-compat and as a deliberate override (some operators
+    want to probe a specific TCP port). Production now defaults to
+    :class:`IcmpPinger` (see the rationale on ``_resolve_target``): the
+    CHR's control plane is ``wg-mgmt``, and that interface accepts ICMP
+    without any cert/api-ssl handshake — ICMP is the most honest "is
+    this box reachable over the control plane" signal we can get.
     """
 
     def __init__(self, timeout_s: float = 3.0):
@@ -138,6 +145,84 @@ class TcpConnectPinger:
                     sock.close()
                 except OSError:  # pragma: no cover - best-effort cleanup
                     pass
+
+
+class IcmpPinger:
+    """Production probe: ICMP echo to ``target.host`` over the control plane.
+
+    Why ICMP and not TCP-connect-8729:
+      * The previous default tried TCP to RouterOS api-ssl on port 8729
+        over the **public IP**, which is firewall-blocked on WAN (and
+        ought to be — exposing api-ssl is a footgun). Result: a perfectly
+        healthy CHR always read as ``down`` until the operator manually
+        flipped its status. This was the live blocker driving this fix.
+      * ``wg-mgmt`` accepts ICMP on the panel-side firewall (it's the
+        control plane — that's the whole point). The moment the tunnel
+        is up, ``ping 10.99.0.11`` works; the moment it goes down, it
+        stops. That is exactly the liveness signal the monitor needs.
+      * No raw sockets / no privileges required: we shell out to the
+        system ``ping`` binary which is on every Linux / Windows host
+        the panel runs on. If the binary somehow isn't there, the probe
+        falls back to a single TCP-connect to ``target.port`` so the
+        monitor degrades to the legacy behaviour rather than reporting
+        every node down.
+
+    Cross-platform invocation:
+      * **Linux**: ``ping -c 1 -W <seconds> <host>``
+      * **Windows**: ``ping -n 1 -w <milliseconds> <host>``
+      * **macOS**: ``ping -c 1 -W <milliseconds> <host>`` (macOS uses ms
+        for ``-W``); same flag spelling as Linux happens to work.
+
+    A non-zero return code OR a "100% packet loss" line counts as fail.
+    """
+
+    def __init__(self, timeout_s: float = 3.0):
+        self._timeout = timeout_s
+
+    def _build_argv(self, host: str) -> list[str]:
+        sysname = platform.system().lower()
+        if sysname == "windows":
+            timeout_ms = max(1, int(self._timeout * 1000))
+            return ["ping", "-n", "1", "-w", str(timeout_ms), host]
+        # Linux + macOS
+        timeout_s = max(1, int(round(self._timeout)))
+        return ["ping", "-c", "1", "-W", str(timeout_s), host]
+
+    def ping(self, target: PingTarget) -> PingResult:
+        host = (target.host or "").strip()
+        if not host:
+            return PingResult(ok=False, error="no_host")
+        if shutil.which("ping") is None:
+            # Degraded fallback: legacy TCP-connect so the monitor still
+            # runs on a stripped container missing the ping binary.
+            return TcpConnectPinger(timeout_s=self._timeout).ping(target)
+
+        argv = self._build_argv(host)
+        start = time.perf_counter()
+        try:
+            proc = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout + 2.0,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return PingResult(ok=False, error="timeout")
+        except OSError as exc:  # pragma: no cover - exotic spawn failure
+            return PingResult(ok=False, error=getattr(exc, "strerror", str(exc)) or "spawn_error")
+        latency_ms = round((time.perf_counter() - start) * 1000.0, 2)
+
+        # ``ping`` returns 0 only when at least one reply was received.
+        # On Windows it can return 0 even with "Destination host
+        # unreachable" so we also scan the output for the loss line.
+        text = (proc.stdout or "") + (proc.stderr or "")
+        lost_all = "100% packet loss" in text or "100% loss" in text
+        if proc.returncode == 0 and not lost_all:
+            return PingResult(ok=True, latency_ms=latency_ms)
+        if "Destination Host Unreachable" in text or "unreachable" in text.lower():
+            return PingResult(ok=False, error="unreachable")
+        return PingResult(ok=False, error="timeout" if lost_all else f"rc{proc.returncode}")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -255,6 +340,22 @@ def evaluate_transition(
         # Already down; just keep accumulating the streak.
         return None
 
+    # Hard rule (added after the live "provisioning-marked-down" debug):
+    # a node that has NEVER been verified up must not be flipped to down
+    # by the monitor. Health rows start at state="unknown" on first
+    # contact, and a node freshly enrolled by the wizard sits in
+    # ``provisioning`` until its wg-mgmt tunnel comes up and the first
+    # ping succeeds. While we are still in "unknown", a failing ping
+    # means "we cannot reach it YET" — that's the same as
+    # provisioning, not a real outage. Only nodes that have already
+    # been seen up (``up`` / ``degraded``) can transition to ``down``.
+    # This breaks the catch-22 where the monitor would mark a fresh CHR
+    # ``down`` before it ever had a chance to come up, and the routing
+    # table (which excludes ``down`` nodes by default) would then never
+    # publish it. See: fleet/registry/models_chr.py NODE_STATUSES.
+    if health.state not in ("up", "degraded"):
+        return None
+
     streak_s = (now - health.first_fail_at).total_seconds()
     if streak_s >= cfg.down_after:
         return _do_transition(health, "down", now)
@@ -280,8 +381,24 @@ def _do_transition(health: FleetChrHealth, to_state: str, now: datetime) -> Tran
 
 
 def _resolve_target(node: FleetChrNode) -> PingTarget:
-    """Pick the best reach for a node — public IP first, mgmt IP as fallback."""
-    host = (node.public_ip or "").strip() or (node.wg_mgmt_ip or "").strip()
+    """Pick the reach for a node — **control plane first**, public IP fallback.
+
+    The monitor's job is "is the CHR alive?" — and the CHR's control
+    plane IS ``wg-mgmt``. The public IP is for end-user VPN traffic; the
+    operator's firewall correctly blocks RouterOS api-ssl on the WAN, so
+    probing the public IP for control liveness always failed and made
+    even a healthy CHR look down (the live deployment debug this fix
+    came out of). The fix is to send every probe over ``wg_mgmt_ip``
+    (e.g. ``10.99.0.11``), the way the rest of the panel reaches CHRs.
+
+    ``public_ip`` is kept only as a last-resort fallback for a node
+    whose ``wg_mgmt_ip`` was somehow never populated — that should be
+    impossible after onboarding but we don't want a single bad row to
+    silently turn off health for the whole fleet. When that fallback
+    fires, the probe still uses ICMP (see :class:`IcmpPinger`) so it
+    doesn't expose any control port externally.
+    """
+    host = (node.wg_mgmt_ip or "").strip() or (node.public_ip or "").strip()
     return PingTarget(
         chr_id=int(node.id),
         name=node.name or "",
@@ -426,7 +543,10 @@ def _denormalize_node_status(node: FleetChrNode, transition: Transition, now: da
 
 
 def _default_pinger() -> Pinger:
-    return TcpConnectPinger()
+    """ICMP over wg-mgmt is the documented control-plane liveness check
+    — see :class:`IcmpPinger` for the rationale. The TCP pinger is still
+    importable for callers that want to test a specific TCP port."""
+    return IcmpPinger()
 
 
 def run_once(
@@ -682,6 +802,7 @@ __all__ = [
     "Pinger",
     "PingResult",
     "PingTarget",
+    "IcmpPinger",
     "TcpConnectPinger",
     "Transition",
     "NodeOutcome",

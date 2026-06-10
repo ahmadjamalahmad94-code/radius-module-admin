@@ -500,6 +500,17 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "routeros_password_enc": "TEXT NOT NULL DEFAULT ''",
         })
 
+    # ProxyRealmRoute — separate allow-list column for FLEET CHR ids
+    # (fleet_chr_nodes), distinct from the legacy chr_nodes ids the older
+    # routes were created with. The two tables have independent
+    # autoincrement sequences so a single column cannot tell them apart;
+    # we keep them as two columns and the routing-table query unions
+    # both at resolve time. Idempotent heal for pre-fix DBs.
+    if "proxy_realm_routes" in tables:
+        _add_columns_if_missing("proxy_realm_routes", {
+            "allowed_fleet_chr_node_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+        })
+
     # Instance Activation Tokens — single-use Admin Bridge bootstrap tokens.
     # The table itself is created fresh by db.create_all() on new DBs.
     # On live DBs the table may pre-exist; guard to heal any additive columns.

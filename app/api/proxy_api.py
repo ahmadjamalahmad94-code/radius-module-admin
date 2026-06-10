@@ -212,19 +212,30 @@ def routing_table():
             exc.__class__.__name__,
         )
 
+    # Index fleet nodes by id for the allow-list resolver below.
+    fleet_chr_by_id = {n.id: n for n in fleet_chr_nodes_q}
+
     routes_out = []
     for r in routes_q:
         # Resolve actual secret from vault
         secret_value = _resolve_secret(r.secret_vault_ref, r.customer_id)
 
-        # Resolve allowed CHR IPs from the LEGACY table (ProxyRealmRoute
-        # historically keyed `allowed_chr_node_ids` against `chr_nodes.id`).
+        # Resolve allowed CHR IPs from BOTH the legacy and the fleet
+        # registries. The two tables have independent autoincrement
+        # sequences and their ids could otherwise collide, so the model
+        # carries them in separate columns and we union them here.
         allowed_ips: list[str] = []
-        if r.allowed_chr_node_ids:
-            for nid in r.allowed_chr_node_ids:
-                node = legacy_chr_nodes.get(nid)
-                if node and node.public_ip:
-                    allowed_ips.append(node.public_ip)
+        seen: set[str] = set()
+        for nid in (r.allowed_fleet_chr_node_ids or []):
+            node = fleet_chr_by_id.get(nid)
+            if node and node.public_ip and node.public_ip not in seen:
+                allowed_ips.append(node.public_ip)
+                seen.add(node.public_ip)
+        for nid in (r.allowed_chr_node_ids or []):
+            node = legacy_chr_nodes.get(nid)
+            if node and node.public_ip and node.public_ip not in seen:
+                allowed_ips.append(node.public_ip)
+                seen.add(node.public_ip)
 
         routes_out.append({
             "realm": r.realm,
