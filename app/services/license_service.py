@@ -77,9 +77,15 @@ def generate_license_key() -> str:
 
 
 def default_grace_days() -> int:
-    setting = db.session.get(Setting, "default_grace_days")
-    if setting and setting.value.isdigit():
-        return int(setting.value)
+    """Resolve grace-days from the Setting table, falling back to env then
+    the built-in default. Accepts BOTH the legacy key (``default_grace_days``,
+    posted by ``/settings`` general form) AND the new payment-panel key
+    (``grace_days``, posted by ``/settings/section`` payment form — FIX #8
+    of mock-inventory remediation). Either UI field now works."""
+    for key in ("default_grace_days", "grace_days"):
+        setting = db.session.get(Setting, key)
+        if setting and setting.value and setting.value.isdigit():
+            return int(setting.value)
     return int(current_app.config.get("DEFAULT_GRACE_DAYS", 7))
 
 
