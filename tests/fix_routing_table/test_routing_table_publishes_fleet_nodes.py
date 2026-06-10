@@ -136,7 +136,24 @@ def test_up_and_degraded_nodes_also_publish(proxy_app, client):
     assert {"chr-up", "chr-deg"}.issubset(names)
 
 
-def test_down_and_disabled_and_drain_filtered_out(proxy_app, client):
+def test_down_node_is_PUBLISHED_disabled_and_drain_excluded(proxy_app, client):
+    """Live-deploy catch-22 fix.
+
+    Publication tracks DATA-plane + admin intent, not control-plane health.
+    A node whose wg-mgmt ping fails (``status=down``) but whose wg-data
+    tunnel still carries RADIUS MUST appear in the proxy's allowlist —
+    otherwise the proxy rejects packets from a healthy data plane just
+    because the panel can't ping the control plane.
+
+    Admin intent / drain are the gates: ``enabled=False`` (admin off)
+    and ``drain=True`` (no new placements; existing keep running) both
+    remove a node from the allowlist; ``status='disabled'`` also drops
+    it. Health-``down`` does NOT.
+
+    The brain's :func:`fleet.brain.placement.rank` separately excludes
+    ``down`` from NEW placements — see :func:`test_brain_rank_still_excludes_down_from_new_placements`
+    below for the corresponding-side check.
+    """
     _live_node(name="chr-down", public_ip="178.105.244.115",
                wg_mgmt_ip="10.99.0.14", status="down")
     _live_node(name="chr-off", public_ip="178.105.244.116",
@@ -145,16 +162,53 @@ def test_down_and_disabled_and_drain_filtered_out(proxy_app, client):
                wg_mgmt_ip="10.99.0.16", status="up", drain=True)
     _live_node(name="chr-disabled", public_ip="178.105.244.118",
                wg_mgmt_ip="10.99.0.17", status="disabled")
-    # Also seed a healthy one so chr_nodes[] isn't empty.
     _live_node(name="chr-survivor", public_ip="178.105.244.119",
                wg_mgmt_ip="10.99.0.18", status="up")
     r = client.get(URL, headers={"X-Proxy-Token": _token()})
-    names = {e["name"] for e in r.get_json()["chr_nodes"]}
-    assert "chr-survivor" in names
-    assert "chr-down" not in names
-    assert "chr-off" not in names
-    assert "chr-drain" not in names
-    assert "chr-disabled" not in names
+    entries = r.get_json()["chr_nodes"]
+    by_name = {e["name"]: e for e in entries}
+
+    # The control-plane-down node IS published (the fix), with its
+    # status string intact so the proxy / operator still sees it's
+    # unhealthy.
+    assert "chr-down" in by_name, (
+        "control-plane DOWN node was filtered out — the catch-22 regressed"
+    )
+    assert by_name["chr-down"]["status"] == "down"
+    assert by_name["chr-down"]["wg_data_ip"] == "10.98.0.14"
+    assert by_name["chr-down"]["enabled"] is True
+    assert by_name["chr-down"]["drain"] is False
+
+    # The healthy survivor is in too.
+    assert "chr-survivor" in by_name
+
+    # Admin intent + drain still gate publication.
+    assert "chr-off" not in by_name
+    assert "chr-drain" not in by_name
+    assert "chr-disabled" not in by_name
+
+
+def test_brain_rank_still_excludes_down_from_new_placements(proxy_app):
+    """Corresponding-side invariant: a ``down`` node IS published to the
+    proxy allowlist but the brain MUST NOT pick it for new logins."""
+    from fleet.brain.placement import rank
+    from fleet.health.models_health import FleetChrHealth
+
+    down = _live_node(name="chr-rank-down", public_ip="178.105.244.220",
+                      wg_mgmt_ip="10.99.0.20", status="down")
+    up = _live_node(name="chr-rank-up", public_ip="178.105.244.221",
+                    wg_mgmt_ip="10.99.0.21", status="up")
+    db.session.add_all([
+        FleetChrHealth(chr_id=down.id, state="down"),
+        FleetChrHealth(chr_id=up.id, state="up"),
+    ])
+    db.session.commit()
+
+    ranked = {ns.name for ns in rank()}
+    assert "chr-rank-up" in ranked
+    assert "chr-rank-down" not in ranked, (
+        "brain rank() must keep excluding down nodes from new placements"
+    )
 
 
 def test_wg_data_ip_empty_for_non_canonical_mgmt_pool(proxy_app, client):

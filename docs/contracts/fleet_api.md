@@ -456,11 +456,19 @@ Implemented in `app/api/proxy_api.py`.
 > from BOTH the new fleet registry (`fleet_chr_nodes`, populated by the
 > onboarding wizard) AND the legacy CHR-console table (`chr_nodes`,
 > kept for backward compatibility). Fleet entries are accepted at
-> ``status ∈ {provisioning, up, degraded}`` (a freshly-onboarded
-> provisioning node MUST be routable; first-light traffic has nowhere
-> to go otherwise). Legacy entries are filtered to ``status="active"``
-> as before. The `source` discriminator tells the proxy which table a
-> node came from.
+> ``status ∈ {provisioning, up, degraded, down}`` — i.e. EVERY non-
+> disabled status, with ``enabled=TRUE`` AND ``drain=FALSE`` as the
+> gates. Health-``down`` (a CONTROL-plane ping failure) does NOT
+> remove a node from the allowlist; the DATA plane (wg-data) is
+> independent and routinely works long before / after the control
+> plane is reachable, so excluding ``down`` causes the catch-22 we hit
+> on the live deployment (data plane fine → mgmt ping fails → node
+> dropped from allowlist → proxy rejects valid RADIUS). The brain's
+> :py:func:`fleet.brain.placement.rank` still excludes ``down`` from
+> NEW placements, so a control-plane-down node stays in the allowlist
+> but never wins a new login until it recovers. Legacy entries are
+> filtered to ``status="active"`` as before. The `source` discriminator
+> tells the proxy which table a node came from.
 
 > **`realms_status` (live-deploy hotfix):** answers "why is `routes[]` empty?"
 > in one read. `ProxyRealmRoute` rows are created from the
