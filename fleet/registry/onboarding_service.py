@@ -162,8 +162,42 @@ class WizardForm:
         if cap is None:
             cap = data.get("bandwidth_cap_tb")
 
+        # Provider resolution — accept BOTH shapes so the wizard's natural
+        # ``provider_id`` (from the dropdown) works AND a name-only payload
+        # (the legacy/tests path) still works.
+        #
+        # The owner's repro shipped only ``provider_id`` and the old code
+        # required ``provider`` (name) → hard-failed with
+        # «الحقل «provider» مطلوب.» before any business logic ran. We now
+        # resolve in this priority:
+        #   1. ``provider`` (name)        — backward-compatible
+        #   2. ``provider_id`` (int)      — looked up in fleet_providers
+        # If neither yields a usable name, raise a precise Arabic message
+        # (no opaque ``onboarding_error`` ever again).
+        provider_name = str(data.get("provider") or "").strip()
+        if not provider_name:
+            raw_id = data.get("provider_id")
+            if raw_id not in (None, "", "__new__"):
+                try:
+                    pid = int(raw_id)
+                except (TypeError, ValueError) as exc:
+                    raise OnboardingError(
+                        "معرّف المزوّد (provider_id) يجب أن يكون رقماً."
+                    ) from exc
+                from fleet.registry.models_chr import FleetProvider  # local import
+                prov = db.session.get(FleetProvider, pid)
+                if prov is None:
+                    raise OnboardingError(
+                        f"لا يوجد مزوّد بالمعرّف {pid}. اختر مزوّداً من القائمة."
+                    )
+                provider_name = prov.name
+        if not provider_name:
+            raise OnboardingError(
+                "اختر المزوّد من القائمة قبل المتابعة (provider أو provider_id مطلوب)."
+            )
+
         return cls(
-            provider=_req_str("provider"),
+            provider=provider_name,
             name=_req_str("name"),
             public_ip=_req_str("public_ip"),
             cost_model=cost_model,
