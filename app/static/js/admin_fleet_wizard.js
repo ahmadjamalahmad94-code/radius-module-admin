@@ -334,8 +334,18 @@
   function collectPayload() {
     const fd = new FormData(form);
     const overage = form.querySelector('input[name="overage_allowed"]').checked;
+    // Resolve the provider name from the selected <option> so the server
+    // can use the natural name-string contract without a second DB hit.
+    // Strips the «(جديد)» suffix the inline "new provider" path appends.
+    const providerId = fd.get("provider_id");
+    const providerName = providerLabel(providerId).replace(/\s*\(جديد\)\s*$/u, "").trim();
     return {
-      provider_id: fd.get("provider_id"),
+      // Send BOTH so the server can pick its preferred shape. The submit
+      // endpoint was historically validated as «provider» (name); the wizard
+      // only ever knew «provider_id» from the dropdown — sending both makes
+      // the contract self-correcting on either side.
+      provider_id: providerId,
+      provider: providerName,
       name: (fd.get("name") || "").toString().trim(),
       public_ip: (fd.get("public_ip") || "").toString().trim(),
       public_ipv6: (fd.get("public_ipv6") || "").toString().trim() || null,
@@ -380,8 +390,12 @@
         toast("success", "تم إنشاء عملية الأنبوردنغ. متابعتها متاحة من لوحة الأسطول.");
         setTimeout(() => { window.location.href = "/admin/fleet/"; }, 1100);
       } else {
-        const detail = body.detail || body.error || ("HTTP " + res.status);
-        toast("error", "تعذّر إرسال الطلب: " + detail, { ttl: 8000 });
+        // Onboarding routes return the human reason under `body.message`;
+        // older shapes used `body.detail`. Fall through to `body.error` only
+        // as a last resort so the toast never reads a bare class name like
+        // «onboarding_error» again.
+        const reason = body.message || body.detail || body.error || ("HTTP " + res.status);
+        toast("error", "تعذّر إرسال الطلب: " + reason, { ttl: 8000 });
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> إرسال للأنبوردنغ';
       }
