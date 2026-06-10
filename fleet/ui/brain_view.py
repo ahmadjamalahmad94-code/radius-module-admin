@@ -108,9 +108,22 @@ class RankedNode:
     name: str
     public_ip: str
     provider_name: str | None
-    score: float                    # higher = better
-    eligible: bool
-    excluded_reason: str | None     # Arabic short phrase when not eligible
+    # Raw weighted score from the brain (or fallback). Higher = better. NOT
+    # bounded — the brain returns whatever its formula produced (e.g. 2.82),
+    # and the fallback returns a value in [0, 1]. This is the SORT KEY and
+    # MUST NOT be rendered directly under a «من 100» framing — use
+    # ``score_pct`` for the UI.
+    score: float
+    # Display score on a 0..100 scale, computed AFTER sorting by
+    # ``_assign_display_scores`` so it's coherent across the whole list:
+    #   top node    → 100
+    #   other nodes → round(score / top * 100)   (clamped to [0, 100])
+    # Order is preserved because we never re-sort on this field. The number,
+    # the «من 100» label, and the progress-bar width all bind to this value
+    # — never to ``score * 100`` (which can blow past 100 on the brain path).
+    score_pct: int = 0
+    eligible: bool = True
+    excluded_reason: str | None = None     # Arabic short phrase when not eligible
     factors: list[FactorChip] = field(default_factory=list)
     source: str = "fallback"        # "real" once fleet.brain.rank lands
 
@@ -126,13 +139,46 @@ def ranked_view_for(node_views: list[NodeView]) -> tuple[list[RankedNode], str]:
     The source label tells the UI banner whether the ordering came from the
     real brain or the local fallback so the owner is never misled about
     where the numbers came from.
+
+    Display normalisation: after building the list we stamp each row's
+    ``score_pct`` with a 0–100 value relative to the top score. The raw
+    ``score`` (used for sorting) is left untouched — ordering is preserved.
     """
     real_scores = _try_brain_rank(node_views)
     if real_scores is not None:
         # "real" = ordering came from fleet.brain.rank (unified with the
         # placement adapter's BRAIN_BACKEND == "real"). "fallback" = local stub.
-        return _merge_brain_scores(real_scores, node_views), "real"
-    return _fallback_rank(node_views), "fallback"
+        ranked = _merge_brain_scores(real_scores, node_views)
+        source = "real"
+    else:
+        ranked = _fallback_rank(node_views)
+        source = "fallback"
+    _assign_display_scores(ranked)
+    return ranked, source
+
+
+def _assign_display_scores(ranked: list[RankedNode]) -> None:
+    """Stamp ``score_pct`` (0..100) on every row, relative to the top score.
+
+    The top eligible row (or the top overall row when nothing is eligible)
+    anchors 100. Other rows scale down by ratio. Excluded rows still receive
+    a percentage so the operator can see "this would have been #2 if it were
+    eligible". Always clamped to [0, 100]; if the anchor is ≤ 0 every row
+    falls back to 0 (no divide-by-zero).
+    """
+    if not ranked:
+        return
+    # Prefer an eligible row as the anchor (it's the score that means "best
+    # node currently in rotation"). Fall back to the overall top when no
+    # row is eligible.
+    eligible_scores = [r.score for r in ranked if r.eligible]
+    top = max(eligible_scores) if eligible_scores else max(r.score for r in ranked)
+    for r in ranked:
+        if top is None or top <= 0:
+            r.score_pct = 0
+        else:
+            pct = round((r.score / top) * 100)
+            r.score_pct = max(0, min(100, int(pct)))
 
 
 def brain_available() -> bool:
