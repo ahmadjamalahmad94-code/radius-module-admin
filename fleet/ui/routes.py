@@ -93,6 +93,24 @@ def fleet_dashboard():
     ranking, ranking_source = ranked_view_for(node_views)
     eligible_count = sum(1 for r in ranking if r.eligible)
 
+    # fix/fleet-onboarding-visibility: surface in-flight onboarding jobs on
+    # the dashboard. Without this card, a job whose auto-advance failed
+    # (e.g. vault key missing) is invisible — the owner clicks «إرسال» and
+    # sees nothing. We expose every non-terminal job (everything except
+    # ``active`` — terminal-success — and pure failure rows that have
+    # already been retried) ordered newest-first.
+    from fleet.registry.models_onboarding import OnboardingJob
+    pending_states = ("draft", "keys_generated", "script_generated",
+                      "pushed", "verifying", "failed")
+    pending_jobs = (
+        OnboardingJob.query
+        .filter(OnboardingJob.status.in_(pending_states))
+        .order_by(OnboardingJob.id.desc())
+        .limit(20)
+        .all()
+    )
+    pending_job_views = [_onboarding_job_view(j) for j in pending_jobs]
+
     return render_template(
         "admin/fleet/dashboard.html",
         nodes=nodes,                  # kept for backwards-compat refs
@@ -106,7 +124,38 @@ def fleet_dashboard():
         brain_imported=brain_available(),
         total_nodes=FleetChrNode.query.count(),
         total_providers=len(providers),
+        pending_jobs=pending_job_views,
+        pending_jobs_count=len(pending_job_views),
     )
+
+
+# Arabic labels for OnboardingJob.status. Kept here (not in models_onboarding)
+# so the model stays decoupled from UI strings.
+_ONBOARDING_STATUS_AR = {
+    "draft":            "مسودة",
+    "keys_generated":   "تم توليد المفاتيح",
+    "script_generated": "تم توليد السكربت",
+    "pushed":           "تم الدفع للعقدة",
+    "verifying":        "قيد التحقّق",
+    "active":           "نشطة",
+    "failed":           "فشلت",
+}
+
+
+def _onboarding_job_view(job) -> dict:
+    """Plain-dict view of an OnboardingJob for the dashboard template."""
+    form = job.form_input or {}
+    return {
+        "id": job.id,
+        "status": job.status,
+        "status_label": _ONBOARDING_STATUS_AR.get(job.status, job.status),
+        "chr_id": job.chr_id,
+        "provider": form.get("provider") or "—",
+        "name": form.get("name") or f"#{job.id}",
+        "public_ip": form.get("public_ip") or "—",
+        "last_error": form.get("last_error"),
+        "created_at": job.created_at.isoformat() + "Z" if getattr(job, "created_at", None) else None,
+    }
 
 
 # ────────────────────────────────────────────────────────────────────────────

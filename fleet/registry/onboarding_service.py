@@ -356,13 +356,52 @@ class OnboardingService:
 
     # ── step 0: draft ────────────────────────────────────────────────────────
     def create_draft(self, form: WizardForm | dict[str, Any]) -> OnboardingJob:
-        """Submit the wizard form → a ``draft`` job. Resolves/creates the provider."""
+        """Submit the wizard form → a job + (best-effort) a provisioning node.
+
+        Behaviour (fix/fleet-onboarding-visibility):
+
+        1. **Dedupe** by ``(provider, name)``. If a ``FleetChrNode`` already
+           exists at that key OR an in-flight ``OnboardingJob`` (anything
+           other than terminal ``active``/``failed``) names the same node,
+           refuse with a precise Arabic message. This kills the "owner
+           submitted the same form 3 times" silent duplicate spam.
+        2. Resolve/upsert the provider (§6.1).
+        3. Persist the ``draft`` job.
+        4. **Auto-advance to ``keys_generated``** in the same request — this
+           creates the ``fleet_chr_nodes`` row (``status='provisioning'``)
+           so the operator SEES the node on the dashboard immediately. If
+           the key generation fails (e.g. the panel vault key isn't set),
+           the draft job remains in ``draft`` with a stamped
+           ``form_input.last_error``; the pending-onboardings card on the
+           dashboard surfaces it so nothing is invisible.
+        """
         if isinstance(form, dict):
             form = WizardForm.from_dict(form)
-        # Resolve or create the provider (the "select/new" field, §6.1). A node
-        # cost_model of 'inherit' is not a valid PROVIDER model, so when we have
-        # to create a brand-new provider we default it to 'open'; an existing
-        # provider (the common case — picked from the dropdown) is returned as-is.
+
+        # ── 1. Dedupe ────────────────────────────────────────────────────
+        provider_name = (form.provider or "").strip()
+        node_name = (form.name or "").strip()
+        existing_provider = provider_service.get_provider_by_name(provider_name)
+        if existing_provider is not None:
+            dup_node = FleetChrNode.query.filter_by(
+                provider_id=existing_provider.id, name=node_name
+            ).first()
+            if dup_node is not None:
+                raise OnboardingError(
+                    f"عقدة باسم «{node_name}» موجودة مسبقاً على المزوّد «{provider_name}». "
+                    f"اختر اسماً مختلفاً أو عدّل العقدة القائمة."
+                )
+        # Block parallel in-flight jobs for the same (provider, name).
+        active_states = ("draft", "keys_generated", "script_generated", "pushed", "verifying")
+        for j in OnboardingJob.query.filter(OnboardingJob.status.in_(active_states)).all():
+            f = j.form_input or {}
+            if (f.get("name") or "").strip() == node_name and (f.get("provider") or "").strip() == provider_name:
+                raise OnboardingError(
+                    f"يوجد عملية إعداد جارية للعقدة «{node_name}» على «{provider_name}» "
+                    f"(الحالة: {j.status}). أكمل العملية الحالية أو احذفها قبل البدء من جديد."
+                )
+
+        # ── 2. Provider upsert ───────────────────────────────────────────
         provider_cost_model = form.cost_model if form.cost_model in ("open", "metered") else "open"
         provider_service.upsert_provider_by_name(
             form.provider,
@@ -371,11 +410,39 @@ class OnboardingService:
             monthly_cap_tb=form.monthly_cap_tb,
             overage_allowed=form.overage_allowed,
         )
+
+        # ── 3. Persist the draft job ─────────────────────────────────────
         job = OnboardingJob(status="draft")
         job.form_input = form.to_json()
         db.session.add(job)
         db.session.commit()
+
+        # ── 4. Auto-advance to keys_generated (creates FleetChrNode) ─────
+        # Wrapped so a missing/misconfigured collaborator (vault, key
+        # provider) leaves the draft job intact + visible, with a stamped
+        # reason instead of a 500.
+        try:
+            self.generate_keys(job)
+        except OnboardingDependencyError as exc:
+            self._stamp_job_error(
+                job,
+                f"تعذّر توليد مفاتيح WireGuard تلقائياً عند الإرسال: {exc}"
+            )
+        except OnboardingError as exc:
+            self._stamp_job_error(job, str(exc))
+        except Exception as exc:  # noqa: BLE001 — never crash submission on the auto-advance
+            self._stamp_job_error(job, f"خطأ غير متوقّع عند توليد المفاتيح: {exc}")
         return job
+
+    def _stamp_job_error(self, job: OnboardingJob, message: str) -> None:
+        """Persist a last_error on the form_input + commit. Used when an
+        auto-advance step fails but we want the draft job to remain visible
+        on the dashboard so the operator can retry from the UI."""
+        data = dict(job.form_input or {})
+        data["last_error"] = message[:500]
+        job.form_input = data
+        db.session.add(job)
+        db.session.commit()
 
     # ── step 1: keys_generated ───────────────────────────────────────────────
     def generate_keys(self, job: OnboardingJob) -> OnboardingJob:
