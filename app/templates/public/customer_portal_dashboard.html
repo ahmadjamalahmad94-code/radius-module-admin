@@ -3,8 +3,109 @@
 
 {% block head_extra %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/portal_pro.css') }}?v=20260531h">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/portal_pro.css') }}?v=20260610a">
 <style>
+  /* ════════════════════════════════════════════════════════════════════
+     Services area — redesign overrides.
+     The pp-svc-grid base auto-fills cards which can stack 4-5 across a wide
+     viewport. Force ≈3 per row on desktop, 2 on tablet, 1 on phone — like
+     the radius module's «خدماتي» tab. Generous whitespace + larger cards.
+     ════════════════════════════════════════════════════════════════════ */
+  .pp-cat-pane .pp-svc-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; }
+  @media (max-width:1100px){ .pp-cat-pane .pp-svc-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:640px){ .pp-cat-pane .pp-svc-grid{ grid-template-columns:1fr; } }
+
+  /* one card — bigger, more breathing room, tier-aware border tint */
+  .pp-cat-pane .pp-svc{ padding:18px; gap:12px; border-radius:16px; min-height:218px; }
+  .pp-cat-pane .pp-svc.tier-green{ background:linear-gradient(180deg,#f0fdf4 0%, #fff 32%); }
+  .pp-cat-pane .pp-svc.tier-green.is-on{ border-color:#86efac; }
+  .pp-cat-pane .pp-svc.tier-teal{ background:linear-gradient(180deg,#ecfeff 0%, #fff 32%); }
+  .pp-cat-pane .pp-svc.tier-teal.is-on{ border-color:#67e8f9; }
+  .pp-svc-tier-row{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+  .pp-tier-badge{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800;
+                  border-radius:999px; padding:4px 11px; border:1px solid transparent; }
+  .pp-tier-badge i{ font-size:11px; }
+  .pp-tier-violet{ background:var(--pp-violet-50); color:var(--pp-violet-d); border-color:var(--pp-violet-100); }
+  .pp-tier-green{ background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+  .pp-tier-teal{ background:#cffafe; color:#155e75; border-color:#a5f3fc; }
+  .pp-tier-ready{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800;
+                  color:#15803d; background:transparent; }
+  .pp-svc-free-tag{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px;
+                    font-weight:800; color:#166534; background:#dcfce7; border:1px solid #bbf7d0;
+                    border-radius:999px; padding:6px 12px; margin-inline-start:auto; }
+  .pp-svc-free-tag i{ font-size:11px; }
+
+  /* tier filter chips above the search box */
+  .pp-tier-filter{ display:flex; flex-wrap:wrap; gap:7px; margin:6px 0 0; }
+  .pp-tier-chip{ display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+    background:#fff; border:1px solid var(--pp-line); border-radius:11px; padding:7px 13px;
+    font:inherit; font-size:12px; font-weight:700; color:var(--pp-ink-2); transition:all .15s ease; }
+  .pp-tier-chip i{ font-size:11px; }
+  .pp-tier-chip:hover{ border-color:var(--pp-violet-300); color:var(--pp-violet-d); }
+  .pp-tier-chip.is-active{ background:var(--pp-violet-100); color:var(--pp-violet-d);
+                           border-color:var(--pp-violet-300); }
+  .pp-tier-chip[data-tier="free_unlimited"].is-active{ background:#dcfce7; color:#166534; border-color:#86efac; }
+  .pp-tier-chip[data-tier="free_limited"].is-active{ background:#cffafe; color:#155e75; border-color:#67e8f9; }
+  .pp-tier-chip[data-tier="paid"].is-active{ background:var(--pp-violet-100); color:var(--pp-violet-d); border-color:var(--pp-violet-300); }
+  .pp-tier-chip[data-tier="all"].is-active{ background:var(--pp-ink); color:#fff; border-color:var(--pp-ink); }
+  .pp-tier-chip .n{ background:#f1f5f9; color:#64748b; font-size:10.5px; font-weight:800;
+    border-radius:999px; padding:1px 7px; }
+  .pp-tier-chip.is-active .n{ background:rgba(255,255,255,.28); color:#fff; }
+  .pp-tier-chip[data-tier="free_unlimited"].is-active .n,
+  .pp-tier-chip[data-tier="free_limited"].is-active .n,
+  .pp-tier-chip[data-tier="paid"].is-active .n{ background:rgba(255,255,255,.45); color:inherit; }
+
+  /* services view header — richer */
+  .pp-services-intro{ display:grid; grid-template-columns:auto 1fr; gap:11px; align-items:start;
+    background:linear-gradient(135deg,#fff,#fafbff); border:1px solid var(--pp-line); border-radius:14px;
+    padding:13px 15px; }
+  .pp-services-intro i{ color:var(--pp-violet-d); font-size:18px; }
+  .pp-services-intro p{ margin:0; font-size:12.5px; color:var(--pp-ink-2); line-height:1.75; }
+  .pp-services-intro b{ color:var(--pp-ink); }
+  .pp-services-legend{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:11.5px; }
+  .pp-services-legend .lg{ display:inline-flex; align-items:center; gap:6px; color:var(--pp-ink-2); }
+  .pp-services-legend .lg .sq{ width:12px; height:12px; border-radius:4px; display:inline-block; }
+  .pp-services-legend .lg .sq.g{ background:#86efac; }
+  .pp-services-legend .lg .sq.t{ background:#67e8f9; }
+  .pp-services-legend .lg .sq.v{ background:#c4b5fd; }
+
+  /* activation / upgrade spec modal */
+  .pp-spec-modal .pp-dialog{ width:min(620px,100%); }
+  .pp-spec-modal .pp-dlg-body{ padding:22px 24px; }
+  .pp-spec-form .pp-spec-intro{ background:var(--pp-violet-50); border:1px solid var(--pp-violet-100);
+    border-radius:12px; padding:12px 14px; color:var(--pp-violet-d); font-size:12.5px; line-height:1.75;
+    margin-bottom:16px; display:flex; gap:10px; align-items:flex-start; }
+  .pp-spec-form .pp-spec-intro i{ font-size:15px; margin-top:1px; }
+  .pp-spec-form .pp-spec-intro b{ color:var(--pp-ink); }
+  .pp-spec-form .pp-spec-fields{ display:grid; gap:13px; }
+  .pp-spec-field label{ display:block; font-size:12.5px; font-weight:800; color:var(--pp-ink); margin-bottom:6px; }
+  .pp-spec-field input, .pp-spec-field textarea, .pp-spec-field select{ width:100%; padding:11px 13px;
+    border:1px solid var(--pp-line-2); border-radius:11px; font:inherit; font-size:13.5px;
+    min-height:44px; background:#fff; }
+  .pp-spec-field input:focus, .pp-spec-field textarea:focus, .pp-spec-field select:focus{
+    outline:none; border-color:var(--pp-violet); box-shadow:0 0 0 4px var(--pp-ring); }
+  .pp-spec-field textarea{ min-height:88px; resize:vertical; line-height:1.7; }
+  .pp-spec-field .pp-hint{ font-size:11.5px; color:var(--pp-ink-3); margin:6px 0 0; line-height:1.6; }
+  .pp-spec-field .pp-current{ display:inline-flex; align-items:center; gap:6px; font-size:11px;
+    font-weight:700; color:var(--pp-ink-3); background:#f1f5f9; border-radius:999px; padding:2px 8px;
+    margin-inline-start:6px; }
+  .pp-spec-empty{ font-size:12.5px; color:var(--pp-ink-2); line-height:1.75; padding:14px;
+    background:#f8fafc; border:1px dashed var(--pp-line-2); border-radius:11px; margin-bottom:12px; }
+  .pp-spec-target{ display:flex; flex-direction:column; gap:11px; }
+  .pp-spec-target-opt{ display:flex; gap:10px; align-items:flex-start; padding:12px 14px;
+    border:1px solid var(--pp-line-2); border-radius:12px; cursor:pointer; transition:all .15s ease; }
+  .pp-spec-target-opt:hover{ border-color:var(--pp-violet-300); background:var(--pp-violet-50); }
+  .pp-spec-target-opt:has(input:checked){ border-color:var(--pp-violet); background:var(--pp-violet-50);
+    box-shadow:0 0 0 3px var(--pp-ring); }
+  .pp-spec-target-opt input{ width:18px; height:18px; margin-top:3px; accent-color:var(--pp-violet); flex:none; }
+  .pp-spec-target-opt .ttl{ font-size:13px; font-weight:800; color:var(--pp-ink); }
+  .pp-spec-target-opt .sub{ font-size:11.5px; color:var(--pp-ink-2); margin-top:4px; line-height:1.6; }
+  /* modal head icon (service icon) — bigger, gradient ring */
+  .pp-spec-modal .pp-dlg-ico{ width:46px; height:46px; }
+
+  /* services view in-pane: hide the (now redundant) sub-title text */
+  .pp-svc-foot{ flex-wrap:wrap; }
+
   /* ════════════════════════════════════════════════════════════════════
      WhatsApp pane — scoped under the pane only (no app-wide bleed).
      Reuses portal-pro look (pp-card / pp-btn / pp-rows) for the chrome and
@@ -166,20 +267,45 @@
 {% macro wa_mask_tail(s, keep=4) %}{% if s and s|length > keep %}••••{{ s[-keep:] }}{% elif s %}{{ s }}{% else %}—{% endif %}{% endmacro %}
 
 {# ── reusable service card macro ── #}
+{# Renders one service card in the customer panel grid. The tier comes from
+   the runtime contract (admin-controlled per subscriber); free tiers show a
+   green "جاهزة" pill, paid tiers expose an activation / upgrade button that
+   opens a real design-system modal (spec form / upgrade form). #}
 {% macro svc_card(item, svc, icon, limit_text) %}
   {% set is_on = svc.enabled %}
   {% set st = svc.status|default('disabled') %}
+  {% set tier = svc.tier|default('paid') %}
+  {% set tier_label = svc.tier_label|default('مدفوعة') %}
+  {% set tier_tone = svc.tier_tone|default('violet') %}
+  {% set is_free = tier in ('free_unlimited', 'free_limited') %}
   {% if is_on %}{% set state='on' %}{% set cls='pp-svc-status is-on' %}{% set card='is-on' %}{% set txt='مفعّلة' %}
   {% elif st == 'pending' %}{% set state='trial' %}{% set cls='pp-svc-status is-blue' %}{% set card='' %}{% set txt='تجريبية' %}
   {% elif st == 'expired' %}{% set state='off' %}{% set cls='pp-svc-status is-amber' %}{% set card='' %}{% set txt='منتهية' %}
   {% elif st == 'suspended' %}{% set state='off' %}{% set cls='pp-svc-status is-red' %}{% set card='' %}{% set txt='موقوفة' %}
   {% else %}{% set state='off' %}{% set cls='pp-svc-status is-off' %}{% set card='' %}{% set txt='غير مفعّلة' %}{% endif %}
-  <article class="pp-svc {{ card }}" data-state="{{ state }}"
+  {# JSON-encoded list of {key,label,hint} for the modal — Jinja's |tojson
+     keeps the order, escapes for HTML attribute embedding safely. #}
+  {% set _spec_fields = [] %}
+  {% for field_key, field_label, field_hint in service_limit_fields(item.service_key) %}
+    {% set _ = _spec_fields.append({"key": field_key, "label": field_label, "hint": field_hint}) %}
+  {% endfor %}
+  <article class="pp-svc {{ card }} tier-{{ tier_tone }}" data-state="{{ state }}" data-tier="{{ tier }}"
            data-name="{{ (item.name_ar or item.name or item.service_key)|lower }} {{ item.service_key }}">
     <div class="pp-svc-top">
       <span class="pp-svc-ico"><i class="fa-solid fa-{{ icon }}"></i></span>
       <span class="pp-svc-name">{{ item.name_ar or item.name or item.service_key }}</span>
       <span class="{{ cls }}"><span class="dot"></span>{{ txt }}</span>
+    </div>
+    <div class="pp-svc-tier-row">
+      <span class="pp-tier-badge pp-tier-{{ tier_tone }}">
+        {% if tier_tone == 'green' %}<i class="fa-solid fa-gift"></i>
+        {% elif tier_tone == 'teal' %}<i class="fa-solid fa-gauge-simple"></i>
+        {% else %}<i class="fa-solid fa-tag"></i>{% endif %}
+        {{ tier_label }}
+      </span>
+      {% if is_free and is_on %}
+      <span class="pp-tier-ready"><i class="fa-solid fa-circle-check"></i> جاهزة للاستخدام</span>
+      {% endif %}
     </div>
     {% if item.description %}<p class="pp-svc-desc">{{ item.description }}</p>{% endif %}
     {% if limit_text %}<div class="pp-svc-limit"><i class="fa-solid fa-gauge"></i> {{ limit_text }}</div>{% endif %}
@@ -187,19 +313,37 @@
       <button type="button" class="pp-more" data-pp-more
               data-name="{{ item.name_ar or item.name or item.service_key }}"
               data-icon="{{ icon }}" data-status="{{ txt }}" data-status-cls="{{ cls }}"
-              data-desc="{{ item.description or 'صلاحية ضمن عقد ترخيصك. تظهر تفاصيلها وحدودها عند تفعيلها من لوحة التراخيص.' }}"
+              data-tier="{{ tier }}" data-tier-label="{{ tier_label }}" data-tier-tone="{{ tier_tone }}"
+              data-desc="{{ item.description or 'صلاحية ضمن عقد ترخيصك. تظهر تفاصيلها وحدودها عند تفعيلها.' }}"
               data-limits="{{ limit_text }}">
-        <i class="fa-solid fa-circle-info"></i> المزيد
+        <i class="fa-solid fa-circle-info"></i> اعرفني
       </button>
-      <form method="post" action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}" class="pp-req-btn">
-        {{ csrf_input() }}
-        <input type="hidden" name="request_type" value="{{ 'upgrade' if is_on else 'activation' }}">
-        {% if is_on %}
-          <button type="submit" class="pp-btn pp-btn--soft pp-btn--sm"><i class="fa-solid fa-arrow-up"></i> ترقية</button>
-        {% else %}
-          <button type="submit" class="pp-btn pp-btn--primary pp-btn--sm"><i class="fa-solid fa-paper-plane"></i> تفعيل</button>
-        {% endif %}
-      </form>
+      {% if is_free %}
+        {# Free tiers are admin-granted — no action needed. The customer sees a
+           soft "متاحة في خطتك" indicator instead of a CTA button. #}
+        <span class="pp-svc-free-tag"><i class="fa-solid fa-check-double"></i> ضمن خطتك</span>
+      {% elif is_on %}
+        {# Paid + already active → upgrade modal asks «ترقّي لشو». #}
+        <button type="button" class="pp-btn pp-btn--soft pp-btn--sm" data-pp-upgrade
+                data-service-key="{{ item.service_key }}"
+                data-service-name="{{ item.name_ar or item.name or item.service_key }}"
+                data-icon="{{ icon }}"
+                data-action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}"
+                data-fields='{{ _spec_fields|tojson }}'
+                data-current-limits='{{ (svc.limits or {})|tojson }}'>
+          <i class="fa-solid fa-arrow-up"></i> ترقية
+        </button>
+      {% else %}
+        {# Paid + not yet active → activation modal collects the spec. #}
+        <button type="button" class="pp-btn pp-btn--primary pp-btn--sm" data-pp-activate
+                data-service-key="{{ item.service_key }}"
+                data-service-name="{{ item.name_ar or item.name or item.service_key }}"
+                data-icon="{{ icon }}"
+                data-action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}"
+                data-fields='{{ _spec_fields|tojson }}'>
+          <i class="fa-solid fa-paper-plane"></i> طلب تفعيل
+        </button>
+      {% endif %}
     </div>
   </article>
 {% endmacro %}
@@ -325,7 +469,47 @@
       <section class="pp-view" data-pp-pane="services">
         <div class="pp-vhead">
           <span class="pp-vh-ic"><i class="fa-solid fa-shapes"></i></span>
-          <div><h1>الخدمات</h1><p>اختر القسم لعرض خدماته — الفعّالة أولاً ثم غير المفعّلة. اطلب التفعيل أو الترقية بضغطة.</p></div>
+          <div><h1>خدماتي</h1><p>تصفّح كل ما تشمله خطتك — الخدمات المجانية تعمل فورًا، والمدفوعة تحتاج طلب تفعيل بسيط.</p></div>
+        </div>
+
+        {# Count totals by tier across the whole catalog (intro panel + chips). #}
+        {% set tier_count = namespace(all=0, free_unlimited=0, free_limited=0, paid=0) %}
+        {% for item in service_catalog %}
+          {% set svc = contract.services.get(item.service_key, {}) %}
+          {% set t = svc.tier|default('paid') %}
+          {% set tier_count.all = tier_count.all + 1 %}
+          {% if t == 'free_unlimited' %}{% set tier_count.free_unlimited = tier_count.free_unlimited + 1 %}
+          {% elif t == 'free_limited' %}{% set tier_count.free_limited = tier_count.free_limited + 1 %}
+          {% else %}{% set tier_count.paid = tier_count.paid + 1 %}{% endif %}
+        {% endfor %}
+
+        <div class="pp-services-intro">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>
+            <p>تجد هنا كل خدمات الموقع. الخدمات <b>المجانية ضمن خطتك</b> تظهر جاهزة للاستخدام مباشرة،
+              أما <b>المدفوعة</b> فيمكنك تصفّحها ومعرفة تفاصيلها وطلب تفعيلها أو ترقيتها متى احتجتها.</p>
+            <div class="pp-services-legend">
+              <span class="lg"><span class="sq g"></span> مجانية مطلقة</span>
+              <span class="lg"><span class="sq t"></span> مجانية محدودة</span>
+              <span class="lg"><span class="sq v"></span> مدفوعة</span>
+            </div>
+          </div>
+        </div>
+
+        {# Tier filter chips — works across categories. #}
+        <div class="pp-tier-filter" id="pp-tier-filter" role="tablist" aria-label="تصفية حسب نوع الخدمة">
+          <button type="button" class="pp-tier-chip is-active" data-tier="all">
+            <i class="fa-solid fa-grid-2"></i> الكل <span class="n">{{ tier_count.all }}</span>
+          </button>
+          <button type="button" class="pp-tier-chip" data-tier="free_unlimited">
+            <i class="fa-solid fa-gift"></i> مجانية مطلقة <span class="n">{{ tier_count.free_unlimited }}</span>
+          </button>
+          <button type="button" class="pp-tier-chip" data-tier="free_limited">
+            <i class="fa-solid fa-gauge-simple"></i> مجانية محدودة <span class="n">{{ tier_count.free_limited }}</span>
+          </button>
+          <button type="button" class="pp-tier-chip" data-tier="paid">
+            <i class="fa-solid fa-tag"></i> مدفوعة <span class="n">{{ tier_count.paid }}</span>
+          </button>
         </div>
 
         {# build a unified pane list: (key,label,icon,items) for categories that
@@ -356,13 +540,20 @@
           <input type="text" id="pp-svc-search" placeholder="ابحث داخل القسم الحالي…" autocomplete="off">
         </div>
 
-        {# category panes — active services grouped first, inactive after #}
+        {# category panes — services grouped: free (ready) first, then paid #}
         <div id="pp-cat-root">
           {% for pkey, plabel, picon, pitems in panes %}
-            {% set act = [] %}{% set ina = [] %}
-            {% for item in pitems %}{% if contract.services.get(item.service_key, {}).enabled %}{% if act.append(item) %}{% endif %}{% else %}{% if ina.append(item) %}{% endif %}{% endif %}{% endfor %}
+            {% set free_items = [] %}{% set paid_items = [] %}
+            {% for item in pitems %}
+              {% set svc = contract.services.get(item.service_key, {}) %}
+              {% if svc.tier in ('free_unlimited', 'free_limited') %}
+                {% set _ = free_items.append(item) %}
+              {% else %}
+                {% set _ = paid_items.append(item) %}
+              {% endif %}
+            {% endfor %}
             <div class="pp-cat-pane {{ 'is-active' if loop.first else '' }}" data-pp-catpane="{{ pkey }}">
-              {% for grp, glabel, gcls in [(act,'الخدمات الفعّالة','on'),(ina,'خدمات غير مفعّلة','off')] %}
+              {% for grp, glabel, gcls in [(free_items,'خدمات مجانية ضمن خطتك','on'),(paid_items,'خدمات يمكنك تفعيلها أو ترقيتها','off')] %}
                 {% if grp %}
                   <div class="pp-group-h {{ gcls }}"><span class="gl">{{ glabel }}</span><span class="gc">{{ grp|length }}</span><span class="line"></span></div>
                   <div class="pp-svc-grid">
@@ -1079,6 +1270,9 @@
     <div class="pp-dlg-body">
       <p class="pp-dlg-block-t">ما هي هذه الخدمة؟</p>
       <p id="pp-modal-desc" style="margin:0 0 14px">—</p>
+      <div id="pp-modal-tier-block" style="margin-bottom:14px">
+        <p class="pp-dlg-block-t">نوع التعرفة لهذه الخدمة</p>
+      </div>
       <div id="pp-modal-limits-block">
         <p class="pp-dlg-block-t">الحدود والصلاحيات</p>
         <div class="pp-svc-limit" id="pp-modal-limits"></div>
@@ -1151,8 +1345,113 @@
   </div>
 </div>
 
+{# ════ Activation spec modal — opens from "طلب تفعيل" on any paid service ════
+   The modal is a single shared <form>; portal_pro.js fills it in on open from
+   the clicked button's data-* (service key, name, icon, spec field list). #}
+<div class="pp-modal pp-spec-modal" id="pp-activate-modal" role="dialog" aria-modal="true" aria-labelledby="pp-activate-title">
+  <div class="pp-dialog">
+    <div class="pp-dlg-head">
+      <span class="pp-dlg-ico"><i class="fa-solid fa-paper-plane" id="pp-activate-ico"></i></span>
+      <div>
+        <div class="pp-dlg-title" id="pp-activate-title">طلب تفعيل خدمة</div>
+        <div style="margin-top:5px; font-size:11.5px; color:var(--pp-ink-3)">قم بتعبئة المواصفات وسنُرسل طلبك للإدارة للمراجعة والتسعير.</div>
+      </div>
+      <button type="button" class="pp-dlg-x" data-pp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form method="post" id="pp-activate-form" class="pp-spec-form" action="">
+      {{ csrf_input() }}
+      <input type="hidden" name="request_type" value="activation">
+      <div class="pp-dlg-body">
+        <div class="pp-spec-intro">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>
+            ستفتح <b>طلب تفعيل موثّق</b> للإدارة. حدّد المواصفات التي تحتاجها وسنرجع لك بعرض التفعيل والتسعير
+            عبر بوابة الدفع. لا يتم خصم أي مبلغ قبل موافقتك على عرض التفعيل.
+          </div>
+        </div>
+        <div class="pp-spec-fields" id="pp-activate-fields">
+          {# inputs are injected by portal_pro.js based on the clicked button's data-fields #}
+        </div>
+        <div class="pp-spec-field" style="margin-top:14px">
+          <label for="pp-activate-notes">ملاحظات إضافية للإدارة <span class="pp-current">اختياري</span></label>
+          <textarea id="pp-activate-notes" name="notes" rows="3" placeholder="أي توضيحات حول استخدامك للخدمة، الزمن المتوقّع، أو أي طلب خاص…"></textarea>
+        </div>
+      </div>
+      <div class="pp-dlg-foot">
+        <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-close>إلغاء</button>
+        <button type="submit" class="pp-btn pp-btn--primary pp-btn--sm"><i class="fa-solid fa-paper-plane"></i> إرسال طلب التفعيل</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ════ Upgrade modal — opens from "ترقية" on any already-active paid service ════
+   Asks the customer «ترقّي لشو»: a structured radio of upgrade targets +
+   the same spec fields (pre-filled with current values) so they can request
+   a higher tier or larger limit. #}
+<div class="pp-modal pp-spec-modal" id="pp-upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="pp-upgrade-title">
+  <div class="pp-dialog">
+    <div class="pp-dlg-head">
+      <span class="pp-dlg-ico"><i class="fa-solid fa-arrow-up" id="pp-upgrade-ico"></i></span>
+      <div>
+        <div class="pp-dlg-title" id="pp-upgrade-title">طلب ترقية خدمة</div>
+        <div style="margin-top:5px; font-size:11.5px; color:var(--pp-ink-3)">حدّد ترقّي إلى ماذا — سعة أكبر، باقة أعلى، أو ميزات إضافية.</div>
+      </div>
+      <button type="button" class="pp-dlg-x" data-pp-close aria-label="إغلاق"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form method="post" id="pp-upgrade-form" class="pp-spec-form" action="">
+      {{ csrf_input() }}
+      <input type="hidden" name="request_type" value="upgrade">
+      <div class="pp-dlg-body">
+        <div class="pp-spec-intro">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>الترقية تتم بعد مراجعة الإدارة وتسعير الفرق. الخدمة الحالية تستمر بدون انقطاع حتى موافقتك على عرض الترقية.</div>
+        </div>
+
+        <p class="pp-dlg-block-t">ترقّي إلى</p>
+        <div class="pp-spec-target">
+          <label class="pp-spec-target-opt">
+            <input type="radio" name="upgrade_target" value="more_capacity" checked>
+            <div>
+              <div class="ttl">سعة أكبر (نفس النوع، حدّ أعلى)</div>
+              <div class="sub">مثال: زيادة عدد المشتركين، أو عدد الكروت الشهري، أو حصة الرسائل.</div>
+            </div>
+          </label>
+          <label class="pp-spec-target-opt">
+            <input type="radio" name="upgrade_target" value="higher_plan">
+            <div>
+              <div class="ttl">باقة أعلى</div>
+              <div class="sub">ترقية إلى مستوى أعلى من نفس الخدمة (مزايا/سرعة/أولوية أعلى).</div>
+            </div>
+          </label>
+          <label class="pp-spec-target-opt">
+            <input type="radio" name="upgrade_target" value="add_features">
+            <div>
+              <div class="ttl">إضافة ميزات</div>
+              <div class="sub">تفعيل خصائص اختيارية ضمن نفس الخدمة دون تغيير السعة.</div>
+            </div>
+          </label>
+        </div>
+
+        <p class="pp-dlg-block-t" style="margin-top:18px">المواصفات المطلوبة بعد الترقية</p>
+        <div class="pp-spec-fields" id="pp-upgrade-fields">
+          {# injected by portal_pro.js — pre-filled with current limits when known #}
+        </div>
+        <div class="pp-spec-field" style="margin-top:14px">
+          <label for="pp-upgrade-notes">تفاصيل أو طلبات خاصة <span class="pp-current">اختياري</span></label>
+          <textarea id="pp-upgrade-notes" name="notes" rows="3" placeholder="اشرح ما تريد ترقيته بالتحديد ولماذا، حتى نقدّم لك أفضل عرض…"></textarea>
+        </div>
+      </div>
+      <div class="pp-dlg-foot">
+        <button type="button" class="pp-btn pp-btn--ghost pp-btn--sm" data-pp-close>إلغاء</button>
+        <button type="submit" class="pp-btn pp-btn--primary pp-btn--sm"><i class="fa-solid fa-arrow-up"></i> إرسال طلب الترقية</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% block scripts %}
 {{ super() }}
-<script src="{{ url_for('static', filename='js/portal_pro.js') }}?v=20260531i"></script>
+<script src="{{ url_for('static', filename='js/portal_pro.js') }}?v=20260610a"></script>
 {% endblock %}
 {% endblock %}
