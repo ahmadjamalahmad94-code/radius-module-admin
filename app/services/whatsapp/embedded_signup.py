@@ -269,10 +269,15 @@ def public_config() -> dict[str, str]:
 
 
 def _timeout() -> int:
+    """HTTP timeout — UI-editable via /admin/settings/platform."""
     try:
-        return int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS") or 15)
-    except (TypeError, ValueError):
-        return 15
+        from ..platform_settings import get_int
+        return get_int("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15)
+    except Exception:  # noqa: BLE001
+        try:
+            return int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS") or 15)
+        except (TypeError, ValueError):
+            return 15
 
 
 # ───────────────────────────── network (mockable) ─────────────────────────────

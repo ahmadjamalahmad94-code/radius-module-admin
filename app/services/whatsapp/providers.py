@@ -172,10 +172,17 @@ class MetaCloudWhatsAppProvider(BaseWhatsAppProvider):
         cfg = current_app.config
         base = (cfg.get("WHATSAPP_GRAPH_BASE") or "https://graph.facebook.com").rstrip("/")
         version = (cfg.get("WHATSAPP_GRAPH_API_VERSION") or "v21.0").strip("/")
+        # HTTP timeout is UI-editable via /admin/settings/platform. The Graph
+        # base + version remain env-only (rarely change, and changing them
+        # mid-flight needs coordinated cache invalidation).
         try:
-            timeout = int(cfg.get("WHATSAPP_HTTP_TIMEOUT_SECONDS") or 15)
-        except (TypeError, ValueError):
-            timeout = 15
+            from ..platform_settings import get_int
+            timeout = get_int("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15)
+        except Exception:  # noqa: BLE001
+            try:
+                timeout = int(cfg.get("WHATSAPP_HTTP_TIMEOUT_SECONDS") or 15)
+            except (TypeError, ValueError):
+                timeout = 15
         return base, version, timeout
 
     def _token(self, account: Any) -> str:

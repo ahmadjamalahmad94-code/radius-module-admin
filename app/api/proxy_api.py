@@ -39,7 +39,15 @@ _NONCE_CACHE_MAX = 2000
 
 def _verify_proxy_token() -> bool:
     """Validate the X-Proxy-Token header. Returns True if valid."""
-    secret = str(current_app.config.get("RADIUS_PROXY_SHARED_SECRET") or "").strip()
+    # DB-first resolution: the owner sets/rotates the shared secret in
+    # /admin/settings/platform; env var stays as the bootstrap fallback.
+    try:
+        from ..services import platform_settings as ps
+        secret = ps.get_secret("RADIUS_PROXY_SHARED_SECRET")
+        if not secret:
+            secret = str(current_app.config.get("RADIUS_PROXY_SHARED_SECRET") or "").strip()
+    except Exception:  # noqa: BLE001
+        secret = str(current_app.config.get("RADIUS_PROXY_SHARED_SECRET") or "").strip()
     if not secret:
         # No secret configured — deny all proxy API calls in production.
         return False
