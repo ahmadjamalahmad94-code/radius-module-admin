@@ -49,8 +49,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import secrets
 from datetime import datetime
 from typing import Callable, Iterable
+
+from sqlalchemy import func
 
 from app.extensions import db
 from app.models import utcnow
@@ -176,7 +179,16 @@ def plan_rebalance(
 
     The function is safe to call without a transaction — every read uses
     the current session implicitly via the ORM; no inserts happen here.
+
+    Phase-8 gate (polymorphic): a STRING ``trigger`` ("manual" / "scheduled" /
+    "headroom" / "forced_failover:<node>") routes to the convenience layer which
+    builds the proper Trigger object, runs THIS engine, and returns a plan
+    ENRICHED to the dashboard-adapter shape. A Trigger OBJECT keeps the frozen
+    engine behaviour below unchanged.
     """
+    if isinstance(trigger, str):
+        return _convenience_plan_from_string(trigger, cfg=cfg, now=now)
+
     cfg = cfg or FLEET
     orc: OrchestratorConfig = cfg.orchestrator
     now = now or utcnow()
@@ -308,7 +320,16 @@ def execute_rebalance(
     """Persist the plan and call DNS reconcile. Idempotent on (trigger,
     username) — duplicate calls do NOT double-record (the most recent
     pending PlacementDecision per user is overwritten with the new
-    intent rather than appended)."""
+    intent rather than appended).
+
+    Phase-8 gate (polymorphic): an engine :class:`RebalancePlan` runs the frozen
+    logic below. Anything else (the dashboard adapter's coerced plan — duck-typed
+    with ``.plan_id`` / string ``.trigger`` / ``.source_node``) routes to the
+    convenience layer, which re-plans from the trigger, executes via THIS engine,
+    and stamps ``plan_id`` / ``trigger`` / ``source_node`` into reason_json.
+    """
+    if not isinstance(plan, RebalancePlan):
+        return _convenience_execute_adapter_plan(plan, cfg=cfg, now=now)
 
     cfg = cfg or FLEET
     now = now or utcnow()
@@ -606,6 +627,213 @@ def _passes_should_move(
     return elapsed >= float(cooldown)
 
 
+# ════════════════════════════════════════════════════════════════════════
+# Phase-8 gate — STRING-trigger convenience layer (drives the dashboard)
+# ════════════════════════════════════════════════════════════════════════
+# The UI adapter (fleet.brain.orchestrator_adapter) calls plan_rebalance with a
+# STRING trigger and expects a plan whose moves carry node NAMES + plan_id/kind/
+# source_node/estimate_summary. These thin wrappers bridge that to the frozen
+# engine above WITHOUT touching its internals.
+
+
+@dataclasses.dataclass(frozen=True)
+class _EnrichedMove:
+    """A move in the adapter's shape: node NAMES, not chr_ids."""
+
+    username: str
+    realm: str
+    from_node: str
+    to_node: str
+    reason: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _EnrichedPlan:
+    """Engine plan enriched to the dashboard adapter's duck-typed shape."""
+
+    plan_id: str
+    trigger: str
+    kind: str
+    reason: str
+    source_node: str | None
+    moves: tuple
+    created_at: datetime
+    estimate_summary: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _ConvenienceResult:
+    """execute result in the adapter's duck-typed shape."""
+
+    plan_id: str
+    applied: bool
+    moves_attempted: int
+    moves_applied: int
+    moves_failed: int
+    moves_skipped: int
+    message: str
+    raw: dict
+
+
+def _node_name_map() -> dict[int, str]:
+    return {n.id: n.name for n in FleetChrNode.query.all()}
+
+
+def _realm_of(username: str) -> str:
+    return username.split("@", 1)[1] if "@" in username else ""
+
+
+def _engine_trigger_from_string(trigger: str) -> tuple[Trigger | None, str]:
+    """Map a UI string trigger → (engine Trigger object | None, kind).
+
+    * ``forced_failover:<node>`` → FailoverTrigger for that node (evacuate).
+    * ``manual`` / ``scheduled`` / ``headroom`` → PressureTrigger on the node
+      with the most active sessions (the one worth relieving). ``None`` source
+      ⇒ no eligible source (empty plan).
+    """
+    label = (trigger or "manual").strip()
+    if label.startswith("forced_failover:"):
+        name = label.split(":", 1)[1].strip()
+        node = FleetChrNode.query.filter_by(name=name).first()
+        if node is None:
+            return None, "forced_failover"
+        return (
+            FailoverTrigger(source_chr_id=node.id, source_name=node.name,
+                            reason="manual_evacuate"),
+            "forced_failover",
+        )
+    # Pressure rebalance: source = busiest node by active session count.
+    row = (
+        db.session.query(Session.chr_id, func.count(Session.id))
+        .filter(Session.state == "active")
+        .group_by(Session.chr_id)
+        .order_by(func.count(Session.id).desc())
+        .first()
+    )
+    node = db.session.get(FleetChrNode, row[0]) if row else (
+        FleetChrNode.query.filter_by(enabled=True).order_by(FleetChrNode.id).first()
+    )
+    if node is None:
+        return None, "rebalance"
+    return (
+        PressureTrigger(source_chr_id=node.id, source_name=node.name,
+                        reason="manual_rebalance"),
+        "rebalance",
+    )
+
+
+def _convenience_plan_from_string(
+    trigger: str, *, cfg: FleetConfig | None = None, now: datetime | None = None,
+) -> _EnrichedPlan:
+    cfg = cfg or FLEET
+    now = now or utcnow()
+    eng_trigger, kind = _engine_trigger_from_string(trigger)
+    if eng_trigger is None:
+        return _EnrichedPlan(
+            plan_id=secrets.token_hex(6), trigger=trigger, kind=kind,
+            reason="no_source", source_node=None, moves=(), created_at=now,
+            estimate_summary="لا يوجد مصدر صالح لإنشاء خطة.",
+        )
+    # Object path → frozen engine planner.
+    engine_plan = plan_rebalance(eng_trigger, cfg=cfg, now=now)
+    names = _node_name_map()
+    moves = tuple(
+        _EnrichedMove(
+            username=m.username,
+            realm=_realm_of(m.username),
+            from_node=names.get(m.from_chr_id, str(m.from_chr_id)),
+            to_node=names.get(m.to_chr_id, str(m.to_chr_id)),
+            reason=m.reason,
+        )
+        for m in engine_plan.moves
+    )
+    skipped = (
+        len(engine_plan.skipped_movable)
+        + len(engine_plan.skipped_hysteresis)
+        + len(engine_plan.skipped_capacity)
+    )
+    summary = f"{len(moves)} نقلة من «{eng_trigger.source_name}»"
+    if skipped:
+        summary += f"، {skipped} مُستبعد"
+    if engine_plan.capacity_warning:
+        summary += "، تحذير سعة"
+    return _EnrichedPlan(
+        plan_id=secrets.token_hex(6),
+        trigger=trigger,
+        kind=kind,
+        reason=eng_trigger.reason,
+        source_node=eng_trigger.source_name,
+        moves=moves,
+        created_at=now,
+        estimate_summary=summary,
+    )
+
+
+def plan_forced_failover(
+    node_name: str, *, cfg: FleetConfig | None = None, now: datetime | None = None,
+) -> _EnrichedPlan:
+    """Convenience: a forced-evacuation plan for one node (by NAME), enriched to
+    the dashboard adapter's shape."""
+    return _convenience_plan_from_string(
+        f"forced_failover:{node_name}", cfg=cfg, now=now,
+    )
+
+
+def _convenience_execute_adapter_plan(
+    plan, *, cfg: FleetConfig | None = None, now: datetime | None = None,
+) -> _ConvenienceResult:
+    cfg = cfg or FLEET
+    now = now or utcnow()
+    plan_id = str(getattr(plan, "plan_id", "") or secrets.token_hex(6))
+    trigger_str = str(getattr(plan, "trigger", "manual") or "manual")
+    eng_trigger, _kind = _engine_trigger_from_string(trigger_str)
+    if eng_trigger is None:
+        return _ConvenienceResult(
+            plan_id=plan_id, applied=False, moves_attempted=0, moves_applied=0,
+            moves_failed=0, moves_skipped=0,
+            message="لا يوجد مصدر صالح للتنفيذ.", raw={"backend": "real"},
+        )
+    # Re-plan from the trigger (immediate after display ⇒ same set) and execute
+    # via the frozen engine (object path).
+    engine_plan = plan_rebalance(eng_trigger, cfg=cfg, now=now)
+    result = execute_rebalance(engine_plan, cfg=cfg, now=now)
+    # Stamp plan_id / trigger / source_node into reason_json so the dashboard's
+    # «آخر الخطط» aggregation can group the rows by plan.
+    for pd_id in result.decision_ids:
+        pd = db.session.get(PlacementDecision, pd_id)
+        if pd is None:
+            continue
+        reason = dict(pd.reason or {})
+        reason["plan_id"] = plan_id
+        reason["trigger"] = trigger_str
+        reason["source_node"] = eng_trigger.source_name
+        pd.reason = reason
+        db.session.add(pd)
+    db.session.commit()
+
+    attempted = len(engine_plan.moves)
+    applied_n = len(result.decision_ids)
+    skipped = (
+        len(engine_plan.skipped_movable)
+        + len(engine_plan.skipped_hysteresis)
+        + len(engine_plan.skipped_capacity)
+    )
+    return _ConvenienceResult(
+        plan_id=plan_id,
+        applied=bool(result.decision_ids),
+        moves_attempted=attempted,
+        moves_applied=applied_n,
+        moves_failed=max(0, attempted - applied_n),
+        moves_skipped=skipped,
+        message=f"نُفِّذت {applied_n} نقلة من «{eng_trigger.source_name}».",
+        raw={
+            "backend": "real",
+            "event_ids": list(result.event_ids),
+            "reconcile_called": result.reconcile_called,
+        },
+    )
+
+
 __all__ = [
     "FailoverTrigger",
     "PressureTrigger",
@@ -615,5 +843,6 @@ __all__ = [
     "ExecuteResult",
     "plan_rebalance",
     "execute_rebalance",
+    "plan_forced_failover",
     "on_monitor_event",
 ]

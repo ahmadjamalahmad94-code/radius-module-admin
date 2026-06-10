@@ -15,6 +15,15 @@ here introduces no import cycle.
 
 from fleet.brain.scoring import NodeScore, score_node, should_move
 from fleet.brain.placement import best_node, rank, top_n
+# Phase-8 gate: re-export the rebalance orchestrator (polymorphic — accepts the
+# dashboard adapter's STRING trigger + coerced plan) so the adapter's
+# ``from fleet.brain import plan_rebalance, execute_rebalance`` binds the REAL
+# engine (ORCHESTRATOR_BACKEND == "real").
+from fleet.brain.rebalance import (
+    execute_rebalance,
+    plan_forced_failover,
+    plan_rebalance,
+)
 
 __all__ = [
     "score_node",
@@ -23,4 +32,7 @@ __all__ = [
     "rank",
     "best_node",
     "top_n",
+    "plan_rebalance",
+    "execute_rebalance",
+    "plan_forced_failover",
 ]
