@@ -14,8 +14,12 @@
      - WAN_IFACE                              (detected)
 
    Fleet-constant (identical in every render):
-     - PANEL_WG_PUBKEY / PANEL_WG_ENDPOINT / PANEL_WG_ADDR
-     - PROXY_WG_PUBKEY / PROXY_WG_ENDPOINT / PROXY_WG_ADDR
+     - PANEL_WG_PUBKEY / PANEL_WG_HOST / PANEL_WG_PORT / PANEL_WG_ADDR
+     - PROXY_WG_PUBKEY / PROXY_WG_HOST / PROXY_WG_PORT / PROXY_WG_ADDR
+       (HOST/PORT are derived from the stored PANEL_WG_ENDPOINT /
+        PROXY_WG_ENDPOINT "host:port" Setting rows — RouterOS forbids the
+        combined host:port shape inside endpoint-address. See
+        fleet.registry.script_render._split_endpoint.)
      - CHR_SHARED_SECRET (matches proxy's PROXY_CHR_SECRET; §6.5.1 note)
      - SSTP_CERT_NAME, IKE_CERT_NAME
      - CLIENT_SUPERNET, DNS_PUSH, GW_LOCAL_ADDR
@@ -36,12 +40,59 @@
        - /ip ipsec profile|proposal|
          mode-config|peer                → find name="hobe-…"
        - /ip ipsec identity              → find peer="hobe-peer"
+       - /ppp profile                    → find comment="hobe-fleet-ppp"
+                                            (defensive — current template
+                                             only `set`s the built-in
+                                             default-encryption; this is the
+                                             anchor for any future custom
+                                             profile add)
+       - /ip pool                        → find name~"^hobe-fleet-pool"
+                                            (defensive — no pool today; the
+                                             anchor is here in case the
+                                             owner ever adds custom pools)
        - /ip firewall nat                → find comment="hobe-fleet-nat-…"
        - /ip firewall filter             → find comment~"^hobe-fleet-fw-"
          (regex match — removes ALL hobe-tagged input rules at once)
 
      `set`-based blocks (/radius incoming, /ppp aaa, /ppp profile, the
      pptp/sstp/ipsec server enable lines) are intrinsically idempotent.
+
+   RADIUS ENTRY ALWAYS ENABLED (fix/fleet-endpoint-and-idempotency):
+     After `/radius add … comment="hobe-fleet-radius"`, the script forces
+     the entry to enabled via `/radius enable [find comment="…"]`. The
+     first live CHR install hit a case where the entry landed disabled
+     (`Flags: X - DISABLED`) and no RADIUS packets ever reached the
+     proxy even though PPP AAA was wired to RADIUS and the entry existed.
+     The explicit enable closes that hole on every (re-)import.
+
+   ENDPOINT FORMAT (fix/fleet-endpoint-and-idempotency):
+     `/interface wireguard peers` peers MUST use host-only
+     ``endpoint-address=<host>`` with a separate ``endpoint-port=<n>``.
+     RouterOS silently rejects ``host:port`` inside ``endpoint-address=``
+     (the peer lands with current-endpoint-address="" and never handshakes).
+     The renderer splits the operator-supplied "host:port" Setting into
+     HOST + PORT bindings before this template runs; the template itself
+     must never emit a ``:`` inside ``endpoint-address=``.
+
+   DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
+     A second field finding: even with host-only endpoint-address,
+     ``endpoint-address=proxy.hoberadius.com`` left wg-data with
+     current-endpoint-address="" and no handshake — replacing with the
+     resolved IP literal worked instantly. RouterOS does not always
+     resolve the peer host into a working endpoint at peer-add time
+     (the peer is created before DNS is usable, or RouterOS caches an
+     empty resolve).
+     The script now:
+       (a) ensures /ip dns has at least one server (sets 1.1.1.1,8.8.8.8
+           as fallback — does NOT clobber an operator-set list);
+       (b) tags each peer with a stable comment (``hobe-fleet-mgmt`` /
+           ``hobe-fleet-data``);
+       (c) runs ``:resolve`` against PANEL_WG_HOST / PROXY_WG_HOST with
+           up to 5 retries (2-second back-off) and ``set [find
+           comment="…"] endpoint-address=<resolved-ip>`` on each peer.
+     If ``:resolve`` ultimately fails (no network at all), we leave the
+     hostname endpoint in place and ``:log error`` — that's no worse than
+     the prior behaviour, and the operator sees the cause in the log.
    ============================================================================ #}
 # ============================================================
 # HobeRadius unified CHR provisioning script  (v2, idempotent)
@@ -49,6 +100,15 @@
 # ============================================================
 
 /system identity set name="{{ ROUTER_IDENTITY }}"
+
+# ---- 0. DNS bootstrap (so :resolve works in section 2b) ----
+# If the CHR has no DNS servers configured yet (fresh install / cloud image
+# without DHCP-pushed DNS), set a public fallback so :resolve below can run.
+# We DO NOT overwrite operator-set DNS — checked via :len of current list.
+:if ([:len [/ip dns get servers]] = 0) do={
+    /ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=no
+    :log info "hobe-fleet: bootstrapped /ip dns servers=1.1.1.1,8.8.8.8 (was empty)"
+}
 
 # ---- 1. WireGuard CONTROL tunnel (wg-mgmt) -----------------
 # Control/telemetry ONLY. No default route, no NAT, no forwarding over this.
@@ -60,9 +120,14 @@ remove [find interface="wg-mgmt"]
 remove [find name="wg-mgmt"]
 add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
 /interface wireguard peers
+{# endpoint-address MUST be host-only — RouterOS rejects host:port silently
+   and leaves current-endpoint-address="" with no handshake. The renderer
+   splits the stored host:port into HOST + PORT bindings; see
+   fleet.registry.script_render._split_endpoint. #}
 add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
-    endpoint-address={{ PANEL_WG_ENDPOINT }} endpoint-port=51820 \
-    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s
+    endpoint-address={{ PANEL_WG_HOST }} endpoint-port={{ PANEL_WG_PORT }} \
+    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s \
+    comment="hobe-fleet-mgmt"
 /ip address
 add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/32
 
@@ -76,11 +141,45 @@ remove [find interface="wg-data"]
 remove [find name="wg-data"]
 add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
 /interface wireguard peers
+{# Same as the wg-mgmt block — host-only endpoint-address, port separate. #}
 add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
-    endpoint-address={{ PROXY_WG_ENDPOINT }} endpoint-port=51821 \
-    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s
+    endpoint-address={{ PROXY_WG_HOST }} endpoint-port={{ PROXY_WG_PORT }} \
+    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
+    comment="hobe-fleet-data"
 /ip address
 add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/32
+
+# ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
+# Field finding (fix/fleet-endpoint-resolve): even with host-only
+# endpoint-address=proxy.hoberadius.com on the wg-data peer, RouterOS left
+# current-endpoint-address="" and never handshaked. Replacing with the
+# resolved IP literal (178.105.251.67) made the handshake fire instantly.
+# So we explicitly resolve at import time and overwrite endpoint-address.
+# Retries 5x with 2s back-off (handles a cold WAN that's not up at import).
+# If :resolve never succeeds we leave the hostname in place + :log error;
+# that is no worse than the prior behaviour and the operator sees why.
+:local hobeResolve do={
+    :local host $1
+    :for i from=1 to=5 do={
+        :do {
+            :local ip [:resolve $host]
+            :log info ("hobe-fleet: resolved " . $host . " -> " . $ip . " (attempt " . $i . ")")
+            :return $ip
+        } on-error={
+            :log warning ("hobe-fleet: :resolve " . $host . " failed (attempt " . $i . "/5)")
+            :delay 2s
+        }
+    }
+    :log error ("hobe-fleet: :resolve " . $host . " gave up after 5 attempts; leaving hostname on peer")
+    :return $host
+}
+
+:local panelIP [$hobeResolve "{{ PANEL_WG_HOST }}"]
+:local proxyIP [$hobeResolve "{{ PROXY_WG_HOST }}"]
+
+/interface wireguard peers
+set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port={{ PANEL_WG_PORT }}
+set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ PROXY_WG_PORT }}
 
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
@@ -89,6 +188,12 @@ add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }
     authentication-port=1812 accounting-port=1813 \
     src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
     comment="hobe-fleet-radius"
+# Guarantee the entry is ENABLED. The first live install hit this: PPP AAA
+# was using RADIUS and the entry existed, but `/radius print detail` showed
+# Flags: X - DISABLED, so no packets ever reached the proxy. Belt-and-braces
+# `enable` against the comment tag forces disabled=no on every (re-)import,
+# regardless of what state a prior run or operator edit left it in.
+/radius enable [find comment="hobe-fleet-radius"]
 /radius incoming
 # Enable CoA / Disconnect listener so panel can kill/move sessions (RFC 5176)
 set accept=yes port=3799
@@ -99,6 +204,18 @@ set use-radius=yes accounting=yes interim-update=5m
 
 # ---- 4. IP-FROM-RADIUS ONLY (no local pool!) --------------
 # default-profile must NOT reference any local-address pool for clients.
+#
+# Defensive idempotency: drop any prior hobe-tagged ppp profile / ip pool
+# from earlier re-imports before re-`set`ting the built-in default-encryption
+# profile. The current template does NOT `add` either (we only `set` the
+# built-in profile, and we deliberately use NO local pool — clients get IPs
+# from RADIUS Framed-IP). These two cleanups exist to (a) sweep stale
+# hobe-tagged rows left by older script revisions the owner may have applied,
+# and (b) be the anchor any future custom profile/pool `add` will sit under.
+/ppp profile
+remove [find comment="hobe-fleet-ppp"]
+/ip pool
+remove [find name~"^hobe-fleet-pool"]
 /ppp profile
 set default-encryption local-address={{ GW_LOCAL_ADDR }} \
     use-encryption=required dns-server={{ DNS_PUSH }} \
