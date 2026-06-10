@@ -406,6 +406,7 @@ def _infra_redirect():
 def fleet_infrastructure():
     """Render the «إعدادات بنية الأسطول» page."""
     from fleet.registry import infra_settings as svc
+    from fleet.health.routeros_creds import fleet_default_view
     return render_template(
         "admin/fleet/infrastructure.html",
         view=svc.view_all(),
@@ -413,6 +414,7 @@ def fleet_infrastructure():
         missing=svc.missing_required(),
         panel_pubkey=svc.panel_pubkey_for_display(),
         panel_pubkey_is_set=svc.panel_pubkey_is_set(),
+        metrics_creds=fleet_default_view(),
     )
 
 
@@ -541,6 +543,191 @@ def fleet_infra_save_cert_names():
     db.session.commit()
     flash("تم حفظ أسماء الشهادات. (اتركها فارغة لتخطّي SSTP/IPsec في السكربت.)", "success")
     return _infra_redirect()
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Live-metrics credentials — fleet defaults + per-node overrides + poll-now
+# ════════════════════════════════════════════════════════════════════════
+#
+# These three routes complete the live-metrics UI loop: the operator can
+# enter the read-only RouterOS API username + password from the panel
+# (no terminal), per-node or fleet-wide, then click «اقرأ المقاييس الآن»
+# to verify before the 60-second background pass.
+
+@bp.post("/infrastructure/metrics-creds")
+@super_admin_required
+def fleet_infra_save_metrics_creds():
+    """Save the fleet-default API user + password for the live-metrics poller.
+
+    The plaintext password is read from the form, written through
+    :mod:`fleet.health.routeros_creds` (Fernet-encrypted at rest), and
+    flashed back as a masked chip. Empty password keeps the existing
+    value — same convention as every other password form on the panel.
+    """
+    from fleet.health.routeros_creds import (
+        get_default_password_plaintext,
+        set_default_password,
+        set_default_user,
+    )
+    user = (request.form.get("api_user") or "").strip()
+    password = request.form.get("api_password") or ""
+    if not user:
+        flash("اسم المستخدم مطلوب — اتركه «hobe-panel» إن أردت الافتراضي.", "error")
+        return _infra_redirect()
+    try:
+        set_default_user(user)
+        if password:
+            set_default_password(password)
+    except WhatsAppCryptoError:
+        flash("لم يُضبط مفتاح التشفير على الخادم — راجع WHATSAPP_FERNET_KEY.", "error")
+        return _infra_redirect()
+    audit(
+        "fleet_metrics_creds_set", "fleet_infra", "METRICS_CREDS",
+        "تم حفظ بيانات اعتماد قراءة المقاييس الافتراضية",
+        metadata={"user": user, "password_changed": bool(password)},
+    )
+    db.session.commit()
+    has_pwd = bool(get_default_password_plaintext())
+    if has_pwd:
+        flash(
+            "تم حفظ بيانات اعتماد قراءة المقاييس. أعد توليد سكربت كل عقدة "
+            "حتى يُنشَأ المستخدم القارئ على CHR.",
+            "success",
+        )
+    else:
+        flash(
+            "تم حفظ اسم المستخدم — لم تُضبط كلمة المرور بعد، فستظل المقاييس "
+            "الحيّة معطّلة حتى تُدخلها هنا.",
+            "warning",
+        )
+    return _infra_redirect()
+
+
+@bp.post("/chr-nodes/<int:node_id>/metrics-creds")
+@super_admin_required
+def fleet_chr_node_save_metrics_creds(node_id: int):
+    """Save per-node API credentials override OR clear them.
+
+    The form has two modes:
+
+    * ``mode="set"`` (default) — write the supplied user + password
+      (encrypted) onto the FleetChrNode row. Empty password is rejected
+      so an accidental submit doesn't erase a working override.
+    * ``mode="clear"`` — wipe the override so the node falls back to the
+      fleet default again.
+
+    Returns a JSON envelope so the dashboard's inline form can flash a
+    toast without a full reload.
+    """
+    from fleet.health.routeros_creds import (
+        clear_credentials,
+        credentials_for,
+        node_creds_view,
+        set_credentials,
+    )
+    from fleet.registry.models_chr import FleetChrNode
+
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    mode = (request.form.get("mode") or "set").lower()
+    if mode == "clear":
+        clear_credentials(node)
+        audit(
+            "fleet_metrics_creds_node_cleared", "fleet_chr_node", str(node_id),
+            f"تم حذف بيانات اعتماد المقاييس الخاصة بـ {node.name}",
+            metadata={"node": node.name},
+        )
+        db.session.commit()
+        return jsonify({"ok": True, "view": node_creds_view(node)})
+
+    user = (request.form.get("api_user") or "").strip()
+    password = request.form.get("api_password") or ""
+    port_raw = (request.form.get("api_port") or "").strip()
+
+    if not user or not password:
+        return jsonify({
+            "ok": False, "error": "missing_credentials",
+            "detail": "اسم المستخدم وكلمة المرور مطلوبان.",
+        }), 400
+    try:
+        if port_raw:
+            node.routeros_api_port = max(1, min(65535, int(port_raw)))
+    except ValueError:
+        return jsonify({
+            "ok": False, "error": "bad_port",
+            "detail": "المنفذ يجب أن يكون رقماً بين 1 و65535.",
+        }), 400
+    try:
+        set_credentials(node, username=user, password=password)
+    except WhatsAppCryptoError:
+        return jsonify({
+            "ok": False, "error": "crypto_unavailable",
+            "detail": "لم يُضبط مفتاح التشفير على الخادم — راجع WHATSAPP_FERNET_KEY.",
+        }), 500
+    audit(
+        "fleet_metrics_creds_node_set", "fleet_chr_node", str(node_id),
+        f"تم تحديث بيانات اعتماد المقاييس لـ {node.name}",
+        metadata={"node": node.name, "user": user, "port": node.routeros_api_port},
+    )
+    db.session.commit()
+    return jsonify({
+        "ok": True, "view": node_creds_view(node),
+        "effective_ready": credentials_for(node) is not None,
+    })
+
+
+@bp.post("/chr-nodes/<int:node_id>/poll-metrics-now")
+@super_admin_required
+def fleet_chr_node_poll_metrics_now(node_id: int):
+    """On-demand single-node poll. Bypasses the 60-second worker cycle.
+
+    Returns the resulting :class:`PollSummary` + a refreshed
+    :class:`NodeView` for the dashboard JS to splice into the row.
+    """
+    from fleet.health.metrics_poller import poll_all
+    from fleet.health.routeros_creds import credentials_for
+    from fleet.registry.models_chr import FleetChrNode
+
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    if credentials_for(node) is None:
+        return jsonify({
+            "ok": False, "error": "no_credentials",
+            "detail": (
+                "لا توجد بيانات اعتماد API لهذه العقدة — اضبطها من «بيانات "
+                "اعتماد قراءة المقاييس» في إعدادات بنية الأسطول، أو أدخل "
+                "تجاوزاً خاصاً بهذه العقدة."
+            ),
+        }), 409
+
+    # Restrict the pass to this one node by skipping siblings without
+    # creds AT the poll_all layer — but we already filter on credentials,
+    # so to keep the on-demand button cheap we directly target the node
+    # via a one-shot eligibility filter override.
+    target_id = node.id
+
+    def _solo_collector(n):
+        if n.id != target_id:
+            from fleet.health.routeros_collector import Sample
+            return Sample(error="not_targeted")
+        from fleet.health.routeros_collector import collect as _real
+        return _real(n)
+
+    summary = poll_all(collector=_solo_collector)
+    row = _node_view_to_payload(get_node_view(node))
+    return jsonify({
+        "ok": True,
+        "summary": {
+            "checked": summary.checked,
+            "ok_count": summary.ok_count,
+            "error_count": summary.error_count,
+            "errors": [list(t) for t in summary.errors],
+        },
+        "row": row,
+    })
 
 
 __all__ = ["bp"]

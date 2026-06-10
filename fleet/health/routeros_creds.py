@@ -232,6 +232,52 @@ def get_default_password_plaintext() -> str:
     return decrypt_password(_setting_value(DEFAULT_PASSWORD_SETTING_KEY) or "")
 
 
+# ════════════════════════════════════════════════════════════════════════
+# UI-safe summaries (the operator UI consumes these — NEVER plaintext)
+# ════════════════════════════════════════════════════════════════════════
+
+
+def fleet_default_view() -> dict:
+    """Snapshot the infra-settings page renders.
+
+    Never returns the plaintext password. ``masked`` is computed off the
+    CIPHERTEXT so we don't even need to decrypt to draw the chip.
+    """
+    user = get_default_user()
+    pwd_cipher = _setting_value(DEFAULT_PASSWORD_SETTING_KEY) or ""
+    return {
+        "user": user,
+        "is_set": bool(pwd_cipher),
+        "masked": mask_password(pwd_cipher) if pwd_cipher else "—",
+        # The owner needs to know which keys to fill — surface them
+        # so the template can show «Setting key:» without hardcoding.
+        "user_setting_key": DEFAULT_USER_SETTING_KEY,
+        "password_setting_key": DEFAULT_PASSWORD_SETTING_KEY,
+    }
+
+
+def node_creds_view(node: FleetChrNode) -> dict:
+    """Snapshot for the per-node row on the dashboard.
+
+    ``has_override`` is True iff the node row holds a per-node user or
+    password (i.e. it does NOT fall back to the fleet default). The
+    plaintext password is NEVER returned.
+    """
+    has_user = bool((node.routeros_api_user or "").strip())
+    has_pwd = bool((node.routeros_api_password_enc or "").strip())
+    return {
+        "has_override": has_user or has_pwd,
+        "user": (node.routeros_api_user or "").strip(),
+        "password_masked": (
+            mask_password(node.routeros_api_password_enc) if has_pwd else "—"
+        ),
+        "port": int(node.routeros_api_port or 8443),
+        "host": node.wg_mgmt_ip,
+        # Convenience: tells the UI whether the poller has anything to use.
+        "effective_ready": credentials_for(node) is not None,
+    }
+
+
 __all__ = [
     "DEFAULT_USER_SETTING_KEY",
     "DEFAULT_PASSWORD_SETTING_KEY",
