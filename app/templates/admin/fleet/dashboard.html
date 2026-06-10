@@ -291,7 +291,89 @@
     <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
     <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
   </div>
+  {# fix/fleet-onboarding-visibility: new KPI surfaces in-flight onboardings.
+     Without it, a draft/failed job was invisible — owner sees nothing for his click. #}
+  <div class="fd-kpi">
+    <div class="fd-kpi-icon" style="background:#eef2ff;color:#4338ca"><i class="fa-solid fa-spinner"></i></div>
+    <div>
+      <div class="fd-kpi-num">{{ pending_jobs_count }}</div>
+      <div class="fd-kpi-label">إضافات قيد التنفيذ</div>
+    </div>
+  </div>
 </div>
+
+{# ═══════════════════════════════════════════════════════════════════════
+   fix/fleet-onboarding-visibility — «عمليات الإضافة قيد التنفيذ»
+   Renders OnboardingJob rows that haven't reached terminal 'active'. A
+   draft whose auto-key-generation failed lands here with its last_error
+   surfaced so the operator can see + retry from the UI.
+   ═══════════════════════════════════════════════════════════════════════ #}
+{% if pending_jobs %}
+<div class="fd-card">
+  <div class="fd-card-head">
+    <div class="fd-card-title">
+      <i class="fa-solid fa-spinner"></i> عمليات الإضافة قيد التنفيذ
+    </div>
+    <div class="fd-card-spacer"></div>
+    <span class="fb-source" style="background:#eef2ff;color:#4338ca">
+      <i class="fa-solid fa-list-check"></i> {{ pending_jobs|length }} عملية
+    </span>
+  </div>
+  <div style="font-size:12.5px;color:#475569;margin-block-end:12px;line-height:1.7">
+    قائمة الجوْب الموجودة حالياً لإضافة عقد جديدة — من إرسال نموذج المعالج حتى تثبيت العقدة
+    على الأسطول. العقد التي وصلت لمرحلة «تم توليد المفاتيح» تظهر أيضاً تحت «عقد CHR»
+    أدناه بحالة «تجهيز».
+  </div>
+
+  <div class="fd-tbl-wrap">
+    <table class="fd-tbl">
+      <thead>
+        <tr>
+          <th>الجوْب</th>
+          <th>العقدة</th>
+          <th>المزوّد</th>
+          <th>IP عام</th>
+          <th>الحالة</th>
+          <th>ملاحظات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in pending_jobs %}
+          <tr>
+            <td class="mono">#{{ j.id }}</td>
+            <td class="mono">{{ j.name }}</td>
+            <td>{{ j.provider }}</td>
+            <td class="mono">{{ j.public_ip }}</td>
+            <td>
+              {% if j.status == 'draft' %}
+                <span class="fd-badge fd-badge--prov" title="مسودة — في انتظار توليد المفاتيح">{{ j.status_label }}</span>
+              {% elif j.status == 'failed' %}
+                <span class="fd-badge fd-badge--down">{{ j.status_label }}</span>
+              {% elif j.status in ('keys_generated','script_generated','pushed','verifying') %}
+                <span class="fd-badge fd-badge--prov">{{ j.status_label }}</span>
+              {% else %}
+                <span class="fd-badge fd-badge--off">{{ j.status_label }}</span>
+              {% endif %}
+              {% if j.chr_id %}
+                <span class="fd-badge fd-badge--off" title="مرتبطة بعقدة #{{ j.chr_id }} ضمن «عقد CHR»">عقدة #{{ j.chr_id }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if j.last_error %}
+                <span style="color:#b91c1c;font-size:12px">
+                  <i class="fa-solid fa-triangle-exclamation"></i> {{ j.last_error }}
+                </span>
+              {% else %}
+                <span style="color:#9ca3af;font-size:12px">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {# ═══════════════════════════════════════════════════════════════════════
    Phase-5 task C — «ترتيب الأسطول» (brain explainability)
