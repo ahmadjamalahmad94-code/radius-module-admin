@@ -101,7 +101,16 @@ def _service(ok: bool = True) -> OnboardingService:
         vault=FakeVault(),
         renderer=FakeRenderer(),
         pusher=FakePusher(ok=ok),
-        config={"CHR_SHARED_SECRET": "fleet-secret", "PANEL_WG_PUBKEY": "PANELPUB"},
+        # The pre-render binding validator (fix/fleet-script-real-bindings)
+        # refuses to emit a script unless ALL five fleet-infra constants are
+        # configured — supply the full set so the fake mirrors a real fleet.
+        config={
+            "CHR_SHARED_SECRET": "fleet-secret",
+            "PANEL_WG_PUBKEY": "PANELPUB",
+            "PANEL_WG_ENDPOINT": "panel:51820",
+            "PROXY_WG_PUBKEY": "PROXYPUB",
+            "PROXY_WG_ENDPOINT": "proxy:51821",
+        },
     )
 
 
