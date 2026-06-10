@@ -4,7 +4,7 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <span class="ar-breadcrumb-item">أسطول CHR</span>
+  <span class="ar-breadcrumb-item">{{ _('أسطول CHR') }}</span>
 {% endblock %}
 {% block page_breadcrumb %}لوحة الأسطول{% endblock %}
 
@@ -260,7 +260,7 @@
       فحص الكل الآن
     </button>
     <a class="fd-btn fd-btn--primary" href="{{ url_for('fleet_ui.onboarding_wizard') }}">
-      <i class="fa-solid fa-wand-magic-sparkles"></i> إضافة عقدة جديدة
+      <i class="fa-solid fa-wand-magic-sparkles"></i> {{ _('إضافة عقدة جديدة') }}
     </a>
   </div>
 </div>
@@ -564,10 +564,10 @@
 {# ─── Styled confirm dialog (replaces native confirm()) ─── #}
 <div class="fd-confirm" id="fd-confirm" role="dialog" aria-modal="true" aria-labelledby="fd-confirm-title">
   <div class="fd-confirm-box">
-    <div class="fd-confirm-title" id="fd-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> تأكيد</div>
+    <div class="fd-confirm-title" id="fd-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> {{ _('تأكيد') }}</div>
     <div class="fd-confirm-msg" id="fd-confirm-msg"></div>
     <div class="fd-confirm-actions">
-      <button type="button" class="fd-rowbtn fd-confirm-cancel" id="fd-confirm-cancel">إلغاء</button>
+      <button type="button" class="fd-rowbtn fd-confirm-cancel" id="fd-confirm-cancel">{{ _('إلغاء') }}</button>
       <button type="button" class="fd-rowbtn" id="fd-confirm-ok" style="background:#1e40af;color:#fff;border-color:#1e40af">متابعة</button>
     </div>
   </div>

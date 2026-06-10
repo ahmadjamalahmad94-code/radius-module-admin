@@ -18,7 +18,7 @@
     {% call hub.fieldset("التعريف والاتصال", icon="address-book") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>اسم الشركة <span class="req">*</span></label>
+          <label>{{ _('اسم الشركة') }} <span class="req">*</span></label>
           <input class="hub-input" name="company_name" value="{{ customer.company_name or '' }}" required>
           <div class="hub-field-hint">الاسم التجاري الذي ستراه في القوائم والتقارير.</div>
         </div>
@@ -33,7 +33,7 @@
           <div class="hub-field-hint">للتواصل الإداري، ولا يفعّل دخولًا تلقائيًا للعميل.</div>
         </div>
         <div class="hub-field">
-          <label>الهاتف</label>
+          <label>{{ _('الهاتف') }}</label>
           <input class="hub-input" name="phone" value="{{ customer.phone or '' }}">
           <div class="hub-field-hint">رقم واتساب أو اتصال للمتابعة السريعة.</div>
         </div>
@@ -50,7 +50,7 @@
           <div class="hub-field-hint">مفيد للتقارير والدعم حسب المنطقة.</div>
         </div>
         <div class="hub-field">
-          <label>المدينة</label>
+          <label>{{ _('المدينة') }}</label>
           <input class="hub-input" name="city" value="{{ customer.city or '' }}">
           <div class="hub-field-hint">اكتب المدينة أو منطقة التشغيل الأساسية.</div>
         </div>
@@ -60,7 +60,7 @@
           <div class="hub-field-hint">يظهر للعميل كرابط دخول أو سيرفر تشغيل. مزامنة كلمات المرور تتم من الريدياس إلى لوحة التراخيص عبر HTTPS.</div>
         </div>
         <div class="hub-field">
-          <label>الحالة</label>
+          <label>{{ _('الحالة') }}</label>
           <select class="hub-select" name="status">
             {% for s in ['pending','active','inactive','blocked'] %}
               <option value="{{ s }}" {{ 'selected' if customer.status == s else '' }}>{{ s|status_label }}</option>
@@ -88,9 +88,9 @@
 
     <div class="hub-form-foot" style="padding-top:16px">
       <button class="hub-btn hub-btn--primary" type="submit">
-        <i class="fa-solid fa-floppy-disk"></i> حفظ
+        <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
       </button>
-      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customers_list') }}">إلغاء</a>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customers_list') }}">{{ _('إلغاء') }}</a>
     </div>
   </form>
 {% endcall %}

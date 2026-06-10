@@ -306,7 +306,7 @@
     <i class="fa-brands fa-whatsapp"></i>
   </div>
   <div>
-    <div class="sw-hero-title">إعدادات واتساب</div>
+    <div class="sw-hero-title">{{ _('إعدادات واتساب') }}</div>
     <div class="sw-hero-sub">
       واتساب يُستخدَم لإرسال إشعارات تلقائية للعملاء — تجديد الاشتراك، انتهاء الباقة، وترحيب الأعضاء الجدد — بدون تدخل يدوي.
     </div>
@@ -436,7 +436,7 @@
         {# ── قالب التجديد ── #}
         <div class="sw-tpl-card">
           <div class="sw-tpl-head">
-            <span class="sw-tpl-badge renew"><i class="fa-solid fa-rotate" aria-hidden="true"></i> تجديد</span>
+            <span class="sw-tpl-badge renew"><i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ _('تجديد') }}</span>
             <span class="sw-tpl-name">رسالة التجديد</span>
           </div>
           <div class="sw-tpl-body">
@@ -448,7 +448,7 @@
               <div class="sw-hint">اكتب الاسم كما هو في Meta بالضبط (حروف صغيرة وشرطات سفلية).</div>
             </div>
             <div class="sw-field">
-              <label class="sw-label" for="sw-tpl-renew-lang">اللغة</label>
+              <label class="sw-label" for="sw-tpl-renew-lang">{{ _('اللغة') }}</label>
               <select class="sw-select" id="sw-tpl-renew-lang" name="tpl_renewal_lang">
                 <option value="ar" {% if whatsapp.get('tpl_renewal_lang','ar')=='ar' %}selected{% endif %}>العربية (ar)</option>
                 <option value="en_US" {% if whatsapp.get('tpl_renewal_lang')=='en_US' %}selected{% endif %}>الإنجليزية (en_US)</option>
@@ -481,7 +481,7 @@
               <div class="sw-hint">يُرسَل قبل انتهاء الباقة بعدد الأيام المحدد في قسم الجدولة أدناه.</div>
             </div>
             <div class="sw-field">
-              <label class="sw-label" for="sw-tpl-exp-lang">اللغة</label>
+              <label class="sw-label" for="sw-tpl-exp-lang">{{ _('اللغة') }}</label>
               <select class="sw-select" id="sw-tpl-exp-lang" name="tpl_expiry_lang">
                 <option value="ar" {% if whatsapp.get('tpl_expiry_lang','ar')=='ar' %}selected{% endif %}>العربية (ar)</option>
                 <option value="en_US" {% if whatsapp.get('tpl_expiry_lang')=='en_US' %}selected{% endif %}>الإنجليزية (en_US)</option>
@@ -513,7 +513,7 @@
               <div class="sw-hint">يُرسَل لحظة إنشاء حساب عميل جديد لأول مرة.</div>
             </div>
             <div class="sw-field">
-              <label class="sw-label" for="sw-tpl-wel-lang">اللغة</label>
+              <label class="sw-label" for="sw-tpl-wel-lang">{{ _('اللغة') }}</label>
               <select class="sw-select" id="sw-tpl-wel-lang" name="tpl_welcome_lang">
                 <option value="ar" {% if whatsapp.get('tpl_welcome_lang','ar')=='ar' %}selected{% endif %}>العربية (ar)</option>
                 <option value="en_US" {% if whatsapp.get('tpl_welcome_lang')=='en_US' %}selected{% endif %}>الإنجليزية (en_US)</option>

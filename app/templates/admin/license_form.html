@@ -18,7 +18,7 @@
     {% call hub.fieldset("العميل والخطة", icon="link") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>العميل <span class="req">*</span></label>
+          <label>{{ _('العميل') }} <span class="req">*</span></label>
           <select class="hub-select" name="customer_id" required>
             {% for customer in customers %}
               <option value="{{ customer.id }}">{{ customer.company_name }}</option>
@@ -43,7 +43,7 @@
     {% call hub.fieldset("الحالة والمدة", icon="calendar-days") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>الحالة</label>
+          <label>{{ _('الحالة') }}</label>
           <select class="hub-select" name="status">
             {% for s in ['active','trial','suspended'] %}
               <option value="{{ s }}">{{ s|status_label }}</option>
@@ -62,7 +62,7 @@
           <div class="hub-field-hint">وقت بداية العقد التجاري.</div>
         </div>
         <div class="hub-field">
-          <label>تاريخ الانتهاء</label>
+          <label>{{ _('تاريخ الانتهاء') }}</label>
           <input class="hub-input ltr" name="expires_at" type="datetime-local" value="{{ (today + timedelta(days=30)).strftime('%Y-%m-%dT%H:%M') }}">
           <div class="hub-field-hint">بعد هذا التاريخ يتغير رد الترخيص حسب المهلة.</div>
         </div>
@@ -83,7 +83,7 @@
       <button class="hub-btn hub-btn--primary" type="submit">
         <i class="fa-solid fa-wand-magic-sparkles"></i> توليد الترخيص
       </button>
-      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.licenses_list') }}">إلغاء</a>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.licenses_list') }}">{{ _('إلغاء') }}</a>
     </div>
   </form>
 {% endcall %}

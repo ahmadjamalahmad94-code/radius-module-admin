@@ -26,7 +26,7 @@
         {% endfor %}
       </select>
       <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
-        <i class="fa-solid fa-filter"></i> تصفية
+        <i class="fa-solid fa-filter"></i> {{ _('تصفية') }}
       </button>
     </form>
     <a class="hub-btn hub-btn--primary hub-btn--sm" href="{{ url_for('admin.customer_new') }}">
@@ -41,9 +41,9 @@
           <th>الشركة</th>
           <th>المسؤول</th>
           <th>البريد</th>
-          <th>الهاتف</th>
-          <th>الحالة</th>
-          <th class="num">التراخيص</th>
+          <th>{{ _('الهاتف') }}</th>
+          <th>{{ _('الحالة') }}</th>
+          <th class="num">{{ _('التراخيص') }}</th>
           <th></th>
         </tr>
       </thead>
@@ -62,10 +62,10 @@
           <td>
             <div class="hub-actions">
               <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">
-                <i class="fa-solid fa-eye"></i> عرض
+                <i class="fa-solid fa-eye"></i> {{ _('عرض') }}
               </a>
               <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">
-                <i class="fa-solid fa-pen"></i> تعديل
+                <i class="fa-solid fa-pen"></i> {{ _('تعديل') }}
               </a>
               {% if is_super_admin %}
               <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" title="الخزنة الخاصة بالعميل — للمدير العام فقط">

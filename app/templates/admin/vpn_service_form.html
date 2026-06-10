@@ -24,7 +24,7 @@
         </div>
         <input type="hidden" name="code" value="{{ vpn_plan.code or '' }}">
         <div class="hub-field full">
-          <label>الوصف</label>
+          <label>{{ _('الوصف') }}</label>
           <textarea class="hub-textarea" name="description" rows="2">{{ vpn_plan.description or '' }}</textarea>
           <div class="hub-field-hint">وصف داخلي قصير يساعد المدير على تمييز الباقة.</div>
         </div>
@@ -78,7 +78,7 @@
       <button class="hub-btn hub-btn--primary" type="submit">
         <i class="fa-solid fa-floppy-disk"></i> حفظ الباقة
       </button>
-      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.vpn_services_list') }}">رجوع</a>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.vpn_services_list') }}">{{ _('رجوع') }}</a>
     </div>
   </form>
 {% endcall %}

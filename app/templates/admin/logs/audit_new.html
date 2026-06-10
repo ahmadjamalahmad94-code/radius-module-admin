@@ -308,16 +308,16 @@
     <label class="al-filter-label" for="al-f-type">نوع العملية</label>
     <select class="al-filter-select" id="al-f-type" name="action_type">
       <option value="">كل العمليات</option>
-      <option value="create"  {% if request.args.get('action_type')=='create'  %}selected{% endif %}>إنشاء</option>
-      <option value="edit"    {% if request.args.get('action_type')=='edit'    %}selected{% endif %}>تعديل</option>
-      <option value="delete"  {% if request.args.get('action_type')=='delete'  %}selected{% endif %}>حذف</option>
+      <option value="create"  {% if request.args.get('action_type')=='create'  %}selected{% endif %}>{{ _('إنشاء') }}</option>
+      <option value="edit"    {% if request.args.get('action_type')=='edit'    %}selected{% endif %}>{{ _('تعديل') }}</option>
+      <option value="delete"  {% if request.args.get('action_type')=='delete'  %}selected{% endif %}>{{ _('حذف') }}</option>
       <option value="login"   {% if request.args.get('action_type')=='login'   %}selected{% endif %}>تسجيل دخول</option>
       <option value="error"   {% if request.args.get('action_type')=='error'   %}selected{% endif %}>خطأ</option>
     </select>
   </div>
   <div class="al-filter-actions">
     <button class="al-btn-filter" type="submit">
-      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> بحث
+      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> {{ _('بحث') }}
     </button>
     <a class="al-btn-reset" href="{{ request.path }}">
       <i class="fa-solid fa-times" aria-hidden="true"></i> إعادة ضبط
@@ -358,7 +358,7 @@
           <th scope="col" class="cc-th-sort">نوع العملية</th>
           <th scope="col" class="cc-th-sort">الكيان المتأثر</th>
           <th scope="col" class="cc-th-sort">العنوان IP</th>
-          <th scope="col" class="cc-th-sort">الحالة</th>
+          <th scope="col" class="cc-th-sort">{{ _('الحالة') }}</th>
         </tr>
       </thead>
       <tbody>

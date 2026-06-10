@@ -405,7 +405,7 @@
       <i class="fa-solid fa-key"></i>
     </div>
     <div class="lic-hero-body">
-      <div class="lic-hero-title">التراخيص</div>
+      <div class="lic-hero-title">{{ _('التراخيص') }}</div>
       <div class="lic-hero-sub">كل ترخيص يعطي عميلاً صلاحية تشغيل النظام. يمكنك إضافة ترخيص جديد أو إيقاف ترخيص قائم من هنا.</div>
     </div>
     <a class="lic-hero-btn" href="{{ url_for('admin.license_new') }}">
@@ -423,7 +423,7 @@
       </div>
       <div class="lic-stat-body">
         <div class="lic-stat-num">{{ stats.total | default(licenses | length) }}</div>
-        <div class="lic-stat-label">إجمالي التراخيص</div>
+        <div class="lic-stat-label">{{ _('إجمالي التراخيص') }}</div>
       </div>
     </div>
 
@@ -471,7 +471,7 @@
       <form class="lic-filter-form" method="get" aria-label="نموذج الفلترة">
 
         <div class="lic-filter-field" style="flex:1; min-width:220px">
-          <label for="lic-search">بحث</label>
+          <label for="lic-search">{{ _('بحث') }}</label>
           <input
             class="lic-input"
             id="lic-search"
@@ -484,19 +484,19 @@
         </div>
 
         <div class="lic-filter-field">
-          <label for="lic-status">الحالة</label>
+          <label for="lic-status">{{ _('الحالة') }}</label>
           <select class="lic-select" id="lic-status" name="status" aria-label="فلترة حسب الحالة">
             <option value="">كل الحالات</option>
             <option value="active"    {{ 'selected' if status == 'active'    }}>نشط ✓</option>
             <option value="trial"     {{ 'selected' if status == 'trial'     }}>تجريبي</option>
-            <option value="expired"   {{ 'selected' if status == 'expired'   }}>منتهي</option>
+            <option value="expired"   {{ 'selected' if status == 'expired'   }}>{{ _('منتهي') }}</option>
             <option value="suspended" {{ 'selected' if status == 'suspended' }}>موقوف</option>
-            <option value="revoked"   {{ 'selected' if status == 'revoked'   }}>ملغى</option>
+            <option value="revoked"   {{ 'selected' if status == 'revoked'   }}>{{ _('ملغى') }}</option>
           </select>
         </div>
 
         <div class="lic-filter-field">
-          <label for="lic-expiry">تاريخ الانتهاء</label>
+          <label for="lic-expiry">{{ _('تاريخ الانتهاء') }}</label>
           <select class="lic-select" id="lic-expiry" name="expiry" aria-label="فلترة حسب تاريخ الانتهاء">
             <option value="">أي وقت</option>
             <option value="this_month" {{ 'selected' if expiry == 'this_month' }}>ينتهي هذا الشهر</option>
@@ -506,10 +506,10 @@
         </div>
 
         <div class="lic-filter-field" style="justify-content:flex-end">
-          <label style="visibility:hidden; user-select:none">بحث</label>
+          <label style="visibility:hidden; user-select:none">{{ _('بحث') }}</label>
           <button class="lic-btn lic-btn--primary" type="submit">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            بحث
+            {{ _('بحث') }}
           </button>
         </div>
 
@@ -557,11 +557,11 @@
       <table class="lic-table" id="tbl-licenses" aria-label="قائمة التراخيص">
         <thead>
           <tr>
-            <th scope="col" class="cc-th-sort">اسم العميل</th>
-            <th scope="col" class="cc-th-sort">مفتاح الترخيص</th>
+            <th scope="col" class="cc-th-sort">{{ _('اسم العميل') }}</th>
+            <th scope="col" class="cc-th-sort">{{ _('مفتاح الترخيص') }}</th>
             <th scope="col" class="cc-th-sort">الباقة</th>
-            <th scope="col" class="cc-th-sort">تاريخ الانتهاء</th>
-            <th scope="col" class="cc-th-sort">الحالة</th>
+            <th scope="col" class="cc-th-sort">{{ _('تاريخ الانتهاء') }}</th>
+            <th scope="col" class="cc-th-sort">{{ _('الحالة') }}</th>
             <th scope="col" class="cc-th-sort">آخر فحص</th>
             <th scope="col"></th>
           </tr>
@@ -599,15 +599,15 @@
 
               <td>
                 {% if lic.status == 'active' %}
-                  <span class="lic-pill lic-pill--green"><i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> نشط</span>
+                  <span class="lic-pill lic-pill--green"><i class="fa-solid fa-circle fa-xs" aria-hidden="true"></i> {{ _('نشط') }}</span>
                 {% elif lic.status == 'trial' %}
                   <span class="lic-pill lic-pill--blue"><i class="fa-solid fa-flask fa-xs" aria-hidden="true"></i> تجريبي</span>
                 {% elif lic.status == 'expired' %}
-                  <span class="lic-pill lic-pill--red"><i class="fa-solid fa-circle-xmark fa-xs" aria-hidden="true"></i> منتهي</span>
+                  <span class="lic-pill lic-pill--red"><i class="fa-solid fa-circle-xmark fa-xs" aria-hidden="true"></i> {{ _('منتهي') }}</span>
                 {% elif lic.status == 'suspended' %}
                   <span class="lic-pill lic-pill--amber"><i class="fa-solid fa-pause fa-xs" aria-hidden="true"></i> موقوف</span>
                 {% elif lic.status == 'revoked' %}
-                  <span class="lic-pill lic-pill--grey"><i class="fa-solid fa-ban fa-xs" aria-hidden="true"></i> ملغى</span>
+                  <span class="lic-pill lic-pill--grey"><i class="fa-solid fa-ban fa-xs" aria-hidden="true"></i> {{ _('ملغى') }}</span>
                 {% else %}
                   <span class="lic-pill lic-pill--grey">{{ lic.status | status_label }}</span>
                 {% endif %}

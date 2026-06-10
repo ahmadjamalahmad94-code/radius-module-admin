@@ -39,6 +39,12 @@ def create_app(config_object=None, **overrides) -> Flask:
     _install_error_handlers(app)
     _install_template_helpers(app)
 
+    # i18n / l10n. Must run BEFORE blueprints register so the Jinja
+    # globals (``_`` / ``gettext``) are available for templates loaded
+    # during route registration.
+    from .i18n import init_app as init_i18n
+    init_i18n(app)
+
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
     from .admin.vault_routes import bp as admin_vault_bp
@@ -46,6 +52,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .admin.landing_routes import bp as admin_landing_bp
     from .admin.infra_routes import bp as admin_infra_bp
     from .admin.messaging_routes import bp as admin_messaging_bp
+    from .i18n.routes import bp as i18n_bp
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
@@ -108,6 +115,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(admin_landing_bp)
     app.register_blueprint(admin_infra_bp)
     app.register_blueprint(admin_messaging_bp)
+    app.register_blueprint(i18n_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(proxy_api_bp)
     app.register_blueprint(public_bp)

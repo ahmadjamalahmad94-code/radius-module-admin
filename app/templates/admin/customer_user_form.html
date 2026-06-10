@@ -18,7 +18,7 @@
     {% call hub.fieldset("الهوية", icon="id-badge") %}
       <div class="hub-form-grid">
         <div class="hub-field">
-          <label>اسم المستخدم <span class="req">*</span></label>
+          <label>{{ _('اسم المستخدم') }} <span class="req">*</span></label>
           <input class="hub-input mono" name="username" value="{{ customer_user.username or '' }}" required autocomplete="username">
           <div class="hub-field-hint">يستخدم للدخول إلى لوحة الريدياس بعد المزامنة.</div>
         </div>
@@ -27,11 +27,11 @@
           <input class="hub-input" name="full_name" value="{{ customer_user.full_name or '' }}">
         </div>
         <div class="hub-field">
-          <label>البريد الإلكتروني</label>
+          <label>{{ _('البريد الإلكتروني') }}</label>
           <input class="hub-input" name="email" type="email" value="{{ customer_user.email or '' }}">
         </div>
         <div class="hub-field">
-          <label>الدور</label>
+          <label>{{ _('الدور') }}</label>
           <select class="hub-select" name="role_key">
             {% for role in ['owner','admin','support','billing','viewer'] %}
               <option value="{{ role }}" {% if customer_user.role_key == role %}selected{% endif %}>{{ role|role_label }}</option>
@@ -87,12 +87,12 @@
     {% if _return_to == 'users' %}<input type="hidden" name="return_to" value="users">{% endif %}
     <div class="hub-form-foot" style="padding-top:16px">
       <button class="hub-btn hub-btn--primary" type="submit">
-        <i class="fa-solid fa-floppy-disk"></i> حفظ
+        <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
       </button>
       {% if _return_to == 'users' %}
-        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_users', customer_id=customer.id) }}">رجوع</a>
+        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_users', customer_id=customer.id) }}">{{ _('رجوع') }}</a>
       {% else %}
-        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">رجوع</a>
+        <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">{{ _('رجوع') }}</a>
       {% endif %}
     </div>
   </form>

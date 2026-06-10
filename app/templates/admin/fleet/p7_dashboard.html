@@ -164,7 +164,7 @@
   <div class="p7-table-wrap">
     <table class="hub-table">
       <thead><tr>
-        <th>الوقت</th><th>النوع</th><th>المستخدم</th>
+        <th>الوقت</th><th>{{ _('النوع') }}</th><th>المستخدم</th>
         <th>من</th><th>إلى</th><th>الإجراء</th><th>النتيجة</th><th>السبب</th>
       </tr></thead>
       <tbody>
@@ -205,8 +205,8 @@
   <div class="p7-table-wrap">
     <table class="hub-table">
       <thead><tr>
-        <th>الوقت</th><th>المستخدم</th><th>النوع</th>
-        <th>من</th><th>إلى</th><th>الحالة</th>
+        <th>الوقت</th><th>المستخدم</th><th>{{ _('النوع') }}</th>
+        <th>من</th><th>إلى</th><th>{{ _('الحالة') }}</th>
       </tr></thead>
       <tbody>
         {% for d in decisions_rows %}
@@ -245,7 +245,7 @@
   <div class="p7-table-wrap">
     <table class="hub-table">
       <thead><tr>
-        <th>المستخدم</th><th>النطاق</th><th>العميل</th>
+        <th>المستخدم</th><th>النطاق</th><th>{{ _('العميل') }}</th>
         <th>IP المثبّت</th><th>قابل للنقل</th><th>إجراءات</th>
       </tr></thead>
       <tbody>
@@ -307,7 +307,7 @@
         <input type="checkbox" name="movable" value="on"> قابل للنقل
       </label>
       <button class="hub-btn hub-btn--primary" type="submit">
-        <i class="fa-solid fa-floppy-disk"></i> حفظ
+        <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
       </button>
     </form>
   </details>

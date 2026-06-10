@@ -4,9 +4,9 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">{{ _('أسطول CHR') }}</a>
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <span class="ar-breadcrumb-item">الباب الأمامي (DNS)</span>
+  <span class="ar-breadcrumb-item">{{ _('الباب الأمامي (DNS)') }}</span>
 {% endblock %}
 {% block page_breadcrumb %}الباب الأمامي{% endblock %}
 
@@ -365,10 +365,10 @@
 
 <div class="ff-confirm" id="ff-confirm" role="dialog" aria-modal="true">
   <div class="ff-confirm-box">
-    <div class="ff-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> تأكيد</div>
+    <div class="ff-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> {{ _('تأكيد') }}</div>
     <div class="ff-confirm-msg" id="ff-confirm-msg"></div>
     <div class="ff-confirm-actions">
-      <button type="button" class="ff-btn ff-btn--ghost" id="ff-confirm-cancel">إلغاء</button>
+      <button type="button" class="ff-btn ff-btn--ghost" id="ff-confirm-cancel">{{ _('إلغاء') }}</button>
       <button type="button" class="ff-btn ff-btn--primary" id="ff-confirm-ok">متابعة</button>
     </div>
   </div>

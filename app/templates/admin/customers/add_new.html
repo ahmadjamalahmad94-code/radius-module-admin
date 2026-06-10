@@ -4,7 +4,7 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">{{ _('العملاء') }}</a>
 {% endblock %}
 {% block page_breadcrumb %}إضافة عميل جديد{% endblock %}
 
@@ -844,7 +844,7 @@
             {# اسم الشركة #}
             <div class="cadd-field" id="field-company_name">
               <label class="cadd-label" for="company_name">
-                اسم الشركة
+                {{ _('اسم الشركة') }}
                 <span class="cadd-label-req" aria-label="مطلوب">*</span>
               </label>
               <input
@@ -893,7 +893,7 @@
             {# البريد الإلكتروني #}
             <div class="cadd-field" id="field-email">
               <label class="cadd-label" for="email">
-                البريد الإلكتروني
+                {{ _('البريد الإلكتروني') }}
                 <span class="cadd-label-opt">(اختياري)</span>
               </label>
               <div class="cadd-input-wrap">
@@ -1002,7 +1002,7 @@
 
             {# المدينة — قائمة منسدلة عند توفر مدن معروفة، وإلا حقل نصي حرّ #}
             <div class="cadd-field" id="field-city">
-              <label class="cadd-label" for="city_select">المدينة</label>
+              <label class="cadd-label" for="city_select">{{ _('المدينة') }}</label>
               <select class="cadd-select"
                       id="city_select"
                       name="city"
@@ -1054,7 +1054,7 @@
         <div class="cadd-fieldset">
           <div class="cadd-fieldset-title">
             <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
-            ملاحظات
+            {{ _('ملاحظات') }}
             <span class="cadd-label-opt">(اختياري)</span>
           </div>
 
@@ -1198,7 +1198,7 @@
           </div>
 
           <div class="cadd-field">
-            <label class="cadd-label" id="label-status">الحالة</label>
+            <label class="cadd-label" id="label-status">{{ _('الحالة') }}</label>
             <div class="cadd-radio-group" role="radiogroup" aria-labelledby="label-status">
 
               {%- set _status_val = (form_data and form_data.get('status')) or 'pending' -%}
@@ -1217,7 +1217,7 @@
                        {{ 'checked' if _status_val == 'active' }}>
                 <label class="cadd-radio-label" for="status-active">
                   <span class="cadd-radio-label-icon">✅</span>
-                  <span class="cadd-radio-label-title">نشط</span>
+                  <span class="cadd-radio-label-title">{{ _('نشط') }}</span>
                   <span class="cadd-radio-label-sub">الحساب جاهز للعمل الآن</span>
                 </label>
               </div>
@@ -1269,7 +1269,7 @@
           </div>
           <div class="cadd-review-grid">
             <div class="cadd-review-item">
-              <div class="cadd-review-item-key">اسم الشركة</div>
+              <div class="cadd-review-item-key">{{ _('اسم الشركة') }}</div>
               <div class="cadd-review-item-val" id="rev-company_name">—</div>
             </div>
             <div class="cadd-review-item">
@@ -1277,11 +1277,11 @@
               <div class="cadd-review-item-val" id="rev-contact_name">—</div>
             </div>
             <div class="cadd-review-item">
-              <div class="cadd-review-item-key">البريد الإلكتروني</div>
+              <div class="cadd-review-item-key">{{ _('البريد الإلكتروني') }}</div>
               <div class="cadd-review-item-val mono" id="rev-email">—</div>
             </div>
             <div class="cadd-review-item">
-              <div class="cadd-review-item-key">الهاتف</div>
+              <div class="cadd-review-item-key">{{ _('الهاتف') }}</div>
               <div class="cadd-review-item-val mono" id="rev-phone">—</div>
             </div>
             <div class="cadd-review-item">
@@ -1356,7 +1356,7 @@
            id="cadd-btn-cancel"
            aria-label="إلغاء والعودة للقائمة">
           <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-          إلغاء
+          {{ _('إلغاء') }}
         </a>
       </div>
 

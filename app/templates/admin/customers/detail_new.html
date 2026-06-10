@@ -4,7 +4,7 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">{{ _('العملاء') }}</a>
 {% endblock %}
 {% block page_breadcrumb %}{{ customer.company_name }}{% endblock %}
 
@@ -702,7 +702,7 @@
     </a>
     <a href="{{ url_for('admin.customer_users', customer_id=customer.id) }}" class="cd-hero-btn"
        title="صفحة مستقلة لمستخدمي العميل (بوابة + هويات الراديوس)">
-      <i class="fa-solid fa-users-gear" aria-hidden="true"></i> مستخدمو العميل
+      <i class="fa-solid fa-users-gear" aria-hidden="true"></i> {{ _('مستخدمو العميل') }}
     </a>
     {% if is_super_admin %}
       <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" class="cd-hero-btn">
@@ -731,7 +731,7 @@
     </div>
     <div class="cd-kpi-body">
       <div class="cd-kpi-num">{{ customer_users|length }}</div>
-      <div class="cd-kpi-label">مستخدمو العميل</div>
+      <div class="cd-kpi-label">{{ _('مستخدمو العميل') }}</div>
     </div>
   </div>
 
@@ -833,7 +833,7 @@
         </div>
         <div class="cd-info-card">
           <div class="cd-info-row">
-            <span class="cd-info-key">اسم الشركة</span>
+            <span class="cd-info-key">{{ _('اسم الشركة') }}</span>
             <span class="cd-info-val">{{ customer.company_name or '—' }}</span>
           </div>
           <div class="cd-info-row">
@@ -841,7 +841,7 @@
             <span class="cd-info-val">{{ customer.contact_name or '—' }}</span>
           </div>
           <div class="cd-info-row">
-            <span class="cd-info-key">البريد الإلكتروني</span>
+            <span class="cd-info-key">{{ _('البريد الإلكتروني') }}</span>
             <span class="cd-info-val mono">{{ customer.email or '—' }}</span>
           </div>
           <div class="cd-info-row">
@@ -849,7 +849,7 @@
             <span class="cd-info-val mono">{{ customer.phone or '—' }}</span>
           </div>
           <div class="cd-info-row">
-            <span class="cd-info-key">المدينة</span>
+            <span class="cd-info-key">{{ _('المدينة') }}</span>
             <span class="cd-info-val">{{ customer.city or '—' }}</span>
           </div>
           <div class="cd-info-row">
@@ -916,7 +916,7 @@
         {# المستخدمون المرتبطون #}
         <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
           <i class="fa-solid fa-users" aria-hidden="true"></i>
-          مستخدمو العميل
+          {{ _('مستخدمو العميل') }}
           <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
             — الحسابات التي يملكها هذا العميل للدخول على البوابة
           </span>
@@ -938,9 +938,9 @@
             <table class="cd-inner-table">
               <thead>
                 <tr>
-                  <th>اسم المستخدم</th>
+                  <th>{{ _('اسم المستخدم') }}</th>
                   <th>البريد</th>
-                  <th>الدور</th>
+                  <th>{{ _('الدور') }}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1021,7 +1021,7 @@
                 <span class="cd-info-val">{{ lic.start_date or '—' }}</span>
               </div>
               <div class="cd-info-row">
-                <span class="cd-info-key">تاريخ الانتهاء</span>
+                <span class="cd-info-key">{{ _('تاريخ الانتهاء') }}</span>
                 <span class="cd-info-val">{{ lic.end_date or '—' }}</span>
               </div>
               <div class="cd-info-row">
@@ -1081,7 +1081,7 @@
                   font-weight:var(--cc-fw-bold);background:var(--cc-brand);color:#fff;text-decoration:none;
                   margin-block-start:var(--cc-sp-5)">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
-          إضافة ترخيص
+          {{ _('إضافة ترخيص') }}
         </a>
       </div>
     {% endif %}
@@ -1115,7 +1115,7 @@
           <span class="cd-cred-label">رابط الخادم (URL)</span>
           <span class="cd-cred-val">{{ customer.runtime_url or '—' }}</span>
           {% if customer.runtime_url %}
-            <button class="cd-cred-copy" onclick="cdCopy('{{ customer.runtime_url }}')" title="نسخ" aria-label="نسخ رابط الخادم">
+            <button class="cd-cred-copy" onclick="cdCopy('{{ customer.runtime_url }}')" title="{{ _('نسخ') }}" aria-label="نسخ رابط الخادم">
               <i class="fa-solid fa-copy" aria-hidden="true"></i>
             </button>
           {% endif %}
@@ -1138,7 +1138,7 @@
               <span class="cd-cred-label">Realm</span>
               <span class="cd-cred-val">{{ contract.realm or '—' }}</span>
               {% if contract.realm %}
-                <button class="cd-cred-copy" onclick="cdCopy('{{ contract.realm }}')" title="نسخ" aria-label="نسخ الـ Realm">
+                <button class="cd-cred-copy" onclick="cdCopy('{{ contract.realm }}')" title="{{ _('نسخ') }}" aria-label="نسخ الـ Realm">
                   <i class="fa-solid fa-copy" aria-hidden="true"></i>
                 </button>
               {% endif %}
@@ -1179,7 +1179,7 @@
         <div id="cd-token-result" class="cd-cred-box" style="display:none;margin-top:var(--cc-sp-5)">
           <span class="cd-cred-label">كود التفعيل (مرة واحدة)</span>
           <span class="cd-cred-val mono" id="cd-token-val">—</span>
-          <button type="button" class="cd-cred-copy" id="cd-token-copy" title="نسخ" aria-label="نسخ الكود">
+          <button type="button" class="cd-cred-copy" id="cd-token-copy" title="{{ _('نسخ') }}" aria-label="نسخ الكود">
             <i class="fa-solid fa-copy" aria-hidden="true"></i>
           </button>
         </div>
@@ -1298,8 +1298,8 @@
                 <tr>
                   <th>اسم الجهاز</th>
                   <th>عنوان IP</th>
-                  <th>النوع</th>
-                  <th>الحالة</th>
+                  <th>{{ _('النوع') }}</th>
+                  <th>{{ _('الحالة') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1391,12 +1391,12 @@
           <thead>
             <tr>
               <th>رقم الطلب</th>
-              <th>المبلغ</th>
-              <th>العملة</th>
+              <th>{{ _('المبلغ') }}</th>
+              <th>{{ _('العملة') }}</th>
               <th>طريقة الدفع</th>
-              <th>الحالة</th>
+              <th>{{ _('الحالة') }}</th>
               <th>تاريخ الطلب</th>
-              <th style="text-align:center">تفاصيل</th>
+              <th style="text-align:center">{{ _('تفاصيل') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -1420,7 +1420,7 @@
                 <td style="text-align:center">
                   <a href="{{ url_for('admin.payment_request_detail', request_id=pr.id) }}"
                      style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-bold);color:var(--cc-brand)">
-                    عرض <i class="fa-solid fa-chevron-left" style="font-size:9px" aria-hidden="true"></i>
+                    {{ _('عرض') }} <i class="fa-solid fa-chevron-left" style="font-size:9px" aria-hidden="true"></i>
                   </a>
                 </td>
               </tr>
