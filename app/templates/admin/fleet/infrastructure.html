@@ -154,32 +154,98 @@
 <div class="fi-card">
   <div class="fi-card-head">
     <div class="fi-card-title"><i class="fa-solid fa-server"></i> الباب الخلفي للوحة (WireGuard control-plane)</div>
+    {% if panel_pubkey_is_set %}
+      <span class="fi-pill fi-pill--ok"><i class="fa-solid fa-circle-check"></i> مضبوط</span>
+    {% endif %}
   </div>
   <div class="fi-card-sub">
-    اللوحة بحاجة لزوج مفاتيح WireGuard خاص بها لاستقبال اتصالات wg-mgmt من كل عقدة.
-    «توليد» يُنشئ المفتاح الخاص ويُخزّنه مُشفَّراً في خزنة الأسرار، ويعرض الجزء العام أدناه
-    (هو وحده ما يدخل في سكربتات العقد).
+    تحتاج اللوحة لزوج مفاتيح WireGuard خاص بها لاستقبال اتصالات wg-mgmt من كل عقدة.
+    <strong>الطريقة المفضّلة:</strong> ولّد الزوج <em>على خادم اللوحة</em> بأمر
+    <code dir="ltr">wg genkey</code> ثم الصق الجزء العام أدناه. هكذا لا يغادر المفتاح الخاص
+    المضيف، ويتفادى الخادم تخزينه بأي شكل.
   </div>
 
-  <div class="fi-field">
-    <label>المفتاح العام للوحة <span style="color:#b91c1c">*</span></label>
-    <input type="text" value="{{ panel_pubkey or '' }}" readonly
-           placeholder="لم يُولَّد بعد — اضغط «توليد مفتاح اللوحة»"
-           style="background:{% if panel_pubkey_is_set %}#ecfdf5{% else %}#fef3c7{% endif %};color:#0f172a">
-    <div class="fi-hint">
-      هذا هو المفتاح العام الذي يظهر في كل سكربت RouterOS. المفتاح الخاص يبقى مشفّراً على الخادم
-      ولا يظهر في أي مكان.
-    </div>
-  </div>
-
-  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_generate_panel_keypair') }}">
+  {# ── Primary path: paste public key from the host ── #}
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_panel_pubkey') }}"
+        {% if panel_pubkey_is_set %}data-confirm="استبدال المفتاح العام للوحة سيُبطل السكربتات الصادرة سابقاً للعقد. هل تريد المتابعة؟"{% endif %}>
     {{ csrf_input() }}
-    <button type="button" class="fi-btn fi-btn--primary" id="fi-gen-panel-key"
-            data-confirm="{% if panel_pubkey_is_set %}إعادة التوليد ستُبطل كل السكربتات السابقة للعقد. هل تريد المتابعة؟{% else %}سيُولِّد الخادم زوج مفاتيح WireGuard جديد للّوحة. هل تريد المتابعة؟{% endif %}">
-      <i class="fa-solid fa-key"></i>
-      {% if panel_pubkey_is_set %}إعادة توليد مفتاح اللوحة{% else %}توليد مفتاح اللوحة{% endif %}
+    <div class="fi-field">
+      <label for="panel_pubkey">المفتاح العام للوحة <span style="color:#b91c1c">*</span></label>
+      <input type="text" id="panel_pubkey" name="panel_pubkey"
+             value="{{ panel_pubkey or '' }}"
+             placeholder="44 حرفاً base64 ينتهي بـ '='  —  مثال: 26t6Zw...sNQV1U="
+             dir="ltr"
+             style="background:{% if panel_pubkey_is_set %}#ecfdf5{% else %}#fff{% endif %};color:#0f172a">
+      <div class="fi-hint">
+        على خادم اللوحة:&nbsp;
+        <code dir="ltr">wg genkey | sudo tee /etc/wireguard/wg-mgmt.key | wg pubkey</code>
+        — الصق ناتج <code dir="ltr">wg pubkey</code> هنا.
+        المفتاح الخاص يبقى في <code dir="ltr">/etc/wireguard/wg-mgmt.key</code> على المضيف ولا يصل اللوحة أبداً.
+      </div>
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-paste"></i> حفظ المفتاح العام
     </button>
   </form>
+
+  {# ── Alternative: server-side generate (kept for owners who prefer it) ── #}
+  <details style="margin-top:14px;border-top:1px dashed #e5e7eb;padding-top:12px">
+    <summary style="cursor:pointer;font-weight:700;color:#475569;font-size:12.5px">
+      بديل: توليد الزوج على الخادم (سيُخزَّن المفتاح الخاص مُشفَّراً في الخزنة)
+    </summary>
+    <div style="margin-top:10px;font-size:12px;color:#6b7280;line-height:1.7">
+      يُولِّد الخادم زوج مفاتيح جديد فوراً. يُخزَّن الجزء الخاص <strong>مُشفَّراً</strong> بمفتاح
+      Fernet الرئيسي للوحة. ستحتاج بعد ذلك إلى «كشف المفتاح الخاص» مرّة واحدة لتنزيله ولصقه
+      في <code dir="ltr">/etc/wireguard/wg-mgmt.conf</code> على المضيف.
+    </div>
+    <form method="post" action="{{ url_for('fleet_ui.fleet_infra_generate_panel_keypair') }}" style="margin-top:10px">
+      {{ csrf_input() }}
+      <button type="button" class="fi-btn fi-btn--warn" id="fi-gen-panel-key"
+              data-confirm="{% if panel_pubkey_is_set %}سيُستبدل المفتاح الحالي ويُولَّد زوج جديد على الخادم. السكربتات السابقة لن تعمل. هل تريد المتابعة؟{% else %}سيُولِّد الخادم زوج مفاتيح WireGuard جديد للّوحة ويُخزِّن الجزء الخاص مُشفَّراً. هل تريد المتابعة؟{% endif %}">
+        <i class="fa-solid fa-key"></i>
+        {% if panel_pubkey_is_set %}إعادة توليد على الخادم{% else %}توليد على الخادم{% endif %}
+      </button>
+    </form>
+    {% if panel_privkey_on_server %}
+      {# A server-minted private key is on file — give the operator a way to
+         retrieve it ONCE so they can install it on the host. After this they
+         should paste their own pubkey to clear the server's copy. #}
+      <form method="post" action="{{ url_for('fleet_ui.fleet_infra_reveal_panel_privkey') }}" style="margin-top:10px">
+        {{ csrf_input() }}
+        <button type="submit" class="fi-btn fi-btn--warn"
+                data-confirm="تحذير: سيُعرض المفتاح الخاص للوحة على هذه الصفحة لنسخه وتثبيته على مضيف اللوحة. كل عملية كشف تُسجَّل في سجل التدقيق. هل تريد المتابعة؟">
+          <i class="fa-solid fa-eye"></i> كشف/تنزيل المفتاح الخاص للوحة
+        </button>
+        <div class="fi-hint" style="margin-top:6px">
+          مُتاح لأنّ المفتاح وُلِّد على الخادم سابقاً. بعد التثبيت على المضيف، يُنصح بـ
+          الصق المفتاح العام في الأعلى — ذلك يحذف نسخة المفتاح الخاص من الخزنة تلقائياً.
+        </div>
+      </form>
+    {% endif %}
+  </details>
+
+  {# ── One-shot reveal of the panel WG private key ── #}
+  {% if revealed_panel_privkey %}
+    <div class="fi-banner fi-banner--warn" style="margin-top:14px;display:block">
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div style="flex:1">
+          <strong>المفتاح الخاص للوحة — انسخه الآن.</strong>
+          الصقه في <code dir="ltr">/etc/wireguard/wg-mgmt.conf</code> ضمن
+          <code dir="ltr">[Interface] PrivateKey = …</code> على خادم اللوحة، ثم أغلق هذه النافذة.
+          كل عملية كشف مُسجَّلة في سجل التدقيق.
+        </div>
+      </div>
+      <textarea readonly dir="ltr" rows="2"
+                style="width:100%;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;
+                       font-size:13px;padding:10px;border:1px solid #fde68a;border-radius:8px;background:#fff"
+                onclick="this.select()">{{ revealed_panel_privkey }}</textarea>
+      <button type="button" class="fi-btn fi-btn--warn" style="margin-top:8px"
+              onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='تم النسخ ✓'">
+        <i class="fa-solid fa-copy"></i> نسخ المفتاح الخاص
+      </button>
+    </div>
+  {% endif %}
 
   <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_panel_endpoint') }}" style="margin-top:16px">
     {{ csrf_input() }}

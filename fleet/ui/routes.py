@@ -413,6 +413,7 @@ def fleet_infrastructure():
         missing=svc.missing_required(),
         panel_pubkey=svc.panel_pubkey_for_display(),
         panel_pubkey_is_set=svc.panel_pubkey_is_set(),
+        panel_privkey_on_server=svc.panel_privkey_is_on_server(),
     )
 
 
@@ -446,6 +447,80 @@ def fleet_infra_generate_panel_keypair():
     else:
         flash("تم توليد زوج مفاتيح اللوحة بنجاح.", "success")
     return _infra_redirect()
+
+
+@bp.post("/infrastructure/panel-pubkey")
+@super_admin_required
+def fleet_infra_save_panel_pubkey():
+    """Accept a panel WG public key the operator pasted in from the host
+    where they ran ``wg genkey | wg pubkey``. Preferred over the server-side
+    «توليد» path because the private key never leaves the host.
+
+    If the server previously minted a keypair (private side encrypted in DB),
+    this also wipes that ciphertext row — the host's privkey is now the only
+    authoritative copy."""
+    from fleet.registry import infra_settings as svc
+    try:
+        result = svc.set_panel_pubkey(request.form.get("panel_pubkey") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit(
+        "fleet_infra_panel_pubkey_pasted", "fleet_infra", "PANEL_WG_PUBKEY",
+        "تم لصق المفتاح العام للوحة يدوياً"
+        + (" — تم حذف المفتاح الخاص الذي وُلِّد سابقاً على الخادم" if result["cleared_server_privkey"] else ""),
+        metadata=result,
+    )
+    db.session.commit()
+    if result["cleared_server_privkey"]:
+        flash(
+            "تم حفظ المفتاح العام، وأُزيل المفتاح الخاص الذي وُلِّد سابقاً على الخادم. "
+            "المفتاح الخاص الآن هو الذي لديك على المضيف فقط.",
+            "success",
+        )
+    elif result["replaced"]:
+        flash("⚠ تم استبدال المفتاح العام للوحة — السكربتات السابقة للعقد لم تعد صالحة.", "warning")
+    else:
+        flash("تم حفظ المفتاح العام للوحة.", "success")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/panel-privkey/reveal")
+@super_admin_required
+def fleet_infra_reveal_panel_privkey():
+    """ONE-TIME reveal of the server-stored panel WG private key so the
+    operator can install it in ``/etc/wireguard/wg-mgmt.conf`` on the panel
+    host. Audited loudly: this is the single legitimate moment the private
+    side ever leaves the vault. Re-clicking simply reveals it again — the
+    audit row records every reveal so an unexpected one is traceable."""
+    from fleet.registry import infra_settings as svc
+    try:
+        privkey = svc.get_panel_wg_private_key_decrypted()
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    except WhatsAppCryptoError:
+        flash("لم يُضبط مفتاح التشفير على الخادم — تعذّر فكّ مفتاح اللوحة الخاص.", "error")
+        return _infra_redirect()
+    audit(
+        "fleet_infra_panel_privkey_revealed", "fleet_infra", "PANEL_WG_PRIVKEY",
+        "كُشف المفتاح الخاص للوحة لمستخدم super-admin (نسخه ولصقه على مضيف اللوحة)",
+        metadata={"reason": "operator install on panel host"},
+    )
+    db.session.commit()
+    # The private key goes back to the page via a one-shot flash — the
+    # template wraps it in a copy-then-clear modal so it doesn't linger on
+    # screen or in browser history (page is super-admin only anyway).
+    return render_template(
+        "admin/fleet/infrastructure.html",
+        view=svc.view_all(),
+        ready=svc.is_fleet_ready(),
+        missing=svc.missing_required(),
+        panel_pubkey=svc.panel_pubkey_for_display(),
+        panel_pubkey_is_set=svc.panel_pubkey_is_set(),
+        panel_privkey_on_server=svc.panel_privkey_is_on_server(),
+        revealed_panel_privkey=privkey,
+    )
 
 
 @bp.post("/infrastructure/panel-endpoint")
