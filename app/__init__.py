@@ -52,6 +52,10 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .admin.landing_routes import bp as admin_landing_bp
     from .admin.infra_routes import bp as admin_infra_bp
     from .admin.messaging_routes import bp as admin_messaging_bp
+    # «اتصالات الوصول» — لوحة موحَّدة لإضافة/إدارة PPTP/SSTP/IPsec/WireGuard
+    # على CHR المركزي. تستورد الـORM الجديد (WireguardPeer) قبل db.create_all().
+    from .admin.access_connections_routes import bp as admin_access_bp
+    from .models import WireguardPeer  # noqa: F401 — model registration
     from .i18n.routes import bp as i18n_bp
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
@@ -115,6 +119,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(admin_landing_bp)
     app.register_blueprint(admin_infra_bp)
     app.register_blueprint(admin_messaging_bp)
+    app.register_blueprint(admin_access_bp)
     app.register_blueprint(i18n_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(proxy_api_bp)

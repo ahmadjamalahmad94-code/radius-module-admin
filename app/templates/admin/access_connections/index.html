@@ -1,0 +1,541 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}اتصالات الوصول{% endblock %}
+{% block page_title %}اتصالات الوصول{% endblock %}
+{% block page_subtitle %}أنشئ وأدِر اتصالات PPTP / SSTP / IPsec / WireGuard على CHR المركزي{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ── Protocol cards: clean, generous spacing, design-system aligned ── */
+.ac-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:18px;margin-bottom:22px;
+}
+.ac-card{
+  position:relative;background:var(--cc-card-bg,#fff);
+  border:1px solid var(--cc-border,#e5e7eb);border-radius:18px;
+  padding:22px;display:flex;flex-direction:column;gap:14px;
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.ac-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.08);
+  border-color:var(--cc-brand,#6366f1);}
+.ac-card-head{display:flex;align-items:center;gap:12px;}
+.ac-card-icon{
+  inline-size:46px;block-size:46px;border-radius:14px;display:grid;place-items:center;
+  font-size:20px;color:#fff;flex-shrink:0;
+}
+.ac-card-icon--violet{background:linear-gradient(135deg,#8b5cf6,#6d28d9);}
+.ac-card-icon--amber {background:linear-gradient(135deg,#fbbf24,#d97706);}
+.ac-card-icon--blue  {background:linear-gradient(135deg,#3b82f6,#1d4ed8);}
+.ac-card-icon--green {background:linear-gradient(135deg,#10b981,#047857);}
+.ac-card-title{font-size:18px;font-weight:800;color:var(--cc-text,#111827);}
+.ac-card-port{font-size:12px;color:var(--cc-text-mute,#6b7280);direction:ltr;font-family:ui-monospace,Menlo,monospace;}
+.ac-card-short{color:var(--cc-text,#1f2937);font-size:14px;line-height:1.65;min-height:42px;}
+.ac-card-detail{
+  font-size:13px;color:var(--cc-text-mute,#6b7280);line-height:1.7;
+  background:var(--cc-tint-bg,#f9fafb);border-radius:10px;padding:10px 12px;
+  border:1px dashed var(--cc-border,#e5e7eb);display:none;
+}
+.ac-card.is-expanded .ac-card-detail{display:block;}
+.ac-card-meta{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin-top:auto;}
+.ac-card-counts{display:flex;gap:14px;font-size:12px;color:var(--cc-text-mute,#6b7280);}
+.ac-count-num{display:block;font-weight:800;font-size:20px;color:var(--cc-text,#111827);}
+.ac-card-actions{display:flex;gap:8px;}
+.ac-more-btn{background:none;border:0;color:var(--cc-brand,#6366f1);font-weight:700;cursor:pointer;
+  font-size:13px;padding:0;}
+.ac-more-btn:hover{text-decoration:underline;}
+
+/* ── Modal: matches existing hub-modal aesthetic but full-form (not confirm) ── */
+.ac-modal{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;
+  align-items:flex-start;justify-content:center;padding:36px 16px;z-index:90;overflow-y:auto;}
+.ac-modal.is-open{display:flex;}
+.ac-modal-card{
+  background:#fff;border-radius:18px;max-width:680px;width:100%;
+  box-shadow:0 32px 80px rgba(15,23,42,.32);overflow:hidden;
+  display:flex;flex-direction:column;max-height:calc(100vh - 72px);
+}
+.ac-modal-head{
+  display:flex;align-items:center;gap:12px;padding:18px 22px;
+  border-bottom:1px solid var(--cc-border,#e5e7eb);background:var(--cc-tint-bg,#f9fafb);
+}
+.ac-modal-icon{
+  inline-size:40px;block-size:40px;border-radius:12px;display:grid;place-items:center;
+  font-size:18px;color:#fff;background:linear-gradient(135deg,#6366f1,#4338ca);
+}
+.ac-modal-title{font-size:17px;font-weight:800;color:var(--cc-text,#111827);}
+.ac-modal-sub{font-size:12px;color:var(--cc-text-mute,#6b7280);margin-top:2px;}
+.ac-modal-close{margin-inline-start:auto;background:none;border:0;font-size:20px;
+  color:var(--cc-text-mute,#6b7280);cursor:pointer;padding:6px;border-radius:8px;}
+.ac-modal-close:hover{background:rgba(15,23,42,.06);color:var(--cc-text,#111827);}
+.ac-modal-body{padding:20px 22px;overflow-y:auto;}
+.ac-modal-foot{
+  display:flex;justify-content:flex-end;gap:10px;padding:14px 22px;
+  border-top:1px solid var(--cc-border,#e5e7eb);background:var(--cc-tint-bg,#f9fafb);
+}
+.ac-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+.ac-field{display:flex;flex-direction:column;gap:6px;}
+.ac-field.full{grid-column:1/-1;}
+.ac-field label{font-size:13px;font-weight:700;color:var(--cc-text,#111827);}
+.ac-field .hint{font-size:12px;color:var(--cc-text-mute,#6b7280);line-height:1.55;}
+.ac-input,.ac-select{
+  width:100%;padding:9px 12px;font-size:14px;color:var(--cc-text,#111827);
+  background:#fff;border:1px solid var(--cc-border,#e5e7eb);border-radius:10px;
+  outline:none;font-family:inherit;
+}
+.ac-input:focus,.ac-select:focus{border-color:var(--cc-brand,#6366f1);
+  box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+.ac-input.ltr,.ac-input.mono{direction:ltr;font-family:ui-monospace,Menlo,monospace;}
+.ac-callout{
+  background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px 14px;
+  color:#1e3a8a;font-size:13px;line-height:1.65;margin-bottom:14px;
+}
+.ac-callout.warn{background:#fef3c7;border-color:#fcd34d;color:#92400e;}
+.ac-callout i{margin-inline-end:6px;}
+.ac-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;}
+.ac-divider{height:1px;background:var(--cc-border,#e5e7eb);margin:14px 0;}
+
+/* ── Connections table tweaks ── */
+.ac-filter{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.ac-filter a{
+  padding:7px 14px;border-radius:999px;background:#fff;border:1px solid var(--cc-border,#e5e7eb);
+  font-size:13px;font-weight:700;color:var(--cc-text-mute,#6b7280);text-decoration:none;
+}
+.ac-filter a.is-active{background:var(--cc-brand,#6366f1);color:#fff;border-color:transparent;}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "اتصالات الوصول",
+  subtitle="مكان واحد لإنشاء/مراقبة كل أنفاق العملاء على CHR المركزي — بدون أوامر طرفية.",
+  icon="link"
+) }}
+
+<div class="hub-kpi-grid">
+  {{ hub.kpi("الاتصالات النشطة", stats.active, icon="plug-circle-check", variant="green") }}
+  {{ hub.kpi("إجمالي السجلات", stats.total, icon="list", variant="violet") }}
+  {{ hub.kpi("بروتوكولات مفعَّلة", stats.protocols_enabled, icon="shield-halved", variant="blue") }}
+</div>
+
+{% if not chr_enabled %}
+  <div class="hub-flash hub-flash--warning">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    تزويد CHR غير مُفعّل (CHR_PROVISIONING_ENABLED). فعّله من البيئة لإنشاء اتصالات حقيقية على الراوتر.
+  </div>
+{% elif not chr_configured %}
+  <div class="hub-flash hub-flash--warning">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    لم تكتمل بيانات اتصال CHR بعد. أكملها من
+    <a href="{{ url_for('admin.settings_page') }}#chr-settings">الإعدادات ← MikroTik CHR</a> قبل الإضافة.
+  </div>
+{% endif %}
+
+{# ─────────── Protocol cards ─────────── #}
+{% call hub.section("اختر البروتوكول", icon="grid-2") %}
+<div class="ac-grid" id="ac-protocol-grid">
+  {% for p in protocols %}
+  <div class="ac-card" data-protocol="{{ p.key }}">
+    <div class="ac-card-head">
+      <span class="ac-card-icon ac-card-icon--{{ p.chip }}"><i class="fa-solid fa-{{ p.icon }}"></i></span>
+      <div>
+        <div class="ac-card-title">{{ p.name }}</div>
+        <div class="ac-card-port">المنفذ {{ p.port }} • {{ 'متاح' if p.availability == 'ready' else 'يحتاج ضبط' }}</div>
+      </div>
+    </div>
+    <div class="ac-card-short">{{ p.short }}</div>
+    <button type="button" class="ac-more-btn" data-toggle-more>المزيد <i class="fa-solid fa-chevron-down"></i></button>
+    <div class="ac-card-detail">{{ p.detail }}</div>
+    <div class="ac-card-meta">
+      <div class="ac-card-counts">
+        <span><span class="ac-count-num">{{ p.active }}</span>نشط</span>
+        <span><span class="ac-count-num">{{ p.total }}</span>إجمالي</span>
+      </div>
+      <div class="ac-card-actions">
+        <button type="button" class="hub-btn hub-btn--primary"
+                data-ac-open-modal="{{ p.key }}"
+                {% if not chr_configured %}disabled aria-disabled="true"{% endif %}>
+          <i class="fa-solid fa-plus"></i> إضافة / تفعيل
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endcall %}
+
+{# ─────────── Connections list ─────────── #}
+{% call hub.section("الاتصالات الحالية", icon="list") %}
+  <div class="ac-filter">
+    <a href="{{ url_for('admin_access.index') }}"
+       class="{% if not protocol_filter %}is-active{% endif %}">الكل</a>
+    {% for key in protocol_order %}
+      {% set m = protocol_meta[key] %}
+      <a href="{{ url_for('admin_access.index', protocol=key) }}"
+         class="{% if protocol_filter == key %}is-active{% endif %}">{{ m.name }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="hub-table-wrap">
+    <table class="hub-table">
+      <thead>
+        <tr>
+          <th>الاسم/التسمية</th>
+          <th>البروتوكول</th>
+          <th>العميل</th>
+          <th>الحالة</th>
+          <th>التسليم</th>
+          <th>CHR</th>
+          <th class="date">أُنشئ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in connections %}
+        <tr>
+          <td class="mono">{{ c.label }}</td>
+          <td>
+            {% set _m = protocol_meta.get(c.protocol) %}
+            <span class="badge badge-{{ _m.chip if _m else 'gray' }}">
+              <i class="fa-solid fa-{{ _m.icon if _m else 'circle' }}"></i>
+              {{ _m.name if _m else c.protocol }}
+            </span>
+          </td>
+          <td>
+            {% if c.customer_id %}
+              <a href="{{ url_for('admin.customer_detail', customer_id=c.customer_id) }}">{{ c.company_name }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td><span class="badge {{ c.status|badge_class }}">{{ c.status|status_label }}</span></td>
+          <td>
+            {% if c.delivery_status == 'delivered' %}
+              <span class="badge badge-green">سُلِّم</span>
+            {% else %}
+              <span class="badge badge-amber">بانتظار السحب</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.chr_provisioned %}
+              <span class="badge badge-blue">مُنشأ على CHR</span>
+            {% else %}
+              <span class="badge badge-gray">سجل فقط</span>
+            {% endif %}
+          </td>
+          <td class="date">{{ c.created_at|dt }}</td>
+          <td>
+            <div class="hub-actions">
+              {% if c.kind == 'wireguard' %}
+                <a class="hub-btn hub-btn--secondary hub-btn--sm"
+                   href="{{ url_for('admin_access.peer_view', peer_id=c.id) }}">
+                  <i class="fa-solid fa-eye"></i> تفاصيل
+                </a>
+              {% else %}
+                <a class="hub-btn hub-btn--secondary hub-btn--sm"
+                   href="{{ url_for('admin.customer_vpn_tunnels', customer_id=c.customer_id) }}">
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i> ملف العميل
+                </a>
+              {% endif %}
+              {% if c.status != 'revoked' %}
+                <form method="post" id="conn-revoke-{{ c.kind }}-{{ c.id }}" action="{{ c.revoke_action }}" style="display:inline">
+                  {{ csrf_input() }}
+                </form>
+                <button type="button" class="hub-btn hub-btn--danger hub-btn--sm"
+                        data-confirm-form="conn-revoke-{{ c.kind }}-{{ c.id }}"
+                        data-confirm-title="إلغاء الاتصال"
+                        data-confirm-msg="سيُحذف الاتصال من CHR ولن يعمل بعد الآن. متابعة؟"
+                        data-confirm-ok="إلغاء الاتصال"><i class="fa-solid fa-trash"></i> إلغاء</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ hub.empty(
+            "لا توجد اتصالات بعد.",
+            sub="اختر بروتوكولًا من البطاقات أعلاه واضغط «إضافة».",
+            icon="link-slash"
+          ) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hub-field-hint" style="margin-top:12px">
+    <i class="fa-solid fa-shield-halved"></i>
+    كل المفاتيح وكلمات المرور مخزّنة مشفّرة (Fernet) ولا تُعرض بعد التسليم — التسليم للعملاء يتم عبر الجسر الموقّع.
+  </p>
+{% endcall %}
+
+{# ─────────── Modals: one per protocol ─────────── #}
+{% set wg_endpoint_host = (chr_configured and protocols and protocols[0].port) %}
+{# WireGuard modal #}
+<div class="ac-modal" id="ac-modal-wireguard" role="dialog" aria-modal="true" aria-hidden="true">
+  <form class="ac-modal-card" method="post" action="{{ url_for('admin_access.create_wireguard') }}">
+    {{ csrf_input() }}
+    <div class="ac-modal-head">
+      <span class="ac-modal-icon" style="background:linear-gradient(135deg,#10b981,#047857);"><i class="fa-solid fa-bolt"></i></span>
+      <div>
+        <div class="ac-modal-title">إضافة قرين WireGuard</div>
+        <div class="ac-modal-sub">حديث، سريع، ومفاتيحه يُولّدها اللوحة تلقائيًا</div>
+      </div>
+      <button type="button" class="ac-modal-close" data-ac-close-modal aria-label="إغلاق">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <div class="ac-callout">
+        <i class="fa-solid fa-circle-info"></i>
+        إن تركت «المفتاح العام» فارغًا ستولّد اللوحة زوجًا جديدًا (X25519) وتعرضه مرة واحدة بعد الإنشاء.
+        لن يُعرض المفتاح الخاص مجددًا.
+      </div>
+      <div class="ac-fields">
+        {{ _customer_field(customers, "wg") }}
+        {{ _license_field("wg") }}
+        <div class="ac-field">
+          <label>اسم القرين</label>
+          <input class="ac-input" name="label" placeholder="مثال: موبايل أحمد" maxlength="60">
+          <div class="hint">للتمييز فقط — يُسبَق بـ <code>c&lt;customer_id&gt;-</code> داخليًا.</div>
+        </div>
+        <div class="ac-field">
+          <label>عنوان IP المحجوز (اختياري)</label>
+          <input class="ac-input mono" name="allowed_ips" placeholder="مثال: {{ wg_default_supernet.split('/')[0].split('.')[:3]|join('.') }}.10/32">
+          <div class="hint">فارغ ⇒ يُحجَز تلقائيًا من شبكة العملاء.</div>
+        </div>
+        <div class="ac-field full">
+          <label>المفتاح العام للقرين (اختياري)</label>
+          <input class="ac-input mono ltr" name="public_key" placeholder="44 حرف base64 — اتركه فارغًا لتُولِّده اللوحة">
+          <div class="hint">للأجهزة التي تولّد مفتاحًا محليًا فقط (مثل بعض الأجهزة الذكية).</div>
+        </div>
+        <div class="ac-field">
+          <label>DNS للدفع للعميل (اختياري)</label>
+          <input class="ac-input mono ltr" name="dns_servers" placeholder="1.1.1.1, 8.8.8.8">
+        </div>
+        <div class="ac-field">
+          <label>Keepalive (ثوانٍ)</label>
+          <input class="ac-input mono ltr" type="number" name="keepalive_seconds" value="{{ wg_keepalive_default }}" min="0" max="600">
+        </div>
+        <div class="ac-field full">
+          <label class="ac-toggle">
+            <input type="checkbox" name="use_preshared" checked>
+            استخدام مفتاح مشترك إضافي (PSK) للأمان
+          </label>
+        </div>
+        <div class="ac-field full">
+          <label>ملاحظات داخلية</label>
+          <input class="ac-input" name="notes" placeholder="مثال: قرين الخادم البديل">
+        </div>
+      </div>
+    </div>
+    <div class="ac-modal-foot">
+      <button type="button" class="hub-btn hub-btn--ghost" data-ac-close-modal>إلغاء</button>
+      <button type="submit" class="hub-btn hub-btn--primary"><i class="fa-solid fa-bolt"></i> إنشاء وتزويد على CHR</button>
+    </div>
+  </form>
+</div>
+
+{# PPP modals (SSTP/PPTP) #}
+{% for ttype in ["sstp", "pptp"] %}
+{% set is_sstp = (ttype == "sstp") %}
+<div class="ac-modal" id="ac-modal-{{ ttype }}" role="dialog" aria-modal="true" aria-hidden="true">
+  <form class="ac-modal-card" method="post" action="{{ url_for('admin_access.create_ppp') }}">
+    {{ csrf_input() }}
+    <input type="hidden" name="tunnel_type" value="{{ ttype }}">
+    <div class="ac-modal-head">
+      <span class="ac-modal-icon" style="background:linear-gradient(135deg,{{ '#8b5cf6,#6d28d9' if is_sstp else '#fbbf24,#d97706' }});">
+        <i class="fa-solid fa-{{ 'lock' if is_sstp else 'plug' }}"></i>
+      </span>
+      <div>
+        <div class="ac-modal-title">إضافة اتصال {{ ttype|upper }}</div>
+        <div class="ac-modal-sub">{{ 'TLS فوق TCP/443 — مناسب للجدران الصارمة' if is_sstp else 'كلاسيكي خفيف الإعداد — للاختبار/الشبكات الموثوقة' }}</div>
+      </div>
+      <button type="button" class="ac-modal-close" data-ac-close-modal aria-label="إغلاق">×</button>
+    </div>
+    <div class="ac-modal-body">
+      {% if is_sstp %}
+      <div class="ac-callout">
+        <i class="fa-solid fa-circle-info"></i>
+        يُستخدم اسم المستخدم وكلمة المرور المولَّدان تلقائيًا لإنشاء <code>/ppp/secret</code> على CHR.
+      </div>
+      {% else %}
+      <div class="ac-callout warn">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        PPTP أمانه أضعف من SSTP/IKEv2. لا تستخدمه لمعطيات حسّاسة على الإنترنت العام.
+      </div>
+      {% endif %}
+      <div class="ac-fields">
+        {{ _customer_field(customers, ttype) }}
+        {{ _license_field(ttype) }}
+        <div class="ac-field">
+          <label>بروفايل السرعة</label>
+          <select class="ac-select" name="speed_profile_id">
+            <option value="">— سرعة مخصّصة / بلا تشكيل —</option>
+            {% for sp in speed_profiles %}
+              <option value="{{ sp.id }}">{{ sp.name }} ({{ sp.download_mbps }}↓/{{ sp.upload_mbps }}↑ Mbps)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="ac-field">
+          <label>عدد الاتصالات المتزامنة</label>
+          <input class="ac-input" type="number" name="max_connections" min="1" value="1">
+        </div>
+        <div class="ac-field">
+          <label>تنزيل مخصّص (Mbps)</label>
+          <input class="ac-input" type="number" name="download_mbps" min="1" max="100000">
+        </div>
+        <div class="ac-field">
+          <label>رفع مخصّص (Mbps)</label>
+          <input class="ac-input" type="number" name="upload_mbps" min="1" max="100000">
+        </div>
+        <div class="ac-field">
+          <label>كوتة شهرية (GB، اختياري)</label>
+          <input class="ac-input" type="number" name="monthly_quota_gb" min="0" max="1000000">
+        </div>
+        <div class="ac-field">
+          <label>بروفايل PPP (متقدّم)</label>
+          <input class="ac-input mono ltr" name="profile" placeholder="default">
+        </div>
+        <div class="ac-field full">
+          <label>ملاحظات داخلية</label>
+          <input class="ac-input" name="notes" placeholder="مثال: نفق احتياطي للموقع الثاني">
+        </div>
+      </div>
+    </div>
+    <div class="ac-modal-foot">
+      <button type="button" class="hub-btn hub-btn--ghost" data-ac-close-modal>إلغاء</button>
+      <button type="submit" class="hub-btn hub-btn--primary"><i class="fa-solid fa-bolt"></i> إنشاء وتزويد على CHR</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+{# IPsec modal #}
+<div class="ac-modal" id="ac-modal-ipsec" role="dialog" aria-modal="true" aria-hidden="true">
+  <form class="ac-modal-card" method="post" action="{{ url_for('admin_access.create_ppp') }}">
+    {{ csrf_input() }}
+    <input type="hidden" name="tunnel_type" value="ipsec">
+    <div class="ac-modal-head">
+      <span class="ac-modal-icon" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);"><i class="fa-solid fa-shield-halved"></i></span>
+      <div>
+        <div class="ac-modal-title">إضافة اتصال IPsec / IKEv2</div>
+        <div class="ac-modal-sub">قياسي للأجهزة المحمولة عبر EAP-MSCHAPv2</div>
+      </div>
+      <button type="button" class="ac-modal-close" data-ac-close-modal aria-label="إغلاق">×</button>
+    </div>
+    <div class="ac-modal-body">
+      <div class="ac-callout">
+        <i class="fa-solid fa-circle-info"></i>
+        يهيّئ تلقائيًا <code>mode-config</code> و<code>peer</code> و<code>identity</code> على CHR (idempotent)،
+        ثم يضيف مستخدم <code>/ip/ipsec/user</code> ببيانات اعتماد فريدة.
+      </div>
+      <div class="ac-fields">
+        {{ _customer_field(customers, "ipsec") }}
+        {{ _license_field("ipsec") }}
+        <div class="ac-field">
+          <label>عدد الاتصالات المتزامنة</label>
+          <input class="ac-input" type="number" name="max_connections" min="1" value="1">
+        </div>
+        <div class="ac-field">
+          <label>كوتة شهرية (GB، اختياري)</label>
+          <input class="ac-input" type="number" name="monthly_quota_gb" min="0" max="1000000">
+        </div>
+        <div class="ac-field full">
+          <label>ملاحظات داخلية</label>
+          <input class="ac-input" name="notes" placeholder="مثال: نفق IPsec لمستخدم iOS">
+        </div>
+      </div>
+    </div>
+    <div class="ac-modal-foot">
+      <button type="button" class="hub-btn hub-btn--ghost" data-ac-close-modal>إلغاء</button>
+      <button type="submit" class="hub-btn hub-btn--primary"><i class="fa-solid fa-bolt"></i> إنشاء وتزويد على CHR</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+
+{# ─────────── Reusable customer/license field macros ─────────── #}
+{% macro _customer_field(customers, scope) %}
+<div class="ac-field">
+  <label>العميل</label>
+  <select class="ac-select ac-customer-select" name="customer_id" data-scope="{{ scope }}" required>
+    <option value="">— اختر عميلاً —</option>
+    {% for c in customers %}
+      <option value="{{ c.id }}">{{ c.name }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% macro _license_field(scope) %}
+<div class="ac-field">
+  <label>الترخيص (اختياري)</label>
+  <select class="ac-select ac-license-select" name="license_id" data-scope="{{ scope }}">
+    <option value="">— تلقائي (أفضل ترخيص نشط) —</option>
+  </select>
+</div>
+{% endmacro %}
+
+{% block scripts %}
+<script>
+(function(){
+  'use strict';
+  // ── Card "more" expand/collapse
+  document.querySelectorAll('[data-toggle-more]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var card = btn.closest('.ac-card');
+      if (card) card.classList.toggle('is-expanded');
+    });
+  });
+
+  // ── Modal open/close
+  function openModal(id){
+    var m = document.getElementById(id); if (!m) return;
+    m.classList.add('is-open');
+    m.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(m){
+    m.classList.remove('is-open');
+    m.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+  document.querySelectorAll('[data-ac-open-modal]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var key = btn.getAttribute('data-ac-open-modal');
+      openModal('ac-modal-' + key);
+    });
+  });
+  document.querySelectorAll('[data-ac-close-modal]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var m = btn.closest('.ac-modal'); if (m) closeModal(m);
+    });
+  });
+  document.querySelectorAll('.ac-modal').forEach(function(m){
+    m.addEventListener('click', function(e){
+      if (e.target === m) closeModal(m);
+    });
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){
+      document.querySelectorAll('.ac-modal.is-open').forEach(closeModal);
+    }
+  });
+
+  // ── License picker: refresh on customer change
+  document.querySelectorAll('.ac-customer-select').forEach(function(sel){
+    sel.addEventListener('change', function(){
+      var scope = sel.getAttribute('data-scope');
+      var lic = document.querySelector('.ac-license-select[data-scope="' + scope + '"]');
+      if (!lic) return;
+      lic.innerHTML = '<option value="">— تلقائي (أفضل ترخيص نشط) —</option>';
+      if (!sel.value) return;
+      fetch('{{ url_for("admin_access.api_customer_licenses", customer_id=0) }}'.replace('/0/', '/' + sel.value + '/'))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          (data.licenses || []).forEach(function(l){
+            var opt = document.createElement('option');
+            opt.value = l.id;
+            opt.textContent = l.key + ' — ' + l.status;
+            lic.appendChild(opt);
+          });
+        }).catch(function(){});
+    });
+  });
+})();
+</script>
+{% endblock %}

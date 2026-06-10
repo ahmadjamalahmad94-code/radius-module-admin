@@ -1,0 +1,157 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}قرين {{ peer.peer_name }}{% endblock %}
+{% block page_title %}قرين WireGuard — {{ peer.peer_name }}{% endblock %}
+{% block page_subtitle %}تكوين القرين يُعرض هنا مرة واحدة — احفظه قبل تأكيد التسليم{% endblock %}
+
+{% block head_extra %}
+<style>
+.wg-detail-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;align-items:start;}
+@media (max-width: 900px){ .wg-detail-grid{grid-template-columns:1fr;} }
+.wg-config-block{
+  background:#0f172a;color:#e2e8f0;border-radius:14px;padding:18px 20px;
+  font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.7;
+  white-space:pre;direction:ltr;text-align:left;overflow-x:auto;
+}
+.wg-copy-btn{
+  position:absolute;top:12px;left:12px;background:rgba(255,255,255,.08);color:#fff;
+  border:0;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;
+}
+.wg-copy-btn:hover{background:rgba(255,255,255,.16);}
+.wg-config-wrap{position:relative;}
+.wg-meta-row{display:flex;justify-content:space-between;padding:10px 0;
+  border-bottom:1px solid var(--cc-border,#e5e7eb);font-size:14px;}
+.wg-meta-row:last-child{border-bottom:0;}
+.wg-meta-label{color:var(--cc-text-mute,#6b7280);}
+.wg-meta-value{font-weight:700;direction:ltr;font-family:ui-monospace,Menlo,monospace;
+  max-width:60%;word-break:break-all;}
+</style>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "قرين WireGuard",
+  subtitle=peer.peer_name,
+  icon="bolt"
+) }}
+
+{% if can_reveal %}
+  <div class="hub-flash hub-flash--warning" style="margin-bottom:18px">
+    <i class="fa-solid fa-key"></i>
+    هذا التكوين يحتوي مفتاحًا خاصًا — انسخه/نزّله الآن. بعد تأكيد التسليم لن يُعرض المفتاح الخاص مرة أخرى.
+  </div>
+{% else %}
+  <div class="hub-flash hub-flash--info" style="margin-bottom:18px">
+    <i class="fa-solid fa-check"></i>
+    تم تأكيد التسليم. المفاتيح الخاصة لم تعد متاحة للعرض من هنا.
+  </div>
+{% endif %}
+
+<div class="wg-detail-grid">
+
+  {% call hub.section("تكوين الجهاز (wireguard .conf)", icon="file-code") %}
+    {% if can_reveal %}
+      <div class="wg-config-wrap">
+        <button class="wg-copy-btn" type="button" id="wg-copy">نسخ</button>
+        <div class="wg-config-block" id="wg-config-text">{{ config_text }}</div>
+      </div>
+      <form method="post" action="{{ url_for('admin_access.peer_acknowledge', peer_id=peer.id) }}" style="margin-top:14px">
+        {{ csrf_input() }}
+        <button class="hub-btn hub-btn--primary" type="submit">
+          <i class="fa-solid fa-check"></i> تأكيد تسليم القرين
+        </button>
+        <span class="hub-field-hint" style="margin-inline-start:10px">
+          اضغط بعد حفظ التكوين/مسحه ضوئيًا على جهاز العميل.
+        </span>
+      </form>
+    {% else %}
+      {{ hub.empty("التكوين لم يعد متاحًا.", sub="تم تأكيد التسليم — أنشئ قرينًا جديدًا إن لزم.", icon="lock") }}
+    {% endif %}
+  {% endcall %}
+
+  {% call hub.section("بيانات القرين", icon="circle-info") %}
+    <div class="wg-meta-row"><span class="wg-meta-label">الاسم</span><span class="wg-meta-value">{{ peer.peer_name }}</span></div>
+    <div class="wg-meta-row"><span class="wg-meta-label">الواجهة</span><span class="wg-meta-value">{{ peer.interface_name }}</span></div>
+    <div class="wg-meta-row"><span class="wg-meta-label">العنوان المسموح</span><span class="wg-meta-value">{{ peer.allowed_ips }}</span></div>
+    <div class="wg-meta-row"><span class="wg-meta-label">المفتاح العام للقرين</span>
+      <span class="wg-meta-value">{{ peer.public_key }}</span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">المفتاح العام للخادم</span>
+      <span class="wg-meta-value">{{ peer.server_public_key or '—' }}</span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">العنوان العام للخادم</span>
+      <span class="wg-meta-value">{{ peer.endpoint_host or '—' }}:{{ peer.endpoint_port }}</span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">الحالة</span>
+      <span class="wg-meta-value"><span class="badge {{ peer.status|badge_class }}">{{ peer.status|status_label }}</span></span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">التسليم</span>
+      <span class="wg-meta-value">
+        {% if peer.delivery_status == 'delivered' %}
+          <span class="badge badge-green">سُلِّم</span>
+        {% else %}
+          <span class="badge badge-amber">بانتظار السحب</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">CHR</span>
+      <span class="wg-meta-value">
+        {% if peer.chr_provisioned %}<span class="badge badge-blue">مُنشأ على CHR</span>
+        {% else %}<span class="badge badge-gray">سجل فقط</span>{% endif %}
+      </span>
+    </div>
+    <div class="wg-meta-row"><span class="wg-meta-label">أُنشئ</span><span class="wg-meta-value">{{ peer.created_at|dt }}</span></div>
+  {% endcall %}
+
+</div>
+
+<div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+  <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin_access.index') }}">
+    <i class="fa-solid fa-arrow-right"></i> رجوع لاتصالات الوصول
+  </a>
+  {% if peer.status != 'revoked' %}
+    {% if peer.status == 'active' %}
+      <form method="post" action="{{ url_for('admin_access.status_wireguard', peer_id=peer.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="status" value="suspended">
+        <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-pause"></i> تعليق</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('admin_access.status_wireguard', peer_id=peer.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="status" value="active">
+        <button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-play"></i> تفعيل</button>
+      </form>
+    {% endif %}
+    <form method="post" id="wg-revoke" action="{{ url_for('admin_access.revoke_wireguard', peer_id=peer.id) }}" style="display:inline">
+      {{ csrf_input() }}
+    </form>
+    <button type="button" class="hub-btn hub-btn--danger"
+            data-confirm-form="wg-revoke"
+            data-confirm-title="إلغاء القرين"
+            data-confirm-msg="سيُحذف القرين من CHR ولن يستطيع الاتصال. متابعة؟"
+            data-confirm-ok="إلغاء القرين"><i class="fa-solid fa-trash"></i> إلغاء القرين</button>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var btn = document.getElementById('wg-copy');
+  var pre = document.getElementById('wg-config-text');
+  if (btn && pre){
+    btn.addEventListener('click', function(){
+      var text = pre.textContent || '';
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(function(){
+          var prev = btn.textContent; btn.textContent = 'نُسخ ✓';
+          setTimeout(function(){ btn.textContent = prev; }, 1600);
+        });
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

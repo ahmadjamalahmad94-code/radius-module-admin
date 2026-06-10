@@ -476,6 +476,108 @@ class RouterOSClient:
         created = self._request("PUT", "ip/ipsec/identity", body=body)
         return created if isinstance(created, dict) else {"peer": peer}
 
+    # ───────────────────────── WireGuard helpers ─────────────────────────
+    # WireGuard on RouterOS lives at ``/interface/wireguard`` (one row per server
+    # interface) and ``/interface/wireguard/peers`` (one row per client peer).
+    # Each peer carries the client's public-key + the allowed-address list it can
+    # claim. All helpers idempotent — they search before they create.
+
+    def find_wireguard_interface(self, name: str) -> dict[str, Any] | None:
+        return self._find_one("interface/wireguard", {"name": name})
+
+    def ensure_wireguard_interface(
+        self,
+        *,
+        name: str,
+        listen_port: int,
+        private_key: str = "",
+    ) -> dict[str, Any]:
+        """Create or return ``/interface/wireguard`` row.
+
+        ``private_key=""`` lets RouterOS auto-generate one (preferred — the key
+        never leaves the router). We then read back the public key from the same
+        row for the panel to share with peers.
+        """
+        existing = self.find_wireguard_interface(name)
+        if existing:
+            return existing
+        body: dict[str, Any] = {"name": name, "listen-port": str(int(listen_port))}
+        if private_key:
+            body["private-key"] = private_key
+        created = self._request("PUT", "interface/wireguard", body=body)
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        if not isinstance(created, dict) or not created.get(".id"):
+            # Some RouterOS builds return the bare ack; re-fetch to surface the pubkey.
+            refetched = self.find_wireguard_interface(name)
+            if refetched:
+                return refetched
+        return created if isinstance(created, dict) else {"name": name}
+
+    def list_wireguard_peers(self, *, interface: str | None = None) -> list[dict[str, Any]]:
+        params = {"interface": interface} if interface else None
+        return self._as_list(self._request("GET", "interface/wireguard/peers", params=params))
+
+    def find_wireguard_peer(self, *, interface: str, public_key: str) -> dict[str, Any] | None:
+        return self._find_one(
+            "interface/wireguard/peers",
+            {"interface": interface, "public-key": public_key},
+        )
+
+    def create_wireguard_peer(
+        self,
+        *,
+        interface: str,
+        public_key: str,
+        allowed_address: str,
+        preshared_key: str = "",
+        comment: str = "",
+        persistent_keepalive: str = "",
+    ) -> dict[str, Any]:
+        """Create ``/interface/wireguard/peers`` and return it (with ``.id``)."""
+        body: dict[str, Any] = {
+            "interface": interface,
+            "public-key": public_key,
+            "allowed-address": allowed_address,
+        }
+        if preshared_key:
+            body["preshared-key"] = preshared_key
+        if comment:
+            body["comment"] = comment
+        if persistent_keepalive:
+            body["persistent-keepalive"] = persistent_keepalive
+        created = self._request("PUT", "interface/wireguard/peers", body=body)
+        if isinstance(created, list):
+            created = created[0] if created else {}
+        return created if isinstance(created, dict) else {}
+
+    def remove_wireguard_peer(self, peer_id: str) -> None:
+        """Delete a peer by .id; idempotent for 404."""
+        if not peer_id:
+            return
+        try:
+            self._request(
+                "DELETE",
+                "interface/wireguard/peers/" + urllib.parse.quote(peer_id, safe=""),
+            )
+        except RouterOSError as exc:
+            if exc.code == "not_found":
+                return
+            raise
+
+    def set_wireguard_peer_disabled(self, peer_id: str, disabled: bool) -> None:
+        if not peer_id:
+            return
+        self._request(
+            "PATCH",
+            "interface/wireguard/peers/" + urllib.parse.quote(peer_id, safe=""),
+            body={"disabled": "yes" if disabled else "no"},
+        )
+
+    def list_wireguard_active(self) -> list[dict[str, Any]]:
+        """All WG peers across interfaces (with live ``last-handshake`` info)."""
+        return self._as_list(self._request("GET", "interface/wireguard/peers"))
+
     # ───────────────────────── console read helpers ─────────────────────────
     # قراءات فقط لوحدة تحكّم CHR (لا تغيّر شيئًا). كلها تعيد قائمة (أو dict للهوية/
     # المورد)؛ تُبقي الأخطاء كـ RouterOSError كي تعالجها طبقة الخدمة برسالة عربية.

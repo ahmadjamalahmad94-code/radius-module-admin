@@ -649,6 +649,70 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
     speed_profile = db.relationship("ChrSpeedProfile", back_populates="tunnels")
 
 
+class WireguardPeer(TimestampMixin, db.Model):
+    """A WireGuard peer provisioned centrally on the owner's CHR.
+
+    Sits alongside ``CustomerVpnTunnel`` (which handles SSTP/PPTP/L2TP/IPsec on
+    ``/ppp/secret`` + ``/ip/ipsec/user``). WireGuard is a different beast on
+    RouterOS — peers attach to a ``/interface/wireguard`` instead — so it gets
+    its own table, but mirrors the surrounding lifecycle (encrypted secrets,
+    pending → active → revoked status, signed-bridge delivery).
+
+    Secrets stored as Fernet ciphertext via ``customer_vault_crypto`` —
+    operators NEVER see them in clear after the create response.
+    """
+
+    __tablename__ = "customer_wireguard_peers"
+    __table_args__ = (
+        db.UniqueConstraint("public_key", name="uq_customer_wg_peers_pubkey"),
+        db.Index("ix_customer_wg_peers_customer_status", "customer_id", "status"),
+        db.Index("ix_customer_wg_peers_delivery", "customer_id", "delivery_status"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    # Operator-given short label for the peer (e.g. "موبايل أحمد"). Username analogue.
+    peer_name = db.Column(db.String(80), nullable=False)
+    # The CHR-side WireGuard interface this peer attaches to (e.g. "wg-vpn").
+    interface_name = db.Column(db.String(40), default="wg-vpn", nullable=False)
+    # Peer's WireGuard public key (text, base64). Identifies the peer on CHR.
+    public_key = db.Column(db.Text, nullable=False)
+    # Optional: server-generated PRIVATE key for the peer (Fernet ciphertext) —
+    # if the operator opted to have us generate the keypair (typical for end-users).
+    private_key_encrypted = db.Column(db.Text, default="", nullable=False)
+    # Optional preshared key (Fernet ciphertext) for an extra symmetric layer.
+    preshared_key_encrypted = db.Column(db.Text, default="", nullable=False)
+    # Comma-separated CIDR list (e.g. "10.97.0.10/32"). Always at least one /32.
+    allowed_ips = db.Column(db.String(255), default="", nullable=False)
+    # Public endpoint host:port the peer's client dials (CHR public host + WG port).
+    endpoint_host = db.Column(db.String(255), default="", nullable=False)
+    endpoint_port = db.Column(db.Integer, default=51822, nullable=False)
+    # CHR's own WireGuard server public key (peers need it to encrypt to the server).
+    server_public_key = db.Column(db.Text, default="", nullable=False)
+    # DNS servers to push to the WG client config (comma-separated).
+    dns_servers = db.Column(db.String(255), default="", nullable=False)
+    keepalive_seconds = db.Column(db.Integer, default=25, nullable=False)
+    # pending | active | suspended | revoked | failed
+    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    # auto | manual
+    provisioning = db.Column(db.String(20), default="manual", nullable=False)
+    source = db.Column(db.String(30), default="admin_manual", nullable=False)
+    chr_provisioned = db.Column(db.Boolean, default=False, nullable=False)
+    # RouterOS .id of the peer row on /interface/wireguard/peers.
+    chr_peer_id = db.Column(db.String(40), default="", nullable=False)
+    chr_host = db.Column(db.String(255), default="", nullable=False)
+    # pending | delivered (peer config handed to operator/customer once).
+    delivery_status = db.Column(db.String(20), default="pending", nullable=False, index=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
+    last_error = db.Column(db.String(255), default="", nullable=False)
+    notes = db.Column(db.Text, default="", nullable=False)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+
+
 class CustomerBackupArtifact(TimestampMixin, db.Model):
     """A database backup uploaded by a customer's RADIUS instance to the panel.
 

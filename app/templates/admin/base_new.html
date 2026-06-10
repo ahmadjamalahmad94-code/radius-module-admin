@@ -167,7 +167,7 @@
 
       {# ── ④ خدمات VPN ─────────────────────────────────────────────── #}
       {% if 'vpn' not in hidden_sections %}
-      {% set _g4 = ep.startswith('admin.vpn_service') or ep.startswith('admin.chr_speed_profile') or ep.startswith('admin.customer_vpn') %}
+      {% set _g4 = ep.startswith('admin.vpn_service') or ep.startswith('admin.chr_speed_profile') or ep.startswith('admin.customer_vpn') or ep.startswith('admin_access.') %}
       <div class="adm-group {% if _g4 %}is-active is-open{% endif %}" data-group="vpn">
         <button class="adm-group-head"
                 type="button"
@@ -180,6 +180,11 @@
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-vpn">
+          <a href="{{ url_for('admin_access.index') }}"
+             class="adm-link {% if ep.startswith('admin_access.') %}is-active{% endif %}">
+            <i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>
+            {{ _('اتصالات الوصول') }}
+          </a>
           {% if 'vpn.tunnels' not in hidden_sections %}
           <a href="{{ url_for('admin.vpn_services_list') }}"
              class="adm-link {% if ep.startswith('admin.vpn_service') %}is-active{% endif %}">
