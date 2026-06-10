@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="{{ current_locale }}" dir="{{ current_dir }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>{% block title %}لوحة الإدارة{% endblock %} — HobeRadius</title>
+  <title>{% block title %}{{ _('لوحة الإدارة') }}{% endblock %} — HobeRadius</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,6 +18,23 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_components.css') }}">
+
+  <style>
+    /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
+    .adm-lang-form{display:inline-flex;align-items:center;gap:6px;margin-inline-end:8px;}
+    .adm-lang-label{display:inline-flex;align-items:center;color:var(--cc-text-mute);font-size:14px;}
+    .adm-lang-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+    .adm-lang-select{
+      appearance:none;background:var(--cc-tint-bg);color:var(--cc-text);
+      border:1px solid var(--cc-border);border-radius:8px;
+      padding:5px 26px 5px 10px;font-size:13px;font-weight:700;cursor:pointer;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:left 8px center;outline:none;
+    }
+    .adm-lang-select:focus{border-color:var(--cc-brand);box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+    .adm-lang-submit{display:none;}
+    [dir=ltr] .adm-lang-select{padding:5px 10px 5px 26px;background-position:right 8px center;}
+  </style>
 
   {% block head_extra %}{% endblock %}
 </head>
@@ -35,14 +52,14 @@
   {# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      القائمة الجانبية
      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ #}
-  <aside class="adm-side" id="adm-side" role="navigation" aria-label="القائمة الرئيسية">
+  <aside class="adm-side" id="adm-side" role="navigation" aria-label="{{ _('القائمة الرئيسية') }}">
 
     {# ── الشعار ───────────────────────────────────────────────────────── #}
     <div class="adm-brand">
       <div class="adm-brand-mark" aria-hidden="true">HR</div>
       <div>
         <div class="adm-brand-name">HobeRadius</div>
-        <div class="adm-brand-sub">لوحة الإدارة</div>
+        <div class="adm-brand-sub">{{ _('لوحة الإدارة') }}</div>
       </div>
     </div>
 
@@ -57,7 +74,7 @@
         <span class="adm-solo-icon" aria-hidden="true">
           <i class="fa-solid fa-gauge-high"></i>
         </span>
-        <span class="adm-solo-label">لوحة التحكم</span>
+        <span class="adm-solo-label">{{ _('لوحة التحكم') }}</span>
       </a>
 
       {# ── ② العملاء ────────────────────────────────────────────────── #}
@@ -71,14 +88,14 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-users"></i>
           </span>
-          <span class="adm-group-label">العملاء</span>
+          <span class="adm-group-label">{{ _('العملاء') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-customers">
           {% if 'customers.list' not in hidden_sections %}
           <a href="{{ url_for('admin.customers_list') }}"
              class="adm-link {% if ep in ['admin.customers_list','admin.customer_new','admin.customer_detail','admin.customer_edit'] %}is-active{% endif %}">
-            قائمة العملاء
+            {{ _('قائمة العملاء') }}
           </a>
           {% endif %}
           {# مستخدمو العميل — صفحة مستقلة سياقية لكل عميل (تظهر دائماً، تنشط ضمن سياق ملف العميل). #}
@@ -86,24 +103,24 @@
           {% if _ctx_customer_id %}
           <a href="{{ url_for('admin.customer_users', customer_id=_ctx_customer_id) }}"
              class="adm-link adm-link--sub {% if ep in ['admin.customer_users','admin.customer_user_new','admin.customer_user_edit'] %}is-active{% endif %}">
-            مستخدمو العميل
+            {{ _('مستخدمو العميل') }}
           </a>
           {% endif %}
           <a href="{{ url_for('admin.service_requests_list') }}"
              class="adm-link {% if ep in ['admin.service_requests_list','admin.service_request_detail'] %}is-active{% endif %}">
-            طلبات الخدمات
+            {{ _('طلبات الخدمات') }}
           </a>
           <a href="{{ url_for('admin.whatsapp_gateway') }}"
              class="adm-link {% if ep == 'admin.whatsapp_gateway' or ep == 'admin.customer_whatsapp' %}is-active{% endif %}">
-            بوابة واتساب
+            {{ _('بوابة واتساب') }}
           </a>
           <a href="{{ url_for('admin.whatsapp_messages') }}"
              class="adm-link adm-link--sub {% if ep == 'admin.whatsapp_messages' %}is-active{% endif %}">
-            سجل الرسائل
+            {{ _('سجل الرسائل') }}
           </a>
           <a href="{{ url_for('admin.whatsapp_webhooks') }}"
              class="adm-link adm-link--sub {% if ep == 'admin.whatsapp_webhooks' %}is-active{% endif %}">
-            أحداث Webhook
+            {{ _('أحداث Webhook') }}
           </a>
         </div>
       </div>
@@ -120,29 +137,29 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-key"></i>
           </span>
-          <span class="adm-group-label">التراخيص والاشتراكات</span>
+          <span class="adm-group-label">{{ _('التراخيص والاشتراكات') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-licenses">
           {% if 'licenses.list' not in hidden_sections %}
           <a href="{{ url_for('admin.licenses_list') }}"
              class="adm-link {% if ep.startswith('admin.license') %}is-active{% endif %}">
-            التراخيص
+            {{ _('التراخيص') }}
           </a>
           {% endif %}
           {% if 'licenses.plans' not in hidden_sections %}
           <a href="{{ url_for('admin.plans_list') }}"
              class="adm-link {% if ep.startswith('admin.plan') %}is-active{% endif %}">
-            خطط الاشتراك
+            {{ _('خطط الاشتراك') }}
           </a>
           {% endif %}
           <a href="{{ url_for('admin.payment_review_queue') }}"
              class="adm-link {% if ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}is-active{% endif %}">
-            مراجعة المدفوعات
+            {{ _('مراجعة المدفوعات') }}
           </a>
           <a href="{{ url_for('admin.payment_reports') }}"
              class="adm-link {% if ep == 'admin.payment_reports' %}is-active{% endif %}">
-            تقارير الدفع
+            {{ _('تقارير الدفع') }}
           </a>
         </div>
       </div>
@@ -159,19 +176,19 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-shield-halved"></i>
           </span>
-          <span class="adm-group-label">خدمات VPN</span>
+          <span class="adm-group-label">{{ _('خدمات VPN') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-vpn">
           {% if 'vpn.tunnels' not in hidden_sections %}
           <a href="{{ url_for('admin.vpn_services_list') }}"
              class="adm-link {% if ep.startswith('admin.vpn_service') %}is-active{% endif %}">
-            باقات الخدمة
+            {{ _('باقات الخدمة') }}
           </a>
           {% endif %}
           <a href="{{ url_for('admin.chr_speed_profiles') }}"
              class="adm-link {% if ep.startswith('admin.chr_speed_profile') %}is-active{% endif %}">
-            بروفايلات السرعة
+            {{ _('بروفايلات السرعة') }}
           </a>
         </div>
       </div>
@@ -188,34 +205,34 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-server"></i>
           </span>
-          <span class="adm-group-label">البنية التحتية</span>
+          <span class="adm-group-label">{{ _('البنية التحتية') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-infra">
           <a href="{{ url_for('admin_infra.system_health') }}"
              class="adm-link {% if ep == 'admin_infra.system_health' %}is-active{% endif %}">
-            صحة الخدمات
+            {{ _('صحة الخدمات') }}
           </a>
           <a href="{{ url_for('admin_infra.chr_nodes_list') }}"
              class="adm-link {% if ep.startswith('admin_infra.chr_node') %}is-active{% endif %}">
-            عقد CHR
+            {{ _('عقد CHR') }}
           </a>
           <a href="{{ url_for('admin_infra.radius_instances_list') }}"
              class="adm-link {% if ep.startswith('admin_infra.radius_instance') %}is-active{% endif %}">
-            نسخ RADIUS
+            {{ _('نسخ RADIUS') }}
           </a>
           <a href="{{ url_for('admin_infra.service_allocations_list') }}"
              class="adm-link {% if ep in ['admin_infra.service_allocations_list','admin_infra.customer_service_allocations','admin_infra.allocation_snapshots'] %}is-active{% endif %}">
-            تخصيصات الخدمة
+            {{ _('تخصيصات الخدمة') }}
           </a>
           <a href="{{ url_for('admin_infra.proxy_routes_list') }}"
              class="adm-link {% if ep.startswith('admin_infra.proxy_route') %}is-active{% endif %}">
-            وكيل RADIUS
+            {{ _('وكيل RADIUS') }}
           </a>
           {% if is_super_admin is defined and is_super_admin %}
           <a href="{{ url_for('admin_chr.console') }}"
              class="adm-link {% if ep.startswith('admin_chr.') %}is-active{% endif %}">
-            تحكم RouterOS
+            {{ _('تحكم RouterOS') }}
             <span class="adm-badge adm-badge--lock" aria-label="للمسؤول العام فقط">
               <i class="fa-solid fa-lock" aria-hidden="true"></i>
             </span>
@@ -236,29 +253,29 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-diagram-project"></i>
           </span>
-          <span class="adm-group-label">أسطول CHR</span>
+          <span class="adm-group-label">{{ _('أسطول CHR') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-fleet">
           <a href="{{ url_for('fleet_ui.fleet_dashboard') }}"
              class="adm-link {% if ep == 'fleet_ui.fleet_dashboard' %}is-active{% endif %}">
-            لوحة الأسطول
+            {{ _('لوحة الأسطول') }}
           </a>
           <a href="{{ url_for('fleet_ui.onboarding_wizard') }}"
              class="adm-link {% if ep == 'fleet_ui.onboarding_wizard' %}is-active{% endif %}">
-            معالج إضافة CHR
+            {{ _('معالج إضافة CHR') }}
           </a>
           <a href="{{ url_for('fleet_ui.dns_frontdoor') }}"
              class="adm-link {% if ep == 'fleet_ui.dns_frontdoor' %}is-active{% endif %}">
-            الباب الأمامي (DNS)
+            {{ _('الباب الأمامي (DNS)') }}
           </a>
           <a href="{{ url_for('fleet_p7.dashboard') }}"
              class="adm-link {% if ep.startswith('fleet_p7.') %}is-active{% endif %}">
-            التطبيق الحي والتحريك
+            {{ _('التطبيق الحي والتحريك') }}
           </a>
           <a href="{{ url_for('fleet_p8.dashboard') }}"
              class="adm-link {% if ep.startswith('fleet_p8.') %}is-active{% endif %}">
-            إعادة التوازن والإخلاء
+            {{ _('إعادة التوازن والإخلاء') }}
           </a>
         </div>
       </div>
@@ -275,21 +292,21 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-clipboard-list"></i>
           </span>
-          <span class="adm-group-label">السجلات</span>
+          <span class="adm-group-label">{{ _('السجلات') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-logs">
           <a href="{{ url_for('admin.checks_list') }}"
              class="adm-link {% if ep == 'admin.checks_list' %}is-active{% endif %}">
-            سجل الفحوصات
+            {{ _('سجل الفحوصات') }}
           </a>
           <a href="{{ url_for('admin.renewals_list') }}"
              class="adm-link {% if ep == 'admin.renewals_list' %}is-active{% endif %}">
-            التجديدات
+            {{ _('التجديدات') }}
           </a>
           <a href="{{ url_for('admin.audit_logs') }}"
              class="adm-link {% if ep == 'admin.audit_logs' %}is-active{% endif %}">
-            سجل التدقيق
+            {{ _('سجل التدقيق') }}
           </a>
         </div>
       </div>
@@ -305,25 +322,25 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-window-maximize"></i>
           </span>
-          <span class="adm-group-label">محتوى الموقع</span>
+          <span class="adm-group-label">{{ _('محتوى الموقع') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-landing">
           <a href="{{ url_for('admin_landing.overview') }}"
              class="adm-link {% if ep == 'admin_landing.overview' %}is-active{% endif %}">
-            نظرة عامة
+            {{ _('نظرة عامة') }}
           </a>
           <a href="{{ url_for('admin_landing.preview') }}"
              class="adm-link {% if ep == 'admin_landing.preview' %}is-active{% endif %}">
-            معاينة الصفحة
+            {{ _('معاينة الصفحة') }}
           </a>
           <a href="{{ url_for('admin_landing.social_list') }}"
              class="adm-link {% if ep == 'admin_landing.social_list' %}is-active{% endif %}">
-            روابط التواصل
+            {{ _('روابط التواصل') }}
           </a>
           <a href="{{ url_for('admin_landing.contact_list') }}"
              class="adm-link {% if ep == 'admin_landing.contact_list' %}is-active{% endif %}">
-            طرق التواصل
+            {{ _('طرق التواصل') }}
           </a>
         </div>
       </div>
@@ -339,44 +356,44 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-gear"></i>
           </span>
-          <span class="adm-group-label">الإعدادات</span>
+          <span class="adm-group-label">{{ _('الإعدادات') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-settings">
           {% if 'settings.general' not in hidden_sections %}
           <a href="{{ url_for('admin.settings_page') }}"
              class="adm-link {% if ep == 'admin.settings_page' %}is-active{% endif %}">
-            الإعدادات العامة
+            {{ _('الإعدادات العامة') }}
           </a>
           <a href="{{ url_for('admin.settings_platform') }}"
              class="adm-link {% if ep == 'admin.settings_platform' %}is-active{% endif %}">
             <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
-            إعدادات المنصة
+            {{ _('إعدادات المنصة') }}
           </a>
           {% endif %}
           {% if 'settings.admins' not in hidden_sections %}
           <a href="{{ url_for('admin.settings_admins') }}"
              class="adm-link {% if ep == 'admin.settings_admins' %}is-active{% endif %}">
-            إدارة المشرفين
+            {{ _('إدارة المشرفين') }}
           </a>
           {% endif %}
           {% if 'settings.whatsapp' not in hidden_sections %}
           <a href="{{ url_for('admin.settings_whatsapp') }}"
              class="adm-link {% if ep == 'admin.settings_whatsapp' %}is-active{% endif %}">
-            إعدادات واتساب
+            {{ _('إعدادات واتساب') }}
           </a>
           {% endif %}
           {% if 'settings.messaging' not in hidden_sections %}
           <a href="{{ url_for('admin_messaging.settings') }}"
              class="adm-link {% if ep == 'admin_messaging.settings' %}is-active{% endif %}">
             <i class="fa-solid fa-paper-plane fa-xs" aria-hidden="true"></i>
-            قنوات التواصل والإشعارات
+            {{ _('قنوات التواصل والإشعارات') }}
           </a>
           {% endif %}
           <a href="{{ url_for('admin.sections_settings') }}"
              class="adm-link {% if ep == 'admin.sections_settings' %}is-active{% endif %}">
             <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
-            تخصيص الأقسام
+            {{ _('تخصيص الأقسام') }}
           </a>
         </div>
       </div>
@@ -392,12 +409,12 @@
         </span>
         <span class="adm-user-name">
           {% set _admin_name = session.get('admin_name') or session.get('admin_user') or '' %}
-          {{ 'مدير النظام' if _admin_name in ['', 'admin', 'License Admin'] else _admin_name }}
+          {{ _('مدير النظام') if _admin_name in ['', 'admin', 'License Admin'] else _admin_name }}
         </span>
       </div>
       <form method="post" action="{{ url_for('auth.logout') }}">
         {{ csrf_input() }}
-        <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
+        <button type="submit" class="adm-logout-btn" aria-label="{{ _('تسجيل الخروج') }}">
           <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
         </button>
       </form>
@@ -415,29 +432,51 @@
       <button class="adm-menu-btn"
               id="adm-menu-btn"
               type="button"
-              aria-label="فتح القائمة الجانبية"
+              aria-label="{{ _('فتح القائمة الجانبية') }}"
               aria-expanded="false"
               aria-controls="adm-side">
         <i class="fa-solid fa-bars" aria-hidden="true"></i>
       </button>
 
       <div class="adm-topbar-page-title">
-        {% block page_title %}لوحة التحكم{% endblock %}{% block page_subtitle %}{% endblock %}
+        {% block page_title %}{{ _('لوحة التحكم') }}{% endblock %}{% block page_subtitle %}{% endblock %}
       </div>
 
       <div class="adm-topbar-actions">
-        <div class="adm-topbar-user" aria-label="المستخدم الحالي">
+        {# ── Language switcher (no native confirm — POST + redirect) ── #}
+        <form method="post" action="{{ url_for('i18n.set_locale_route') }}"
+              class="adm-lang-form" aria-label="{{ _('اللغة') }}">
+          {{ csrf_input() }}
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <label for="adm-lang" class="adm-lang-label">
+            <i class="fa-solid fa-language" aria-hidden="true"></i>
+            <span class="adm-lang-sr">{{ _('اللغة') }}</span>
+          </label>
+          <select id="adm-lang" name="locale" class="adm-lang-select"
+                  onchange="this.form.submit()">
+            {% for code, meta in supported_locales.items() %}
+            <option value="{{ code }}" {% if code == current_locale %}selected{% endif %}>
+              {{ meta.flag }} {{ meta.label }}
+            </option>
+            {% endfor %}
+          </select>
+          <noscript>
+            <button type="submit" class="adm-lang-submit">{{ _('تطبيق') }}</button>
+          </noscript>
+        </form>
+
+        <div class="adm-topbar-user" aria-label="{{ _('المستخدم الحالي') }}">
           <span class="adm-topbar-avatar" aria-hidden="true">
             <i class="fa-solid fa-user-shield"></i>
           </span>
           <span>
             {% set _admin_name = session.get('admin_name') or session.get('admin_user') or '' %}
-            {{ 'مدير النظام' if _admin_name in ['', 'admin', 'License Admin'] else _admin_name }}
+            {{ _('مدير النظام') if _admin_name in ['', 'admin', 'License Admin'] else _admin_name }}
           </span>
         </div>
         <form method="post" action="{{ url_for('auth.logout') }}">
           {{ csrf_input() }}
-          <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
+          <button type="submit" class="adm-topbar-logout" aria-label="{{ _('تسجيل الخروج') }}">
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
           </button>
         </form>
@@ -451,7 +490,7 @@
       {% if bootstrap_mode is defined and bootstrap_mode %}
         <div class="adm-flash adm-flash--warning" role="alert">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-          وضع التهيئة المؤقت مفعل — استخدم نطاقاً حقيقياً و HTTPS قبل الإنتاج.
+          {{ _('وضع التهيئة المؤقت مفعل — استخدم نطاقاً حقيقياً و HTTPS قبل الإنتاج.') }}
         </div>
       {% endif %}
 

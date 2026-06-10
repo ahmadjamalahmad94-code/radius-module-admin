@@ -25,7 +25,7 @@
       {% endfor %}
     </select>
     <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
-      <i class="fa-solid fa-filter"></i> تصفية
+      <i class="fa-solid fa-filter"></i> {{ _('تصفية') }}
     </button>
   </form>
 {% endcall %}
@@ -35,11 +35,11 @@
     <table class="hub-table">
       <thead>
         <tr>
-          <th>المفتاح</th>
-          <th>العميل</th>
+          <th>{{ _('المفتاح') }}</th>
+          <th>{{ _('العميل') }}</th>
           <th>الخطة</th>
-          <th>الحالة</th>
-          <th class="date">ينتهي في</th>
+          <th>{{ _('الحالة') }}</th>
+          <th class="date">{{ _('ينتهي في') }}</th>
           <th class="date">آخر فحص</th>
           <th></th>
         </tr>

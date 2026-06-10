@@ -23,7 +23,7 @@
           <th class="num">مستخدمو الشبكة الخاصة</th>
           <th class="num">المواقع</th>
           <th class="num">السعر/شهر</th>
-          <th>الحالة</th>
+          <th>{{ _('الحالة') }}</th>
           <th></th>
         </tr>
       </thead>
@@ -43,7 +43,7 @@
           <td>
             <div class="hub-actions">
               <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin.vpn_service_edit', vpn_plan_id=vpn_plan.id) }}">
-                <i class="fa-solid fa-pen"></i> تعديل
+                <i class="fa-solid fa-pen"></i> {{ _('تعديل') }}
               </a>
               {% if vpn_plan.is_active %}
                 <form method="post" action="{{ url_for('admin.vpn_service_disable', vpn_plan_id=vpn_plan.id) }}" style="display:inline">
@@ -53,7 +53,7 @@
               {% else %}
                 <form method="post" action="{{ url_for('admin.vpn_service_enable', vpn_plan_id=vpn_plan.id) }}" style="display:inline">
                   {{ csrf_input() }}
-                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> تفعيل</button>
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> {{ _('تفعيل') }}</button>
                 </form>
               {% endif %}
             </div>

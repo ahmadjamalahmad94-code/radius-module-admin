@@ -25,11 +25,11 @@
 <div class="hub-grid-2">
   {% call hub.section("تفاصيل الطلب", icon="circle-info") %}
     <div class="hub-detail-list">
-      <div><span>العميل</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "—" }}</strong></div>
+      <div><span>{{ _('العميل') }}</span><strong>{{ payment_request.customer.company_name if payment_request.customer else "—" }}</strong></div>
       <div><span>الغرض</span><strong>{{ payment_request.purpose|payment_purpose_label }}</strong></div>
-      <div><span>المبلغ</span><strong class="num">{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
+      <div><span>{{ _('المبلغ') }}</span><strong class="num">{{ payment_request.amount|money }} {{ payment_request.currency }}</strong></div>
       <div><span>المحفظة</span><strong class="mono">{{ payment_request.receiver_wallet }}</strong></div>
-      <div><span>ينتهي في</span><strong>{{ payment_request.expires_at|dt }}</strong></div>
+      <div><span>{{ _('ينتهي في') }}</span><strong>{{ payment_request.expires_at|dt }}</strong></div>
       <div><span>الرابط الآمن</span><strong class="mono ltr">/payments/requests/{{ payment_request.id }}</strong></div>
     </div>
   {% endcall %}
@@ -43,7 +43,7 @@
           <textarea class="hub-textarea" name="review_note" rows="2" placeholder="مرجع قصير للمراجعة لاحقًا"></textarea>
         </div>
         <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
-          <i class="fa-solid fa-circle-check"></i> قبول الدفع
+          <i class="fa-solid fa-circle-check"></i> {{ _('قبول الدفع') }}
         </button>
       </form>
       <div style="border-top:1px dashed var(--hub-line); padding-top:12px">
@@ -128,8 +128,8 @@
     {% if transactions %}
       {% for transaction in transactions %}
         <div class="hub-detail-list">
-          <div><span>الحالة</span><strong>{{ transaction.status|status_label }}</strong></div>
-          <div><span>المبلغ</span><strong class="num">{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
+          <div><span>{{ _('الحالة') }}</span><strong>{{ transaction.status|status_label }}</strong></div>
+          <div><span>{{ _('المبلغ') }}</span><strong class="num">{{ transaction.amount|money }} {{ transaction.currency }}</strong></div>
           <div><span>وقت التحقق</span><strong>{{ transaction.verified_at|dt }}</strong></div>
         </div>
       {% endfor %}
@@ -142,9 +142,9 @@
     {% if orders %}
       {% for order in orders %}
         <div class="hub-detail-list">
-          <div><span>الحالة</span><strong><span class="badge {{ order.status|badge_class }}">{{ order.status|status_label }}</span></strong></div>
+          <div><span>{{ _('الحالة') }}</span><strong><span class="badge {{ order.status|badge_class }}">{{ order.status|status_label }}</span></strong></div>
           <div><span>دفع في</span><strong>{{ order.paid_at|dt }}</strong></div>
-          <div><span>ملاحظات</span><strong>{{ order.notes or "—" }}</strong></div>
+          <div><span>{{ _('ملاحظات') }}</span><strong>{{ order.notes or "—" }}</strong></div>
         </div>
       {% endfor %}
     {% else %}

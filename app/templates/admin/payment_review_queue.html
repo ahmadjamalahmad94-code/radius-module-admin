@@ -20,7 +20,7 @@
       {% endfor %}
     </select>
     <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
-      <i class="fa-solid fa-filter"></i> عرض
+      <i class="fa-solid fa-filter"></i> {{ _('عرض') }}
     </button>
   </form>
 {% endcall %}
@@ -31,11 +31,11 @@
       <thead>
         <tr>
           <th>المرجع</th>
-          <th>العميل</th>
+          <th>{{ _('العميل') }}</th>
           <th>الغرض</th>
-          <th class="num">المبلغ</th>
-          <th>الحالة</th>
-          <th class="date">آخر تحديث</th>
+          <th class="num">{{ _('المبلغ') }}</th>
+          <th>{{ _('الحالة') }}</th>
+          <th class="date">{{ _('آخر تحديث') }}</th>
           <th></th>
         </tr>
       </thead>

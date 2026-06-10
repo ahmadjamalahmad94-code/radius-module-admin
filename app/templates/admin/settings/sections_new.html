@@ -235,7 +235,7 @@
         <i class="fa-solid fa-users"></i>
       </div>
       <div class="sv-card-info">
-        <div class="sv-card-label">العملاء</div>
+        <div class="sv-card-label">{{ _('العملاء') }}</div>
         <div class="sv-card-desc">قائمة العملاء وإضافتهم</div>
       </div>
       <label class="cc-toggle" aria-label="إظهار/إخفاء قسم العملاء">
@@ -248,7 +248,7 @@
     <div class="sv-card-body">
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-list"></i></div>
-        <span class="sv-sub-label">قائمة العملاء</span>
+        <span class="sv-sub-label">{{ _('قائمة العملاء') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء قائمة العملاء">
           <input type="checkbox" name="customers.list"
                  {% if 'customers.list' not in hidden_sections %}checked{% endif %}>
@@ -257,7 +257,7 @@
       </div>
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-user-plus"></i></div>
-        <span class="sv-sub-label">إضافة عميل</span>
+        <span class="sv-sub-label">{{ _('إضافة عميل') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء رابط إضافة عميل">
           <input type="checkbox" name="customers.add"
                  {% if 'customers.add' not in hidden_sections %}checked{% endif %}>
@@ -305,7 +305,7 @@
       </div>
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-boxes-stacked"></i></div>
-        <span class="sv-sub-label">خطط الاشتراك</span>
+        <span class="sv-sub-label">{{ _('خطط الاشتراك') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء خطط الاشتراك">
           <input type="checkbox" name="licenses.plans"
                  {% if 'licenses.plans' not in hidden_sections %}checked{% endif %}>
@@ -365,7 +365,7 @@
     <div class="sv-card-body">
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-microchip"></i></div>
-        <span class="sv-sub-label">عقد CHR</span>
+        <span class="sv-sub-label">{{ _('عقد CHR') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء عقد CHR">
           <input type="checkbox" name="infra.chr"
                  {% if 'infra.chr' not in hidden_sections %}checked{% endif %}>
@@ -439,7 +439,7 @@
         <i class="fa-solid fa-gear"></i>
       </div>
       <div class="sv-card-info">
-        <div class="sv-card-label">الإعدادات</div>
+        <div class="sv-card-label">{{ _('الإعدادات') }}</div>
         <div class="sv-card-desc">الإعدادات العامة والمشرفون وواتساب</div>
       </div>
       <label class="cc-toggle" aria-label="إظهار/إخفاء قسم الإعدادات">
@@ -452,7 +452,7 @@
     <div class="sv-card-body">
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-sliders"></i></div>
-        <span class="sv-sub-label">الإعدادات العامة</span>
+        <span class="sv-sub-label">{{ _('الإعدادات العامة') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء الإعدادات العامة">
           <input type="checkbox" name="settings.general"
                  {% if 'settings.general' not in hidden_sections %}checked{% endif %}>
@@ -461,7 +461,7 @@
       </div>
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-solid fa-user-shield"></i></div>
-        <span class="sv-sub-label">إدارة المشرفين</span>
+        <span class="sv-sub-label">{{ _('إدارة المشرفين') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء إدارة المشرفين">
           <input type="checkbox" name="settings.admins"
                  {% if 'settings.admins' not in hidden_sections %}checked{% endif %}>
@@ -470,7 +470,7 @@
       </div>
       <div class="sv-sub-row">
         <div class="sv-sub-icon" aria-hidden="true"><i class="fa-brands fa-whatsapp"></i></div>
-        <span class="sv-sub-label">إعدادات واتساب</span>
+        <span class="sv-sub-label">{{ _('إعدادات واتساب') }}</span>
         <label class="cc-toggle" aria-label="إظهار/إخفاء إعدادات واتساب">
           <input type="checkbox" name="settings.whatsapp"
                  {% if 'settings.whatsapp' not in hidden_sections %}checked{% endif %}>
@@ -491,7 +491,7 @@
   <div class="sv-toast" id="sv-toast" role="alert" aria-live="polite"></div>
   <button type="button" class="sv-btn-save" id="sv-save-btn">
     <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-    حفظ الإعدادات
+    {{ _('حفظ الإعدادات') }}
   </button>
 </div>
 </form>

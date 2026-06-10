@@ -35,10 +35,10 @@
 <div class="hub-grid-2">
   {% call hub.section("معلومات الترخيص", icon="circle-info") %}
     <div class="hub-detail-list">
-      <div><span>العميل</span><strong>{{ license.customer.company_name }}</strong></div>
+      <div><span>{{ _('العميل') }}</span><strong>{{ license.customer.company_name }}</strong></div>
       <div><span>الخطة</span><strong>{{ license.plan.name }}</strong></div>
-      <div><span>الحالة</span><strong><span class="badge {{ license.status|badge_class }}">{{ license.status|status_label }}</span></strong></div>
-      <div><span>ينتهي في</span><strong>{{ license.expires_at|dt }}</strong></div>
+      <div><span>{{ _('الحالة') }}</span><strong><span class="badge {{ license.status|badge_class }}">{{ license.status|status_label }}</span></strong></div>
+      <div><span>{{ _('ينتهي في') }}</span><strong>{{ license.expires_at|dt }}</strong></div>
       <div><span>مهلة السماح</span><strong>{{ license.grace_until|dt }}</strong></div>
       <div><span>أقصى بصمات</span><strong class="num">{{ license.max_fingerprints }}</strong></div>
       <div><span>آخر فحص</span><strong>{{ license.last_check_at|dt }}</strong></div>
@@ -52,7 +52,7 @@
         <button type="submit" class="hub-action" style="width:100%">
           <span class="hub-action-icon hub-action-icon--green"><i class="fa-solid fa-play"></i></span>
           <div class="hub-action-body">
-            <div class="hub-action-title">تفعيل</div>
+            <div class="hub-action-title">{{ _('تفعيل') }}</div>
             <div class="hub-action-sub">إعادة الترخيص للعمل</div>
           </div>
         </button>
@@ -78,7 +78,7 @@
               data-confirm-ok="إلغاء نهائي">
         <span class="hub-action-icon hub-action-icon--red"><i class="fa-solid fa-ban"></i></span>
         <div class="hub-action-body">
-          <div class="hub-action-title">إلغاء</div>
+          <div class="hub-action-title">{{ _('إلغاء') }}</div>
           <div class="hub-action-sub">إيقاف نهائي للترخيص</div>
         </div>
       </button>
@@ -109,7 +109,7 @@
           <div class="hub-field-hint">سيتم تمديد الانتهاء بناءً عليها.</div>
         </div>
         <div class="hub-field">
-          <label>المبلغ</label>
+          <label>{{ _('المبلغ') }}</label>
           <input class="hub-input" name="amount" type="number" step="0.01" value="{{ license.plan.monthly_price }}">
           <div class="hub-field-hint">يسجل في سجل التجديدات لأغراض مالية.</div>
         </div>
@@ -123,15 +123,15 @@
           </select>
         </div>
         <div class="hub-field">
-          <label>الحالة</label>
+          <label>{{ _('الحالة') }}</label>
           <select class="hub-select" name="status">
-            <option value="paid">مدفوع</option>
-            <option value="unpaid">غير مدفوع</option>
+            <option value="paid">{{ _('مدفوع') }}</option>
+            <option value="unpaid">{{ _('غير مدفوع') }}</option>
             <option value="waived">معفى</option>
           </select>
         </div>
         <div class="hub-field full">
-          <label>ملاحظات</label>
+          <label>{{ _('ملاحظات') }}</label>
           <textarea class="hub-textarea" name="notes" rows="2"></textarea>
         </div>
       </div>
@@ -148,7 +148,7 @@
       {{ csrf_input() }}
       <input class="hub-input mono" name="fingerprint" placeholder="server fingerprint" style="flex:1; min-width:200px">
       <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
-        <i class="fa-solid fa-plus"></i> إضافة
+        <i class="fa-solid fa-plus"></i> {{ _('إضافة') }}
       </button>
     </form>
     <p class="hub-field-hint" style="margin-top:8px">أضف بصمة يدويًا فقط عند ربط خادم معروف قبل أول فحص ترخيص.</p>
@@ -209,11 +209,11 @@
     <table class="hub-table">
       <thead>
         <tr>
-          <th class="num">المدة</th>
+          <th class="num">{{ _('المدة') }}</th>
           <th class="date">الفترة</th>
-          <th class="num">المبلغ</th>
+          <th class="num">{{ _('المبلغ') }}</th>
           <th>الطريقة</th>
-          <th>الحالة</th>
+          <th>{{ _('الحالة') }}</th>
           <th class="date">الوقت</th>
         </tr>
       </thead>

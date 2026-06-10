@@ -5,7 +5,7 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">العملاء</a>
+  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">{{ _('العملاء') }}</a>
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
   <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="ar-breadcrumb-item">{{ customer.company_name }}</a>
 {% endblock %}
@@ -149,7 +149,7 @@
   <div class="cu-hero-actions">
     <a class="cu-hero-btn cu-hero-btn--primary"
        href="{{ url_for('admin.customer_user_new', customer_id=customer.id, return_to='users') }}">
-      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> إضافة مستخدم
+      <i class="fa-solid fa-user-plus" aria-hidden="true"></i> {{ _('إضافة مستخدم') }}
     </a>
     <a class="cu-hero-btn"
        href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}">
@@ -206,7 +206,7 @@
     <div class="cu-card-spacer"></div>
     <a class="cu-btn cu-btn--primary"
        href="{{ url_for('admin.customer_user_new', customer_id=customer.id, return_to='users') }}">
-      <i class="fa-solid fa-user-plus"></i> إضافة مستخدم
+      <i class="fa-solid fa-user-plus"></i> {{ _('إضافة مستخدم') }}
     </a>
   </div>
 
@@ -217,8 +217,8 @@
           <tr>
             <th>المستخدم</th>
             <th>البريد</th>
-            <th>الدور</th>
-            <th>الحالة</th>
+            <th>{{ _('الدور') }}</th>
+            <th>{{ _('الحالة') }}</th>
             <th>إصدار الدخول</th>
             <th>آخر تغيير</th>
             <th style="text-align:end">إجراءات</th>
@@ -251,10 +251,10 @@
                   <a class="cu-btn cu-btn--ghost"
                      href="{{ url_for('admin.customer_user_edit', customer_id=customer.id, user_id=u.id, return_to='users') }}"
                      title="تعديل البيانات وكلمة المرور">
-                    <i class="fa-solid fa-pen-to-square"></i> تعديل
+                    <i class="fa-solid fa-pen-to-square"></i> {{ _('تعديل') }}
                   </a>
                   <details class="cu-popover">
-                    <summary class="cu-btn cu-btn--ghost"><i class="fa-solid fa-key"></i> كلمة المرور</summary>
+                    <summary class="cu-btn cu-btn--ghost"><i class="fa-solid fa-key"></i> {{ _('كلمة المرور') }}</summary>
                     <form method="post"
                           action="{{ url_for('admin.customer_user_password_set', customer_id=customer.id, user_id=u.id) }}"
                           class="cu-popover-body">
@@ -263,7 +263,7 @@
                       <div class="cu-hint">تُحفظ نسخة مشفرة فقط ويزيد إصدار الدخول.</div>
                       <label>كلمة مرور جديدة</label>
                       <input type="password" name="password" minlength="8" required autocomplete="new-password">
-                      <label>تأكيد كلمة المرور</label>
+                      <label>{{ _('تأكيد كلمة المرور') }}</label>
                       <input type="password" name="password_confirm" minlength="8" required autocomplete="new-password">
                       <button class="cu-btn cu-btn--primary" type="submit">
                         <i class="fa-solid fa-floppy-disk"></i> حفظ كلمة المرور
@@ -278,7 +278,7 @@
                       <input type="hidden" name="return_to" value="users">
                       <button class="cu-btn cu-btn--danger" type="submit"
                               data-cu-confirm="تعطيل دخول هذا المستخدم على البوابة؟ يبقى السجل محفوظاً، لكن لن يستطيع الدخول حتى يُعاد تفعيله.">
-                        <i class="fa-solid fa-pause"></i> تعطيل
+                        <i class="fa-solid fa-pause"></i> {{ _('تعطيل') }}
                       </button>
                     </form>
                   {% else %}
@@ -288,7 +288,7 @@
                       {{ csrf_input() }}
                       <input type="hidden" name="return_to" value="users">
                       <button class="cu-btn cu-btn--ghost" type="submit">
-                        <i class="fa-solid fa-play"></i> تفعيل
+                        <i class="fa-solid fa-play"></i> {{ _('تفعيل') }}
                       </button>
                     </form>
                   {% endif %}
@@ -334,9 +334,9 @@
         <thead>
           <tr>
             <th>المستخدم</th>
-            <th>الدور</th>
+            <th>{{ _('الدور') }}</th>
             <th>سوبر</th>
-            <th>الحالة</th>
+            <th>{{ _('الحالة') }}</th>
             <th>المصدر</th>
             <th>آخر ظهور</th>
             <th style="text-align:end">تحكم اللوحة</th>
@@ -445,11 +445,11 @@
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
         <button id="cu-confirm-toast-cancel" type="button"
                 style="height:32px;padding-inline:12px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:12px;cursor:pointer">
-          إلغاء
+          {{ _('إلغاء') }}
         </button>
         <button id="cu-confirm-toast-ok" type="button"
                 style="height:32px;padding-inline:12px;border-radius:8px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;font-weight:700;font-size:12px;cursor:pointer">
-          تأكيد
+          {{ _('تأكيد') }}
         </button>
       </div>
     </div>

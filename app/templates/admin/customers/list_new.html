@@ -4,7 +4,7 @@
 
 {% block crumbs %}
   <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <span class="ar-breadcrumb-item">العملاء</span>
+  <span class="ar-breadcrumb-item">{{ _('العملاء') }}</span>
 {% endblock %}
 {% block page_breadcrumb %}قائمة العملاء{% endblock %}
 
@@ -618,12 +618,12 @@
   <div class="clist-hero-stats" aria-label="إحصائيات العملاء">
     <div class="clist-stat">
       <div class="clist-stat-num">{{ total_customers }}</div>
-      <div class="clist-stat-label">إجمالي العملاء</div>
+      <div class="clist-stat-label">{{ _('إجمالي العملاء') }}</div>
     </div>
     <div class="clist-stat-divider" aria-hidden="true"></div>
     <div class="clist-stat">
       <div class="clist-stat-num" style="color:var(--hb-green)">{{ active_count }}</div>
-      <div class="clist-stat-label">نشط</div>
+      <div class="clist-stat-label">{{ _('نشط') }}</div>
     </div>
     <div class="clist-stat-divider" aria-hidden="true"></div>
     <div class="clist-stat">
@@ -659,7 +659,7 @@
 
     {# الحالة #}
     <div class="clist-field">
-      <label class="clist-field-label" for="clist-status">الحالة</label>
+      <label class="clist-field-label" for="clist-status">{{ _('الحالة') }}</label>
       <select class="clist-select" id="clist-status" name="status" aria-label="تصفية بالحالة">
         <option value="">كل الحالات</option>
         <option value="active"   {{ 'selected' if status == 'active' }}>✅ نشط</option>
@@ -676,7 +676,7 @@
       <div style="display:flex;gap:var(--cc-sp-4);align-items:center">
         <button type="submit" class="clist-btn clist-btn--filter">
           <i class="fa-solid fa-filter" aria-hidden="true"></i>
-          تصفية
+          {{ _('تصفية') }}
         </button>
         {% if search or status %}
           <a href="{{ url_for('admin.customers_list') }}" class="clist-btn clist-btn--reset" aria-label="مسح الفلاتر">
@@ -722,7 +722,7 @@
 {% endif %}
 
 {# ── الجدول ── #}
-<div class="clist-card" role="region" aria-label="قائمة العملاء">
+<div class="clist-card" role="region" aria-label="{{ _('قائمة العملاء') }}">
 
   <div class="clist-card-header">
     <div class="clist-card-title">
@@ -749,16 +749,16 @@
   </div>
 
   <div class="clist-table-wrap">
-    <table class="clist-table" id="tbl-customers" role="table" aria-label="قائمة العملاء">
+    <table class="clist-table" id="tbl-customers" role="table" aria-label="{{ _('قائمة العملاء') }}">
       <thead>
         <tr role="row">
           <th scope="col" class="cc-th-sort">اسم الشركة / العميل</th>
-          <th scope="col" class="cc-th-sort">البريد الإلكتروني</th>
-          <th scope="col" class="cc-th-sort">الهاتف</th>
-          <th scope="col" class="cc-th-sort col-center">الحالة</th>
+          <th scope="col" class="cc-th-sort">{{ _('البريد الإلكتروني') }}</th>
+          <th scope="col" class="cc-th-sort">{{ _('الهاتف') }}</th>
+          <th scope="col" class="cc-th-sort col-center">{{ _('الحالة') }}</th>
           <th scope="col" class="cc-th-sort">تاريخ الانضمام</th>
           <th scope="col" class="cc-th-sort">آخر نشاط</th>
-          <th scope="col" class="col-actions">الإجراءات</th>
+          <th scope="col" class="col-actions">{{ _('الإجراءات') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -858,7 +858,7 @@
               </a>
               <a href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}"
                  class="clist-action-btn clist-action-btn--edit"
-                 title="تعديل بيانات العميل"
+                 title="{{ _('تعديل بيانات العميل') }}"
                  aria-label="تعديل {{ customer.company_name }}">
                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
               </a>
@@ -916,7 +916,7 @@
   {% if customers|length > 0 %}
   <div class="clist-pagination" role="navigation" aria-label="التنقل بين الصفحات">
     <div class="clist-page-info">
-      عرض
+      {{ _('عرض') }}
       <strong>{{ customers|length }}</strong>
       من أصل
       <strong>{{ total_count if total_count is defined else customers|length }}</strong>

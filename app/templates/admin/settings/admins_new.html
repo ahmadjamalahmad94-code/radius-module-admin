@@ -381,7 +381,7 @@
 <div class="sa-hero">
   <div class="sa-hero-icon" aria-hidden="true"><i class="fa-solid fa-users-gear"></i></div>
   <div class="sa-hero-body">
-    <div class="sa-hero-title">إدارة المشرفين</div>
+    <div class="sa-hero-title">{{ _('إدارة المشرفين') }}</div>
     <div class="sa-hero-sub">تحكّم في من يصل للوحة التحكم وما يستطيع فعله</div>
   </div>
   <div class="sa-hero-action">
@@ -456,10 +456,10 @@
       <thead>
         <tr role="row">
           <th scope="col" class="cc-th-sort">المشرف</th>
-          <th scope="col" class="cc-th-sort">الدور</th>
-          <th scope="col" class="cc-th-sort">آخر دخول</th>
-          <th scope="col" class="cc-th-sort">الحالة</th>
-          <th scope="col">الإجراءات</th>
+          <th scope="col" class="cc-th-sort">{{ _('الدور') }}</th>
+          <th scope="col" class="cc-th-sort">{{ _('آخر دخول') }}</th>
+          <th scope="col" class="cc-th-sort">{{ _('الحالة') }}</th>
+          <th scope="col">{{ _('الإجراءات') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -597,7 +597,7 @@
         </div>
 
         <div class="sa-mfield">
-          <label class="sa-mlabel" for="sa-email">البريد الإلكتروني <span class="sa-req">*</span></label>
+          <label class="sa-mlabel" for="sa-email">{{ _('البريد الإلكتروني') }} <span class="sa-req">*</span></label>
           <input class="sa-minput" id="sa-email" name="email" type="email"
                  placeholder="admin@example.com" dir="ltr" autocomplete="email" required>
           <div class="sa-mhint">يُستخدم لتسجيل الدخول وإرسال إشعارات النظام. يجب أن يكون فريداً.</div>
@@ -605,7 +605,7 @@
 
         <div class="sa-mfield" id="sa-pass-field">
           <label class="sa-mlabel" for="sa-password">
-            كلمة المرور <span class="sa-req" id="sa-pass-req">*</span>
+            {{ _('كلمة المرور') }} <span class="sa-req" id="sa-pass-req">*</span>
           </label>
           <input class="sa-minput" id="sa-password" name="password" type="password"
                  placeholder="8 أحرف على الأقل" autocomplete="new-password">
@@ -615,7 +615,7 @@
         </div>
 
         <div class="sa-mfield">
-          <label class="sa-mlabel">الدور <span class="sa-req">*</span></label>
+          <label class="sa-mlabel">{{ _('الدور') }} <span class="sa-req">*</span></label>
           <div class="sa-mhint" style="margin-block-end:var(--cc-sp-4)">
             اختر الدور المناسب — كل دور يحدد بدقة ما يستطيع المشرف فعله داخل اللوحة.
           </div>
@@ -657,7 +657,7 @@
 
     <div class="sa-modal-foot">
       <button class="sa-btn-cancel" type="button" id="sa-modal-cancel">
-        <i class="fa-solid fa-times" aria-hidden="true"></i> إلغاء
+        <i class="fa-solid fa-times" aria-hidden="true"></i> {{ _('إلغاء') }}
       </button>
       <button class="sa-btn-confirm" type="button"
               onclick="document.getElementById('sa-admin-form').submit()">

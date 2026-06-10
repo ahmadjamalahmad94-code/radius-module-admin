@@ -29,12 +29,12 @@
           <div class="hub-field-hint">مرجعي للمدفوعات والتقارير.</div>
         </div>
         <div class="hub-field">
-          <label>العملة</label>
+          <label>{{ _('العملة') }}</label>
           <input class="hub-input mono" name="currency" value="{{ plan.currency or 'USD' }}">
           <div class="hub-field-hint">مثال: USD أو ILS. استخدم رمزًا موحدًا عبر الخطط.</div>
         </div>
         <div class="hub-field">
-          <label>الحالة</label>
+          <label>{{ _('الحالة') }}</label>
           <select class="hub-select" name="status">
             {% for s in ['active','inactive'] %}
               <option value="{{ s }}" {{ 'selected' if plan.status == s else '' }}>{{ s|status_label }}</option>
@@ -87,9 +87,9 @@
 
     <div class="hub-form-foot" style="padding-top:16px">
       <button class="hub-btn hub-btn--primary" type="submit">
-        <i class="fa-solid fa-floppy-disk"></i> حفظ
+        <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
       </button>
-      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.plans_list') }}">إلغاء</a>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.plans_list') }}">{{ _('إلغاء') }}</a>
     </div>
   </form>
 {% endcall %}

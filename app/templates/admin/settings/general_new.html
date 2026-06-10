@@ -364,7 +364,7 @@
     <i class="fa-solid fa-sliders"></i>
   </div>
   <div>
-    <div class="sg-hero-title">الإعدادات العامة</div>
+    <div class="sg-hero-title">{{ _('الإعدادات العامة') }}</div>
     <div class="sg-hero-sub">تحكّم في هوية الموقع وطرق الدفع وإعدادات البريد — كل تغيير يُحفظ فوراً</div>
   </div>
 </div>
@@ -379,11 +379,11 @@
   </button>
   <button class="cc-tab-btn" role="tab" data-tab="payments"
           aria-controls="tab-payments" id="tab-btn-payments">
-    <i class="fa-solid fa-credit-card" aria-hidden="true"></i> المدفوعات
+    <i class="fa-solid fa-credit-card" aria-hidden="true"></i> {{ _('المدفوعات') }}
   </button>
   <button class="cc-tab-btn" role="tab" data-tab="email"
           aria-controls="tab-email" id="tab-btn-email">
-    <i class="fa-solid fa-envelope" aria-hidden="true"></i> البريد الإلكتروني
+    <i class="fa-solid fa-envelope" aria-hidden="true"></i> {{ _('البريد الإلكتروني') }}
   </button>
   <button class="cc-tab-btn" role="tab" data-tab="vault"
           aria-controls="tab-vault" id="tab-btn-vault">
@@ -492,7 +492,7 @@
         </div>
 
         <div class="sg-field">
-          <label class="sg-label" for="sg-site-timezone">المنطقة الزمنية</label>
+          <label class="sg-label" for="sg-site-timezone">{{ _('المنطقة الزمنية') }}</label>
           <select class="sg-select" id="sg-site-timezone" name="timezone">
             <option value="Asia/Jerusalem" {% if settings.get('timezone','Asia/Jerusalem')=='Asia/Jerusalem' %}selected{% endif %}>Asia/Jerusalem (فلسطين)</option>
             <option value="Asia/Riyadh" {% if settings.get('timezone')=='Asia/Riyadh' %}selected{% endif %}>Asia/Riyadh (السعودية)</option>
@@ -687,7 +687,7 @@
         </div>
 
         <div class="sg-field">
-          <label class="sg-label" for="sg-smtp-pass">كلمة المرور</label>
+          <label class="sg-label" for="sg-smtp-pass">{{ _('كلمة المرور') }}</label>
           <input class="sg-input" id="sg-smtp-pass" name="smtp_password" type="password"
                  autocomplete="new-password"
                  placeholder="{{ 'محفوظة — اتركها فارغة للإبقاء' if settings.get('smtp_password') else 'أدخل كلمة مرور SMTP' }}"
@@ -731,7 +731,7 @@
       {# اختبار الإرسال #}
       <div class="sg-test-row">
         <div class="sg-field">
-          <label class="sg-label" for="sg-test-email">اختبار الإرسال</label>
+          <label class="sg-label" for="sg-test-email">{{ _('اختبار الإرسال') }}</label>
           <input class="sg-input" id="sg-test-email" name="test_recipient" type="email"
                  placeholder="your@email.com" dir="ltr">
           <div class="sg-hint">سيُرسَل بريد تجريبي للتأكد من صحة الإعداد.</div>

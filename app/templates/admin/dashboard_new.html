@@ -376,17 +376,17 @@
       مرحباً، {{ 'مدير النظام' if _name in ['', 'admin', 'License Admin'] else _name }}
     </div>
     <div class="dash-hero-sub">
-      نظرة عامة على نظام HobeRadius — الترخيص والعملاء والمدفوعات
+      {{ _('نظرة عامة على نظام HobeRadius — الترخيص والعملاء والمدفوعات') }}
     </div>
   </div>
   <div class="dash-hero-actions">
     <a href="{{ url_for('admin.licenses_list') }}" class="dash-hero-btn">
       <i class="fa-solid fa-key" aria-hidden="true"></i>
-      التراخيص
+      {{ _('التراخيص') }}
     </a>
     <a href="{{ url_for('admin.settings_page') }}" class="dash-hero-btn">
       <i class="fa-solid fa-gear" aria-hidden="true"></i>
-      الإعدادات
+      {{ _('الإعدادات') }}
     </a>
   </div>
 </div>
@@ -400,7 +400,7 @@
       <i class="fa-solid fa-users"></i>
     </div>
     <div class="dash-kpi-body">
-      <div class="dash-kpi-label">إجمالي العملاء</div>
+      <div class="dash-kpi-label">{{ _('إجمالي العملاء') }}</div>
       <div class="dash-kpi-value">{{ stats.customers | default(0) }}</div>
       <div class="dash-kpi-sub">
         جميع الحسابات المسجلة
@@ -542,17 +542,17 @@
       <span class="dash-section-icon" aria-hidden="true">
         <i class="fa-solid fa-shield-heart"></i>
       </span>
-      <h2 class="dash-section-title" id="checks-heading">آخر فحوصات الترخيص</h2>
+      <h2 class="dash-section-title" id="checks-heading">{{ _('آخر فحوصات الترخيص') }}</h2>
       <a href="{{ url_for('admin.checks_list') }}" class="dash-section-action">
         عرض الكل
         <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
       </a>
     </div>
     <div class="dash-table-wrap">
-      <table class="dash-table" aria-label="آخر فحوصات الترخيص">
+      <table class="dash-table" aria-label="{{ _('آخر فحوصات الترخيص') }}">
         <thead>
           <tr>
-            <th scope="col">مفتاح الترخيص</th>
+            <th scope="col">{{ _('مفتاح الترخيص') }}</th>
             <th scope="col">النتيجة</th>
             <th scope="col">الخادم</th>
             <th scope="col">الوقت</th>
@@ -603,19 +603,19 @@
       <span class="dash-section-icon" aria-hidden="true">
         <i class="fa-solid fa-rotate"></i>
       </span>
-      <h2 class="dash-section-title" id="renewals-heading">آخر التجديدات</h2>
+      <h2 class="dash-section-title" id="renewals-heading">{{ _('آخر التجديدات') }}</h2>
       <a href="{{ url_for('admin.renewals_list') }}" class="dash-section-action">
         عرض الكل
         <i class="fa-solid fa-arrow-left fa-xs" aria-hidden="true"></i>
       </a>
     </div>
     <div class="dash-table-wrap">
-      <table class="dash-table" aria-label="آخر التجديدات">
+      <table class="dash-table" aria-label="{{ _('آخر التجديدات') }}">
         <thead>
           <tr>
-            <th scope="col">العميل</th>
-            <th scope="col">المدة</th>
-            <th scope="col">المبلغ</th>
+            <th scope="col">{{ _('العميل') }}</th>
+            <th scope="col">{{ _('المدة') }}</th>
+            <th scope="col">{{ _('المبلغ') }}</th>
             <th scope="col">الوقت</th>
           </tr>
         </thead>
@@ -653,10 +653,10 @@
     <span class="dash-section-icon" aria-hidden="true">
       <i class="fa-solid fa-server"></i>
     </span>
-    <h2 class="dash-section-title" id="health-heading">حالة النظام</h2>
+    <h2 class="dash-section-title" id="health-heading">{{ _('حالة النظام') }}</h2>
     <a href="{{ url_for('admin.settings_page') }}" class="dash-section-action">
       <i class="fa-solid fa-gear fa-xs" aria-hidden="true"></i>
-      الإعدادات
+      {{ _('الإعدادات') }}
     </a>
   </div>
   <div class="adm-detail-list">

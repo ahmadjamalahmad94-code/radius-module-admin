@@ -57,7 +57,7 @@
         </form>
       {% endif %}
       <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}">
-        <i class="fa-solid fa-pen"></i> تعديل
+        <i class="fa-solid fa-pen"></i> {{ _('تعديل') }}
       </a>
       {% if is_super_admin %}
       <a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}">
@@ -80,10 +80,10 @@
 <div class="hub-grid-2">
   {% call hub.section("ملخص العميل", icon="id-card") %}
     <div class="hub-detail-list">
-      <div><span>الحالة</span><strong><span class="badge {{ customer.status|badge_class }}">{{ customer.status|status_label }}</span></strong></div>
+      <div><span>{{ _('الحالة') }}</span><strong><span class="badge {{ customer.status|badge_class }}">{{ customer.status|status_label }}</span></strong></div>
       <div><span>المسؤول</span><strong>{{ customer.contact_name or '—' }}</strong></div>
       <div><span>البريد</span><strong class="ltr">{{ customer.email or '—' }}</strong></div>
-      <div><span>الهاتف</span><strong class="ltr">{{ customer.phone or '—' }}</strong></div>
+      <div><span>{{ _('الهاتف') }}</span><strong class="ltr">{{ customer.phone or '—' }}</strong></div>
       <div><span>الموقع</span><strong>{{ customer.city }} {{ customer.country }}</strong></div>
       <div><span>رابط الريدياس / الخادم</span><strong class="mono">{{ customer.runtime_url or '—' }}</strong></div>
       <div><span>إصدار الدخول</span><strong class="num">{{ users_version }}</strong></div>
@@ -110,8 +110,8 @@
         <tr>
           <th>المستخدم</th>
           <th>البريد</th>
-          <th>الدور</th>
-          <th>الحالة</th>
+          <th>{{ _('الدور') }}</th>
+          <th>{{ _('الحالة') }}</th>
           <th class="num">إصدار الدخول</th>
           <th class="date">آخر تغيير</th>
           <th></th>
@@ -140,7 +140,7 @@
           <td>
             <div class="hub-actions">
               <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.customer_user_edit', customer_id=customer.id, user_id=user.id) }}">
-                <i class="fa-solid fa-pen"></i> تعديل
+                <i class="fa-solid fa-pen"></i> {{ _('تعديل') }}
               </a>
               <details class="control-details" style="display:inline-block;min-width:220px">
                 <summary class="hub-btn hub-btn--secondary hub-btn--sm" style="list-style:none;cursor:pointer">
@@ -153,7 +153,7 @@
                     <input class="hub-input" name="password" type="password" minlength="8" required autocomplete="new-password">
                   </div>
                   <div class="hub-field">
-                    <label>تأكيد كلمة المرور</label>
+                    <label>{{ _('تأكيد كلمة المرور') }}</label>
                     <input class="hub-input" name="password_confirm" type="password" minlength="8" required autocomplete="new-password">
                     <div class="hub-field-hint">ستحفظ لوحة التراخيص نسخة مشفرة فقط وتزيد إصدار الدخول.</div>
                   </div>
@@ -165,12 +165,12 @@
               {% if user.active %}
                 <form method="post" action="{{ url_for('admin.customer_user_disable', customer_id=customer.id, user_id=user.id) }}" style="display:inline">
                   {{ csrf_input() }}
-                  <button class="hub-btn hub-btn--danger hub-btn--sm" type="submit"><i class="fa-solid fa-pause"></i> تعطيل</button>
+                  <button class="hub-btn hub-btn--danger hub-btn--sm" type="submit"><i class="fa-solid fa-pause"></i> {{ _('تعطيل') }}</button>
                 </form>
               {% else %}
                 <form method="post" action="{{ url_for('admin.customer_user_enable', customer_id=customer.id, user_id=user.id) }}" style="display:inline">
                   {{ csrf_input() }}
-                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> تفعيل</button>
+                  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> {{ _('تفعيل') }}</button>
                 </form>
               {% endif %}
             </div>
@@ -196,10 +196,10 @@
     <table class="hub-table">
       <thead>
         <tr>
-          <th>اسم المستخدم</th>
-          <th>الدور</th>
+          <th>{{ _('اسم المستخدم') }}</th>
+          <th>{{ _('الدور') }}</th>
           <th>سوبر</th>
-          <th>الحالة</th>
+          <th>{{ _('الحالة') }}</th>
           <th>المصدر</th>
           <th>آخر ظهور</th>
           <th>تحكم</th>
@@ -272,8 +272,8 @@
       <thead>
         <tr>
           <th>الخدمة</th>
-          <th>الحالة</th>
-          <th>الوصف</th>
+          <th>{{ _('الحالة') }}</th>
+          <th>{{ _('الوصف') }}</th>
           <th>الحدود</th>
           <th>تحكم</th>
         </tr>
@@ -308,9 +308,9 @@
                 <input type="hidden" name="limits_json" value='{{ ent.limits_json if ent else "{}" }}'>
                 <input type="hidden" name="config_json" value='{{ ent.config_json if ent else "{}" }}'>
               <input type="hidden" name="notes" value="{{ ent.notes if ent else '' }}">
-              <button class="hub-btn hub-btn--primary hub-btn--sm" name="action" value="activate" type="submit">تفعيل</button>
+              <button class="hub-btn hub-btn--primary hub-btn--sm" name="action" value="activate" type="submit">{{ _('تفعيل') }}</button>
               <button class="hub-btn hub-btn--secondary hub-btn--sm" name="action" value="suspend" type="submit">تعليق</button>
-              <button class="hub-btn hub-btn--danger hub-btn--sm" name="action" value="disable" type="submit">تعطيل</button>
+              <button class="hub-btn hub-btn--danger hub-btn--sm" name="action" value="disable" type="submit">{{ _('تعطيل') }}</button>
             </form>
             <details class="cd-advanced">
               <summary><i class="fa-solid fa-sliders"></i> تعديل متقدم</summary>
@@ -318,7 +318,7 @@
                 {{ csrf_input() }}
                 <input type="hidden" name="action" value="save">
                 <div class="hub-field">
-                  <label>الحالة</label>
+                  <label>{{ _('الحالة') }}</label>
                   <select class="hub-select" name="status">
                     {% for st in ['active','suspended','expired','disabled'] %}
                       <option value="{{ st }}" {% if ent and ent.status == st %}selected{% endif %}>{{ st|status_label }}</option>
@@ -407,7 +407,7 @@
   {% call hub.section("خدمة تغيير العنوان والشبكة الخاصة", icon="shield-halved", meta='<a class="hub-btn hub-btn--secondary hub-btn--sm" href="' ~ url_for('admin.customer_vpn_service', customer_id=customer.id) ~ '"><i class="fa-solid fa-gauge"></i> إدارة السرعة والحدود</a>') %}
     {% set vpn = contract.services.ip_change_vpn %}
     <div class="hub-detail-list">
-      <div><span>الحالة</span><strong><span class="badge {{ vpn.status|badge_class }}">{{ vpn.status|status_label }}</span></strong></div>
+      <div><span>{{ _('الحالة') }}</span><strong><span class="badge {{ vpn.status|badge_class }}">{{ vpn.status|status_label }}</span></strong></div>
       <div><span>سرعة التحميل</span><strong class="num">{{ vpn.download_mbps|default('—') }} ميجابت/ثانية</strong></div>
       <div><span>سرعة الرفع</span><strong class="num">{{ vpn.upload_mbps|default('—') }} ميجابت/ثانية</strong></div>
       <div><span>عدد مستخدمي الشبكة الخاصة</span><strong class="num">{{ vpn.max_vpn_users|default('—') }}</strong></div>
@@ -447,7 +447,7 @@
         <button type="button"
                 class="hub-btn hub-btn--secondary hub-btn--sm"
                 onclick="copyActivationToken()">
-          <i class="fa-regular fa-copy"></i> نسخ
+          <i class="fa-regular fa-copy"></i> {{ _('نسخ') }}
         </button>
       </div>
       <p id="activation-token-expiry" class="hub-hint" style="margin-top:.4rem"></p>
@@ -498,10 +498,10 @@
     <table class="hub-table">
       <thead>
         <tr>
-          <th>المفتاح</th>
+          <th>{{ _('المفتاح') }}</th>
           <th>الخطة</th>
-          <th>الحالة</th>
-          <th class="date">ينتهي في</th>
+          <th>{{ _('الحالة') }}</th>
+          <th class="date">{{ _('ينتهي في') }}</th>
           <th></th>
         </tr>
       </thead>
@@ -514,7 +514,7 @@
           <td class="date">{{ lic.expires_at|date }}</td>
           <td>
             <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin.license_detail', license_id=lic.id) }}">
-              <i class="fa-solid fa-eye"></i> عرض
+              <i class="fa-solid fa-eye"></i> {{ _('عرض') }}
             </a>
           </td>
         </tr>
@@ -531,7 +531,7 @@
   {% call hub.section("طلبات الدفع", icon="credit-card") %}
     <div class="hub-table-wrap">
       <table class="hub-table">
-        <thead><tr><th>المرجع</th><th>الغرض</th><th class="num">المبلغ</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th>المرجع</th><th>الغرض</th><th class="num">{{ _('المبلغ') }}</th><th>{{ _('الحالة') }}</th><th></th></tr></thead>
         <tbody>
         {% for req in payment_requests %}
           <tr>
@@ -556,7 +556,7 @@
   {% call hub.section("طلبات الخدمات", icon="list-check") %}
     <div class="hub-table-wrap">
       <table class="hub-table">
-        <thead><tr><th>الطلب</th><th>الخدمة</th><th>النوع</th><th>الحالة</th><th class="date">الوقت</th><th></th></tr></thead>
+        <thead><tr><th>الطلب</th><th>الخدمة</th><th>{{ _('النوع') }}</th><th>{{ _('الحالة') }}</th><th class="date">الوقت</th><th></th></tr></thead>
         <tbody>
         {% for req in service_requests %}
           <tr>
@@ -602,7 +602,7 @@
         <thead>
           <tr>
             <th>المرجع</th>
-            <th>الحالة</th>
+            <th>{{ _('الحالة') }}</th>
             <th class="num">الحجم</th>
             <th>البصمة (SHA-256)</th>
             <th class="date">وقت الاستلام</th>
@@ -679,7 +679,7 @@
     </div>
     <div class="hub-flex-row" style="gap:8px">
       <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">
-        <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات
+        <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ الإعدادات') }}
       </button>
       {% if hidden_secs %}
         <span class="hub-pill hub-pill--red"><span class="dot"></span>{{ hidden_secs|length }} قسم مخفي</span>

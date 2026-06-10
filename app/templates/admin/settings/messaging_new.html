@@ -206,7 +206,7 @@
     <i class="fa-solid fa-paper-plane"></i>
   </div>
   <div>
-    <div class="sm-hero-title">قنوات التواصل والإشعارات</div>
+    <div class="sm-hero-title">{{ _('قنوات التواصل والإشعارات') }}</div>
     <div class="sm-hero-sub">
       مكان واحد لإدارة قنوات الإرسال (SMS / واتساب / تيليجرام) — لتنبيه المالك بأي تحديث على اللوحة، ولإرسال رسائل للعملاء عند الحاجة.
     </div>
@@ -246,7 +246,7 @@
 
       <label class="sm-toggle-row" for="sm-enabled-{{ ch.channel }}">
         <div class="sm-toggle-info">
-          <div class="sm-toggle-name">تفعيل القناة</div>
+          <div class="sm-toggle-name">{{ _('تفعيل القناة') }}</div>
           <div class="sm-toggle-desc">عند الإيقاف لا تُرسَل أي رسالة عبر هذه القناة حتى لو كانت البيانات مكتملة.</div>
         </div>
         <input class="sm-toggle" type="checkbox"
@@ -329,7 +329,7 @@
 
       <div class="sm-foot">
         <button class="sm-btn-primary" type="submit">
-          <i class="fa-solid fa-floppy-disk"></i> حفظ
+          <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
         </button>
 
         <form method="post" action="{{ url_for('admin_messaging.settings_test_channel', channel=ch.channel) }}"
@@ -338,7 +338,7 @@
           <input type="text" name="recipient" placeholder="رقم/مُعرّف الاختبار" dir="ltr"
                  class="sm-input" style="display:inline-block;width:auto;height:36px;margin-inline-end:var(--cc-sp-4)">
           <button class="sm-btn-test" type="submit">
-            <i class="fa-solid fa-vial"></i> اختبار
+            <i class="fa-solid fa-vial"></i> {{ _('اختبار') }}
           </button>
         </form>
         <span class="sm-hint sm-test-result" id="sm-test-{{ ch.channel }}" style="margin:0"></span>
@@ -354,7 +354,7 @@
     <span class="sm-card-head-icon is-owner" aria-hidden="true">
       <i class="fa-solid fa-bell"></i>
     </span>
-    <span class="sm-card-head-title">إشعارات المالك</span>
+    <span class="sm-card-head-title">{{ _('إشعارات المالك') }}</span>
   </div>
   <div class="sm-card-body">
     <p class="sm-hint" style="margin:0 0 var(--cc-sp-7)">
@@ -475,7 +475,7 @@
 
           <div class="sm-foot">
             <button class="sm-btn-primary" type="submit">
-              <i class="fa-solid fa-floppy-disk"></i> حفظ
+              <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
             </button>
           </div>
         </form>

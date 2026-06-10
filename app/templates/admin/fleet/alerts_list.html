@@ -97,7 +97,7 @@
 <div class="p9-hero">
   <div class="p9-hero-icon" aria-hidden="true"><i class="fa-solid fa-bell"></i></div>
   <div>
-    <div class="p9-hero-title">تنبيهات الأسطول</div>
+    <div class="p9-hero-title">{{ _('تنبيهات الأسطول') }}</div>
     <div class="p9-hero-sub">
       كل حدث مهم في الأسطول — سقوط عقدة، إعادة توزيع، تحديث DNS، تجاوز سعة — يظهر هنا ويُرسَل للمالك على القنوات المُفعَّلة. أزرار «تأكيد القراءة» تُحرِّر الخانة لإطلاق تنبيه جديد عند تكرار الحالة.
     </div>
@@ -129,11 +129,11 @@
       <tr>
         <th>الوقت</th>
         <th>الحدث</th>
-        <th>الخطورة</th>
-        <th>القناة</th>
-        <th>المُستلِم</th>
-        <th>الحالة</th>
-        <th>محاولات</th>
+        <th>{{ _('الخطورة') }}</th>
+        <th>{{ _('القناة') }}</th>
+        <th>{{ _('المُستلِم') }}</th>
+        <th>{{ _('الحالة') }}</th>
+        <th>{{ _('محاولات') }}</th>
         <th></th>
       </tr>
     </thead>
@@ -154,7 +154,7 @@
           {% if a.status in ('queued','sent') %}
           <form method="post" action="{{ url_for('fleet_notify_ui.alert_ack', alert_id=a.id) }}" style="display:inline">
             {{ csrf_input() }}
-            <button type="submit" class="p9-ack-btn"><i class="fa-solid fa-check"></i> تأكيد</button>
+            <button type="submit" class="p9-ack-btn"><i class="fa-solid fa-check"></i> {{ _('تأكيد') }}</button>
           </form>
           {% else %}—{% endif %}
         </td>
