@@ -4,7 +4,9 @@ import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from pathlib import Path
+
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required, super_admin_required
@@ -108,6 +110,17 @@ from ..services.vpn_entitlements import (
 )
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+# FIX #4: server-enforce section visibility. Hidden sections now 404 on
+# direct URL hits in addition to disappearing from the sidebar.
+@bp.before_request
+def _enforce_section_visibility():
+    from flask import request as _req
+    from .section_visibility import is_endpoint_hidden
+    if is_endpoint_hidden(_req.endpoint or ""):
+        abort(404)
+
 
 FEATURES = [
     ("cards", "البطاقات"),
@@ -1909,21 +1922,81 @@ def license_detail(license_id: int):
 
 
 def _effective_services_for_license(lic: License) -> list[dict]:
-    """يبني قائمة الخدمات الفعّالة للترخيص = خدمات الباقة ∪ التفعيلات بالاتفاق الجانبي.
+    """يبني قائمة الخدمات الفعّالة للترخيص.
 
-    يبدأ من قائمة الخدمات الافتراضية (SERVICES_MOCK) كقاعدة، ثم يطبق فوقها
-    سجلات LicenseServiceOverride الخاصة بهذا الترخيص. القاعدة في كل override:
-      - status='active' على خدمة 'unavailable' ⇒ تفعيل بالاتفاق الجانبي (is_granted=True)
-      - أي status آخر يستبدل الحالة الافتراضية للخدمة
-      - max_limit يستبدل الحد الأقصى الافتراضي
+    FIX #6 of the mock-inventory remediation: replaces the previous mock
+    ``current``/``max`` numbers that were rendered as if they were live
+    usage. Behaviour now:
+
+      * Catalogue **metadata** (icon, category label, default max,
+        limits label) comes from ``ServiceCatalogItem.catalog_metadata``
+        when available; ``SERVICES_MOCK`` is the bootstrap seed only.
+      * ``limits.current`` is set to ``None`` — the template renders
+        «بانتظار تفعيل تقارير الاستخدام» instead of a fake number. Real
+        per-cycle counts will land when the customer-radius bridge ships
+        a usage-snapshot producer; see the SEAM below.
+      * ``status`` / ``max_limit`` are still overridden by
+        ``LicenseServiceOverride`` for side-agreement activations.
+
+    SEAM for real usage counts (one place to wire): once the customer
+    radius reports per-service usage via
+    ``POST /api/integration/hoberadius/usage-snapshot/push`` (already
+    implemented at panel side, see ``app/api/routes.py``), look up the
+    current cycle's ``ServiceUsageSnapshot`` for this license's
+    customer and replace ``svc["limits"]["current"] = …``. This is the
+    only function that needs the change.
     """
     from .services_data import SERVICES_MOCK
     import copy
 
     services = copy.deepcopy(SERVICES_MOCK)
+    # Catalogue-metadata enrichment from the DB (when present). The catalogue
+    # is the source of truth for icon/cat_label/default_max; SERVICES_MOCK
+    # is only consulted for service_keys the DB hasn't seen yet.
+    catalogue_by_key: dict[str, dict] = {}
+    try:
+        for item in ServiceCatalogItem.query.all():
+            md = item.catalog_metadata or {}
+            catalogue_by_key[item.service_key] = {
+                "name": md.get("name_ar") or item.title or item.service_key,
+                "description": item.short_description or "",
+                "category": item.category or "",
+                "icon": md.get("icon") or "",
+                "status": (item.status or "active").lower() if item.is_active else (item.status or "unavailable").lower(),
+                "default_max": md.get("default_max"),
+                "limits_label": md.get("limits_label"),
+            }
+    except Exception:  # noqa: BLE001 — DB unavailable (tests) → fall back to MOCK
+        catalogue_by_key = {}
+
     for svc in services:
         svc.setdefault("is_granted", False)
         svc["plan_status"] = svc.get("status", "unavailable")
+
+        # 🩹 KILL THE FAKE CURRENT-USAGE NUMBER. Live values require the
+        # customer-radius bridge producer (see SEAM in docstring above).
+        if svc.get("limits") and isinstance(svc["limits"], dict):
+            svc["limits"] = dict(svc["limits"])
+            svc["limits"]["current"] = None
+
+        # Enrich with real catalogue metadata when the DB has a row.
+        cat = catalogue_by_key.get(svc["key"])
+        if cat:
+            if cat.get("name"):
+                svc["name"] = cat["name"]
+            if cat.get("description"):
+                svc["description"] = cat["description"]
+            if cat.get("category"):
+                svc["category"] = cat["category"]
+            if cat.get("icon"):
+                svc["icon"] = cat["icon"]
+            if cat.get("status"):
+                svc["status"] = cat["status"]
+                svc["plan_status"] = cat["status"]
+            if cat.get("default_max") is not None and svc.get("limits"):
+                svc["limits"]["max"] = cat["default_max"]
+            if cat.get("limits_label") and svc.get("limits"):
+                svc["limits"]["label"] = cat["limits_label"]
 
     overrides = LicenseServiceOverride.query.filter_by(license_id=lic.id).all()
     by_key = {o.service_key: o for o in overrides}
@@ -2174,7 +2247,7 @@ def license_activate(license_id: int):
 
 
 @bp.post("/licenses/<int:license_id>/revoke")
-@login_required
+@super_admin_required          # FIX #7 — terminal action, super-only.
 def license_revoke(license_id: int):
     lic = db.get_or_404(License, license_id)
     set_license_status(lic, "revoked", session.get("admin_id"))
@@ -2315,22 +2388,14 @@ def settings_page():
 @bp.get("/settings/whatsapp")
 @login_required
 def settings_whatsapp():
-    from ..services.whatsapp import cloud_settings as wac
-    wac_state = wac.get_state() if wac.enabled() else {}
-    _wa = {
-        "connected": wac_state.get("connected", False) if wac_state else False,
-        "error": wac_state.get("error") if wac_state else None,
-        "phone_display": wac_state.get("phone_display", "") if wac_state else "",
-        "token_set": bool(wac_state.get("token_set") if wac_state else False),
-        "phone_number_id": wac_state.get("phone_number_id", "") if wac_state else "",
-        "waba_id": wac_state.get("waba_id", "") if wac_state else "",
-        "tpl_renewal_name": wac_state.get("tpl_renewal_name", "") if wac_state else "",
-        "tpl_renewal_lang": wac_state.get("tpl_renewal_lang", "ar") if wac_state else "ar",
-        "tpl_expiry_name": wac_state.get("tpl_expiry_name", "") if wac_state else "",
-        "tpl_expiry_lang": wac_state.get("tpl_expiry_lang", "ar") if wac_state else "ar",
-        "tpl_welcome_name": wac_state.get("tpl_welcome_name", "") if wac_state else "",
-    }
-    return render_template("admin/settings/whatsapp_new.html", whatsapp=_wa)
+    """Legacy URL — redirect to the REAL WhatsApp Cloud settings panel on
+    the main Settings page. The old standalone whatsapp_new.html template
+    was a dead duplicate (every form posted to ``action="#"``). The live
+    handlers (``whatsapp_cloud_save/test/reveal``) read state from
+    ``cloud_settings.get_state()`` and write through the encrypted Setting
+    store — they live inline in ``settings_page`` under the anchor below.
+    """
+    return redirect(url_for("admin.settings_page") + "#whatsapp-cloud")
 
 
 @bp.route("/settings/sections", methods=["GET", "POST"])
@@ -2365,6 +2430,322 @@ def settings_admins():
         "admin/settings/admins_new.html",
         admins=[_AdminProxy(a) for a in admins],
     )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# /settings/admins — CRUD wired (FIX #1 of mock-inventory remediation).
+#
+# Owner-rule: every admin operation comes from the UI; no terminal.
+# Auth: super_admin_required — managing admins must not be open to operators.
+# Audit: every mutation logged via audit().
+# UX: username derived from email's local part (the UI hides the column);
+#     password ≥ 8 chars on create; optional on edit.
+# Role mapping: the template offers four labels (super_admin / operator /
+#     support / viewer). The auth model has two tiers (is_super_admin), so
+#     "super_admin" → True, everything else → False. The non-super tiers
+#     differ only in UI semantics today — when finer-grained roles ship the
+#     existing `is_super_admin` boolean plus a future `role_key` column slots
+#     in without breaking these handlers.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _admin_role_to_super(role: str) -> bool:
+    """Map the UI role choice onto the binary auth tier."""
+    return (role or "").strip().lower() == "super_admin"
+
+
+def _admin_validate_password(password: str) -> str | None:
+    if len(password) < 8:
+        return "كلمة المرور يجب أن تكون 8 أحرف على الأقل."
+    return None
+
+
+def _admin_resolve_username(email: str, full_name: str) -> str:
+    """Derive a stable username from email's local part; fall back to full name."""
+    base = ""
+    if email and "@" in email:
+        base = email.split("@", 1)[0]
+    if not base:
+        base = (full_name or "").strip().replace(" ", ".").lower()
+    base = re.sub(r"[^a-zA-Z0-9._-]", "", base)[:60].lower() or "admin"
+    return base
+
+
+@bp.post("/settings/admins")
+@super_admin_required
+def settings_admins_post():
+    """Single POST endpoint — branches on the form's ``action`` field
+    (create / edit / enable / disable / delete) so the template's existing
+    hidden ``action`` input keeps working."""
+    from ..models import Admin as _Admin
+
+    action = (request.form.get("action") or "").strip().lower()
+    me = current_admin()
+
+    # ─── CREATE ────────────────────────────────────────────────────────
+    if action == "create":
+        full_name = (request.form.get("full_name") or "").strip()[:160]
+        email = (request.form.get("email") or "").strip().lower()[:160]
+        password = request.form.get("password") or ""
+        role = (request.form.get("role") or "operator").strip().lower()
+        if not full_name:
+            flash("الاسم الكامل مطلوب.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        if not email or "@" not in email:
+            flash("البريد الإلكتروني غير صالح.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        err = _admin_validate_password(password)
+        if err:
+            flash(err, "error")
+            return redirect(url_for("admin.settings_admins"))
+        if _Admin.query.filter(func.lower(_Admin.email) == email).first():
+            flash("البريد الإلكتروني مستخدم بالفعل.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        username = _admin_resolve_username(email, full_name)
+        # Disambiguate username collisions deterministically.
+        if _Admin.query.filter_by(username=username).first():
+            i = 2
+            while _Admin.query.filter_by(username=f"{username}{i}").first():
+                i += 1
+            username = f"{username}{i}"
+        admin = _Admin(
+            username=username,
+            email=email,
+            full_name=full_name,
+            active=True,
+            is_super_admin=_admin_role_to_super(role),
+        )
+        admin.set_password(password)
+        db.session.add(admin)
+        db.session.flush()
+        audit(
+            "admin_user_created", "admin", str(admin.id),
+            f"تم إنشاء مشرف جديد {admin.username} ({admin.full_name}) — الدور: {role}",
+            metadata={"username": admin.username, "email": admin.email, "role": role,
+                      "is_super_admin": admin.is_super_admin},
+        )
+        db.session.commit()
+        flash(f"تم إنشاء المشرف «{admin.full_name}».", "success")
+        return redirect(url_for("admin.settings_admins"))
+
+    # ─── EDIT ──────────────────────────────────────────────────────────
+    if action == "edit":
+        target_username = (request.form.get("edit_username") or "").strip()
+        admin = _Admin.query.filter_by(username=target_username).first()
+        if admin is None:
+            flash("المشرف غير موجود.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        full_name = (request.form.get("full_name") or "").strip()[:160]
+        email = (request.form.get("email") or "").strip().lower()[:160]
+        role = (request.form.get("role") or "operator").strip().lower()
+        password = request.form.get("password") or ""
+        if not full_name:
+            flash("الاسم الكامل مطلوب.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        if not email or "@" not in email:
+            flash("البريد الإلكتروني غير صالح.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        if _Admin.query.filter(
+            func.lower(_Admin.email) == email, _Admin.id != admin.id
+        ).first():
+            flash("البريد الإلكتروني مستخدم لمشرف آخر.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        # Prevent self-demotion to non-super when no other super exists — would
+        # lock the panel out of super-only routes.
+        new_super = _admin_role_to_super(role)
+        if me and me.id == admin.id and admin.is_super_admin and not new_super:
+            other_super = _Admin.query.filter(
+                _Admin.is_super_admin.is_(True), _Admin.id != admin.id,
+                _Admin.active.is_(True),
+            ).count()
+            if other_super == 0:
+                flash("لا يمكنك خفض رتبة نفسك — أنت المسؤول العام الوحيد المُفعَّل.", "error")
+                return redirect(url_for("admin.settings_admins"))
+        admin.full_name = full_name
+        admin.email = email
+        admin.is_super_admin = new_super
+        if password:
+            err = _admin_validate_password(password)
+            if err:
+                flash(err, "error")
+                return redirect(url_for("admin.settings_admins"))
+            admin.set_password(password)
+        audit(
+            "admin_user_updated", "admin", str(admin.id),
+            f"تم تحديث المشرف {admin.username} ({admin.full_name})",
+            metadata={"role": role, "is_super_admin": admin.is_super_admin,
+                      "password_changed": bool(password)},
+        )
+        db.session.commit()
+        flash(f"تم تحديث المشرف «{admin.full_name}».", "success")
+        return redirect(url_for("admin.settings_admins"))
+
+    # ─── ENABLE / DISABLE ──────────────────────────────────────────────
+    if action in {"enable", "disable"}:
+        target_username = (request.form.get("username") or "").strip()
+        admin = _Admin.query.filter_by(username=target_username).first()
+        if admin is None:
+            flash("المشرف غير موجود.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        if me and me.id == admin.id and action == "disable":
+            flash("لا يمكنك إيقاف حسابك الحالي.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        admin.active = (action == "enable")
+        audit(
+            f"admin_user_{action}d", "admin", str(admin.id),
+            f"تم {'تفعيل' if action == 'enable' else 'إيقاف'} المشرف {admin.username}",
+        )
+        db.session.commit()
+        flash(
+            f"تم {'تفعيل' if action == 'enable' else 'إيقاف'} المشرف «{admin.full_name or admin.username}».",
+            "success",
+        )
+        return redirect(url_for("admin.settings_admins"))
+
+    # ─── DELETE ────────────────────────────────────────────────────────
+    if action == "delete":
+        target_username = (request.form.get("username") or "").strip()
+        admin = _Admin.query.filter_by(username=target_username).first()
+        if admin is None:
+            flash("المشرف غير موجود.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        if me and me.id == admin.id:
+            flash("لا يمكنك حذف حسابك الحالي.", "error")
+            return redirect(url_for("admin.settings_admins"))
+        # Refuse deletion of the last active super-admin.
+        if admin.is_super_admin:
+            other_super = _Admin.query.filter(
+                _Admin.is_super_admin.is_(True), _Admin.id != admin.id,
+                _Admin.active.is_(True),
+            ).count()
+            if other_super == 0:
+                flash("لا يمكن حذف المسؤول العام الأخير المُفعَّل.", "error")
+                return redirect(url_for("admin.settings_admins"))
+        display = admin.full_name or admin.username
+        audit(
+            "admin_user_deleted", "admin", str(admin.id),
+            f"تم حذف المشرف {admin.username} ({display})",
+            metadata={"email": admin.email, "is_super_admin": admin.is_super_admin},
+        )
+        db.session.delete(admin)
+        db.session.commit()
+        flash(f"تم حذف المشرف «{display}».", "success")
+        return redirect(url_for("admin.settings_admins"))
+
+    flash("إجراء غير معروف.", "error")
+    return redirect(url_for("admin.settings_admins"))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# /settings/section — unified handler for site-info / payments / email forms
+# on the General Settings page (FIX #2 of mock-inventory remediation).
+#
+# The template renders one <form> per panel with a hidden ``section`` field.
+# Each panel's keys are whitelisted below so a malicious POST can't smuggle
+# arbitrary keys into the ``Setting`` table.
+#
+# Logo upload: persisted under app/static/uploads/site_logo.<ext> and the
+# URL written to the ``site_logo`` Setting.
+#
+# SMTP password: encrypted at rest with the existing WHATSAPP_FERNET_KEY
+# (same pattern as the WhatsApp/CHR/Fleet secrets vault). Never echoed.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+_SETTINGS_SECTION_KEYS = {
+    "site_info": (
+        "site_name", "site_tagline", "site_address",
+        "support_email", "support_phone", "site_url", "timezone",
+    ),
+    "payment": (
+        "default_currency", "tax_rate", "grace_days", "invoice_prefix",
+        "gateway_cash", "gateway_bank", "gateway_stripe",
+        "gateway_paypal", "gateway_whatsapp",
+    ),
+    "email": (
+        "smtp_host", "smtp_port", "smtp_username",
+        "from_name", "from_email", "email_signature",
+    ),
+}
+
+# Settings keys whose values are booleans (checkbox: present="1", absent="").
+_SETTINGS_BOOL_KEYS = {
+    "gateway_cash", "gateway_bank", "gateway_stripe",
+    "gateway_paypal", "gateway_whatsapp",
+}
+
+# Settings keys whose values must be encrypted at rest.
+_SETTINGS_SECRET_KEYS = {"smtp_password"}
+
+# Allowed image MIME types + extension map for the logo upload.
+_LOGO_EXT_BY_MIME = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
+_LOGO_MAX_BYTES = 500 * 1024  # 500 KB (matches the template hint)
+
+
+@bp.post("/settings/section")
+@login_required
+def settings_section_save():
+    section = (request.form.get("section") or "").strip().lower()
+    allowed = _SETTINGS_SECTION_KEYS.get(section)
+    if not allowed:
+        flash("قسم الإعدادات غير معروف.", "error")
+        return redirect(url_for("admin.settings_page"))
+
+    # ─── Logo upload (site_info panel) ────────────────────────────────
+    if section == "site_info":
+        logo = request.files.get("site_logo")
+        if logo and getattr(logo, "filename", ""):
+            ext = _LOGO_EXT_BY_MIME.get((logo.mimetype or "").lower())
+            if ext is None:
+                flash("صيغة الشعار غير مدعومة. اختر PNG أو SVG أو JPG.", "error")
+                return redirect(url_for("admin.settings_page"))
+            # Read once + size-cap before writing.
+            blob = logo.read(_LOGO_MAX_BYTES + 1)
+            if len(blob) > _LOGO_MAX_BYTES:
+                flash("الشعار أكبر من 500 كيلوبايت. اختصره وأعد المحاولة.", "error")
+                return redirect(url_for("admin.settings_page"))
+            uploads_dir = Path(current_app.static_folder) / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            target = uploads_dir / f"site_logo{ext}"
+            try:
+                target.write_bytes(blob)
+            except OSError as exc:
+                current_app.logger.warning("settings_section: logo write failed: %s", exc)
+                flash("تعذّر حفظ ملف الشعار على الخادم.", "error")
+                return redirect(url_for("admin.settings_page"))
+            _set_setting("site_logo", url_for("static", filename=f"uploads/site_logo{ext}"))
+
+    # ─── Whitelisted text/bool keys ────────────────────────────────────
+    for key in allowed:
+        if key in _SETTINGS_BOOL_KEYS:
+            _set_setting(key, "1" if request.form.get(key) else "")
+        else:
+            value = (request.form.get(key) or "").strip()[:500]
+            _set_setting(key, value)
+
+    # ─── Email panel — encrypt SMTP password if provided ───────────────
+    if section == "email":
+        new_password = (request.form.get("smtp_password") or "").strip()
+        if new_password:
+            try:
+                from ..services.whatsapp.crypto import encrypt_secret, WhatsAppCryptoError
+                _set_setting("smtp_password", encrypt_secret(new_password))
+            except WhatsAppCryptoError:
+                flash("لم يُضبط مفتاح التشفير على الخادم — راجع إعداد WHATSAPP_FERNET_KEY.", "error")
+                return redirect(url_for("admin.settings_page"))
+
+    audit("settings_section_updated", "settings", section, f"تم حفظ قسم الإعدادات {section}",
+          metadata={"section": section})
+    db.session.commit()
+    flash("تم حفظ الإعدادات.", "success")
+    return redirect(url_for("admin.settings_page"))
 
 
 @bp.post("/settings")
@@ -2872,7 +3253,7 @@ def payment_request_detail(payment_request_id: int):
 
 
 @bp.post("/payments/requests/<int:payment_request_id>/approve")
-@login_required
+@super_admin_required          # FIX #7 — financial action; super-only.
 def payment_request_approve(payment_request_id: int):
     payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
     try:
@@ -2900,7 +3281,7 @@ def payment_request_approve(payment_request_id: int):
 
 
 @bp.post("/payments/requests/<int:payment_request_id>/reject")
-@login_required
+@super_admin_required          # FIX #7 — financial action; super-only.
 def payment_request_reject(payment_request_id: int):
     payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
     try:

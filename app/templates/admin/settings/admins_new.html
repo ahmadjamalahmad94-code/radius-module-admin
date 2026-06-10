@@ -520,7 +520,8 @@
               </button>
 
               {% if admin.enabled %}
-              <form method="post" action="#" style="display:contents">
+              <form method="post" action="{{ url_for('admin.settings_admins_post') }}" style="display:contents"
+                    data-sa-confirm="إيقاف المشرف «{{ admin.full_name or admin.username }}» سيمنعه من الدخول حتى تُعيد تفعيله. هل تريد المتابعة؟">
                 {{ csrf_input() }}
                 <input type="hidden" name="action" value="disable">
                 <input type="hidden" name="username" value="{{ admin.username }}">
@@ -531,7 +532,7 @@
                 </button>
               </form>
               {% else %}
-              <form method="post" action="#" style="display:contents">
+              <form method="post" action="{{ url_for('admin.settings_admins_post') }}" style="display:contents">
                 {{ csrf_input() }}
                 <input type="hidden" name="action" value="enable">
                 <input type="hidden" name="username" value="{{ admin.username }}">
@@ -584,7 +585,7 @@
     </div>
 
     <div class="sa-modal-body">
-      <form method="post" action="#" id="sa-admin-form">
+      <form method="post" action="{{ url_for('admin.settings_admins_post') }}" id="sa-admin-form">
         {{ csrf_input() }}
         <input type="hidden" name="action" value="create" id="sa-form-action">
         <input type="hidden" name="edit_username" id="sa-edit-username">
@@ -669,11 +670,32 @@
 </div>
 
 {# نموذج الحذف المخفي #}
-<form method="post" action="#" id="sa-delete-form" style="display:none">
+<form method="post" action="{{ url_for('admin.settings_admins_post') }}" id="sa-delete-form" style="display:none">
   {{ csrf_input() }}
   <input type="hidden" name="action" value="delete">
   <input type="hidden" name="username" id="sa-delete-username">
 </form>
+
+{# Styled confirm dialog — replaces native confirm() for delete + disable #}
+<div id="sa-confirm" role="dialog" aria-modal="true"
+     style="position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.35)">
+  <div style="background:#fff;border-radius:14px;padding:20px 22px;max-width:440px;width:92%;box-shadow:0 24px 48px -20px rgba(15,23,42,.4)">
+    <div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <i class="fa-solid fa-triangle-exclamation" style="color:#b45309"></i> تأكيد
+    </div>
+    <div id="sa-confirm-msg" style="font-size:13px;color:#1f2937;line-height:1.6;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" id="sa-confirm-cancel"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        إلغاء
+      </button>
+      <button type="button" id="sa-confirm-ok"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        متابعة
+      </button>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
 
@@ -722,12 +744,60 @@
     openModal();
   };
 
-  /* تأكيد الحذف */
+  /* Styled confirm dialog (replaces native confirm) */
+  var confirmEl    = document.getElementById('sa-confirm');
+  var confirmMsg   = document.getElementById('sa-confirm-msg');
+  var confirmOk    = document.getElementById('sa-confirm-ok');
+  var confirmCancel= document.getElementById('sa-confirm-cancel');
+
+  function styledConfirm(message) {
+    return new Promise(function(resolve) {
+      if (!confirmEl) return resolve(true);
+      confirmMsg.textContent = message || 'هل أنت متأكد؟';
+      confirmEl.style.display = 'flex';
+      function close(r) {
+        confirmEl.style.display = 'none';
+        confirmOk.removeEventListener('click', onOk);
+        confirmCancel.removeEventListener('click', onCancel);
+        confirmEl.removeEventListener('click', onBackdrop);
+        document.removeEventListener('keydown', onKey);
+        resolve(r);
+      }
+      function onOk()    { close(true); }
+      function onCancel(){ close(false); }
+      function onBackdrop(e) { if (e.target === confirmEl) close(false); }
+      function onKey(e)  { if (e.key === 'Escape') close(false); }
+      confirmOk.addEventListener('click', onOk);
+      confirmCancel.addEventListener('click', onCancel);
+      confirmEl.addEventListener('click', onBackdrop);
+      document.addEventListener('keydown', onKey);
+    });
+  }
+
+  /* تأكيد الحذف — يستدعي الحوار المُنسَّق بدل confirm الأصلي */
   window.saConfirmDelete = function(username, displayName) {
-    if (!confirm('هل أنت متأكد من حذف المشرف «' + displayName + '»؟ لا يمكن التراجع عن هذا الإجراء.')) return;
-    document.getElementById('sa-delete-username').value = username;
-    document.getElementById('sa-delete-form').submit();
+    styledConfirm('هل أنت متأكد من حذف المشرف «' + displayName + '»؟ لا يمكن التراجع عن هذا الإجراء.')
+      .then(function(ok) {
+        if (!ok) return;
+        document.getElementById('sa-delete-username').value = username;
+        document.getElementById('sa-delete-form').submit();
+      });
   };
+
+  /* Intercept any form carrying data-sa-confirm (e.g. disable) */
+  document.addEventListener('submit', function(e) {
+    var f = e.target;
+    if (!f || !f.getAttribute) return;
+    var msg = f.getAttribute('data-sa-confirm');
+    if (!msg) return;
+    if (f.__saConfirmed) return;
+    e.preventDefault();
+    styledConfirm(msg).then(function(ok) {
+      if (!ok) return;
+      f.__saConfirmed = true;
+      f.submit();
+    });
+  }, true);
 
 }());
 </script>

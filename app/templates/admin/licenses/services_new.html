@@ -717,7 +717,10 @@
 
     {% for svc in services %}
     {% set pct = 0 %}
-    {% if svc.limits and svc.limits.max %}
+    {# pct only meaningful when BOTH max + a real current count are present.
+       FIX #6: current=None means "بانتظار تفعيل تقارير الاستخدام" from the
+       customer-radius bridge — never compute a fake percentage from it. #}
+    {% if svc.limits and svc.limits.max and svc.limits.current is not none %}
       {% set pct = [((svc.limits.current / svc.limits.max) * 100) | int, 100] | min %}
     {% endif %}
 
@@ -770,11 +773,16 @@
             <div class="svc-limit-row">
               <span class="svc-limit-label">{{ lim.label }}</span>
               <span class="svc-limit-val">
-                {{ lim.current }}
-                {% if lim.max %}/ {{ lim.max }}{% else %}<span style="font-family:var(--cc-font); font-weight:var(--cc-fw-medium); color:var(--cc-text-mute);">(غير محدود)</span>{% endif %}
+                {% if lim.current is none %}
+                  <span style="color:var(--cc-text-mute);font-weight:var(--cc-fw-medium);font-size:var(--cc-fs-tiny)">— بانتظار تفعيل تقارير الاستخدام —</span>
+                  {% if lim.max %}<span style="color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)"> (الحد الأقصى: {{ lim.max }})</span>{% endif %}
+                {% else %}
+                  {{ lim.current }}
+                  {% if lim.max %}/ {{ lim.max }}{% else %}<span style="font-family:var(--cc-font); font-weight:var(--cc-fw-medium); color:var(--cc-text-mute);">(غير محدود)</span>{% endif %}
+                {% endif %}
               </span>
             </div>
-            {% if lim.max %}
+            {% if lim.max and lim.current is not none %}
               <div class="svc-bar-track" role="progressbar"
                    aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"
                    aria-label="{{ lim.label }}: {{ pct }}%">
@@ -785,6 +793,8 @@
                      style="width:{{ pct }}%"></div>
               </div>
               <div class="svc-bar-pct">{{ pct }}%</div>
+            {% elif lim.max %}
+              <div class="svc-no-limit" style="color:var(--cc-text-mute)">سيظهر شريط النسبة بعد ربط الراديوس لتقارير الاستخدام</div>
             {% else %}
               <div class="svc-no-limit">لا يوجد حد أقصى مضبوط</div>
             {% endif %}

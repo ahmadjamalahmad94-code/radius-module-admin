@@ -1017,6 +1017,19 @@ def _verify_integration_signature(body: dict):
     return None
 
 
+#: Customer-status values that block the bridge end-to-end.
+#:
+#: FIX #5 of mock-inventory remediation. The customer-edit form lets an
+#: admin set ``customer.status`` to any of {pending, active, inactive,
+#: blocked}, but until now the bridge only checked ``license.status``. So
+#: marking a customer "blocked" hid them from the portal yet they kept
+#: receiving the runtime / identity-sync / capacity contracts. This set
+#: defines what counts as "not authorised to operate" — see
+#: ``app/admin/routes.py:_fill_customer`` for the source of truth on
+#: allowed values.
+_BRIDGE_BLOCKED_CUSTOMER_STATUSES = frozenset({"blocked", "inactive", "pending"})
+
+
 def _checked_license_from_integration_body(body: dict):
     try:
         license_key = clean_text(body.get("license_key"), 32).upper()
@@ -1038,6 +1051,28 @@ def _checked_license_from_integration_body(body: dict):
         domain=domain,
         ip_address=client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)),
     )
+    # ─── Customer-status gate (FIX #5) ────────────────────────────────
+    # Run AFTER license resolution so we can read the resolved customer.
+    # We mark the result inactive and emit a clean Arabic reason that every
+    # downstream handler already forwards verbatim in its response shape.
+    customer = getattr(getattr(result, "license", None), "customer", None) if result else None
+    if customer is not None:
+        cstatus = (customer.status or "").strip().lower()
+        if cstatus in _BRIDGE_BLOCKED_CUSTOMER_STATUSES:
+            denial_status = (
+                "customer_pending" if cstatus == "pending"
+                else "customer_blocked"
+            )
+            denial_msg = (
+                "حساب العميل بانتظار التفعيل من الإدارة." if cstatus == "pending"
+                else "حساب العميل موقوف. تواصل مع الدعم."
+            )
+            return None, (jsonify({
+                "ok": False,
+                "status": denial_status,
+                "message": denial_msg,
+                "customer_status": cstatus,
+            }), 403)
     return result, None
 
 

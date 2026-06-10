@@ -404,7 +404,7 @@
     <span class="sg-card-head-sub">تظهر في العنوان وفي رسائل التواصل مع العملاء</span>
   </div>
   <div class="sg-card-body">
-    <form method="post" action="#" enctype="multipart/form-data">
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}" enctype="multipart/form-data">
       {{ csrf_input() }}
       <input type="hidden" name="section" value="site_info">
 
@@ -527,7 +527,7 @@
     <span class="sg-card-head-sub">العملة، بوابات الدفع المفعّلة، والرسوم الإضافية</span>
   </div>
   <div class="sg-card-body">
-    <form method="post" action="#">
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}">
       {{ csrf_input() }}
       <input type="hidden" name="section" value="payment">
 
@@ -646,7 +646,7 @@
     <span class="sg-card-head-sub">خادم SMTP وقالب الرسائل</span>
   </div>
   <div class="sg-card-body">
-    <form method="post" action="#">
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}">
       {{ csrf_input() }}
       <input type="hidden" name="section" value="email">
 
