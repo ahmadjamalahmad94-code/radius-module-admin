@@ -129,8 +129,10 @@ def fleet_dashboard():
     )
 
 
-# Arabic labels for OnboardingJob.status. Kept here (not in models_onboarding)
-# so the model stays decoupled from UI strings.
+# Arabic labels + "what does this status MEAN" + "what's the next step?".
+# Kept here (not in models_onboarding) so the model stays decoupled from UI
+# strings. Both fields used by fix/fleet-script-view-instructions to make
+# the pending card transparent — no more opaque states for the owner.
 _ONBOARDING_STATUS_AR = {
     "draft":            "مسودة",
     "keys_generated":   "تم توليد المفاتيح",
@@ -141,14 +143,46 @@ _ONBOARDING_STATUS_AR = {
     "failed":           "فشلت",
 }
 
+_ONBOARDING_STATUS_MEANING_AR = {
+    "draft":            "سجلت اللوحة بياناتك ولم تبدأ بعد بتوليد المفاتيح.",
+    "keys_generated":   "أُنشئت مفاتيح WireGuard على اللوحة، والعقدة جاهزة لتوليد السكربت.",
+    "script_generated": "السكربت الكامل لـ RouterOS جاهز للتطبيق على المايكروتيك.",
+    "pushed":           "دُفع السكربت إلى المايكروتيك عبر قناة الإقلاع لمرّة واحدة.",
+    "verifying":        "تتحقق اللوحة من أن العقدة تتصل عبر wg-mgmt وأن RADIUS يعمل.",
+    "active":           "العقدة فعّالة ضمن الأسطول وتستقبل جلسات RADIUS عبر الجسر.",
+    "failed":           "فشلت إحدى مراحل الإعداد — راجع سبب الخطأ أدناه ثم أعد المحاولة.",
+}
+
+_ONBOARDING_NEXT_STEP_AR = {
+    "draft":            "اضغط «متابعة» لتوليد المفاتيح وعقدة CHR الأولية.",
+    "keys_generated":   "اضغط «متابعة» لتوليد السكربت ثم «عرض السكربت» لتثبيته على المايكروتيك.",
+    "script_generated": "اضغط «عرض السكربت» لنسخه/تنزيله وتثبيته على المايكروتيك.",
+    "pushed":           "اللوحة تتابع — لا حاجة لإجراء يدوي.",
+    "verifying":        "في انتظار اتصال wg-mgmt من العقدة. تأكّد أن السكربت يعمل عليها.",
+    "active":           "كل شيء يعمل — العقدة فعّالة.",
+    "failed":           "اضغط «إعادة المحاولة» بعد إصلاح السبب، أو «حذف» للإلغاء.",
+}
+
+
+# Statuses where «عرض السكربت» can be shown on the row (the renderer needs a
+# linked chr_id and at least a WireGuard keypair to work). Mirrors
+# ``_SCRIPT_VIEW_OK_STATUSES`` in fleet/registry/routes_onboarding.py.
+_STATUSES_WITH_SCRIPT = frozenset({
+    "keys_generated", "script_generated", "pushed", "verifying", "active",
+})
+
 
 def _onboarding_job_view(job) -> dict:
     """Plain-dict view of an OnboardingJob for the dashboard template."""
     form = job.form_input or {}
+    status = job.status
     return {
         "id": job.id,
-        "status": job.status,
-        "status_label": _ONBOARDING_STATUS_AR.get(job.status, job.status),
+        "status": status,
+        "status_label": _ONBOARDING_STATUS_AR.get(status, status),
+        "status_meaning": _ONBOARDING_STATUS_MEANING_AR.get(status, ""),
+        "next_step": _ONBOARDING_NEXT_STEP_AR.get(status, ""),
+        "has_script": bool(job.chr_id) and status in _STATUSES_WITH_SCRIPT,
         "chr_id": job.chr_id,
         "provider": form.get("provider") or "—",
         "name": form.get("name") or f"#{job.id}",
