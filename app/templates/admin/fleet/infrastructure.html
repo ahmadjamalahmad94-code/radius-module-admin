@@ -163,12 +163,28 @@
 
   <div class="fi-field">
     <label>المفتاح العام للوحة <span style="color:#b91c1c">*</span></label>
-    <input type="text" value="{{ panel_pubkey or '' }}" readonly
-           placeholder="لم يُولَّد بعد — اضغط «توليد مفتاح اللوحة»"
-           style="background:{% if panel_pubkey_is_set %}#ecfdf5{% else %}#fef3c7{% endif %};color:#0f172a">
+    {# dir="ltr" + unicode-bidi: plaintext is essential — without them the
+       trailing '=' of base64 jumps to the visual start in this RTL page,
+       making the key APPEAR reversed. The stored value is correct, but
+       the operator gets confused. Copy/paste still works either way. #}
+    <div style="display:flex;gap:8px;align-items:stretch">
+      <input id="fi-panel-pubkey" type="text" value="{{ panel_pubkey or '' }}" readonly
+             dir="ltr" lang="en"
+             placeholder="لم يُولَّد بعد — اضغط «توليد مفتاح اللوحة»"
+             style="flex:1;text-align:left;unicode-bidi:plaintext;font-family:var(--cc-font-mono);
+                    background:{% if panel_pubkey_is_set %}#ecfdf5{% else %}#fef3c7{% endif %};color:#0f172a">
+      {% if panel_pubkey_is_set %}
+      <button type="button" class="fi-btn fi-btn--secondary"
+              onclick="navigator.clipboard.writeText(document.getElementById('fi-panel-pubkey').value).then(function(){this.textContent='✓ نُسخ';}.bind(this));"
+              title="نسخ المفتاح كاملاً">
+        <i class="fa-solid fa-copy"></i> نسخ
+      </button>
+      {% endif %}
+    </div>
     <div class="fi-hint">
       هذا هو المفتاح العام الذي يظهر في كل سكربت RouterOS. المفتاح الخاص يبقى مشفّراً على الخادم
-      ولا يظهر في أي مكان.
+      ولا يظهر في أي مكان. النص اللاتيني <span dir="ltr">(LTR)</span> — استخدم زر «نسخ» لتجنّب
+      أي التباس بصري بسبب اتجاه الكتابة.
     </div>
   </div>
 
@@ -188,10 +204,15 @@
       <label for="panel_endpoint">نقطة وصول اللوحة (Host:Port) <span style="color:#b91c1c">*</span></label>
       <input type="text" id="panel_endpoint" name="panel_endpoint"
              value="{{ ep.masked if ep.is_set else '' }}"
-             placeholder="مثال: control.hoberadius.com:51820" dir="ltr">
+             dir="ltr" lang="en"
+             style="text-align:left;unicode-bidi:plaintext;font-family:var(--cc-font-mono)"
+             placeholder="&lt;public-ip-or-fqdn&gt;:51820">
       <div class="fi-hint">
-        العنوان العام للوحة (FQDN أو IP) على المنفذ 51820 الذي تتصل به العقد عبر wg-mgmt.
-        لا بد أن يكون قابلاً للوصول من الإنترنت.
+        العنوان العام للوحة (FQDN أو IP) على المنفذ <code>51820</code> الذي تتصل به العقد عبر <code>wg-mgmt</code>.
+        لا بد أن يكون قابلاً للوصول من الإنترنت. <strong>مثال:</strong>
+        <span dir="ltr" style="font-family:var(--cc-font-mono)">203.0.113.55:51820</span>
+        أو <span dir="ltr" style="font-family:var(--cc-font-mono)">control.yourdomain.com:51820</span>.
+        — هذا هو نفس العنوان الذي تظهره <code dir="ltr">wg show wg-mgmt</code> على الخادم.
       </div>
     </div>
     <button type="submit" class="fi-btn fi-btn--primary">
@@ -217,7 +238,9 @@
       <label for="proxy_pubkey">مفتاح الوكيل العام <span style="color:#b91c1c">*</span></label>
       <input type="text" id="proxy_pubkey" name="proxy_pubkey"
              value="{{ pk.masked if pk.is_set else '' }}"
-             placeholder="44 حرفاً base64 ينتهي بـ '='" dir="ltr">
+             dir="ltr" lang="en"
+             style="text-align:left;unicode-bidi:plaintext;font-family:var(--cc-font-mono)"
+             placeholder="44 حرفاً base64 ينتهي بـ =">
       <div class="fi-hint">
         المفتاح العام لـ wg-data الذي ينشره وكيل RADIUS عند تشغيله.
       </div>
@@ -234,8 +257,13 @@
       <label for="proxy_endpoint">نقطة وصول الوكيل (Host:Port) <span style="color:#b91c1c">*</span></label>
       <input type="text" id="proxy_endpoint" name="proxy_endpoint"
              value="{{ pe.masked if pe.is_set else '' }}"
-             placeholder="مثال: proxy.hoberadius.com:51821" dir="ltr">
-      <div class="fi-hint">العنوان العام للوكيل على المنفذ 51821.</div>
+             dir="ltr" lang="en"
+             style="text-align:left;unicode-bidi:plaintext;font-family:var(--cc-font-mono)"
+             placeholder="&lt;proxy-public-ip-or-fqdn&gt;:51821">
+      <div class="fi-hint">
+        العنوان العام للوكيل على المنفذ <code>51821</code>. <strong>مثال:</strong>
+        <span dir="ltr" style="font-family:var(--cc-font-mono)">198.51.100.7:51821</span>.
+      </div>
     </div>
     <button type="submit" class="fi-btn fi-btn--primary">
       <i class="fa-solid fa-floppy-disk"></i> حفظ نقطة الوصول
