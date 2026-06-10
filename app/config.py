@@ -3,8 +3,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_DATABASE_URI = f"sqlite:///{BASE_DIR / 'instance' / 'license_panel.sqlite3'}"
+# Canonical DB path resolution lives in ONE module — see app/db_path.py
+# for the why (split-brain field report) and the validation contract.
+from .db_path import REPO_ROOT, canonical_database_uri
+
+BASE_DIR: Path = REPO_ROOT  # kept for back-compat with older imports
+DEFAULT_DATABASE_URI: str = canonical_database_uri()
 
 
 def _env_bool(name: str, default: bool) -> bool:
