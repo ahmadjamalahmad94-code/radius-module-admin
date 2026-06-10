@@ -21,20 +21,43 @@
      - CLIENT_SUPERNET, DNS_PUSH, GW_LOCAL_ADDR
 
    See ``fleet/registry/script_render.py`` for the binding model and dataclass.
-   The template itself contains NO logic beyond {{ var }} substitution so the
-   ``diff`` between two renders is mechanically a count of substituted vars —
-   the test in ``tests/fleet_p3/test_script_render.py`` asserts exactly that.
+
+   IDEMPOTENCY (fix/fleet-script-idempotent):
+     Every `add` in this script is preceded by `remove [find …]` so the
+     whole .rsc is safe to import twice in a row, or to re-import after a
+     partial first run that already created some of the resources. RouterOS
+     `remove` of an empty find-result is a no-op, so the same pattern works
+     on a virgin CHR. Anchors used:
+
+       - /interface wireguard            → find name="wg-mgmt|wg-data"
+       - /interface wireguard peers      → find interface="wg-mgmt|wg-data"
+       - /ip address                     → find interface="wg-mgmt|wg-data"
+       - /radius                         → find comment="hobe-fleet-radius"
+       - /ip ipsec profile|proposal|
+         mode-config|peer                → find name="hobe-…"
+       - /ip ipsec identity              → find peer="hobe-peer"
+       - /ip firewall nat                → find comment="hobe-fleet-nat-…"
+       - /ip firewall filter             → find comment~"^hobe-fleet-fw-"
+         (regex match — removes ALL hobe-tagged input rules at once)
+
+     `set`-based blocks (/radius incoming, /ppp aaa, /ppp profile, the
+     pptp/sstp/ipsec server enable lines) are intrinsically idempotent.
    ============================================================================ #}
 # ============================================================
-# HobeRadius unified CHR provisioning script  (v1)
-# IDENTICAL across the fleet — only the per-CHR bindings differ.
+# HobeRadius unified CHR provisioning script  (v2, idempotent)
+# Safe to re-import: every resource removes prior copies first.
 # ============================================================
 
 /system identity set name="{{ ROUTER_IDENTITY }}"
 
 # ---- 1. WireGuard CONTROL tunnel (wg-mgmt) -----------------
 # Control/telemetry ONLY. No default route, no NAT, no forwarding over this.
+/interface wireguard peers
+remove [find interface="wg-mgmt"]
+/ip address
+remove [find interface="wg-mgmt"]
 /interface wireguard
+remove [find name="wg-mgmt"]
 add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
 /interface wireguard peers
 add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
@@ -45,7 +68,12 @@ add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/32
 
 # ---- 2. WireGuard DATA path to RADIUS proxy (wg-data) ------
 # Carries ONLY RADIUS 1812/1813 + CoA 3799 to the proxy.
+/interface wireguard peers
+remove [find interface="wg-data"]
+/ip address
+remove [find interface="wg-data"]
 /interface wireguard
+remove [find name="wg-data"]
 add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
 /interface wireguard peers
 add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
@@ -56,9 +84,11 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/32
 
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
+remove [find comment="hobe-fleet-radius"]
 add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
     authentication-port=1812 accounting-port=1813 \
-    src-address={{ WG_DATA_ADDR_IP }} timeout=3s
+    src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
+    comment="hobe-fleet-radius"
 /radius incoming
 # Enable CoA / Disconnect listener so panel can kill/move sessions (RFC 5176)
 set accept=yes port=3799
@@ -99,7 +129,18 @@ set enabled=yes port=443 authentication=mschap2 \
 {% endif %}
 
 # ---- 7. IPsec / IKEv2 server ------------------------------
+# IPsec children reference parents by name — clean child→parent order on
+# remove, then parent→child on add.
+/ip ipsec identity
+remove [find peer="hobe-peer"]
+/ip ipsec peer
+remove [find name="hobe-peer"]
+/ip ipsec mode-config
+remove [find name="hobe-mc"]
+/ip ipsec proposal
+remove [find name="hobe-prop"]
 /ip ipsec profile
+remove [find name="hobe-ike"]
 add name=hobe-ike dh-group=modp2048 enc-algorithm=aes-256 hash-algorithm=sha256
 /ip ipsec proposal
 add name=hobe-prop enc-algorithms=aes-256-cbc,aes-256-gcm pfs-group=modp2048
@@ -107,11 +148,11 @@ add name=hobe-prop enc-algorithms=aes-256-cbc,aes-256-gcm pfs-group=modp2048
 # Address ALSO via RADIUS for IKEv2 (no local pool); identity = vpn.hoberadius.com
 add name=hobe-mc responder=yes
 {% if IKE_CERT_NAME %}
+/ip ipsec peer
+add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
 /ip ipsec identity
 add auth-method=eap-radius generate-policy=port-strict mode-config=hobe-mc \
     peer=hobe-peer certificate={{ IKE_CERT_NAME }}
-/ip ipsec peer
-add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
 {% else %}
 # IPsec identity + peer skipped: no IKEv2 certificate configured on the
 # panel yet. Set IKE_CERT_NAME in /admin/fleet config (and pre-install the
@@ -121,25 +162,30 @@ add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
 # ---- 8. NAT / masquerade to the internet ------------------
 # Client (RADIUS-assigned) range egresses via this CHR's public IP.
 /ip firewall nat
+remove [find comment="hobe-fleet-nat-egress"]
 add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
-    src-address={{ CLIENT_SUPERNET }}     ;# e.g. 10.0.0.0/8 fleet client supernet
+    src-address={{ CLIENT_SUPERNET }} comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
 
 # ---- 9. Firewall: RADIUS/CoA only over wg, never public ---
+# Strip every prior hobe-fleet-fw-* rule in one go, then re-add the current
+# set. The regex remove catches stale rules even if cert config flipped
+# between renders (SSTP/IKE openings come and go).
 /ip firewall filter
-add chain=input in-interface=wg-data protocol=udp dst-port=1812,1813 action=accept
-add chain=input in-interface=wg-data protocol=udp dst-port=3799 action=accept
-add chain=input in-interface=wg-mgmt action=accept comment="control plane"
-add chain=input protocol=udp dst-port=1812,1813,3799 action=drop comment="never public"
+remove [find comment~"^hobe-fleet-fw-"]
+add chain=input in-interface=wg-data protocol=udp dst-port=1812,1813 action=accept comment="hobe-fleet-fw-radius"
+add chain=input in-interface=wg-data protocol=udp dst-port=3799 action=accept           comment="hobe-fleet-fw-coa"
+add chain=input in-interface=wg-mgmt action=accept                                       comment="hobe-fleet-fw-mgmt"
+add chain=input protocol=udp dst-port=1812,1813,3799 action=drop                         comment="hobe-fleet-fw-no-public-radius"
 # Allow VPN protocols inbound on WAN — each gate matches the corresponding
 # server block above (skip the SSTP/IKE openings when their certs aren't
 # configured so we don't expose a dangling port to the internet).
 {% if SSTP_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 action=accept ;# SSTP
+add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 action=accept     comment="hobe-fleet-fw-sstp"
 {% endif %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 action=accept ;# PPTP ctrl
-add chain=input in-interface={{ WAN_IFACE }} protocol=gre action=accept               ;# PPTP data
+add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 action=accept    comment="hobe-fleet-fw-pptp-ctrl"
+add chain=input in-interface={{ WAN_IFACE }} protocol=gre action=accept                  comment="hobe-fleet-fw-pptp-data"
 {% if IKE_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 action=accept ;# IKE
+add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 action=accept comment="hobe-fleet-fw-ike"
 {% endif %}
 
 # ---- 10. control-plane is NOT a data route ----------------
@@ -150,4 +196,5 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 acti
 # CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
 # ============================================================
 # END unified script — bindings above are the ONLY per-CHR delta.
+# Re-importable: every resource above clears its prior copy first.
 # ============================================================
