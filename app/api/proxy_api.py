@@ -182,6 +182,22 @@ def routing_table():
     except Exception:  # noqa: BLE001 — read path must be defensive
         live_apply_enabled = False
 
+    # Phase 7: the opt-in movable set. Lowercased usernames whose per-user
+    # ``movable`` flag is TRUE in fleet_users — this is what the proxy reads to
+    # know who may be relocated by enforcement. Absent/empty ⇒ nobody movable.
+    # See docs/contracts/fleet_api.md §1.1. Defensive: any read failure ⇒ [].
+    try:
+        from fleet.brain.models_session import UserFleet
+        movable_users = sorted({
+            (u or "").strip().lower()
+            for (u,) in db.session.query(UserFleet.username)
+            .filter(UserFleet.movable.is_(True))
+            .all()
+            if u
+        })
+    except Exception:  # noqa: BLE001 — read path must be defensive
+        movable_users = []
+
     return jsonify({
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -189,6 +205,7 @@ def routing_table():
         "routes": routes_out,
         "chr_nodes": chr_list,
         "live_apply_enabled": live_apply_enabled,
+        "movable_users": movable_users,
     })
 
 

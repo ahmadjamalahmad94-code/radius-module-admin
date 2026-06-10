@@ -72,9 +72,17 @@ OFF** and the panel treats any missing/malformed read as OFF.
   "route_count": 5,
   "routes":      [ ... ],
   "chr_nodes":   [ ... ],
-  "live_apply_enabled": false        // NEW — Phase 7
+  "live_apply_enabled": false,       // NEW — Phase 7
+  "movable_users": ["bob@client5"]   // NEW — Phase 7: opt-in movable usernames
 }
 ```
+
+`movable_users` is the list of **lowercased** RADIUS usernames whose per-user
+`movable` flag is TRUE in `fleet_users`. The proxy reads it to know who is opt-in
+relocatable by enforcement (a `move`/`single_session_kill` on a non-movable user
+should be treated as advisory). The list is **additive** and defaults to **empty**
+— absent or empty ⇒ **nobody is movable** (the safe default). A forced failover may
+still override per-user movability fleet-side (see §1.4 / [05](05_LOAD_BALANCER_BRAIN.md) §5.6).
 
 Proxy obligations:
 
