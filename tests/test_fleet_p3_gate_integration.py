@@ -75,7 +75,7 @@ def test_onboarding_real_collaborators_render_and_push(app):
     bootstrap_push.register_transport("api", lambda target: _FakeTransport(target))
     svc = OnboardingService(config=_FLEET_CONST)  # real key/vault/render/push adapters
 
-    job = svc.create_draft(FORM)
+    job = svc.create_draft(FORM, auto_advance=False)
     assert job.status == "draft"
 
     svc.generate_keys(job)  # real wg_keys + real secrets_vault
@@ -106,7 +106,7 @@ def test_push_failure_via_real_pusher_marks_failed(app):
     bootstrap_push.register_transport("api", lambda target: _FailTransport(target))
     svc = OnboardingService(config=_FLEET_CONST)
 
-    job = svc.create_draft({**FORM, "name": "contabo-de-09", "public_ip": "203.0.113.19"})
+    job = svc.create_draft({**FORM, "name": "contabo-de-09", "public_ip": "203.0.113.19"}, auto_advance=False)
     svc.generate_keys(job)
     svc.render_script(job)
     with pytest.raises(OnboardingError):

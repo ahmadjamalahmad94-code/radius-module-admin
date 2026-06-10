@@ -220,7 +220,7 @@ def test_provider_routes_require_login(client):
 # ════════════════════════════ onboarding service ═════════════════════════════
 def test_onboarding_happy_path_stepwise(app):
     svc = _service()
-    job = svc.create_draft(FORM)
+    job = svc.create_draft(FORM, auto_advance=False)
     assert job.status == "draft"
     assert FleetProvider.query.filter_by(name="Contabo").one()  # provider created
 
@@ -247,7 +247,7 @@ def test_onboarding_happy_path_stepwise(app):
 
 def test_onboarding_push_failure_marks_failed_then_retry(app):
     svc = _service(ok=False)
-    job = svc.create_draft(FORM)
+    job = svc.create_draft(FORM, auto_advance=False)
     svc.generate_keys(job)
     svc.render_script(job)
     with pytest.raises(OnboardingError):
@@ -261,7 +261,7 @@ def test_onboarding_push_failure_marks_failed_then_retry(app):
 
 def test_onboarding_illegal_transition(app):
     svc = _service()
-    job = svc.create_draft(FORM)
+    job = svc.create_draft(FORM, auto_advance=False)
     # cannot push straight from draft (must go through keys + script first)
     with pytest.raises(OnboardingError):
         svc.push(job, reach={})
@@ -270,9 +270,9 @@ def test_onboarding_illegal_transition(app):
 
 def test_mgmt_ip_allocation_is_unique(app):
     svc = _service()
-    j1 = svc.create_draft(FORM)
+    j1 = svc.create_draft(FORM, auto_advance=False)
     svc.generate_keys(j1)
-    j2 = svc.create_draft({**FORM, "name": "contabo-de-02", "public_ip": "203.0.113.12"})
+    j2 = svc.create_draft({**FORM, "name": "contabo-de-02", "public_ip": "203.0.113.12"}, auto_advance=False)
     svc.generate_keys(j2)
     ips = {db.session.get(FleetChrNode, j1.chr_id).wg_mgmt_ip,
            db.session.get(FleetChrNode, j2.chr_id).wg_mgmt_ip}
@@ -286,31 +286,27 @@ def test_onboarding_provision_pipeline(app):
 
 
 # ════════════════════════════ onboarding routes ══════════════════════════════
-def test_onboarding_draft_route(auth_client):
+def test_onboarding_submit_auto_advances_and_creates_node(auth_client):
+    # fix/fleet-onboarding-visibility: the submit route auto-advances draft →
+    # keys_generated in the same request (real wg_keys + secrets_vault), so the
+    # CHR node exists + is visible immediately (was: invisible draft).
     r = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM)
     assert r.status_code == 201, r.get_data(as_text=True)
     body = r.get_json()
-    assert body["job"]["status"] == "draft"
-
-
-def test_onboarding_generate_keys_with_real_dependencies(auth_client):
-    # Post the Phase-3 gate, the real wg_keys + secrets_vault modules are merged,
-    # so generate-keys runs the real flow (no 503). Proves the dependency wiring.
-    r = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM)
-    jid = r.get_json()["job"]["id"]
-    r = auth_client.post(f"/admin/fleet/onboarding/{jid}/generate-keys")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    assert r.get_json()["job"]["status"] == "keys_generated"
+    assert body["job"]["status"] == "keys_generated"
+    # The fleet_chr_nodes row was created (status=provisioning).
+    node = FleetChrNode.query.filter_by(name=FORM["name"]).first()
+    assert node is not None and node.status == "provisioning"
 
 
 def test_onboarding_routes_full_flow_with_injected_fakes(auth_client, monkeypatch):
     shared = _service()
     monkeypatch.setattr("fleet.registry.routes_onboarding.build_service", lambda: shared)
 
-    jid = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM).get_json()["job"]["id"]
-
-    r = auth_client.post(f"/admin/fleet/onboarding/{jid}/generate-keys")
-    assert r.status_code == 200 and r.get_json()["job"]["status"] == "keys_generated"
+    # Submit auto-advances to keys_generated (create_draft default auto_advance).
+    body = auth_client.post("/admin/fleet/onboarding/jobs", json=FORM).get_json()
+    jid = body["job"]["id"]
+    assert body["job"]["status"] == "keys_generated"
 
     r = auth_client.post(f"/admin/fleet/onboarding/{jid}/render-script")
     assert r.status_code == 200 and r.get_json()["job"]["status"] == "script_generated"

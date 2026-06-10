@@ -355,7 +355,9 @@ class OnboardingService:
         return _FLEET_CONST_DEFAULTS.get(key, "")
 
     # ── step 0: draft ────────────────────────────────────────────────────────
-    def create_draft(self, form: WizardForm | dict[str, Any]) -> OnboardingJob:
+    def create_draft(
+        self, form: WizardForm | dict[str, Any], *, auto_advance: bool = True,
+    ) -> OnboardingJob:
         """Submit the wizard form → a job + (best-effort) a provisioning node.
 
         Behaviour (fix/fleet-onboarding-visibility):
@@ -418,20 +420,23 @@ class OnboardingService:
         db.session.commit()
 
         # ── 4. Auto-advance to keys_generated (creates FleetChrNode) ─────
-        # Wrapped so a missing/misconfigured collaborator (vault, key
-        # provider) leaves the draft job intact + visible, with a stamped
-        # reason instead of a 500.
-        try:
-            self.generate_keys(job)
-        except OnboardingDependencyError as exc:
-            self._stamp_job_error(
-                job,
-                f"تعذّر توليد مفاتيح WireGuard تلقائياً عند الإرسال: {exc}"
-            )
-        except OnboardingError as exc:
-            self._stamp_job_error(job, str(exc))
-        except Exception as exc:  # noqa: BLE001 — never crash submission on the auto-advance
-            self._stamp_job_error(job, f"خطأ غير متوقّع عند توليد المفاتيح: {exc}")
+        # On by default so the submit route makes the node visible immediately.
+        # Internal callers (provision) and stepwise tests pass auto_advance=False
+        # to keep the clean draft → generate_keys → … state machine. Wrapped so a
+        # missing/misconfigured collaborator (vault, key provider) leaves the
+        # draft job intact + visible, with a stamped reason instead of a 500.
+        if auto_advance:
+            try:
+                self.generate_keys(job)
+            except OnboardingDependencyError as exc:
+                self._stamp_job_error(
+                    job,
+                    f"تعذّر توليد مفاتيح WireGuard تلقائياً عند الإرسال: {exc}"
+                )
+            except OnboardingError as exc:
+                self._stamp_job_error(job, str(exc))
+            except Exception as exc:  # noqa: BLE001 — never crash submission on the auto-advance
+                self._stamp_job_error(job, f"خطأ غير متوقّع عند توليد المفاتيح: {exc}")
         return job
 
     def _stamp_job_error(self, job: OnboardingJob, message: str) -> None:
@@ -546,7 +551,9 @@ class OnboardingService:
     # ── convenience pipeline ─────────────────────────────────────────────────
     def provision(self, form: WizardForm | dict[str, Any], reach: dict[str, Any]) -> OnboardingJob:
         """Run the whole happy path draft→…→pushed in one call (server-side)."""
-        job = self.create_draft(form)
+        # auto_advance=False so we drive generate_keys explicitly below (no
+        # double-advance against the auto-advance in create_draft).
+        job = self.create_draft(form, auto_advance=False)
         self.generate_keys(job)
         _, script = self.render_script(job)
         return self.push(job, reach, script=script)
