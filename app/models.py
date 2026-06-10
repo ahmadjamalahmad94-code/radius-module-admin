@@ -1664,8 +1664,19 @@ class ProxyRealmRoute(TimestampMixin, db.Model):
     target_acct_port = db.Column(db.Integer, default=1813, nullable=False)
     # Vault reference for shared RADIUS secret (actual value lives in CustomerSecret)
     secret_vault_ref = db.Column(db.String(120), default="", nullable=False)
-    # JSON list of ChrNode IDs allowed to route through this entry (empty = all)
+    # JSON list of LEGACY ChrNode IDs (app.models.ChrNode — CHR-console table)
+    # allowed to route through this entry (empty = all).
     allowed_chr_node_ids_json = db.Column(db.Text, default="[]", nullable=False)
+    # JSON list of FLEET CHR node IDs (fleet.registry.models_chr.FleetChrNode —
+    # the Phase-4 fleet registry, populated by the onboarding wizard).
+    # Kept as a SEPARATE column because the two tables have independent
+    # autoincrement sequences and their ids would otherwise collide. The
+    # routing-table query unions both lists when resolving allowed_chr_ips.
+    # See the gap-analysis in commit "fix(fleet): onboarding e2e gaps" —
+    # before this column existed, an operator who picked a FleetChrNode in
+    # the admin UI would silently get an empty allowed_chr_ips list because
+    # the proxy resolved the id against the legacy table only.
+    allowed_fleet_chr_node_ids_json = db.Column(db.Text, default="[]", nullable=False)
     # active | suspended | draft
     status = db.Column(db.String(20), default="draft", nullable=False, index=True)
 
@@ -1679,6 +1690,14 @@ class ProxyRealmRoute(TimestampMixin, db.Model):
     @allowed_chr_node_ids.setter
     def allowed_chr_node_ids(self, value: list) -> None:
         self.allowed_chr_node_ids_json = json_dumps(value or [])
+
+    @property
+    def allowed_fleet_chr_node_ids(self) -> list:
+        return json_loads(self.allowed_fleet_chr_node_ids_json, [])
+
+    @allowed_fleet_chr_node_ids.setter
+    def allowed_fleet_chr_node_ids(self, value: list) -> None:
+        self.allowed_fleet_chr_node_ids_json = json_dumps(value or [])
 
 
 # ─────────────────────────────────────────────────────────────────────────
