@@ -227,7 +227,7 @@
 
       {# ── ⑤b أسطول CHR ─────────────────────────────────────────────── #}
       {% if 'fleet' not in hidden_sections %}
-      {% set _g5b = ep.startswith('fleet_ui.') or ep.startswith('fleet_registry_api.') %}
+      {% set _g5b = ep.startswith('fleet_ui.') or ep.startswith('fleet_registry_api.') or ep.startswith('fleet_p7.') %}
       <div class="adm-group {% if _g5b %}is-active is-open{% endif %}" data-group="fleet">
         <button class="adm-group-head"
                 type="button"
@@ -251,6 +251,10 @@
           <a href="{{ url_for('fleet_ui.dns_frontdoor') }}"
              class="adm-link {% if ep == 'fleet_ui.dns_frontdoor' %}is-active{% endif %}">
             الباب الأمامي (DNS)
+          </a>
+          <a href="{{ url_for('fleet_p7.dashboard') }}"
+             class="adm-link {% if ep.startswith('fleet_p7.') %}is-active{% endif %}">
+            التطبيق الحي والتحريك
           </a>
         </div>
       </div>

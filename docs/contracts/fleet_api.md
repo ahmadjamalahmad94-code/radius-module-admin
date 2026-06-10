@@ -53,6 +53,107 @@ fields), `unknown_node` (404, node not enrolled), `rate_limited` (429),
 
 ---
 
+## 1.1 Routing table — `GET /api/proxy/routing-table` (Phase 7 ADDITIVE)
+
+> **FROZEN** at Phase 7. Existing fields unchanged; one new top-level field
+> added.
+
+The response now carries a `live_apply_enabled` boolean. It is the panel's
+canonical answer to "should the proxy actually ENFORCE fleet decisions
+(CoA moves, single-session kill) right now?". It is set ONLY from the
+admin UI (`/admin/fleet/p7/`) by an authenticated admin; there is no env
+var, terminal shortcut, or proxy-side override. The flag is **default
+OFF** and the panel treats any missing/malformed read as OFF.
+
+```json
+{
+  "ok": true,
+  "generated_at": "2026-06-10T19:40:00Z",
+  "route_count": 5,
+  "routes":      [ ... ],
+  "chr_nodes":   [ ... ],
+  "live_apply_enabled": false        // NEW — Phase 7
+}
+```
+
+Proxy obligations:
+
+* When `live_apply_enabled` is **true**, the proxy MAY apply moves /
+  disconnects it receives from the panel-side control plane (CoA via
+  the routing table's `allowed_chr_ips`).
+* When `live_apply_enabled` is **false** OR absent (older panel), the
+  proxy MUST treat fleet decisions as **advisory only** — log them,
+  surface them for review, do not apply.
+* The proxy SHOULD re-read the routing table no less often than once
+  per `routing_ttl_seconds` and pick up a flag flip on the next tick.
+
+A flip from OFF→ON must be confirmed via the design-system modal in
+the panel UI (no native `confirm()` per project rule).
+
+---
+
+## 1.4 Enforcement-outcome ingest — `POST /api/proxy/enforcement` (Phase 7, FROZEN)
+
+The proxy POSTs to this endpoint every time it applies a fleet action
+(move via CoA, single-session-kill, manual kick). The panel uses it to
+close the loop between the brain's plan and what actually shipped:
+
+* Closes the previous `fleet_sessions` row and (on a `move applied`)
+  opens a new active row on the target node.
+* Stamps the most recent pending `fleet_placement_decisions` row with
+  `outcome` = `applied` / `failed` (or synthesises a row when the action
+  was reactive and no plan was pre-recorded).
+* Appends a `fleet_events` row (`coa_sent` / `move_ok` / `move_fail`)
+  for the operator audit log and the Phase-9 notifier.
+
+### Request
+
+```json
+{
+  "node":            "chr-exit-02",         // required — target CHR (where the user landed)
+  "user":            "bob@client5",         // required
+  "action":          "move",                // required: "move" | "kick" | "single_session_kill"
+  "result":          "applied",             // required: "applied" | "failed"
+  "ts":              "2026-06-09T19:40:35Z",// required — ISO-8601 UTC
+  "acct_session_id": "8f2c-...",            // optional but recommended — idempotency key
+  "previous_node":   "chr-exit-01",         // optional — source CHR (move only)
+  "reason":          "rebalance",           // optional — short free-form ("rebalance" | "forced_failover" | "manual" | "dup_session")
+  "detail":          ""                     // optional — error text on failure
+}
+```
+
+### Response
+
+```json
+// success — fresh outcome recorded
+{ "ok": true, "idempotent": false,
+  "session_id": 17, "decision_id": 9, "event_id": 42 }
+
+// replay of same acct_session_id — no-op
+{ "ok": true, "idempotent": true }
+
+// errors
+{ "ok": false, "error": "bad_request",  "detail": "missing field: result" }   // 400
+{ "ok": false, "error": "unauthorized" }                                       // 401
+{ "ok": false, "error": "unknown_node", "detail": "chr-exit-02" }              // 404
+```
+
+Notes:
+
+* **Authentication** reuses the existing `X-Proxy-Token` HMAC (§0). No
+  new secret.
+* **Idempotency**: replays with the same `acct_session_id` + matching
+  outcome event return `idempotent: true` and do not double-record.
+* `action: "move"` opens a new `fleet_sessions` row on the target node
+  only on `result: "applied"`. `action: "kick"` and
+  `action: "single_session_kill"` close the source but do NOT open a
+  new row — the user is being disconnected, not relocated.
+* The endpoint is the ONLY writer of fleet_sessions / fleet_events for
+  enforcement-side outcomes; the brain owns the planning side
+  (placement_decisions inserts with `outcome: "pending"`).
+
+---
+
 ## 1. Telemetry ingest — `POST /api/proxy/telemetry`
 
 Per-node health + load sample. Pushed by the proxy/agent on each `SCORE_INTERVAL`

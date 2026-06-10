@@ -172,12 +172,23 @@ def routing_table():
         if n.status == "active"
     ]
 
+    # Phase 7: surface the UI-controlled live-apply switch (default OFF).
+    # The proxy reads this to decide whether to ENFORCE moves/CoA — see
+    # docs/contracts/fleet_api.md §1.1. Import is lazy so an older fleet
+    # branch without the control package still boots; missing → false.
+    try:
+        from fleet.control.live_apply_settings import is_enabled as _live_apply_on
+        live_apply_enabled = bool(_live_apply_on())
+    except Exception:  # noqa: BLE001 — read path must be defensive
+        live_apply_enabled = False
+
     return jsonify({
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "route_count": len(routes_out),
         "routes": routes_out,
         "chr_nodes": chr_list,
+        "live_apply_enabled": live_apply_enabled,
     })
 
 
