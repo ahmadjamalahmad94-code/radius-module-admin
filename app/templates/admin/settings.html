@@ -583,25 +583,25 @@
 {% call hub.section("وكيل RADIUS المركزي", icon="arrows-split-up-and-left") %}
   <p style="font-size:13px;color:var(--hub-muted);margin:0 0 16px">
     يوجّه الوكيل طلبات Auth/Acct من عقد CHR إلى RADIUS VPS العميل الصحيح.
-    السر المشترك أدناه يُضبَط أيضًا في ملف <span class="mono ltr">/etc/hobe-radius-proxy/env</span>.
+    السر المشترك أصبح الآن قابلًا للتحرير من
+    <a href="{{ url_for('admin.settings_platform') }}#grp-5" class="mono">إعدادات المنصة</a>
+    — يُحفَظ مشفّرًا في قاعدة البيانات، أولوية القاعدة على متغيّر البيئة.
   </p>
 
   {% call hub.fieldset("إعدادات الوكيل", icon="key") %}
     <div class="hub-form-grid">
       <div class="hub-field full">
         <label>RADIUS_PROXY_SHARED_SECRET</label>
-        <div style="display:flex;gap:8px">
-          <input class="hub-input mono ltr" type="password" id="proxy-secret-display"
-                 value="(محفوظ في متغير البيئة)" readonly
-                 style="flex:1;background:var(--hub-input-bg)">
-          <button type="button" class="hub-btn hub-btn--secondary"
-                  onclick="this.previousElementSibling.type = this.previousElementSibling.type === 'password' ? 'text' : 'password'">
-            <i class="fa-solid fa-eye"></i>
-          </button>
-        </div>
+        <a href="{{ url_for('admin.settings_platform') }}#grp-5"
+           class="hub-btn hub-btn--secondary"
+           style="display:inline-flex;align-items:center;gap:8px">
+          <i class="fa-solid fa-pen-to-square"></i>
+          تحرير السرّ من إعدادات المنصة
+        </a>
         <div class="hub-field-hint">
-          السر المشترك بين لوحة التراخيص والوكيل — لا يُحفظ في قاعدة البيانات.
-          أنشئه بـ: <span class="mono ltr">openssl rand -hex 32</span>
+          السر المشترك بين لوحة التراخيص والوكيل. الحقل أصبح UI-managed
+          — احفظه من «إعدادات المنصة → مفاتيح تكامل». ٣٢ حرفًا عشوائيًا على الأقل
+          (يمكنك توليدها مرة واحدة محليًا بـ <span class="mono ltr">openssl rand -hex 32</span>).
         </div>
       </div>
     </div>

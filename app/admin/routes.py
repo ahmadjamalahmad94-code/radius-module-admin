@@ -2390,6 +2390,69 @@ def settings_update():
     return redirect(url_for("admin.settings_page"))
 
 
+# ── Platform settings — operational knobs migrated from env to the DB ────────
+# Resolution chain per key: Setting row -> app.config -> built-in default. The
+# owner edits every value here; nothing else needs editing in env in prod.
+@bp.get("/settings/platform")
+@login_required
+def settings_platform():
+    from ..services import platform_settings as ps
+    return render_template(
+        "admin/settings/platform_new.html",
+        groups=ps.snapshot(),
+        health=ps.health(),
+    )
+
+
+@bp.post("/settings/platform")
+@login_required
+def settings_platform_save():
+    from ..services import platform_settings as ps
+    try:
+        result = ps.save_form(request.form, actor_audit=audit)
+    except ps.PlatformSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("admin.settings_platform"))
+    # Re-apply LOG_LEVEL live if the operator just changed it. Other knobs are
+    # read on every request through the resolver, so no extra apply step.
+    import logging
+    new_level = ps.get_str("LOG_LEVEL", "INFO").upper()
+    new_int = getattr(logging, new_level, logging.INFO)
+    logging.getLogger().setLevel(new_int)
+    try:
+        request.environ.get("flask.app").logger.setLevel(new_int)  # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001
+        pass
+    db.session.commit()
+    flash(
+        f"تم حفظ {result['saved']} حقلًا (تجاوُز قاعدة البيانات الآن مفعّل)."
+        + (f" دوّرت {len(result['secrets_rotated'])} سرّ." if result['secrets_rotated'] else ""),
+        "success",
+    )
+    return redirect(url_for("admin.settings_platform"))
+
+
+@bp.post("/settings/platform/<key>/reset")
+@login_required
+def settings_platform_reset(key: str):
+    """Clear the DB row for one key so the resolver falls back to env/default."""
+    from ..services import platform_settings as ps
+    if key not in ps.KEYS:
+        abort(404)
+    row = db.session.get(Setting, key)
+    if row is not None:
+        row.value = ""
+        db.session.add(row)
+        # Drop the per-request cache so subsequent reads see the fallback.
+        ps._invalidate_cache()
+        audit("platform_settings_reset", "platform_settings", key,
+              f"إعادة {key} إلى قيمة البيئة/الافتراضي.", {"key": key})
+        db.session.commit()
+        flash(f"تمت إعادة {ps.KEYS[key].label_ar} إلى القيمة الافتراضية.", "info")
+    return redirect(url_for("admin.settings_platform"))
+
+
 # ── WhatsApp Cloud API settings (admin-managed house credentials) ──────────
 def _wac_redirect():
     return redirect(url_for("admin.settings_page") + "#whatsapp-cloud")
