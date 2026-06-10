@@ -317,6 +317,68 @@ class BrainConfig:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Orchestrator — rebalance / forced-evacuation planner (fleet.brain.rebalance)
+# ──────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class OrchestratorConfig:
+    """Knobs for the Phase-8 rebalance / evacuation planner.
+
+    The planner produces a :class:`RebalancePlan` — a deliberately
+    capacity-aware list of intended user moves. Two trigger flavours:
+
+    * **Forced evacuation** — the source node is DOWN. We move ALL of
+      its active users regardless of their ``movable`` flag (their
+      server is dead; opt-in is meaningless once you cannot reach the
+      box anyway). The movement hysteresis :func:`should_move` is
+      ALSO ignored for this trigger.
+
+    * **Pressure rebalance** — the source node is OVER CPU shed or
+      bandwidth cap. Only ``movable=True`` users are candidates, and
+      each move must clear :func:`should_move` (sustain + cooldown)
+      before it is added to the plan.
+
+    Headroom / thundering-herd guards apply to BOTH triggers: the
+    planner caps how many moves a single target can absorb in one
+    pass so a flood doesn't immediately overload the targets, and
+    cuts the batch when the fleet's total spare session capacity is
+    too small (emitting ``capacity_warning``).
+    """
+
+    max_moves_per_plan: int = 50
+    """Hard fleet-wide cap on plan size. Any move beyond this falls off
+    the plan AND emits a ``capacity_warning`` event so the operator sees
+    that the batch was truncated. 50 mirrors
+    :attr:`PlacementConfig.max_moves_per_cycle` so the two never disagree."""
+
+    max_moves_per_target_per_plan: int = 10
+    """Per-target receive cap. Even if the brain's score puts every move
+    on the same node, we spread the load across the top-N best targets
+    so the receiver doesn't get hit with the whole evacuation at once."""
+
+    target_min_free_pct: float = 10.0
+    """A target is only eligible to RECEIVE moves while it still has at
+    least this percentage of session capacity free. Below this (after the
+    planner subtracts the moves it has already routed to it in this
+    plan), the next move spills to the next-best target. Keeps a single
+    fast-filling target from flipping to "near-cap" mid-evacuation."""
+
+    insufficient_capacity_pct: float = 50.0
+    """If the total spare capacity across all healthy targets is below
+    this fraction of the source's active session count, the planner
+    truncates the plan to what fits and emits a ``capacity_warning``
+    event. The unplaced users are NOT included in the plan — the
+    operator must add capacity before they can be moved."""
+
+    auto_failover_on_down: bool = True
+    """When True (default), the health monitor's DOWN transition hook
+    auto-invokes :func:`plan_rebalance` + :func:`execute_rebalance` so a
+    real outage produces an evacuation plan without human action. Even
+    when ``live_apply_enabled`` is OFF on the proxy side, recording the
+    plan is still valuable as an advisory audit (operator can see what
+    WOULD have happened)."""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Aggregate
 # ──────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -333,6 +395,7 @@ class FleetConfig:
     dns: DnsConfig = field(default_factory=DnsConfig)
     cost: CostModel = field(default_factory=CostModel)
     brain: BrainConfig = field(default_factory=BrainConfig)
+    orchestrator: OrchestratorConfig = field(default_factory=OrchestratorConfig)
 
 
 # Canonical default instance. Import this; do not mutate (frozen).
