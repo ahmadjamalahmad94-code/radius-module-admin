@@ -489,9 +489,13 @@
             </div>
           </div>
           <div>
-            <div class="fb-score-num">{{ '%.0f'|format(r.score * 100) }}</div>
+            {# Display score is normalised to 0..100 relative to the top
+               (see brain_view._assign_display_scores). NEVER render
+               `r.score * 100` here — the brain path returns raw weighted
+               sums that can exceed 1.0 and would blow past 100. #}
+            <div class="fb-score-num">{{ r.score_pct }}</div>
             <div class="fb-score-cap">نقاط من 100</div>
-            <div class="fb-score-bar"><span style="width:{{ (r.score * 100)|round|int }}%"></span></div>
+            <div class="fb-score-bar"><span style="width:{{ r.score_pct }}%"></span></div>
           </div>
           <div class="fb-chips">
             {% for chip in r.factors %}
@@ -528,9 +532,9 @@
               </span>
             </div>
             <div>
-              <div class="fb-score-num" style="color:#94a3b8">{{ '%.0f'|format(r.score * 100) }}</div>
+              <div class="fb-score-num" style="color:#94a3b8">{{ r.score_pct }}</div>
               <div class="fb-score-cap">لن تُختار للجلسات الجديدة</div>
-              <div class="fb-score-bar"><span style="width:{{ (r.score * 100)|round|int }}%"></span></div>
+              <div class="fb-score-bar"><span style="width:{{ r.score_pct }}%"></span></div>
             </div>
             <div class="fb-chips">
               {% for chip in r.factors %}
