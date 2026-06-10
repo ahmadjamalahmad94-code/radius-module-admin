@@ -1,0 +1,333 @@
+/*
+ * admin_design_sweep.css — DESIGN SYSTEM SWEEP v1
+ *
+ * Purpose
+ * =======
+ * Applies the canonical hub-* design system uniformly across all admin
+ * pages without rewriting every legacy template. Loaded LAST so it acts
+ * as a normalizing layer on top of:
+ *   - admin_tokens.css   (variables only)
+ *   - admin_base.css     (layout)
+ *   - admin_components.css (components)
+ *   - app.css            (hub-* components)
+ *   - any page-local <style> block
+ *
+ * What's in here
+ * ==============
+ *  1. Section-tabs styles (consumed by the new hub.tab_bar / hub.tab_panel
+ *     macros).
+ *  2. Table baseline: a "padding floor" for any <table> inside .adm-page so
+ *     no cell can render flush against its container, regardless of which
+ *     custom -table class the page uses. Owner's «ملزقة بالحواف» fix.
+ *  3. Section/card padding floor: any *_card / *_section / *_panel body
+ *     gets a minimum inline padding so content never touches the edge.
+ *  4. Confirm modal + toast styles (consumed by hub.confirm_modal /
+ *     hub.toast_root + admin_design_sweep.js).
+ *  5. Small consistency touches: hub-btn spacing, hub-section-head visual
+ *     refinement, pill-with-count for tabs.
+ *
+ * RTL is inherited via `html[dir="rtl"]` from admin_base.css; we use
+ * logical properties (inset-inline-*, padding-block-*, margin-block-*)
+ * throughout so the file is bidi-correct.
+ *
+ * Rule: no hard-coded hex; everything uses tokens from admin_tokens.css.
+ * The one exception is rgba()-based overlays where alpha matters.
+ */
+
+
+/* ============================================================
+   1. SECTION TABS — sticky tab strip + single-visible panel
+   ============================================================ */
+.hub-tabs {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  overflow: hidden;
+  margin-block-end: var(--cc-gap-section);
+}
+
+.hub-tabs-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding-inline: var(--cc-sp-7);
+  padding-block: var(--cc-sp-4);
+  border-block-end: 1px solid var(--cc-border);
+  background: linear-gradient(
+    180deg,
+    var(--cc-tint-bg) 0%,
+    var(--cc-card-bg) 100%
+  );
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.hub-tabs--sticky .hub-tabs-strip {
+  position: sticky;
+  inset-block-start: var(--hb-topbar-h);
+  z-index: 5;
+}
+
+.hub-tabs-strip::-webkit-scrollbar { height: 6px; }
+.hub-tabs-strip::-webkit-scrollbar-thumb { background: var(--cc-border-2); border-radius: 3px; }
+
+.hub-tab-btn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--cc-r-lg);
+  padding: var(--cc-sp-5) var(--cc-sp-8);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text-mute);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--cc-anim-fast) var(--cc-ease),
+              color var(--cc-anim-fast) var(--cc-ease),
+              border-color var(--cc-anim-fast) var(--cc-ease);
+}
+.hub-tab-btn:hover { color: var(--cc-text); background: var(--hb-bg-hover); }
+.hub-tab-btn.is-active {
+  background: var(--cc-brand-softer);
+  border-color: var(--cc-brand-soft2);
+  color: var(--cc-brand-ink);
+  box-shadow: 0 1px 0 var(--cc-brand-soft2);
+}
+.hub-tab-btn[disabled], .hub-tab-btn[aria-disabled="true"] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.hub-tab-btn > i { font-size: var(--cc-fs-body-s); }
+.hub-tab-btn-label { line-height: 1.1; }
+
+.hub-tab-btn-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: var(--cc-sp-3);
+  border-radius: var(--cc-r-pill);
+  background: var(--cc-border-2);
+  color: var(--cc-text-mute);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-heavy);
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: var(--cc-sp-2);
+}
+.hub-tab-btn.is-active .hub-tab-btn-count {
+  background: var(--cc-brand);
+  color: #fff;
+}
+
+.hub-tabs-panels {
+  padding: var(--cc-sp-9) var(--cc-sp-11);
+  background: var(--cc-card-bg);
+}
+
+.hub-tab-panel { display: none; }
+.hub-tab-panel.is-active { display: block; }
+
+/* Inside a tab panel: every immediate child block gets at least
+   --cc-gap-section bottom spacing so sections breathe regardless of
+   what the page author did. */
+.hub-tab-panel > * + * { margin-block-start: var(--cc-gap-section); }
+
+
+/* ============================================================
+   2. TABLE BASELINE — guarantee NO cell touches the container edge.
+   This is a "floor" rule: any <table> nested under .adm-page that
+   hasn't received explicit cell padding gets a sane default.
+   Higher-specificity page rules still win.
+   ============================================================ */
+.adm-page table { border-collapse: separate; border-spacing: 0; }
+
+/* Per-cell minimum padding. We use inline-padding + block-padding via
+   logical properties so RTL is automatic. The "min" qualifier in the
+   layered rule below means: if a more specific rule sets padding,
+   that wins; if nothing does, this floor takes effect. */
+.adm-page table th,
+.adm-page table td {
+  padding-block: var(--cc-sp-5);
+  padding-inline: var(--cc-sp-7);
+  vertical-align: middle;
+}
+
+/* Numeric / date / mono cells render LTR with tabular-nums so the
+   columns line up. Common convention across the canonical templates. */
+.adm-page table .num,
+.adm-page table .date,
+.adm-page table .mono,
+.adm-page table .ltr-cell {
+  text-align: center;
+  direction: ltr;
+  unicode-bidi: embed;
+  font-variant-numeric: tabular-nums;
+}
+.adm-page table .mono { font-family: var(--cc-font-mono); }
+
+/* Canonical .hub-table — sweetens the floor with header tint + zebra hover */
+.adm-page .hub-table thead th {
+  background: var(--hb-bg);
+  color: var(--cc-text-soft);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-heavy);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  border-block-end: 2px solid var(--cc-border);
+}
+.adm-page .hub-table tbody td {
+  border-block-end: 1px solid var(--cc-border);
+  color: var(--cc-text);
+  font-size: var(--cc-fs-body-s);
+}
+.adm-page .hub-table tbody tr:last-child td { border-block-end: 0; }
+.adm-page .hub-table tbody tr:hover td { background: var(--cc-brand-softer); }
+
+/* The wrapper — rounded corners + the page-level border. Adopt this
+   on every list table to fix the "table flush against the page" issue
+   the owner flagged. */
+.adm-page .hub-table-wrap {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  overflow-x: auto;
+  margin-block-end: var(--cc-gap-section);
+}
+.adm-page .hub-table-wrap > .hub-table { width: 100%; }
+
+/* If a page uses one of the legacy custom -table classes, give it the
+   same baseline so cells aren't flush. These are floors — page-specific
+   higher-specificity selectors continue to override. */
+.adm-page .chrc-table th,
+.adm-page .chrc-table td,
+.adm-page .clist-table th,
+.adm-page .clist-table td,
+.adm-page .cu-tbl th,
+.adm-page .cu-tbl td,
+.adm-page .ldet-table th,
+.adm-page .ldet-table td,
+.adm-page .sa-table th,
+.adm-page .sa-table td,
+.adm-page .sm-table th,
+.adm-page .sm-table td,
+.adm-page .sg-table th,
+.adm-page .sg-table td {
+  padding-block: var(--cc-sp-5);
+  padding-inline: var(--cc-sp-7);
+}
+
+
+/* ============================================================
+   3. SECTION/CARD INLINE PADDING FLOOR
+   Any *_card-body / *_section-body / *_panel-body inside .adm-page
+   gets a minimum inline padding so content (especially text + fields)
+   never touches the card border.
+   ============================================================ */
+.adm-page [class*="-card-body"],
+.adm-page [class*="-section-body"],
+.adm-page [class*="-panel-body"],
+.adm-page .hub-section-body {
+  /* Use min() so existing page rules that set tighter values still apply
+     when intentional; otherwise floor at --cc-sp-9. */
+  padding-block: max(var(--cc-sp-9), 0px);
+  padding-inline: max(var(--cc-sp-9), 0px);
+}
+
+/* .hub-section-body--flush opts OUT of the floor for tables-in-cards
+   that need the table to butt against the card edges. */
+.adm-page .hub-section-body--flush { padding: 0 !important; }
+
+
+/* ============================================================
+   4. CONFIRM MODAL + TOAST (consumed by admin_design_sweep.js)
+   ============================================================ */
+.hub-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9100;
+  background: rgba(15, 23, 42, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cc-sp-9);
+}
+.hub-confirm-box {
+  background: var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  padding: var(--cc-sp-11);
+  min-width: 320px;
+  max-width: 480px;
+  box-shadow: var(--cc-sh-pop);
+  text-align: center;
+}
+.hub-confirm-message {
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text);
+  margin-block-end: var(--cc-sp-9);
+  line-height: var(--cc-lh-default);
+}
+.hub-confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--cc-sp-6);
+}
+
+.hub-toast {
+  position: fixed;
+  inset-block-end: var(--cc-sp-11);
+  inset-inline-start: var(--cc-sp-11);
+  z-index: 9200;
+  background: var(--cc-text);
+  color: #fff;
+  padding: var(--cc-sp-5) var(--cc-sp-9);
+  border-radius: var(--cc-r-pill);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  box-shadow: var(--cc-sh-pop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cc-anim-med) var(--cc-ease);
+  max-width: min(90vw, 60ch);
+}
+.hub-toast.is-visible { opacity: 1; }
+.hub-toast--ok   { background: var(--hb-green); color: #fff; }
+.hub-toast--err  { background: var(--hb-red);   color: #fff; }
+.hub-toast--warn { background: var(--hb-amber); color: var(--cc-text); }
+
+
+/* ============================================================
+   5. CONSISTENCY POLISH
+   ============================================================ */
+/* Hero subtitle line-height: keeps long Arabic copy readable. */
+.adm-page .hub-hero-sub { line-height: var(--cc-lh-default); }
+
+/* Section headers — slightly more breathing room around the icon. */
+.adm-page .hub-section-head {
+  gap: var(--cc-sp-6);
+  padding-block: var(--cc-sp-7);
+  padding-inline: var(--cc-sp-9);
+}
+
+/* Buttons — equal gap between icon and label across the board so the
+   icon never visually merges with the label edge. */
+.adm-page .hub-btn { gap: var(--cc-sp-4); }
+
+/* hub-detail-list — pad each row symmetrically. Some legacy pages
+   relied on a tight 4px row; floor it to --cc-sp-3 for readability. */
+.adm-page .hub-detail-list > div {
+  padding-block: max(var(--cc-sp-4), 0px);
+}
+
+/* Small responsive nicety: on narrow viewports, tab strip wraps */
+@media (max-width: 640px) {
+  .adm-page .hub-tabs-strip { flex-wrap: wrap; }
+  .adm-page .hub-tabs-panels { padding: var(--cc-sp-7); }
+}

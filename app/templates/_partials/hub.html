@@ -175,3 +175,130 @@
   <span style="width: {{ v }}%"></span>
 </div>
 {%- endmacro %}
+
+
+{# ═══════════════════════════════════════════════════════════════════════
+   SECTION TABS — generalize the finance-center pattern: one section visible
+   at a time, sticky tab strip, deep-linkable via URL hash. Styles + JS are
+   in app/static/css/admin_design_sweep.css + admin_design_sweep.js (loaded
+   from admin/base_new.html). Pure HTML here, no inline JS.
+
+   Usage:
+       {% call hub.tab_bar(tabs=[
+            {"key":"info",     "label":"معلومات",     "icon":"circle-info"},
+            {"key":"licenses", "label":"التراخيص",   "icon":"key", "count":4},
+            {"key":"vault",    "label":"الخزنة",      "icon":"vault"},
+         ], default="info") %}
+         {% call hub.tab_panel("info") %}
+           ...content for the info tab...
+         {% endcall %}
+         {% call hub.tab_panel("licenses") %}
+           ...content for the licenses tab...
+         {% endcall %}
+         {% call hub.tab_panel("vault") %}
+           ...content for the vault tab...
+         {% endcall %}
+       {% endcall %}
+
+   - Exactly one panel is visible at any time (the active one).
+   - The active tab is restored from `location.hash` on load; clicking a tab
+     pushes a hash so deep-linking works.
+   - `count` shows a small pill next to the label (useful for "4 licenses").
+   - `disabled` greys the tab and prevents click.
+   ═══════════════════════════════════════════════════════════════════════ #}
+{% macro tab_bar(tabs, default=None, sticky=True) -%}
+{%- set _default = default or (tabs[0].key if tabs else '') -%}
+<div class="hub-tabs{% if sticky %} hub-tabs--sticky{% endif %}"
+     data-tabs data-default-tab="{{ _default }}">
+  <div class="hub-tabs-strip" role="tablist">
+    {% for t in tabs %}
+      <button type="button"
+              class="hub-tab-btn{% if t.key == _default %} is-active{% endif %}"
+              role="tab"
+              aria-selected="{{ 'true' if t.key == _default else 'false' }}"
+              aria-controls="hubtab-{{ t.key }}"
+              data-tab="{{ t.key }}"
+              {% if t.disabled %}disabled aria-disabled="true"{% endif %}>
+        {%- if t.icon %}<i class="fa-solid fa-{{ t.icon }}" aria-hidden="true"></i>{% endif -%}
+        <span class="hub-tab-btn-label">{{ t.label }}</span>
+        {%- if t.count is defined and t.count is not none %}
+          <span class="hub-tab-btn-count">{{ t.count }}</span>
+        {% endif -%}
+      </button>
+    {% endfor %}
+  </div>
+  <div class="hub-tabs-panels">
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{% macro tab_panel(key) -%}
+<div class="hub-tab-panel"
+     id="hubtab-{{ key }}"
+     role="tabpanel"
+     aria-labelledby="hubtab-btn-{{ key }}"
+     data-tab-panel="{{ key }}"
+     hidden>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{# ═══════════════════════════════════════════════════════════════════════
+   CANONICAL TABLE — call macro that wraps any `<table>` content with the
+   correct outer container + thead/tbody styling. Pages that already wrap
+   their own `<thead>/<tbody>` should call this and put the rows inside.
+
+   Usage:
+       {% call hub.table_wrap() %}
+         <table class="hub-table">
+           <thead>
+             <tr><th>الاسم</th><th class="num">العدد</th></tr>
+           </thead>
+           <tbody>
+             {% for r in rows %}
+               <tr><td>{{ r.name }}</td><td class="num">{{ r.count }}</td></tr>
+             {% endfor %}
+           </tbody>
+         </table>
+       {% endcall %}
+
+   The wrapper handles horizontal overflow + the rounded corners and
+   border. Apply `class="num"`/`class="date"` to RTL-sensitive cells so
+   they render LTR with tabular-nums.
+   ═══════════════════════════════════════════════════════════════════════ #}
+{% macro table_wrap(extra_class="") -%}
+<div class="hub-table-wrap{% if extra_class %} {{ extra_class }}{% endif %}">
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{# ═══════════════════════════════════════════════════════════════════════
+   TOAST — page-local toast (one DOM node per page, JS-driven via showToast).
+   Call once near the bottom of a page; the design-sweep JS picks it up
+   automatically. Replaces native alert/confirm everywhere.
+   ═══════════════════════════════════════════════════════════════════════ #}
+{% macro toast_root() -%}
+<div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
+{%- endmacro %}
+
+
+{# ═══════════════════════════════════════════════════════════════════════
+   CONFIRM MODAL — call once per page; any submit button with
+   `data-confirm="text..."` shows this in-flow modal instead of
+   window.confirm. The design-sweep JS wires it up.
+   ═══════════════════════════════════════════════════════════════════════ #}
+{% macro confirm_modal() -%}
+<div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
+  <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
+    <div class="hub-confirm-message" id="hub-confirm-message">—</div>
+    <div class="hub-confirm-actions">
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+{%- endmacro %}
