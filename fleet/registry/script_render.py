@@ -145,6 +145,14 @@ class RouterosTemplateConfig:
     dns_push: str = "1.1.1.1,1.0.0.1"
     gw_local_addr: str = "10.0.0.1"
 
+    # ── panel read-only API user (live-metrics poller) ───────────────────
+    # When BOTH api_user and api_password are non-empty, the unified
+    # script provisions a ``read``-group user reachable only over
+    # wg-mgmt. Empty in either field → the API block is skipped.
+    api_user: str = ""
+    api_password: str = ""
+    api_port: int = 8443
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Jinja environment
@@ -282,6 +290,10 @@ def build_bindings(
         "CLIENT_SUPERNET":     template_cfg.client_supernet,
         "DNS_PUSH":            template_cfg.dns_push,
         "GW_LOCAL_ADDR":       template_cfg.gw_local_addr,
+        # ── live-metrics API user provisioning ─────────────────────────────
+        "API_USER":            template_cfg.api_user,
+        "API_PASSWORD":        template_cfg.api_password,
+        "API_PORT":            template_cfg.api_port,
     }
 
 

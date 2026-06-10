@@ -809,16 +809,26 @@
                 </div>
               </td>
 
-              {# ─── إجراء: فحص الآن ─── #}
+              {# ─── إجراء: فحص ICMP + قراءة المقاييس الآن ─── #}
               <td>
-                <button type="button" class="fd-rowbtn fd-check-one"
-                        data-node-id="{{ n.id }}"
-                        data-node-name="{{ n.name }}"
-                        title="طلب فحص فوري لهذه العقدة">
-                  <i class="fa-solid fa-rotate fa-rotate-icon"></i>
-                  <i class="fa-solid fa-spinner fa-spin"></i>
-                  فحص الآن
-                </button>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <button type="button" class="fd-rowbtn fd-check-one"
+                          data-node-id="{{ n.id }}"
+                          data-node-name="{{ n.name }}"
+                          title="طلب فحص فوري لهذه العقدة">
+                    <i class="fa-solid fa-rotate fa-rotate-icon"></i>
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    فحص الآن
+                  </button>
+                  <button type="button" class="fd-rowbtn fd-poll-metrics"
+                          data-node-id="{{ n.id }}"
+                          data-node-name="{{ n.name }}"
+                          data-url="{{ url_for('fleet_ui.fleet_chr_node_poll_metrics_now', node_id=n.id) }}"
+                          title="قراءة المقاييس من RouterOS الآن (بدون انتظار الدورة)">
+                    <i class="fa-solid fa-chart-line"></i>
+                    اقرأ المقاييس الآن
+                  </button>
+                </div>
               </td>
             </tr>
           {% endfor %}

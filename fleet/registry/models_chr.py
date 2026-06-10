@@ -119,7 +119,23 @@ class FleetChrNode(TimestampMixin, db.Model):
     public_ipv6 = db.Column(db.String(45))                              # optional AAAA candidate
     wg_mgmt_ip = db.Column(db.String(45), nullable=False, unique=True)  # control-plane address
     wg_mgmt_pubkey = db.Column(db.Text, nullable=False)                 # CHR WireGuard public key
-    routeros_api_port = db.Column(db.Integer, nullable=False, default=8729)
+    # RouterOS REST API port we use for live metrics polling. Default 8443
+    # because the production deploy occupies 443 with SSTP; the unified
+    # provisioning script enables ``www-ssl`` on this port and binds it to
+    # the wg-mgmt address (NOT WAN). Existing rows that defaulted to 8729
+    # (the binary-API port — we use REST, not binary) keep working: the
+    # poller treats this as authoritative per node.
+    routeros_api_port = db.Column(db.Integer, nullable=False, default=8443)
+    # Per-CHR API credentials for the live-metrics poller. Mirrors the
+    # legacy ``app.models.ChrNode.routeros_password_enc`` storage pattern:
+    # plaintext password is NEVER written to disk; the column holds a
+    # Fernet ciphertext encrypted with the same panel master key the
+    # customer vault uses (``WHATSAPP_FERNET_KEY``). Decryption goes
+    # through :func:`fleet.health.routeros_creds.decrypt_password`.
+    routeros_api_user = db.Column(db.String(80), nullable=False, default="",
+                                  server_default="")
+    routeros_api_password_enc = db.Column(db.Text, nullable=False, default="",
+                                          server_default="")
     coa_port = db.Column(db.Integer, nullable=False, default=3799)
 
     # ── declared capacity (from onboarding wizard) ────────────────────────────
