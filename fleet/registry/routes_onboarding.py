@@ -314,4 +314,123 @@ def _stamp_job_error(job: OnboardingJob, message: str) -> None:
     db.session.commit()
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# fix/fleet-script-view-instructions — view + download the rendered .rsc
+#
+# Owner pain: after «تم توليد السكربت» there was no way to SEE/COPY/DOWNLOAD
+# the actual RouterOS script. The MikroTik admin needs the bytes to install
+# the node manually (until the bootstrap-push channel auto-pushes them).
+#
+# Security & vault discipline:
+#   * The script EMBEDS WireGuard private keys (wg-mgmt/wg-data). The
+#     persistent column ``generated_script_ref`` is a SHA-256 hash only —
+#     not the script body. We re-render on demand using the same renderer
+#     used by the auto-advance path; the bytes only ever live on the
+#     active stack frame.
+#   * Endpoint is @super_admin_required + audited. The audit log records
+#     "operator X viewed the script for job N (chr-vpn-1)" — not the body.
+#   * The handler never logs the body, never writes it to disk, and never
+#     surfaces it in an error response (we trap exceptions and return the
+#     Arabic reason only).
+#
+# Statuses where this is meaningful:
+#   * script_generated, pushed, verifying, active  — the script exists
+#   * keys_generated                                — we can render fresh
+#   * draft / failed (no chr_id)                    — refused
+# ════════════════════════════════════════════════════════════════════════════
+
+
+_SCRIPT_VIEW_OK_STATUSES = (
+    "keys_generated", "script_generated", "pushed", "verifying", "active",
+)
+
+
+def _safe_filename(name: str) -> str:
+    """Sanitise the node name for use as a .rsc filename. RouterOS file
+    operations dislike spaces + most punctuation; lowercase ASCII + hyphens
+    + underscores + digits + dots is the safe alphabet."""
+    import re as _re
+    cleaned = _re.sub(r"[^A-Za-z0-9._-]+", "-", str(name or "")).strip("-.")
+    return (cleaned or f"chr-job-{0}").lower()
+
+
+@bp.get("/jobs/<int:job_id>/script")
+@super_admin_required
+def view_script(job_id: int):
+    """Re-render the per-CHR .rsc and return it in JSON.
+
+    Response on success:
+        {ok: true,
+         job_id, node_name, status,
+         filename:  "chr-vpn-1.rsc",
+         script:    "<rendered RouterOS bytes>",
+         sha256:    "<the stored generated_script_ref>"}
+
+    Response on refusal:
+        400 {ok:false, error:"script_unavailable", message:"<Arabic reason>"}
+    """
+    job = _job_or_404(job_id)
+    if job is None:
+        return jsonify({"ok": False, "error": "not_found",
+                        "message": "مهمة التسجيل غير موجودة."}), 404
+    if job.status not in _SCRIPT_VIEW_OK_STATUSES:
+        return jsonify({
+            "ok": False, "error": "script_unavailable",
+            "message": (
+                f"السكربت غير متاح بعد — الحالة الحالية «{job.status}». "
+                f"اضغط «متابعة» على البطاقة لدفع الجوب حتى مرحلة توليد "
+                f"السكربت ثم أعد المحاولة."),
+        }), 400
+    if not job.chr_id:
+        return jsonify({
+            "ok": False, "error": "script_unavailable",
+            "message": (
+                "لا توجد عقدة CHR مرتبطة بهذه المهمة بعد، فلا يمكن توليد "
+                "السكربت. ادفع الجوب أولاً عبر «متابعة»."),
+        }), 400
+
+    service = build_service()
+    try:
+        # The renderer is pure (no DB writes, no vault writes); calling it
+        # again is safe + cheap. We bypass service.render_script() to avoid
+        # re-advancing the state machine — that would error from any state
+        # past script_generated.
+        script = service.renderer.render(service._build_bindings(job))
+    except OnboardingDependencyError as exc:
+        return jsonify({"ok": False, "error": "dependency_unavailable",
+                        "message": str(exc)}), 503
+    except OnboardingError as exc:
+        return jsonify({"ok": False, "error": "onboarding_error",
+                        "message": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001 — never leak the body in errors
+        return jsonify({"ok": False, "error": "internal_error",
+                        "message": f"تعذّر توليد السكربت: {exc}"}), 500
+
+    node_name = (job.form_input or {}).get("name") or f"chr-job-{job.id}"
+    filename = f"{_safe_filename(node_name)}.rsc"
+
+    # Audit — record the VIEW (not the body). The audit row's `summary`
+    # is operator-facing; the body never appears anywhere except the
+    # JSON response we're about to return.
+    audit(
+        "fleet_onboarding_script_view",
+        "fleet_onboarding",
+        str(job.id),
+        f"تم عرض سكربت RouterOS للعقدة «{node_name}» (الجوب #{job.id})",
+        metadata={"chr_id": job.chr_id, "status": job.status,
+                  "script_sha256": job.generated_script_ref},
+    )
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "job_id": job.id,
+        "node_name": node_name,
+        "status": job.status,
+        "filename": filename,
+        "script": script,
+        "sha256": job.generated_script_ref,
+    })
+
+
 __all__ = ["bp", "build_service"]
