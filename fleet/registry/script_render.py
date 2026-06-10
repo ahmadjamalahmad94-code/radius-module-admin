@@ -184,6 +184,49 @@ def _ip_without_mask(cidr: str) -> str:
     return str(iface.ip)
 
 
+#: Default ports per WG plane. MUST match ``infra_settings._DEFAULT_PORTS``.
+#: Duplicated here (not imported) to keep this module Flask-free — the
+#: renderer must work in pure-Python tests that don't boot the app.
+_DEFAULT_ENDPOINT_PORTS = {
+    "PANEL_WG_ENDPOINT": 51820,
+    "PROXY_WG_ENDPOINT": 51821,
+}
+
+
+def _split_endpoint(value: str, *, default_port: int) -> tuple[str, int]:
+    """Parse a ``host`` / ``host:port`` / ``[ipv6]:port`` literal into the
+    two fields RouterOS needs separately.
+
+    Critical: RouterOS' ``/interface wireguard peers`` rejects ``host:port``
+    inside ``endpoint-address=`` — the colon-port causes the peer to land
+    with ``current-endpoint-address=""`` and no handshake ever fires. The
+    only correct shape is ``endpoint-address=<host>`` and ``endpoint-port=<n>``
+    separately. This helper is the single splitter used at render time so
+    the bug can't recur from any code path.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return "", default_port
+    if raw.startswith("["):
+        # bracketed IPv6
+        close = raw.find("]")
+        if close == -1:
+            return raw, default_port  # malformed; let StrictUndefined / on-CHR import surface
+        host = raw[: close + 1]
+        rest = raw[close + 1 :]
+        if rest.startswith(":") and rest[1:].isdigit():
+            return host, int(rest[1:])
+        return host, default_port
+    if raw.count(":") == 1:
+        host, _, port_str = raw.partition(":")
+        if port_str.isdigit():
+            port = int(port_str)
+            if 1 <= port <= 65535:
+                return host, port
+    # No port suffix (or multi-colon junk) — return host alone with default.
+    return raw, default_port
+
+
 def build_bindings(
     node: "FleetChrNode",
     keys: ChrKeyMaterial,
@@ -197,6 +240,19 @@ def build_bindings(
     into template variable names — the test introspects this function to verify
     the boundary documented in §6.5.1.
     """
+    # Split host:port → (host, port) for both WG peer endpoints. The template
+    # references the HOST / PORT split bindings (NOT the raw combined ones);
+    # see the module docstring for why RouterOS forbids host:port inside
+    # endpoint-address.
+    panel_host, panel_port = _split_endpoint(
+        template_cfg.panel_wg_endpoint,
+        default_port=_DEFAULT_ENDPOINT_PORTS["PANEL_WG_ENDPOINT"],
+    )
+    proxy_host, proxy_port = _split_endpoint(
+        template_cfg.proxy_wg_endpoint,
+        default_port=_DEFAULT_ENDPOINT_PORTS["PROXY_WG_ENDPOINT"],
+    )
+
     return {
         # ── per-CHR (PER_CHR_BINDINGS) ──────────────────────────────────────
         "WG_MGMT_PRIVKEY":  keys.mgmt_privkey,
@@ -209,10 +265,16 @@ def build_bindings(
         "WAN_IFACE":        keys.wan_iface,
         # ── fleet-constant (RouterosTemplateConfig) ─────────────────────────
         "PANEL_WG_PUBKEY":     template_cfg.panel_wg_pubkey,
+        # Combined form kept for backwards-compat consumers (e.g. UI display);
+        # NOT referenced by the template anymore — the split bindings below are.
         "PANEL_WG_ENDPOINT":   template_cfg.panel_wg_endpoint,
+        "PANEL_WG_HOST":       panel_host,
+        "PANEL_WG_PORT":       panel_port,
         "PANEL_WG_ADDR":       template_cfg.panel_wg_addr,
         "PROXY_WG_PUBKEY":     template_cfg.proxy_wg_pubkey,
         "PROXY_WG_ENDPOINT":   template_cfg.proxy_wg_endpoint,
+        "PROXY_WG_HOST":       proxy_host,
+        "PROXY_WG_PORT":       proxy_port,
         "PROXY_WG_ADDR":       template_cfg.proxy_wg_addr,
         "CHR_SHARED_SECRET":   template_cfg.chr_shared_secret,
         "SSTP_CERT_NAME":      template_cfg.sstp_cert_name,
@@ -275,10 +337,27 @@ def render_chr_script(
 
 def render_from_bindings(bindings: dict[str, Any], *, env: Environment | None = None) -> str:
     """Render directly from a raw binding dict. Used by tests that want to
-    exercise the template independently of the ``FleetChrNode`` ORM."""
+    exercise the template independently of the ``FleetChrNode`` ORM.
+
+    For backwards-compat with callers that only pass the combined
+    ``PANEL_WG_ENDPOINT`` / ``PROXY_WG_ENDPOINT`` (the pre-split shape),
+    auto-derive the ``*_HOST`` / ``*_PORT`` siblings. Explicit values in the
+    bindings dict win.
+    """
+    enriched: dict[str, Any] = dict(bindings)
+    for src, host_key, port_key, default_port in (
+        ("PANEL_WG_ENDPOINT", "PANEL_WG_HOST", "PANEL_WG_PORT",
+         _DEFAULT_ENDPOINT_PORTS["PANEL_WG_ENDPOINT"]),
+        ("PROXY_WG_ENDPOINT", "PROXY_WG_HOST", "PROXY_WG_PORT",
+         _DEFAULT_ENDPOINT_PORTS["PROXY_WG_ENDPOINT"]),
+    ):
+        if (host_key not in enriched or port_key not in enriched) and src in enriched:
+            host, port = _split_endpoint(enriched[src], default_port=default_port)
+            enriched.setdefault(host_key, host)
+            enriched.setdefault(port_key, port)
     jinja_env = env if env is not None else _build_env()
     template = jinja_env.get_template(_TEMPLATE_NAME)
-    return template.render(**bindings)
+    return template.render(**enriched)
 
 
 __all__ = [
