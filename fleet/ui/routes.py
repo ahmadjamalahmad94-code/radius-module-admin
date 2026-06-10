@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
-from app.auth.routes import login_required
+from app.auth.routes import audit, login_required, super_admin_required
 from app.extensions import db
 from app.services.whatsapp.crypto import WhatsAppCryptoError
 from fleet.registry.models_chr import (
@@ -380,6 +380,167 @@ def dns_frontdoor_preview():
 def dns_frontdoor_apply():
     """Ask the reconciler to publish. Returns JSON for the page JS."""
     return jsonify({"ok": True, "result": dns_reconcile_now()})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# feat/fleet-infrastructure-settings — «إعدادات بنية الأسطول»
+#
+# The page the «بانتظار إعداد» pending-card error message points to. Captures
+# the five required fleet-constants (panel + proxy WireGuard, RADIUS secret)
+# and the two optional cert names, writes them to ``Setting`` rows, which
+# ``OnboardingService._const`` reads BEFORE app.config / defaults. Once all
+# five required values are stored, the validator's «بانتظار» clears and
+# render_script succeeds without any other code change.
+#
+# Auth: super_admin_required across the board (these settings affect every
+# CHR in the fleet). Every mutator is audited.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _infra_redirect():
+    return redirect(url_for("fleet_ui.fleet_infrastructure"))
+
+
+@bp.get("/infrastructure")
+@super_admin_required
+def fleet_infrastructure():
+    """Render the «إعدادات بنية الأسطول» page."""
+    from fleet.registry import infra_settings as svc
+    return render_template(
+        "admin/fleet/infrastructure.html",
+        view=svc.view_all(),
+        ready=svc.is_fleet_ready(),
+        missing=svc.missing_required(),
+        panel_pubkey=svc.panel_pubkey_for_display(),
+        panel_pubkey_is_set=svc.panel_pubkey_is_set(),
+    )
+
+
+@bp.post("/infrastructure/panel-keypair")
+@super_admin_required
+def fleet_infra_generate_panel_keypair():
+    """Mint a new wg-mgmt keypair on the panel. Stores the private side
+    encrypted; returns only the public side for the UI flash."""
+    from fleet.registry import infra_settings as svc
+    try:
+        result = svc.generate_panel_wg_keypair()
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    except WhatsAppCryptoError:
+        flash("لم يُضبط مفتاح التشفير على الخادم — راجع إعداد WHATSAPP_FERNET_KEY.", "error")
+        return _infra_redirect()
+    audit(
+        "fleet_infra_panel_keypair_generated", "fleet_infra", "PANEL_WG_PUBKEY",
+        "تم توليد زوج مفاتيح wg-mgmt للوحة"
+        + (" — أُعيد التوليد (السكربتات السابقة لم تعد صالحة)" if result["regenerated"] else ""),
+        metadata={"regenerated": result["regenerated"]},
+    )
+    db.session.commit()
+    if result["regenerated"]:
+        flash(
+            "تم توليد زوج مفاتيح اللوحة الجديد. ⚠ السكربتات الصادرة سابقاً "
+            "للعقد لم تعد صالحة — أعد إنشاء سكربت كل عقدة من «عرض السكربت».",
+            "warning",
+        )
+    else:
+        flash("تم توليد زوج مفاتيح اللوحة بنجاح.", "success")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/panel-endpoint")
+@super_admin_required
+def fleet_infra_save_panel_endpoint():
+    from fleet.registry import infra_settings as svc
+    try:
+        svc.set_panel_endpoint(request.form.get("panel_endpoint") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit("fleet_infra_panel_endpoint_set", "fleet_infra", "PANEL_WG_ENDPOINT",
+          "تم حفظ نقطة وصول اللوحة")
+    db.session.commit()
+    flash("تم حفظ نقطة وصول اللوحة.", "success")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/proxy-pubkey")
+@super_admin_required
+def fleet_infra_save_proxy_pubkey():
+    from fleet.registry import infra_settings as svc
+    try:
+        svc.set_proxy_pubkey(request.form.get("proxy_pubkey") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit("fleet_infra_proxy_pubkey_set", "fleet_infra", "PROXY_WG_PUBKEY",
+          "تم حفظ مفتاح وكيل RADIUS العام")
+    db.session.commit()
+    flash("تم حفظ مفتاح الوكيل العام.", "success")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/proxy-endpoint")
+@super_admin_required
+def fleet_infra_save_proxy_endpoint():
+    from fleet.registry import infra_settings as svc
+    try:
+        svc.set_proxy_endpoint(request.form.get("proxy_endpoint") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit("fleet_infra_proxy_endpoint_set", "fleet_infra", "PROXY_WG_ENDPOINT",
+          "تم حفظ نقطة وصول الوكيل")
+    db.session.commit()
+    flash("تم حفظ نقطة وصول الوكيل.", "success")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/radius-secret")
+@super_admin_required
+def fleet_infra_save_radius_secret():
+    from fleet.registry import infra_settings as svc
+    form_value = (request.form.get("chr_shared_secret") or "").strip()
+    auto = bool(request.form.get("auto_generate"))
+    try:
+        if auto:
+            svc.generate_chr_shared_secret()
+            audit("fleet_infra_radius_secret_generated", "fleet_infra", "CHR_SHARED_SECRET",
+                  "تم توليد السر المشترك لـ RADIUS تلقائياً")
+            db.session.commit()
+            flash("تم توليد سرّ قوي وحفظه مشفّراً.", "success")
+        else:
+            svc.set_chr_shared_secret(form_value)
+            audit("fleet_infra_radius_secret_set", "fleet_infra", "CHR_SHARED_SECRET",
+                  "تم تحديث السر المشترك لـ RADIUS")
+            db.session.commit()
+            flash(
+                "تم حفظ السرّ مشفّراً. تذكّر أن تضبط القيمة نفسها على الوكيل "
+                "(PROXY_CHR_SECRET).",
+                "success",
+            )
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+    except WhatsAppCryptoError:
+        flash("لم يُضبط مفتاح التشفير على الخادم — راجع إعداد WHATSAPP_FERNET_KEY.", "error")
+    return _infra_redirect()
+
+
+@bp.post("/infrastructure/cert-names")
+@super_admin_required
+def fleet_infra_save_cert_names():
+    from fleet.registry import infra_settings as svc
+    try:
+        svc.set_cert_name("SSTP_CERT_NAME", request.form.get("sstp_cert_name") or "")
+        svc.set_cert_name("IKE_CERT_NAME", request.form.get("ike_cert_name") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit("fleet_infra_cert_names_set", "fleet_infra", "CERTS",
+          "تم تحديث أسماء شهادات SSTP/IKEv2")
+    db.session.commit()
+    flash("تم حفظ أسماء الشهادات. (اتركها فارغة لتخطّي SSTP/IPsec في السكربت.)", "success")
+    return _infra_redirect()
 
 
 __all__ = ["bp"]

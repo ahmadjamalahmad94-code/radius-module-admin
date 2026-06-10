@@ -1,0 +1,348 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إعدادات بنية الأسطول — CHR Fleet{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+{% endblock %}
+{% block page_breadcrumb %}إعدادات البنية{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fi-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+    border-radius: 18px; padding: 22px 26px; color: #fff;
+    margin-block-end: 18px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .fi-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .fi-hero-body { flex: 1 1 220px; }
+  .fi-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .fi-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 800px; }
+
+  .fi-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 20px; margin-block-end: 16px;
+  }
+  .fi-card-head { display: flex; gap: 10px; align-items: center; margin-block-end: 14px; flex-wrap: wrap; }
+  .fi-card-title { font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .fi-card-title i { color: #1e40af; }
+  .fi-card-sub { font-size: 12.5px; color: #475569; margin-block-end: 12px; line-height: 1.65; }
+
+  .fi-field { display: flex; flex-direction: column; gap: 6px; margin-block-end: 12px; }
+  .fi-field label { font-size: 12.5px; font-weight: 700; color: #0f172a; }
+  .fi-field input, .fi-field textarea {
+    height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 10px;
+    font-size: 13px; background: #fff; font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .fi-field input:focus { outline: none; border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.12); }
+  .fi-hint { font-size: 11.5px; color: #6b7280; line-height: 1.65; }
+
+  .fi-btn {
+    height: 36px; padding-inline: 14px; border-radius: 10px;
+    font-weight: 700; font-size: 13px; cursor: pointer;
+    border: 1px solid #e5e7eb; background: #fff; color: #0f172a;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .fi-btn--primary { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .fi-btn--primary:hover { background: #1e3a8a; }
+  .fi-btn--warn { background: #f59e0b; border-color: #f59e0b; color: #1f2937; }
+  .fi-btn--warn:hover { background: #d97706; color: #fff; }
+  .fi-btn--ghost:hover { background: #f1f5f9; }
+  .fi-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  .fi-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+    border: 1px solid transparent;
+  }
+  .fi-pill--ok   { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+  .fi-pill--wait { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .fi-pill--info { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+
+  .fi-banner {
+    display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px;
+    font-size: 13px; line-height: 1.7; margin-block-end: 16px;
+  }
+  .fi-banner--warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .fi-banner--ok   { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+  .fi-banner--info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+  .fi-banner i { margin-top: 2px; font-size: 16px; }
+
+  .fi-status-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-block-end: 14px; }
+  .fi-status-row {
+    display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+    background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px;
+    font-size: 12.5px;
+  }
+  .fi-status-row .label { flex: 1; color: #0f172a; font-weight: 700; }
+  .fi-status-row .mono { font-family: ui-monospace, Menlo, Consolas, monospace; color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="fi-hero">
+  <div class="fi-hero-icon"><i class="fa-solid fa-network-wired"></i></div>
+  <div class="fi-hero-body">
+    <div class="fi-hero-title">إعدادات بنية الأسطول</div>
+    <div class="fi-hero-sub">
+      هذه القيم تُستخدم في كل سكربت RouterOS تولِّده اللوحة لعقد CHR — الباب الخلفي للوحة،
+      وكيل RADIUS المركزي، والسر المشترك. عند ضبطها جميعاً تنطلق العقد الجديدة دون «بانتظار إعداد».
+      الأسرار تُخزَّن مُشفَّرة ولا تظهر بعد الحفظ.
+    </div>
+  </div>
+</div>
+
+{# Live readiness banner #}
+{% if ready %}
+  <div class="fi-banner fi-banner--ok">
+    <i class="fa-solid fa-circle-check"></i>
+    <div>
+      <strong>الأسطول جاهز لتوليد سكربتات صالحة.</strong>
+      كل القيم المطلوبة مضبوطة — أي عقدة جديدة ستحصل على سكربت كامل دون «بانتظار إعداد».
+    </div>
+  </div>
+{% else %}
+  <div class="fi-banner fi-banner--warn">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <div>
+      <strong>بانتظار إعداد {{ missing|length }} من أصل 5 قيم مطلوبة.</strong>
+      حتى تكتمل، السكربتات الصادرة ستفشل بصمت على المايكروتيك. أكمل الحقول أدناه ثم
+      أعد محاولة «متابعة» على أي جوب «بانتظار إعداد».
+    </div>
+  </div>
+{% endif %}
+
+{# Status panel — every key with its is_set/masked state #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title"><i class="fa-solid fa-list-check"></i> حالة الإعدادات</div>
+    <div style="flex:1"></div>
+    {% if ready %}
+      <span class="fi-pill fi-pill--ok"><i class="fa-solid fa-circle-check"></i> جاهز ({{ view|length }}/{{ view|length }})</span>
+    {% else %}
+      <span class="fi-pill fi-pill--wait"><i class="fa-solid fa-hourglass-half"></i> {{ missing|length }} ينتظر</span>
+    {% endif %}
+  </div>
+  <div class="fi-status-grid">
+    {% for s in view %}
+      <div class="fi-status-row">
+        <span class="label">{{ s.label_ar }}</span>
+        {% if s.is_set %}
+          <span class="fi-pill fi-pill--ok"><i class="fa-solid fa-check"></i> مضبوط</span>
+          <span class="mono" title="{{ s.masked }}">{{ s.masked }}</span>
+        {% else %}
+          {% if s.key in ['SSTP_CERT_NAME','IKE_CERT_NAME'] %}
+            <span class="fi-pill fi-pill--info"><i class="fa-solid fa-circle-info"></i> اختياري — متخطٍّى</span>
+          {% else %}
+            <span class="fi-pill fi-pill--wait"><i class="fa-solid fa-hourglass-half"></i> بانتظار</span>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ─── 1. Panel control-plane ─── #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title"><i class="fa-solid fa-server"></i> الباب الخلفي للوحة (WireGuard control-plane)</div>
+  </div>
+  <div class="fi-card-sub">
+    اللوحة بحاجة لزوج مفاتيح WireGuard خاص بها لاستقبال اتصالات wg-mgmt من كل عقدة.
+    «توليد» يُنشئ المفتاح الخاص ويُخزّنه مُشفَّراً في خزنة الأسرار، ويعرض الجزء العام أدناه
+    (هو وحده ما يدخل في سكربتات العقد).
+  </div>
+
+  <div class="fi-field">
+    <label>المفتاح العام للوحة <span style="color:#b91c1c">*</span></label>
+    <input type="text" value="{{ panel_pubkey or '' }}" readonly
+           placeholder="لم يُولَّد بعد — اضغط «توليد مفتاح اللوحة»"
+           style="background:{% if panel_pubkey_is_set %}#ecfdf5{% else %}#fef3c7{% endif %};color:#0f172a">
+    <div class="fi-hint">
+      هذا هو المفتاح العام الذي يظهر في كل سكربت RouterOS. المفتاح الخاص يبقى مشفّراً على الخادم
+      ولا يظهر في أي مكان.
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_generate_panel_keypair') }}">
+    {{ csrf_input() }}
+    <button type="button" class="fi-btn fi-btn--primary" id="fi-gen-panel-key"
+            data-confirm="{% if panel_pubkey_is_set %}إعادة التوليد ستُبطل كل السكربتات السابقة للعقد. هل تريد المتابعة؟{% else %}سيُولِّد الخادم زوج مفاتيح WireGuard جديد للّوحة. هل تريد المتابعة؟{% endif %}">
+      <i class="fa-solid fa-key"></i>
+      {% if panel_pubkey_is_set %}إعادة توليد مفتاح اللوحة{% else %}توليد مفتاح اللوحة{% endif %}
+    </button>
+  </form>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_panel_endpoint') }}" style="margin-top:16px">
+    {{ csrf_input() }}
+    {% set ep = view|selectattr('key','equalto','PANEL_WG_ENDPOINT')|first %}
+    <div class="fi-field">
+      <label for="panel_endpoint">نقطة وصول اللوحة (Host:Port) <span style="color:#b91c1c">*</span></label>
+      <input type="text" id="panel_endpoint" name="panel_endpoint"
+             value="{{ ep.masked if ep.is_set else '' }}"
+             placeholder="مثال: control.hoberadius.com:51820" dir="ltr">
+      <div class="fi-hint">
+        العنوان العام للوحة (FQDN أو IP) على المنفذ 51820 الذي تتصل به العقد عبر wg-mgmt.
+        لا بد أن يكون قابلاً للوصول من الإنترنت.
+      </div>
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ نقطة الوصول
+    </button>
+  </form>
+</div>
+
+{# ─── 2. Proxy data-plane ─── #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title"><i class="fa-solid fa-route"></i> وكيل RADIUS المركزي (data-plane)</div>
+  </div>
+  <div class="fi-card-sub">
+    هذه القيم تأتي من خادم البروكسي بعد نشره. الصق المفتاح العام الذي يُصدره وكيل RADIUS،
+    ونقطة وصوله العامة على المنفذ 51821.
+  </div>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_proxy_pubkey') }}">
+    {{ csrf_input() }}
+    {% set pk = view|selectattr('key','equalto','PROXY_WG_PUBKEY')|first %}
+    <div class="fi-field">
+      <label for="proxy_pubkey">مفتاح الوكيل العام <span style="color:#b91c1c">*</span></label>
+      <input type="text" id="proxy_pubkey" name="proxy_pubkey"
+             value="{{ pk.masked if pk.is_set else '' }}"
+             placeholder="44 حرفاً base64 ينتهي بـ '='" dir="ltr">
+      <div class="fi-hint">
+        المفتاح العام لـ wg-data الذي ينشره وكيل RADIUS عند تشغيله.
+      </div>
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ مفتاح الوكيل
+    </button>
+  </form>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_proxy_endpoint') }}" style="margin-top:16px">
+    {{ csrf_input() }}
+    {% set pe = view|selectattr('key','equalto','PROXY_WG_ENDPOINT')|first %}
+    <div class="fi-field">
+      <label for="proxy_endpoint">نقطة وصول الوكيل (Host:Port) <span style="color:#b91c1c">*</span></label>
+      <input type="text" id="proxy_endpoint" name="proxy_endpoint"
+             value="{{ pe.masked if pe.is_set else '' }}"
+             placeholder="مثال: proxy.hoberadius.com:51821" dir="ltr">
+      <div class="fi-hint">العنوان العام للوكيل على المنفذ 51821.</div>
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ نقطة الوصول
+    </button>
+  </form>
+</div>
+
+{# ─── 3. RADIUS shared secret ─── #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title"><i class="fa-solid fa-lock"></i> سرّ RADIUS المشترك (CHR ↔ Proxy)</div>
+  </div>
+  <div class="fi-card-sub">
+    هذا هو القيمة الموضوعة في <code dir="ltr">/radius add ... secret=</code> على كل CHR.
+    <strong>يجب أن تطابق</strong> القيمة المضبوطة على وكيل RADIUS (<code dir="ltr">PROXY_CHR_SECRET</code>
+    أو <code dir="ltr">Config.CHR_SHARED_SECRET</code>) — وإلا تفشل المصافحة بلا إشعار واضح.
+    تُخزَّن مُشفَّرة هنا ولا تُعرض مجدداً بعد الحفظ.
+  </div>
+
+  {% set rs = view|selectattr('key','equalto','CHR_SHARED_SECRET')|first %}
+  {% if rs.is_set %}
+    <div class="fi-banner fi-banner--ok" style="margin-block-end:14px">
+      <i class="fa-solid fa-shield-halved"></i>
+      <div>
+        السر مضبوط ومحفوظ مشفّراً (قيمة مُقنَّعة: <code dir="ltr">{{ rs.masked }}</code>).
+        لا يُعرض النص الأصلي بعد الحفظ.
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_radius_secret') }}">
+    {{ csrf_input() }}
+    <div class="fi-field">
+      <label for="chr_shared_secret">السر المشترك (الصق سرّاً قوياً ≥ 16 حرفاً)</label>
+      <input type="password" id="chr_shared_secret" name="chr_shared_secret"
+             autocomplete="new-password" placeholder="…">
+      <div class="fi-hint">
+        أو اضغط «توليد سرّ قوي» لإنشاء قيمة عشوائية 48 حرفاً مباشرة.
+        لا تشاركه عبر البريد أو الدردشة.
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="submit" class="fi-btn fi-btn--primary">
+        <i class="fa-solid fa-lock"></i> حفظ السر المشفّر
+      </button>
+      <button type="submit" name="auto_generate" value="1" class="fi-btn fi-btn--warn"
+              data-confirm="هل تريد توليد سرّ عشوائي 48 حرفاً وحفظه؟ ستحتاج لضبط القيمة نفسها على الوكيل.">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> توليد سرّ قوي
+      </button>
+    </div>
+  </form>
+</div>
+
+{# ─── 4. TLS certificates (optional) ─── #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title"><i class="fa-solid fa-certificate"></i> شهادات TLS (اختياري)</div>
+  </div>
+  <div class="fi-card-sub">
+    أسماء الشهادات (<code dir="ltr">/certificate</code> rows) المثبّتة مسبقاً على كل CHR.
+    إذا تركتها فارغة يتخطّى السكربت خوادم SSTP و IPsec/IKEv2 تلقائياً (يبقى PPTP يعمل).
+    استخدم هذا الخيار حتى تُجهّز شهادة <code dir="ltr">vpn.hoberadius.com</code> على عقدك.
+  </div>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_cert_names') }}">
+    {{ csrf_input() }}
+    {% set ss = view|selectattr('key','equalto','SSTP_CERT_NAME')|first %}
+    {% set ks = view|selectattr('key','equalto','IKE_CERT_NAME')|first %}
+    <div class="fi-field">
+      <label for="sstp_cert_name">اسم شهادة SSTP</label>
+      <input type="text" id="sstp_cert_name" name="sstp_cert_name"
+             value="{{ ss.masked if ss.is_set else '' }}"
+             placeholder="(فارغ = تخطّي SSTP)" dir="ltr">
+    </div>
+    <div class="fi-field">
+      <label for="ike_cert_name">اسم شهادة IKEv2</label>
+      <input type="text" id="ike_cert_name" name="ike_cert_name"
+             value="{{ ks.masked if ks.is_set else '' }}"
+             placeholder="(فارغ = تخطّي IPsec)" dir="ltr">
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ أسماء الشهادات
+    </button>
+  </form>
+</div>
+
+{# Styled confirm + toast (no native confirm) — same shape as the pending card #}
+<div id="fi-confirm" role="dialog" aria-modal="true"
+     style="position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.35)">
+  <div style="background:#fff;border-radius:14px;padding:20px 22px;max-width:460px;width:92%;box-shadow:0 24px 48px -20px rgba(15,23,42,.4)">
+    <div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <i class="fa-solid fa-triangle-exclamation" style="color:#b45309"></i> تأكيد
+    </div>
+    <div id="fi-confirm-msg" style="font-size:13px;color:#1f2937;line-height:1.65;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" id="fi-confirm-cancel"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        إلغاء
+      </button>
+      <button type="button" id="fi-confirm-ok"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #1e40af;background:#1e40af;color:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        متابعة
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/admin_fleet_infra.js') }}" defer></script>
+
+{% endblock %}

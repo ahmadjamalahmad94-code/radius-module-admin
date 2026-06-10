@@ -347,8 +347,28 @@ class OnboardingService:
 
     # ── config access (works in or out of an app context) ────────────────────
     def _const(self, key: str) -> Any:
+        """Resolve a fleet-constant by template-var name.
+
+        Chain: ``self.config`` (test injection) → ``Setting`` row → app config
+        → built-in defaults. The Setting layer lands here so the new
+        «إعدادات بنية الأسطول» page (feat/fleet-infrastructure-settings) can
+        write the live values without any code change to the renderer — the
+        validator's «بانتظار» clears the moment Setting rows exist.
+
+        Secrets stored in the Setting layer are Fernet-encrypted; the
+        settings_store module decrypts them on read. Non-secret fields
+        (pubkeys, endpoints, cert names) are stored verbatim.
+        """
         if self.config is not None and key in self.config:
             return self.config[key]
+        # Setting layer (UI-managed) — feat/fleet-infrastructure-settings.
+        try:
+            from fleet.registry.infra_settings import get_fleet_const  # local import — avoids cycle at module load
+            val = get_fleet_const(key)
+            if val is not None and val != "":
+                return val
+        except Exception:  # noqa: BLE001 — never break render on a settings probe error
+            pass
         try:
             from flask import current_app
 
