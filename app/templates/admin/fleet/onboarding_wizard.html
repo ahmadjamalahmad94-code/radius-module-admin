@@ -262,6 +262,17 @@
               <span>السماح بالتجاوز الشهري المدفوع</span>
             </label>
           </div>
+          {# Only meaningful when overage is allowed. Required by the service
+             layer (provider_service.py: «عند السماح بالتجاوز يجب تحديد سعر
+             التجاوز لكل TB»). JS toggles display + required when checkbox flips. #}
+          <div class="fw-field" id="np_overage_price_field" style="display:none">
+            <label for="np_overage_price_per_tb">سعر التجاوز / TB ($)</label>
+            <input type="number" id="np_overage_price_per_tb" name="np_overage_price_per_tb"
+                   min="0" step="0.01" placeholder="مثلاً 12.00">
+            <div class="fw-hint">
+              مطلوب فقط عند تفعيل «السماح بالتجاوز». يمكن أن يساوي سعر TB العادي.
+            </div>
+          </div>
         </div>
         <div class="fw-foot" style="justify-content:flex-end;padding-top:0;border-top:none;margin-top:0">
           <button type="button" class="fw-btn fw-btn--primary" id="fw-new-provider-save">
