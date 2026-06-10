@@ -197,6 +197,31 @@ class Config:
     # How long (seconds) a proxy heartbeat token remains valid (clock skew window).
     RADIUS_PROXY_TOKEN_TTL = _env_int("RADIUS_PROXY_TOKEN_TTL", 60)
 
+    # ── CHR fleet — control-plane infra (fix/fleet-script-real-bindings) ───
+    # These are CONSUMED BY THE RouterOS unified template via
+    # OnboardingService._const("X") → current_app.config.get("X") → defaults.
+    # Until a Fleet-Infrastructure settings UI lands, they're env-only —
+    # mirroring the bootstrap pattern of RADIUS_PROXY_SHARED_SECRET above.
+    #
+    # NOT THE SAME as RADIUS_PROXY_SHARED_SECRET:
+    #   * RADIUS_PROXY_SHARED_SECRET — HMAC token used by the panel ↔ proxy
+    #     HTTP ingest API (X-Proxy-Token, _verify_proxy_token).
+    #   * CHR_SHARED_SECRET         — the RouterOS `/radius add ... secret="..."`
+    #     value the CHR uses against the proxy in RFC-2865 RADIUS. Must match
+    #     the proxy's PROXY_CHR_SECRET / Config.CHR_SHARED_SECRET (one fleet-
+    #     wide value all CHRs use, per docs/chr_fleet/06_ONBOARDING_WIZARD
+    #     §6.5.1).
+    PANEL_WG_PUBKEY = os.environ.get("PANEL_WG_PUBKEY", "")
+    PANEL_WG_ENDPOINT = os.environ.get("PANEL_WG_ENDPOINT", "")
+    PROXY_WG_PUBKEY = os.environ.get("PROXY_WG_PUBKEY", "")
+    PROXY_WG_ENDPOINT = os.environ.get("PROXY_WG_ENDPOINT", "")
+    CHR_SHARED_SECRET = os.environ.get("CHR_SHARED_SECRET", "")
+    # SSTP / IKEv2 TLS cert names on the CHR. Empty → cert-bound sections in
+    # the unified template are skipped cleanly. Set these (and pre-install
+    # the matching /certificate row on each CHR) to enable SSTP + IPsec.
+    SSTP_CERT_NAME = os.environ.get("SSTP_CERT_NAME", "")
+    IKE_CERT_NAME = os.environ.get("IKE_CERT_NAME", "")
+
     # ── WhatsApp Cloud API settings panel (admin-managed credentials) ──────
     # Lets an admin store/manage the house Meta Cloud API credentials in the
     # panel settings (encrypted) instead of editing env. When disabled, the
