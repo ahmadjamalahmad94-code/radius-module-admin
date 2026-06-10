@@ -413,13 +413,20 @@ Implemented in `app/api/proxy_api.py`.
   ],
   "chr_nodes": [
     {
-      "name": "chr-exit-01",              // registry node NAME — telemetry/placement key by this
-      "public_ip": "x.x.x.x",
-      "management_ip": "10.99.0.11",
-      "status": "active",
-      "enabled_services": ["sstp"]
+      "name":       "chr-vpn-1",          // registry node NAME — telemetry/placement key
+      "public_ip":  "178.105.244.112",    // front-door + RADIUS-from-internet candidate
+      "wg_mgmt_ip": "10.99.0.11",         // control plane (api-ssl, CoA listener)
+      "wg_data_ip": "10.98.0.11",         // RADIUS source the proxy actually SEES
+      "status":     "provisioning",       // fleet status: provisioning|up|degraded
+      "enabled":    true,
+      "drain":      false,
+      "source":     "fleet"               // "fleet" | "legacy"
     }
-  ]
+  ],
+  "realms_status": {                       // Phase-X diagnostic — see below
+    "active": 0, "draft": 1, "suspended": 0, "total": 1,
+    "hint": "إنشئ ProxyRealmRoute ثم اضبط الحالة إلى active …"
+  }
 }
 ```
 
@@ -428,6 +435,41 @@ Implemented in `app/api/proxy_api.py`.
 > (`POST /api/proxy/placement`, §2) key by node name, so the proxy needs the name
 > here to correlate a routing-table CHR with the node it reports telemetry for.
 > `name` is **additive** — `public_ip` and the other fields are unchanged.
+
+> **`chr_nodes[].wg_data_ip` (live-deploy hotfix `fix/fleet-routing-table-publish`):**
+> The proxy receives RADIUS packets from the CHR over the `wg-data` tunnel —
+> a separate Curve25519 WireGuard tunnel parallel to `wg-mgmt`. The actual
+> RADIUS SOURCE IP on the proxy side is therefore the CHR's
+> `wg-data` address (`10.98.0.X`), NOT its public IP. The proxy uses
+> `wg_data_ip` to:
+>   1. allowlist the source address of incoming RADIUS,
+>   2. map `received-from-10.98.0.11` → `chr-vpn-1` for telemetry attribution.
+>
+> The panel derives `wg_data_ip` from `wg_mgmt_ip` by swapping the
+> management pool prefix `10.99.` → data pool prefix `10.98.` (parallel
+> pools — see `fleet/registry/onboarding_service.py` §6.3 for the
+> minted-at-onboarding rule). A node outside the canonical 10.99/16
+> pool gets `wg_data_ip: ""` and the proxy falls back to the legacy
+> public-IP allowlist for that node.
+
+> **`chr_nodes[].source` (live-deploy hotfix):** The panel publishes nodes
+> from BOTH the new fleet registry (`fleet_chr_nodes`, populated by the
+> onboarding wizard) AND the legacy CHR-console table (`chr_nodes`,
+> kept for backward compatibility). Fleet entries are accepted at
+> ``status ∈ {provisioning, up, degraded}`` (a freshly-onboarded
+> provisioning node MUST be routable; first-light traffic has nowhere
+> to go otherwise). Legacy entries are filtered to ``status="active"``
+> as before. The `source` discriminator tells the proxy which table a
+> node came from.
+
+> **`realms_status` (live-deploy hotfix):** answers "why is `routes[]` empty?"
+> in one read. `ProxyRealmRoute` rows are created from the
+> **Admin → البنية التحتية → مسارات الوكيل** UI; they land at
+> ``status="draft"`` and stay invisible to the proxy until the owner
+> explicitly switches them to ``"active"``. The summary lists the
+> three counts + an Arabic hint when something looks misconfigured.
+> An empty `routes[]` is therefore EXPECTED on a fresh install — but
+> chr_nodes[] is NOT (a provisioned node ships immediately).
 
 ---
 

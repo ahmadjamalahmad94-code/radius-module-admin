@@ -110,6 +110,17 @@ def proxy_placement_decision():
         "decision": result.decision.name if result.decision is not None else None,
         "top_n": [_serialise_node(c) for c in result.candidates],
     }
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog(
+            "placement-decision",
+            realm=(request.args.get("realm") or "")[:80],
+            username=(request.args.get("username") or "")[:80],
+            decision=payload["decision"],
+            top_n=len(payload["top_n"]),
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return jsonify(payload), 200
 
 
