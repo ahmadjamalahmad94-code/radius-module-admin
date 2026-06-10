@@ -145,15 +145,45 @@ def build_node_views(nodes: Iterable[FleetChrNode]) -> list[NodeView]:
     )
     metric_by_chr: dict[int, FleetChrMetric] = {m.chr_id: m for m in latest_rows}
 
+    # Latest CONTROL-source metric per node — separate from "absolute
+    # latest" so we never lose CPU / sessions / bandwidth just because
+    # a more recent ping arrived (the ping path writes source='ping'
+    # rows that carry RTT but never CPU). The dashboard prefers this
+    # source for the load chips and falls back to the absolute latest
+    # only when no control sample exists.
+    latest_ctl_ts_subq = (
+        select(FleetChrMetric.chr_id, func.max(FleetChrMetric.ts).label("max_ts"))
+        .where(FleetChrMetric.chr_id.in_(chr_ids))
+        .where(FleetChrMetric.source == "control")
+        .group_by(FleetChrMetric.chr_id)
+        .subquery()
+    )
+    latest_ctl_rows = (
+        db.session.query(FleetChrMetric)
+        .join(
+            latest_ctl_ts_subq,
+            and_(
+                FleetChrMetric.chr_id == latest_ctl_ts_subq.c.chr_id,
+                FleetChrMetric.ts == latest_ctl_ts_subq.c.max_ts,
+                FleetChrMetric.source == "control",
+            ),
+        )
+        .all()
+    )
+    control_metric_by_chr: dict[int, FleetChrMetric] = {
+        m.chr_id: m for m in latest_ctl_rows
+    }
+
     views: list[NodeView] = []
     for node in nodes_list:
         h = health_by_chr.get(node.id)
         m = metric_by_chr.get(node.id)
+        c = control_metric_by_chr.get(node.id)
         views.append(
             NodeView(
                 node=node,
                 health=_health_to_view(h),
-                metric=_metric_to_view(m),
+                metric=_metric_to_view(m, control=c),
             )
         )
     return views
@@ -182,19 +212,63 @@ def _health_to_view(h: FleetChrHealth | None) -> HealthView:
     )
 
 
-def _metric_to_view(m: FleetChrMetric | None) -> MetricsView:
-    if m is None:
+def _metric_to_view(
+    m: FleetChrMetric | None, *, control: FleetChrMetric | None = None,
+) -> MetricsView:
+    """Compose a dashboard-side metric view from up to two sample rows.
+
+    ``m`` is the absolute latest metric (any source) and ``control`` is
+    the latest sample whose ``source='control'`` — the live RouterOS
+    poll. Load chips (CPU / mem / sessions / RX / TX) prefer the control
+    sample so a fresher ping (which only carries RTT) never blanks them;
+    RTT + loss come from the absolute latest. ``ts`` and ``source``
+    follow the chip the operator actually sees: when the control sample
+    contributed the CPU/sessions values we expose its timestamp so the
+    «منذ …» label matches the data.
+    """
+    if m is None and control is None:
         return MetricsView()
+
+    base = m if m is not None else control
+    ctrl = control if control is not None else None
+
+    def _pick_float(field: str) -> float | None:
+        if ctrl is not None and getattr(ctrl, field) is not None:
+            return float(getattr(ctrl, field))
+        if m is not None and getattr(m, field) is not None:
+            return float(getattr(m, field))
+        return None
+
+    def _pick_int(field: str) -> int | None:
+        if ctrl is not None and getattr(ctrl, field) is not None:
+            return int(getattr(ctrl, field))
+        if m is not None and getattr(m, field) is not None:
+            return int(getattr(m, field))
+        return None
+
+    # Surface the timestamp + source the load chips came from.
+    if ctrl is not None and (
+        ctrl.cpu_pct is not None or ctrl.active_sessions is not None
+        or ctrl.rx_bytes is not None or ctrl.tx_bytes is not None
+    ):
+        ts = ctrl.ts
+        source = ctrl.source
+    else:
+        ts = base.ts if base is not None else None
+        source = base.source if base is not None else None
+
     return MetricsView(
-        ts=m.ts,
-        cpu_pct=float(m.cpu_pct) if m.cpu_pct is not None else None,
-        mem_pct=float(m.mem_pct) if m.mem_pct is not None else None,
-        active_sessions=int(m.active_sessions) if m.active_sessions is not None else None,
-        rx_bytes=int(m.rx_bytes) if m.rx_bytes is not None else None,
-        tx_bytes=int(m.tx_bytes) if m.tx_bytes is not None else None,
-        ping_rtt_ms=float(m.ping_rtt_ms) if m.ping_rtt_ms is not None else None,
-        ping_loss_pct=float(m.ping_loss_pct) if m.ping_loss_pct is not None else None,
-        source=m.source,
+        ts=ts,
+        cpu_pct=_pick_float("cpu_pct"),
+        mem_pct=_pick_float("mem_pct"),
+        active_sessions=_pick_int("active_sessions"),
+        rx_bytes=_pick_int("rx_bytes"),
+        tx_bytes=_pick_int("tx_bytes"),
+        ping_rtt_ms=(float(m.ping_rtt_ms)
+                     if m is not None and m.ping_rtt_ms is not None else None),
+        ping_loss_pct=(float(m.ping_loss_pct)
+                       if m is not None and m.ping_loss_pct is not None else None),
+        source=source,
     )
 
 

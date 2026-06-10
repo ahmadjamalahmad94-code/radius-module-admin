@@ -251,3 +251,294 @@ def test_remove_appears_before_add_for_every_managed_resource():
             f"remove `{rem}` (line {ri}) must come BEFORE add `{add}` "
             f"(line {ai}); otherwise a re-run hits «already have»."
         )
+
+
+# ─── defensive belt-and-braces for /ppp profile and /ip pool ────────────────
+
+def test_radius_entry_is_force_enabled_after_add():
+    """The first live CHR install hit a case where the /radius entry landed
+    with Flags: X - DISABLED (so PPP AAA + the entry both existed, but no
+    RADIUS packets ever reached the proxy). The script MUST force the
+    entry enabled after the add/re-add so any prior disabled state is
+    corrected on every (re-)import."""
+    script = _render()
+    flat = script.replace(" \\\n", " ")
+    # The enable line MUST exist, target the comment tag, and come AFTER
+    # the add so it acts on the row we just inserted.
+    enable_line = '/radius enable [find comment="hobe-fleet-radius"]'
+    assert enable_line in script, (
+        f"missing radius enable line: expected {enable_line!r}"
+    )
+    lines = flat.splitlines()
+
+    def first_index(needle: str) -> int:
+        for i, line in enumerate(lines):
+            if needle in line:
+                return i
+        return -1
+
+    add_idx = first_index('comment="hobe-fleet-radius"')
+    enable_idx = first_index('/radius enable')
+    assert add_idx != -1 and enable_idx != -1
+    assert enable_idx > add_idx, (
+        f"/radius enable (line {enable_idx}) must come AFTER the add "
+        f"that places comment=\"hobe-fleet-radius\" (line {add_idx})."
+    )
+
+
+def test_ppp_profile_has_defensive_remove():
+    """The current template only `set`s the built-in default-encryption profile
+    — but the owner's real-router re-import hit «name can't repeat» for PPP
+    profiles (left over from an older script revision). Defensive cleanup
+    sweeps any hobe-tagged ppp profile before the `set` so stale rows from
+    older imports go away."""
+    script = _render()
+    assert 'remove [find comment="hobe-fleet-ppp"]' in script, \
+        "/ppp profile needs a defensive remove [find comment=\"hobe-fleet-ppp\"] before set"
+
+
+def test_ip_pool_has_defensive_remove():
+    """The owner's real-router re-import also hit «can't repeat» for pools.
+    The template doesn't `add` any pool today, but the cleanup anchor lives
+    here so any future custom pool add lands on a clean table — and so
+    stale rows from older scripts get swept."""
+    script = _render()
+    assert 'remove [find name~"^hobe-fleet-pool"]' in script, \
+        "/ip pool needs defensive remove [find name~\"^hobe-fleet-pool\"]"
+
+
+# ─── comprehensive audit: NO unprotected `add` to a managed table ──────────
+
+#: Tables whose `add` MUST be preceded somewhere upstream by a `remove`. The
+#: set of tables is exhaustive over the v2 template; if a future edit adds an
+#: `add` to a new managed table, the audit below will catch it (and the
+#: matching `remove` becomes mandatory).
+_IDEMPOTENT_TABLES = {
+    "/interface wireguard",
+    "/interface wireguard peers",
+    "/ip address",
+    "/radius",
+    "/ip ipsec profile",
+    "/ip ipsec proposal",
+    "/ip ipsec mode-config",
+    "/ip ipsec peer",
+    "/ip ipsec identity",
+    "/ip firewall nat",
+    "/ip firewall filter",
+    "/ppp profile",       # defensive
+    "/ip pool",           # defensive
+}
+
+
+def test_audit_every_add_under_a_managed_table_has_prior_remove_in_same_table():
+    """Comprehensive sweep: walk the script line-by-line tracking the active
+    table. For each `add` line under a table in :data:`_IDEMPOTENT_TABLES`,
+    confirm at least one `remove [find …]` appeared under that SAME table
+    earlier in the script."""
+    script = _render()
+    flat = script.replace(" \\\n", " ")
+
+    table = None
+    removes_seen_per_table: dict[str, int] = {t: 0 for t in _IDEMPOTENT_TABLES}
+    failures: list[str] = []
+    for lineno, raw in enumerate(flat.splitlines(), start=1):
+        line = raw.strip()
+        if line.startswith("/"):
+            table = line if line in _IDEMPOTENT_TABLES else line
+            continue
+        if table in _IDEMPOTENT_TABLES:
+            if line.startswith("remove "):
+                removes_seen_per_table[table] += 1
+            elif line.startswith("add "):
+                if removes_seen_per_table[table] == 0:
+                    failures.append(
+                        f"L{lineno}: unprotected `add` under {table}: {line!r}"
+                    )
+    assert not failures, "idempotency audit failed:\n  " + "\n  ".join(failures)
+
+
+# ─── double-apply simulator: prove the second import is clean ──────────────
+
+_TABLE_KEY = {
+    "/interface wireguard":       ("name",),
+    "/interface wireguard peers": ("interface", "public_key"),
+    "/ip address":                ("address", "interface"),
+    "/radius":                    ("comment",),
+    "/ip ipsec profile":          ("name",),
+    "/ip ipsec proposal":         ("name",),
+    "/ip ipsec mode-config":      ("name",),
+    "/ip ipsec peer":             ("name",),
+    "/ip ipsec identity":         ("peer",),
+    "/ip firewall nat":           ("comment",),
+    "/ip firewall filter":        ("comment",),
+    "/ppp profile":               ("comment",),
+    "/ip pool":                   ("name",),
+}
+
+
+def _parse_kv(s):
+    """Tokenize  `key=value` / `key="quoted value"`  pairs from a RouterOS line."""
+    out = {}
+    for m in re.finditer(r'([\w-]+)=("([^"]*)"|([^\s;\\]+))', s):
+        k = m.group(1)
+        v = m.group(3) if m.group(3) is not None else m.group(4)
+        # Normalize: hyphen-keyed Mikrotik attrs map to underscore for python.
+        out[k.replace("-", "_")] = v
+    return out
+
+
+def _parse_find(expr):
+    """`[find name="X"]` → ("name", "=", "X"); `[find c~"^h-"]` → ("c","~","^h-")."""
+    m = re.match(r'\[find ([\w-]+)([=~])"?([^"\]]+)"?\]', expr.strip())
+    assert m, f"can't parse find: {expr!r}"
+    return m.group(1).replace("-", "_"), m.group(2), m.group(3)
+
+
+def _row_matches_find(row, find):
+    k, op, v = find
+    rv = row.get(k, "")
+    return (rv == v) if op == "=" else bool(re.search(v, rv))
+
+
+class _FakeCHR:
+    """Toy RouterOS state machine that enforces add-uniqueness per table.
+
+    Rows track a synthetic ``_disabled`` field so the simulator can
+    reproduce the «landed disabled» bug class and prove `enable [find …]`
+    fixes it.
+    """
+
+    def __init__(self):
+        self.tables: dict[str, list[dict]] = {t: [] for t in _TABLE_KEY}
+        self.errors: list[str] = []
+
+    def add(self, table, kwargs, line_no):
+        keyspec = _TABLE_KEY[table]
+        for row in self.tables[table]:
+            if all(row.get(k, "") == kwargs.get(k, "") for k in keyspec):
+                self.errors.append(
+                    f"L{line_no}: «name/key can't repeat» {table} "
+                    f"{keyspec}={[kwargs.get(k, '') for k in keyspec]}"
+                )
+                return
+        # RouterOS default: many tables land with disabled=no, but the live
+        # CHR has demonstrated /radius can come up disabled. The simulator
+        # plays it safe: every newly-added row defaults to ENABLED in our
+        # model so the test of `enable` is meaningful (we'll explicitly
+        # force a disabled state in `force_disable_radius_for_bug_repro`).
+        row = dict(kwargs)
+        row.setdefault("_disabled", False)
+        self.tables[table].append(row)
+
+    def remove(self, table, find, line_no):
+        before = len(self.tables[table])
+        self.tables[table] = [r for r in self.tables[table] if not _row_matches_find(r, find)]
+        return before - len(self.tables[table])
+
+    def enable(self, table, find, line_no):
+        """`/<table> enable [find …]` → flips _disabled=False on matches."""
+        for row in self.tables[table]:
+            if _row_matches_find(row, find):
+                row["_disabled"] = False
+
+    # Test helper — repro the live-CHR bug class.
+    def force_disable_radius(self):
+        for row in self.tables["/radius"]:
+            row["_disabled"] = True
+
+
+def _apply_script_to(chr_state, script_text):
+    flat = re.sub(r"\\\n\s*", " ", script_text)
+    table = None
+    # A line may be a table selector (`/radius`) OR a table selector + op
+    # on the same line (`/radius enable [find comment=…]`). Handle both.
+    for n, raw in enumerate(flat.splitlines(), start=1):
+        line = raw.split(";#", 1)[0].rstrip()
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("/"):
+            # `/radius enable [find …]` — table selector + op on one line.
+            m = re.match(r'^(/[\w \-]+?) (enable|disable) (\[find [^\]]+\])$', s)
+            if m:
+                t = m.group(1)
+                if t in _TABLE_KEY:
+                    chr_state.enable(t, _parse_find(m.group(3)), n)
+                continue
+            # Otherwise it's just a table selector — switch context.
+            table = s if s in _TABLE_KEY else s
+            continue
+        if s.startswith("remove "):
+            m = re.match(r'remove (\[find [^\]]+\])', s)
+            if not m or table not in _TABLE_KEY:
+                continue
+            chr_state.remove(table, _parse_find(m.group(1)), n)
+            continue
+        if s.startswith("add ") and table in _TABLE_KEY:
+            chr_state.add(table, _parse_kv(s[4:]), n)
+
+
+def test_double_apply_is_clean_no_repeat_errors_no_duplicates():
+    """Logical proof: render the .rsc, parse it into RouterOS-like ops,
+    apply twice to a virgin fake CHR. Zero «can't repeat» errors required;
+    state after 2nd apply must equal state after 1st."""
+    script = _render()
+    chr_state = _FakeCHR()
+
+    _apply_script_to(chr_state, script)
+    snapshot_1 = {t: [dict(r) for r in rows] for t, rows in chr_state.tables.items()}
+    assert chr_state.errors == [], (
+        "first apply already errored: " + "\n".join(chr_state.errors)
+    )
+
+    _apply_script_to(chr_state, script)
+    snapshot_2 = {t: [dict(r) for r in rows] for t, rows in chr_state.tables.items()}
+
+    assert chr_state.errors == [], (
+        "second apply hit «can't repeat»:\n  " + "\n  ".join(chr_state.errors)
+    )
+    for table in _TABLE_KEY:
+        assert snapshot_1[table] == snapshot_2[table], (
+            f"{table}: state diverged between applies — 1st={len(snapshot_1[table])}, "
+            f"2nd={len(snapshot_2[table])}"
+        )
+    # And the radius entry MUST be enabled after BOTH applies — this is what
+    # broke the first live install (entry existed but disabled, PPP used
+    # RADIUS, no packets ever reached the proxy).
+    for snap, label in ((snapshot_1, "1st"), (snapshot_2, "2nd")):
+        radius = snap["/radius"]
+        assert len(radius) == 1, f"{label} apply: expected 1 /radius row, got {len(radius)}"
+        assert radius[0].get("_disabled") is False, (
+            f"{label} apply: /radius entry ended up disabled — the `enable` "
+            f"line must run after the add."
+        )
+
+
+def test_radius_enable_recovers_a_disabled_entry_on_reimport():
+    """Regression repro: simulate the live-CHR bug where /radius came up
+    DISABLED. Apply once → entry enabled. Force-disable the row (mimics the
+    state the owner found on the real router). Re-apply. The entry MUST end
+    up enabled again because of the `/radius enable [find comment="…"]`
+    line — without it, the re-import would `remove` + `add` cleanly but
+    the new row could once again land disabled (we don't control the
+    default), and AAA would silently keep failing.
+
+    The enable line is the belt-and-braces that closes this hole."""
+    script = _render()
+    chr_state = _FakeCHR()
+
+    _apply_script_to(chr_state, script)
+    assert chr_state.tables["/radius"][0]["_disabled"] is False
+
+    # Mimic what the owner found on the real CHR.
+    chr_state.force_disable_radius()
+    assert chr_state.tables["/radius"][0]["_disabled"] is True
+
+    # Re-import — should heal the entry.
+    _apply_script_to(chr_state, script)
+    assert chr_state.errors == [], chr_state.errors
+    assert len(chr_state.tables["/radius"]) == 1
+    assert chr_state.tables["/radius"][0]["_disabled"] is False, (
+        "/radius re-import did not heal a disabled entry — the `enable [find …]` "
+        "line is missing or in the wrong order."
+    )

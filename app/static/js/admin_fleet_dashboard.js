@@ -341,7 +341,60 @@
   }
 
   // ────────────────────────────────────────────────────────────────────
+  // Single-node live-metrics poll — bypasses the 60s background worker.
+  // ────────────────────────────────────────────────────────────────────
+  function bindPollMetricsButtons() {
+    document.querySelectorAll(".fd-poll-metrics").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const url = btn.dataset.url;
+        const nodeName = btn.dataset.nodeName || ("#" + btn.dataset.nodeId);
+        if (!url) {
+          toast("error", "تعذّر تحديد عنوان الطلب.");
+          return;
+        }
+        const tr = btn.closest("tr");
+        if (tr) tr.classList.add("is-checking");
+        btn.classList.add("is-busy");
+        btn.disabled = true;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+            body: JSON.stringify({}),
+          });
+          const body = await safeJson(res);
+          if (!res.ok || !body.ok) {
+            const detail = body.detail || body.error || ("HTTP " + res.status);
+            toast("error",
+              "تعذّر قراءة المقاييس للعقدة «" + nodeName + "»: " + detail,
+              { ttl: 6500 });
+            return;
+          }
+          if (body.row) applyRowPayload(body.row);
+          recomputeKpis();
+          const summary = body.summary || {};
+          if ((summary.error_count || 0) > 0) {
+            const first = (summary.errors || [])[0] || ["", ""];
+            toast("warning",
+              "العقدة «" + nodeName + "» — تعذّرت القراءة: " + (first[1] || "خطأ غير معروف"));
+          } else {
+            toast("success",
+              "تمت قراءة المقاييس من «" + nodeName + "» (مصدر: control).");
+          }
+        } catch (err) {
+          toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.");
+        } finally {
+          if (tr) tr.classList.remove("is-checking");
+          btn.classList.remove("is-busy");
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────────
   // Boot
   // ────────────────────────────────────────────────────────────────────
   bindSingleCheckButtons();
+  bindPollMetricsButtons();
 })();

@@ -18,6 +18,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_components.css') }}">
+  {# Design-system sweep — loaded LAST so it normalizes spacing/tables/tabs
+     across every admin page without rewriting individual templates. Pairs
+     with admin_design_sweep.js (deferred at the bottom). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_design_sweep.css') }}">
 
   <style>
     /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
@@ -521,8 +525,23 @@
 {# المودال العام (موجود في _partials) #}
 {% include "_partials/_confirm_modal.html" %}
 
+{# Design-sweep building blocks — globally available on every admin page so
+   any template can use hub.tab_bar / data-confirm / showToast() without
+   adding its own DOM scaffolding. The CSS is in admin_design_sweep.css. #}
+<div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
+  <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
+    <div class="hub-confirm-message" id="hub-confirm-message">—</div>
+    <div class="hub-confirm-actions">
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+<div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
+
 {# ── JavaScript ──────────────────────────────────────────────────────────── #}
 <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/admin_design_sweep.js') }}" defer></script>
 
 <script>
 (function () {
