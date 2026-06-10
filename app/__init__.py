@@ -32,6 +32,12 @@ def create_app(config_object=None, **overrides) -> Flask:
     _install_proxy_fix(app)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
 
+    # Reject any DATABASE_URL that would re-introduce the SQLite
+    # split-brain (relative paths resolved against cwd). Canonical-path
+    # diagnostics + legacy-sibling warning are logged here so the
+    # operator sees them on every boot, including under systemd.
+    _validate_and_log_db_path(app)
+
     db.init_app(app)
     _install_rate_limits(app)
     _install_csrf(app)
@@ -157,6 +163,43 @@ def _configure_logging(app: Flask) -> None:
     level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(level=level, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
     app.logger.setLevel(level)
+
+
+def _validate_and_log_db_path(app: Flask) -> None:
+    """Reject relative sqlite:/// URIs at boot + warn on a legacy sibling.
+
+    The historical split-brain (license_panel.db vs license_panel.sqlite3)
+    came from cwd-dependent path resolution. We refuse to start with a
+    config that would re-create the same trap, and we log the resolved
+    on-disk path so the operator can verify it in journalctl.
+    """
+    from .db_path import (
+        DatabaseURIError,
+        detect_legacy_sibling,
+        resolved_sqlite_path_for,
+        validate_database_uri,
+    )
+
+    uri = str(app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+    try:
+        validate_database_uri(uri)
+    except DatabaseURIError as exc:
+        # Hard-fail: this is the exact misconfig the field report
+        # uncovered. Better to refuse than open a stray file.
+        raise RuntimeError(str(exc)) from exc
+
+    resolved = resolved_sqlite_path_for(uri)
+    if resolved is not None:
+        app.logger.info("SQLite database resolved to: %s", resolved)
+    sibling = detect_legacy_sibling()
+    if sibling is not None:
+        app.logger.warning(
+            "Legacy SQLite sibling detected next to the canonical file: %s. "
+            "The panel only reads the canonical file; data in the legacy "
+            "file is INVISIBLE to the running app. See "
+            "docs/DB_PATH_FIX_RUNBOOK.md before deleting or moving it.",
+            sibling,
+        )
 
 
 def _validate_production_config(app: Flask) -> None:
