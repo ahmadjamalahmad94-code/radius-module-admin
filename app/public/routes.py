@@ -17,7 +17,9 @@ from ..services.customer_control import (
     normalize_contact_phone,
     service_catalog_items,
     service_label,
+    service_limit_fields,
     service_limit_summary,
+    service_tier_for_entitlement,
     visible_service_request_messages,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
@@ -272,6 +274,7 @@ def customer_portal_dashboard():
         runtime_setup=_runtime_setup_for_license(lic),
         service_catalog=service_catalog_items(),
         service_limit_summary=service_limit_summary,
+        service_limit_fields=service_limit_fields,
         licenses=customer.licenses.order_by(License.created_at.desc()).all(),
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
@@ -395,13 +398,37 @@ def customer_portal_service_request(service_key: str):
     user = _current_customer_user()
     if not user:
         return redirect(url_for("public.customer_portal_login"))
+    # The activation / upgrade modal collects spec inputs as `spec_<field_key>`
+    # (e.g. spec_max_total). Build a desired_limits dict from whatever the
+    # service's own limit fields are, then append a human-readable summary
+    # of the requested specs to the customer's notes so the admin sees them
+    # in the service-request inbox.
+    desired_limits: dict[str, int] = {}
+    spec_summary_parts: list[str] = []
     try:
+        for field_key, field_label, _hint in service_limit_fields(service_key):
+            raw = (request.form.get(f"spec_{field_key}") or "").strip()
+            if not raw:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                continue
+            if value < 0:
+                continue
+            desired_limits[field_key] = value
+            spec_summary_parts.append(f"{field_label}: {value}")
+        notes = (request.form.get("notes") or "").strip()
+        if spec_summary_parts:
+            preamble = "المواصفات المطلوبة — " + "، ".join(spec_summary_parts)
+            notes = f"{preamble}\n\n{notes}" if notes else preamble
         service_request = create_customer_service_request(
             customer=user.customer,
             customer_user_id=user.id,
             service_key=service_key,
             request_type=request.form.get("request_type") or "activation",
-            notes=request.form.get("notes") or "",
+            notes=notes,
+            desired_limits=desired_limits or None,
         )
         amount = (request.form.get("amount") or "").strip()
         payment_request = None

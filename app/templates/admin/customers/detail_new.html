@@ -704,6 +704,10 @@
        title="صفحة مستقلة لمستخدمي العميل (بوابة + هويات الراديوس)">
       <i class="fa-solid fa-users-gear" aria-hidden="true"></i> {{ _('مستخدمو العميل') }}
     </a>
+    <a href="{{ url_for('admin.customer_service_tiers', customer_id=customer.id) }}" class="cd-hero-btn"
+       title="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة لهذا المشترك">
+      <i class="fa-solid fa-layer-group" aria-hidden="true"></i> تعرفة الخدمات
+    </a>
     {% if is_super_admin %}
       <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" class="cd-hero-btn">
         <i class="fa-solid fa-vault" aria-hidden="true"></i> الخزنة

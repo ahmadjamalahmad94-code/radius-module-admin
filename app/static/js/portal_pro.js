@@ -58,6 +58,20 @@
     if (mS) { mS.className = more.getAttribute("data-status-cls") || "pp-svc-status is-off";
       mS.innerHTML = '<span class="dot"></span> ' + (more.getAttribute("data-status") || "—"); }
     if (mD) mD.textContent = more.getAttribute("data-desc") || "—";
+    // append a tier line to the description block when the card carries one
+    var mTier = $("pp-modal-tier-block");
+    var tierLabel = (more.getAttribute("data-tier-label") || "").trim();
+    var tierTone = (more.getAttribute("data-tier-tone") || "violet").trim();
+    if (mTier) {
+      if (tierLabel) {
+        mTier.style.display = "";
+        mTier.innerHTML = '<span class="pp-tier-badge pp-tier-' + tierTone + '">'
+          + '<i class="fa-solid fa-' + (tierTone === "green" ? "gift" : tierTone === "teal" ? "gauge-simple" : "tag") + '"></i> '
+          + escText(tierLabel) + "</span>";
+      } else {
+        mTier.style.display = "none";
+      }
+    }
     var lim = (more.getAttribute("data-limits") || "").trim();
     if (mLB && mL) {
       if (lim) { mLB.style.display = ""; mL.innerHTML = '<i class="fa-solid fa-gauge"></i> ' + lim; }
@@ -180,6 +194,10 @@
     var chip = document.querySelector("#pp-cats .pp-cat-chip.is-active");
     return chip ? chip.getAttribute("data-pp-cat") : null;
   }
+  function activeTierKey() {
+    var chip = document.querySelector("#pp-tier-filter .pp-tier-chip.is-active");
+    return chip ? (chip.getAttribute("data-tier") || "all") : "all";
+  }
   function selectCat(key) {
     document.querySelectorAll("#pp-cats .pp-cat-chip").forEach(function (c) {
       c.classList.toggle("is-active", c.getAttribute("data-pp-cat") === key);
@@ -191,6 +209,12 @@
     var s = $("pp-svc-search"); if (s) s.value = "";
     applySearch();
   }
+  function selectTier(tier) {
+    document.querySelectorAll("#pp-tier-filter .pp-tier-chip").forEach(function (c) {
+      c.classList.toggle("is-active", c.getAttribute("data-tier") === tier);
+    });
+    applySearch();
+  }
   function applySearch() {
     var root = $("pp-cat-root"); if (!root) return;
     var key = activeCatKey();
@@ -198,9 +222,13 @@
     if (!pane) return;
     var s = $("pp-svc-search");
     var q = (s && s.value || "").trim().toLowerCase();
+    var tier = activeTierKey();
     var shown = 0;
     pane.querySelectorAll(".pp-svc").forEach(function (c) {
-      var ok = !q || (c.getAttribute("data-name") || "").indexOf(q) !== -1;
+      var nameOk = !q || (c.getAttribute("data-name") || "").indexOf(q) !== -1;
+      var cardTier = c.getAttribute("data-tier") || "paid";
+      var tierOk = (tier === "all") || (cardTier === tier);
+      var ok = nameOk && tierOk;
       c.style.display = ok ? "" : "none";
       if (ok) shown++;
     });
@@ -211,6 +239,79 @@
       if (h && h.classList.contains("pp-group-h")) h.style.display = any ? "" : "none";
     });
     var nr = $("pp-svc-noresult"); if (nr) nr.style.display = shown ? "none" : "";
+  }
+
+  // ───────────────────────── activate / upgrade modals ─────────────────────────
+  // The activation + upgrade modals are SINGLE shared dialogs. Each card carries
+  // the spec layout in data-fields (a JSON list of {key,label,hint}). On open we
+  // build the inputs into the modal body and point the form at the right URL.
+  function escAttr(s) { return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function escText(s) { var d = document.createElement("div"); d.textContent = (s == null ? "" : String(s)); return d.innerHTML; }
+  function parseJsonAttr(value, fallback) {
+    if (!value) return fallback;
+    try { return JSON.parse(value); } catch (e) { return fallback; }
+  }
+  function buildSpecInputs(host, fields, currentLimits, namePrefix) {
+    if (!host) return;
+    host.innerHTML = "";
+    if (!fields || !fields.length) {
+      host.innerHTML = '<div class="pp-spec-empty">'
+        + '<i class="fa-solid fa-circle-info"></i> '
+        + 'لا تتطلّب هذه الخدمة مواصفات كميّة. أرسل الطلب وسنتواصل معك لاتفاق التفاصيل وعرض السعر.'
+        + "</div>";
+      return;
+    }
+    var html = "";
+    fields.forEach(function (f) {
+      var key = (f && f.key) || "";
+      if (!key) return;
+      var label = escText(f.label || key);
+      var hint = escText(f.hint || "");
+      var cur = (currentLimits && currentLimits[key] != null) ? currentLimits[key] : "";
+      var curBadge = (cur !== "" && cur !== null && cur !== undefined)
+        ? ' <span class="pp-current">الحالي: ' + escText(cur) + "</span>" : "";
+      html += '<div class="pp-spec-field">'
+        + '<label for="' + namePrefix + "-" + escAttr(key) + '">' + label + curBadge + "</label>"
+        + '<input type="number" min="0" '
+          + 'id="' + namePrefix + "-" + escAttr(key) + '" '
+          + 'name="spec_' + escAttr(key) + '" '
+          + 'placeholder="' + escAttr(cur !== "" ? cur : "—") + '" '
+          + 'value="' + (cur !== "" ? escAttr(cur) : "") + '">'
+        + (hint ? '<div class="pp-hint">' + hint + "</div>" : "")
+        + "</div>";
+    });
+    host.innerHTML = html;
+  }
+  function openActivate(btn) {
+    var modal = $("pp-activate-modal"); if (!modal) return;
+    var name = btn.getAttribute("data-service-name") || "خدمة";
+    var icon = btn.getAttribute("data-icon") || "paper-plane";
+    var action = btn.getAttribute("data-action") || "";
+    var fields = parseJsonAttr(btn.getAttribute("data-fields"), []);
+    var title = $("pp-activate-title"); if (title) title.textContent = "طلب تفعيل: " + name;
+    var ico = $("pp-activate-ico"); if (ico) ico.className = "fa-solid fa-" + icon;
+    var form = $("pp-activate-form"); if (form) form.setAttribute("action", action);
+    buildSpecInputs($("pp-activate-fields"), fields, null, "pp-act");
+    var notes = $("pp-activate-notes"); if (notes) notes.value = "";
+    openModal(modal);
+  }
+  function openUpgrade(btn) {
+    var modal = $("pp-upgrade-modal"); if (!modal) return;
+    var name = btn.getAttribute("data-service-name") || "خدمة";
+    var icon = btn.getAttribute("data-icon") || "arrow-up";
+    var action = btn.getAttribute("data-action") || "";
+    var fields = parseJsonAttr(btn.getAttribute("data-fields"), []);
+    var current = parseJsonAttr(btn.getAttribute("data-current-limits"), {});
+    var title = $("pp-upgrade-title"); if (title) title.textContent = "ترقية: " + name;
+    var ico = $("pp-upgrade-ico"); if (ico) ico.className = "fa-solid fa-" + icon;
+    var form = $("pp-upgrade-form"); if (form) form.setAttribute("action", action);
+    buildSpecInputs($("pp-upgrade-fields"), fields, current, "pp-upg");
+    var notes = $("pp-upgrade-notes"); if (notes) notes.value = "";
+    // reset to default upgrade target
+    var first = modal.querySelector('input[name="upgrade_target"][value="more_capacity"]');
+    if (first) first.checked = true;
+    openModal(modal);
   }
 
   function togglePwd(btn) {
@@ -225,15 +326,18 @@
   // ───────────────────────── single delegated click router ─────────────────────────
   document.addEventListener("click", function (e) {
     var t;
-    if ((t = e.target.closest("[data-pp-restore]"))) { e.preventDefault(); try { openRestore(t); } catch (x) {} return; }
-    if ((t = e.target.closest("[data-pp-delete]")))  { e.preventDefault(); try { openDelete(t); } catch (x) {} return; }
-    if ((t = e.target.closest("[data-pp-more]")))    { try { openDetails(t); } catch (x) {} return; }
-    if (e.target.closest("[data-pp-close]"))         { closeModals(); return; }
+    if ((t = e.target.closest("[data-pp-restore]")))  { e.preventDefault(); try { openRestore(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-delete]")))   { e.preventDefault(); try { openDelete(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-activate]"))) { e.preventDefault(); try { openActivate(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-upgrade]")))  { e.preventDefault(); try { openUpgrade(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-more]")))     { try { openDetails(t); } catch (x) {} return; }
+    if (e.target.closest("[data-pp-close]"))          { closeModals(); return; }
     if (e.target.classList && e.target.classList.contains("pp-modal")) { closeModals(); return; }
-    if ((t = e.target.closest("[data-pwd-toggle]"))) { e.preventDefault(); try { togglePwd(t); } catch (x) {} return; }
-    if ((t = e.target.closest("[data-pp-view]")))    { showView(t.getAttribute("data-pp-view"), true); return; }
-    if ((t = e.target.closest("[data-pp-go]")))      { showView(t.getAttribute("data-pp-go"), true); return; }
-    if ((t = e.target.closest(".pp-cat-chip")))      { selectCat(t.getAttribute("data-pp-cat")); return; }
+    if ((t = e.target.closest("[data-pwd-toggle]")))  { e.preventDefault(); try { togglePwd(t); } catch (x) {} return; }
+    if ((t = e.target.closest("[data-pp-view]")))     { showView(t.getAttribute("data-pp-view"), true); return; }
+    if ((t = e.target.closest("[data-pp-go]")))       { showView(t.getAttribute("data-pp-go"), true); return; }
+    if ((t = e.target.closest("#pp-tier-filter .pp-tier-chip"))) { selectTier(t.getAttribute("data-tier") || "all"); return; }
+    if ((t = e.target.closest(".pp-cat-chip")))       { selectCat(t.getAttribute("data-pp-cat")); return; }
     if (e.target.closest("#pp-burger")) {
       var s = $("pp-side"), sc = $("pp-scrim");
       if (s) s.classList.toggle("is-open"); if (sc) sc.classList.toggle("is-open");

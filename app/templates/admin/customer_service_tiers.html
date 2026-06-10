@@ -1,0 +1,173 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+
+{% set _display_name = customer.company_name or customer.email or ('عميل #' ~ customer.id) %}
+{% block title %}تعرفة خدمات العميل — {{ _display_name }}{% endblock %}
+{% block page_title %}تعرفة خدمات العميل{% endblock %}
+{% block page_subtitle %} — {{ _display_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  .cst-intro{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px;
+    padding:14px 16px; display:flex; gap:12px; font-size:13px; line-height:1.75; color:#475569; }
+  .cst-intro i{ color:#7c3aed; font-size:18px; margin-top:2px; }
+  .cst-intro b{ color:#0f172a; }
+  .cst-form{ display:flex; flex-direction:column; gap:14px; }
+  .cst-actions-top{ display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+  .cst-table-wrap{ overflow-x:auto; border:1px solid #e2e8f0; border-radius:14px; background:#fff;
+    box-shadow:0 1px 3px rgba(15,23,42,.06); }
+  .cst-table{ width:100%; border-collapse:collapse; font-size:13px; }
+  .cst-table thead th{ background:#f1f5f9; color:#475569; font-weight:800; text-align:start;
+    padding:11px 13px; border-bottom:1px solid #cbd5e1; white-space:nowrap; }
+  .cst-table tbody td{ padding:13px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+  .cst-table tbody tr:last-child td{ border-bottom:0; }
+  .cst-svc-name{ font-weight:800; color:#0f172a; font-size:13.5px; }
+  .cst-svc-desc{ font-size:11.5px; color:#64748b; margin-top:4px; line-height:1.65; max-width:50ch; }
+  .cst-tier-radios{ display:flex; flex-wrap:wrap; gap:8px; }
+  .cst-tier-radio{ display:inline-flex; align-items:center; gap:7px; padding:8px 12px;
+    border:1px solid #e2e8f0; border-radius:11px; background:#fff; cursor:pointer;
+    font-size:12.5px; font-weight:700; color:#475569; transition:all .15s ease; }
+  .cst-tier-radio:hover{ border-color:#c4b5fd; background:#f5f3ff; }
+  .cst-tier-radio input{ accent-color:#7c3aed; }
+  .cst-tier-radio.is-paid input:checked ~ span{ color:#5b21b6; }
+  .cst-tier-radio.is-free-unl input:checked ~ span{ color:#15803d; }
+  .cst-tier-radio.is-free-lim input:checked ~ span{ color:#0e7490; }
+  .cst-tier-radio:has(input:checked){ background:#f5f3ff; border-color:#7c3aed;
+    box-shadow:0 0 0 3px rgba(124,58,237,.12); }
+  .cst-tier-radio.is-free-unl:has(input:checked){ background:#dcfce7; border-color:#16a34a;
+    box-shadow:0 0 0 3px rgba(22,163,74,.14); }
+  .cst-tier-radio.is-free-lim:has(input:checked){ background:#cffafe; border-color:#0891b2;
+    box-shadow:0 0 0 3px rgba(8,145,178,.14); }
+  .cst-limits{ display:flex; flex-direction:column; gap:8px; min-width:230px; }
+  .cst-limits-empty{ font-size:11.5px; color:#94a3b8; font-style:italic; }
+  .cst-limit-field label{ display:block; font-size:11.5px; font-weight:700; color:#475569;
+    margin-bottom:3px; }
+  .cst-limit-field input{ width:130px; padding:7px 10px; border:1px solid #cbd5e1;
+    border-radius:9px; font:inherit; font-size:13px; }
+  .cst-limit-field input:focus{ outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.18); }
+  .cst-limit-field .hint{ font-size:10.5px; color:#94a3b8; margin-top:3px; line-height:1.5; }
+  .cst-current{ display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
+    border-radius:999px; font-size:11px; font-weight:800; }
+  .cst-current.paid{ background:#ede9fe; color:#5b21b6; }
+  .cst-current.free_unlimited{ background:#dcfce7; color:#166534; }
+  .cst-current.free_limited{ background:#cffafe; color:#155e75; }
+  .cst-empty{ text-align:center; padding:36px 14px; color:#64748b; font-size:13px; }
+  .cst-submit{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:8px; }
+  @media (max-width:760px){
+    .cst-table thead{ display:none; }
+    .cst-table tbody tr{ display:grid; gap:8px; padding:12px; border-bottom:8px solid #f1f5f9; }
+    .cst-table tbody td{ padding:0; border:0; }
+    .cst-limits{ min-width:0; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+   "تعرفة خدمات العميل — " ~ _display_name,
+   subtitle="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة. الخدمات المجانية تظهر للعميل مباشرة كجاهزة، والمدفوعة تنتظر طلب تفعيل وتسعير.",
+   icon="layer-group",
+   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-right"></i> ملف العميل</a>') }}
+
+{% call hub.section("تعرفة الخدمات لهذا العميل", icon="tags") %}
+
+<div class="cst-intro">
+  <i class="fa-solid fa-circle-info"></i>
+  <div>
+    تنطبق التعرفة على هذا المشترك فقط — يمكنك جعل خدمة مجانية لعميل ومدفوعة لآخر.
+    <b>«مجانية مطلقة»</b> تجعل الخدمة جاهزة فورًا بلا حدود.
+    <b>«مجانية محدودة»</b> تجعلها جاهزة مع حدّ كميّ تحدّده بنفسك.
+    <b>«مدفوعة»</b> تبقى مغلقة في لوحة العميل ويظهر لها زر «طلب تفعيل / ترقية» الذي يفتح طلبًا للإدارة وتسعيرًا.
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('admin.customer_service_tiers_save', customer_id=customer.id) }}" class="cst-form">
+  {{ csrf_input() }}
+
+  <div class="cst-actions-top">
+    <button type="submit" class="hub-btn hub-btn--primary hub-btn--sm">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ التعرفة
+    </button>
+  </div>
+
+  <div class="cst-table-wrap">
+    <table class="cst-table">
+      <thead>
+        <tr>
+          <th>الخدمة</th>
+          <th>الحالي</th>
+          <th>التعرفة لهذا المشترك</th>
+          <th>حدود (للمجانية المحدودة)</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        {% set item = row.item %}
+        {% set ent = row.entitlement %}
+        {% set tier = row.tier %}
+        <tr>
+          <td>
+            <div class="cst-svc-name">{{ item.name_ar or item.name or item.service_key }}</div>
+            {% if item.description %}
+              <div class="cst-svc-desc">{{ item.description }}</div>
+            {% endif %}
+          </td>
+          <td>
+            <span class="cst-current {{ tier }}">
+              {% if tier == 'free_unlimited' %}مجانية مطلقة
+              {% elif tier == 'free_limited' %}مجانية محدودة
+              {% else %}مدفوعة{% endif %}
+            </span>
+          </td>
+          <td>
+            <div class="cst-tier-radios" role="radiogroup" aria-label="تعرفة {{ item.name_ar }}">
+              <label class="cst-tier-radio is-paid">
+                <input type="radio" name="tier_{{ item.service_key }}" value="paid" {% if tier == 'paid' %}checked{% endif %}>
+                <span>مدفوعة</span>
+              </label>
+              <label class="cst-tier-radio is-free-unl">
+                <input type="radio" name="tier_{{ item.service_key }}" value="free_unlimited" {% if tier == 'free_unlimited' %}checked{% endif %}>
+                <span>مجانية مطلقة</span>
+              </label>
+              {% if row.limit_fields %}
+              <label class="cst-tier-radio is-free-lim">
+                <input type="radio" name="tier_{{ item.service_key }}" value="free_limited" {% if tier == 'free_limited' %}checked{% endif %}>
+                <span>مجانية محدودة</span>
+              </label>
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            <div class="cst-limits">
+              {% if row.limit_fields %}
+                {% for field_key, field_label, field_hint in row.limit_fields %}
+                  <div class="cst-limit-field">
+                    <label>{{ field_label }}</label>
+                    <input type="number" min="0" name="limit_{{ item.service_key }}_{{ field_key }}"
+                           value="{{ row.limits.get(field_key, '') }}" placeholder="—">
+                    <div class="hint">{{ field_hint }}</div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <span class="cst-limits-empty">لا يوجد حدّ كميّ لهذه الخدمة — اختر «مدفوعة» أو «مجانية مطلقة».</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cst-submit">
+    <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="hub-btn hub-btn--ghost">
+      <i class="fa-solid fa-arrow-right"></i> رجوع لملف العميل
+    </a>
+    <button type="submit" class="hub-btn hub-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ التعرفة
+    </button>
+  </div>
+</form>
+
+{% endcall %}
+{% endblock %}

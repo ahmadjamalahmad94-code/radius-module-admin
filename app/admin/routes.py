@@ -42,6 +42,8 @@ from ..models import (
 )
 from ..services.customer_control import (
     CustomerControlValidationError,
+    SERVICE_TIER_LABELS,
+    SERVICE_TIER_VALUES,
     add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
@@ -49,6 +51,7 @@ from ..services.customer_control import (
     clean_service_request_status,
     clean_service_key,
     clean_service_status,
+    clean_service_tier,
     clean_username,
     customer_service_map,
     customer_users_version,
@@ -63,6 +66,8 @@ from ..services.customer_control import (
     service_label,
     service_limit_fields,
     service_limit_summary,
+    service_tier_for_entitlement,
+    set_service_tier_on_entitlement,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
 )
@@ -231,6 +236,11 @@ def _fill_customer_service_entitlement(customer: Customer, entitlement: Customer
     entitlement.plan_code = (request.form.get("plan_code") or "").strip()[:80]
     entitlement.limits = _service_limits_from_request(entitlement.service_key)
     entitlement.config = parse_json_object(request.form.get("config_json"), field="إعدادات الخدمة")
+    # Tier (per-subscriber free/paid model) is OWNED by the admin form. Persist
+    # it onto the entitlement's config, preserving any other config keys that
+    # came in via config_json. Unknown values silently fall back to "paid".
+    if request.form.get("service_tier") is not None:
+        set_service_tier_on_entitlement(entitlement, request.form.get("service_tier") or "")
     entitlement.price_monthly = parse_service_decimal(request.form.get("price_monthly"), field="price_monthly")
     entitlement.expires_at = parse_optional_datetime(request.form.get("expires_at"))
     entitlement.notes = (request.form.get("notes") or "").strip()[:2000]
@@ -3992,3 +4002,108 @@ def generate_activation_token(customer_id: int):
         "expires_at": expires_at.isoformat(),
         "ttl_minutes": InstanceActivationToken.ACTIVATION_TOKEN_TTL_MINUTES,
     })
+
+
+# ════════════════════════════════════════════════════════════════════
+# Per-subscriber service tier control (free / paid).
+#
+# Standalone page intentionally — keeps admin/customers/detail_new.html
+# untouched (other agents own that template). Linked from the customer
+# detail hero. POST is one bulk save: every row is upserted into the
+# entitlement's config (tier) + limits (free_limited cap). The customer
+# panel renders the tier badge from the very same source.
+# ════════════════════════════════════════════════════════════════════
+@bp.get("/customers/<int:customer_id>/service-tiers")
+@login_required
+def customer_service_tiers(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    catalog = service_catalog_items()
+    entitlement_map = customer_service_map(customer)
+    rows = []
+    for item in catalog:
+        ent = entitlement_map.get(item.service_key)
+        rows.append({
+            "item": item,
+            "entitlement": ent,
+            "tier": service_tier_for_entitlement(ent),
+            "limit_fields": service_limit_fields(item.service_key),
+            "limits": (ent.limits if ent else {}) or {},
+        })
+    return render_template(
+        "admin/customer_service_tiers.html",
+        customer=customer,
+        rows=rows,
+        tier_labels=SERVICE_TIER_LABELS,
+        tier_values=SERVICE_TIER_VALUES,
+    )
+
+
+@bp.post("/customers/<int:customer_id>/service-tiers")
+@login_required
+def customer_service_tiers_save(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    catalog = service_catalog_items()
+    changed = 0
+    for item in catalog:
+        key = item.service_key
+        raw_tier = request.form.get(f"tier_{key}")
+        if raw_tier is None:
+            continue  # field not posted (e.g. partial form)
+        try:
+            tier = clean_service_tier(raw_tier)
+            entitlement = get_or_create_service_entitlement(customer, key)
+            previous = service_tier_for_entitlement(entitlement)
+            set_service_tier_on_entitlement(entitlement, tier)
+            # When the row is "free_limited" we save the limit-cap inputs onto
+            # the entitlement's limits dict (reusing the existing per-service
+            # limit fields so customer + radius enforcement work unchanged).
+            if tier == "free_limited":
+                limit_fields = service_limit_fields(key)
+                if limit_fields:
+                    new_limits = dict(entitlement.limits or {})
+                    for field_key, _label, _hint in limit_fields:
+                        raw = (request.form.get(f"limit_{key}_{field_key}") or "").strip()
+                        if not raw:
+                            continue
+                        try:
+                            value = int(raw)
+                        except ValueError as exc:
+                            raise CustomerControlValidationError(
+                                f"حد {field_key} للخدمة {item.name_ar or key} يجب أن يكون رقمًا صحيحًا."
+                            ) from exc
+                        if value < 0:
+                            raise CustomerControlValidationError(
+                                f"حد {field_key} للخدمة {item.name_ar or key} لا يمكن أن يكون سالبًا."
+                            )
+                        new_limits[field_key] = value
+                    entitlement.limits = new_limits
+            # Auto-mark active for free tiers so the runtime contract considers
+            # the service enabled even before the owner toggles "enabled".
+            if tier in ("free_unlimited", "free_limited"):
+                entitlement.enabled = True
+                if entitlement.status != "active":
+                    entitlement.status = "active"
+            entitlement.updated_by_admin_id = session.get("admin_id")
+            if previous != tier:
+                changed += 1
+        except CustomerControlValidationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+
+    if changed:
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_service_entitlement_updated",
+            entity_type="customer",
+            entity_id=str(customer.id),
+            summary=f"تم تحديث تعرفة خدمات العميل {customer.company_name} ({changed} خدمة)",
+            metadata={"customer_id": customer.id, "tiers_changed": changed},
+        )
+    db.session.commit()
+    flash(
+        "تم حفظ تعرفة الخدمات. الخدمات المجانية تظهر مباشرة للعميل، والمدفوعة تنتظر طلب التفعيل."
+        if changed else "لا توجد تغييرات لحفظها.",
+        "success" if changed else "info",
+    )
+    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))

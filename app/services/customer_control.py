@@ -550,6 +550,79 @@ DEFAULT_SERVICE_CATALOG = [
     },
 ]
 
+# ════════════════════════════════════════════════════════════════════
+# Per-subscriber service tier (free vs. paid).
+#
+# Owner-controlled per CUSTOMER and per SERVICE from the admin side. Storage
+# is the existing CustomerServiceEntitlement.config dict — no schema change.
+#
+# Customer panel rendering:
+#   • free_unlimited → green "مجاني" badge; the customer sees the service as
+#     ready, no activation button. The runtime contract reports enabled=True.
+#   • free_limited  → teal "مجاني · حتى N" badge (N = entitlement.limits cap);
+#     also enabled=True in the runtime contract, but the existing limits gate.
+#   • paid (default) → behavior is unchanged: the customer requests
+#     activation/upgrade and pays before it goes live.
+# ════════════════════════════════════════════════════════════════════
+SERVICE_TIER_PAID = "paid"
+SERVICE_TIER_FREE_UNLIMITED = "free_unlimited"
+SERVICE_TIER_FREE_LIMITED = "free_limited"
+SERVICE_TIER_VALUES = (SERVICE_TIER_PAID, SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
+SERVICE_TIER_DEFAULT = SERVICE_TIER_PAID
+
+SERVICE_TIER_LABELS = {
+    SERVICE_TIER_PAID: "مدفوعة",
+    SERVICE_TIER_FREE_UNLIMITED: "مجانية مطلقة",
+    SERVICE_TIER_FREE_LIMITED: "مجانية محدودة",
+}
+
+# Short label used inside the customer card (compact).
+SERVICE_TIER_BADGE_LABELS = {
+    SERVICE_TIER_PAID: "مدفوعة",
+    SERVICE_TIER_FREE_UNLIMITED: "مجانية",
+    SERVICE_TIER_FREE_LIMITED: "مجانية · محدودة",
+}
+
+# Color hint (matches the portal_pro tone tokens — green / teal / violet).
+SERVICE_TIER_BADGE_TONE = {
+    SERVICE_TIER_PAID: "violet",
+    SERVICE_TIER_FREE_UNLIMITED: "green",
+    SERVICE_TIER_FREE_LIMITED: "teal",
+}
+
+
+def clean_service_tier(value: str | None) -> str:
+    """Normalize a tier value; fall back to the safe default when unknown."""
+    tier = str(value or "").strip().lower()
+    return tier if tier in SERVICE_TIER_VALUES else SERVICE_TIER_DEFAULT
+
+
+def service_tier_for_entitlement(entitlement: CustomerServiceEntitlement | None) -> str:
+    """Read the tier stored on an entitlement's config; default = paid."""
+    if entitlement is None:
+        return SERVICE_TIER_DEFAULT
+    try:
+        config = entitlement.config or {}
+    except Exception:  # pragma: no cover — defensive against broken JSON
+        return SERVICE_TIER_DEFAULT
+    return clean_service_tier(config.get("tier"))
+
+
+def set_service_tier_on_entitlement(entitlement: CustomerServiceEntitlement, tier: str) -> None:
+    """Persist a tier onto an entitlement's config, leaving sibling keys intact."""
+    cleaned = clean_service_tier(tier)
+    config = dict(entitlement.config or {})
+    if cleaned == SERVICE_TIER_DEFAULT:
+        config.pop("tier", None)
+    else:
+        config["tier"] = cleaned
+    entitlement.config = config
+
+
+def service_tier_is_free(tier: str | None) -> bool:
+    return clean_service_tier(tier) in (SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
+
+
 SERVICE_LIMIT_FIELDS = {
     "subscribers": [("max_total", "أقصى عدد مشتركين", "عدد المشتركين المسموح إنشاؤهم.")],
     "backups": [("max_count", "أقصى عدد نسخ احتياطية محفوظة", "عند تجاوز العدد يُحذف الأقدم تلقائيًا (نسخ الريدياس وملف العميل). يُحدَّد حسب الإصدار والرسوم.")],
@@ -1272,6 +1345,7 @@ def _serialize_service(
     config: dict[str, Any] = {}
     expires_at = None
     plan_code = ""
+    tier = SERVICE_TIER_DEFAULT
 
     if entitlement:
         try:
@@ -1283,9 +1357,20 @@ def _serialize_service(
         config = entitlement.config
         expires_at = entitlement.expires_at
         plan_code = entitlement.plan_code or ""
+        tier = service_tier_for_entitlement(entitlement)
         if expires_at and expires_at < utcnow():
             enabled = False
             status = "expired"
+
+    # ── FREE TIER OVERRIDE ─────────────────────────────────────────────
+    # When the owner has marked this service free for the subscriber, the
+    # service is available regardless of the entitlement.enabled flag — the
+    # admin's tier choice is the source of truth. (Paid tier keeps the old
+    # gating: the customer must request activation + pay.)
+    if service_tier_is_free(tier) and license_active:
+        if not (expires_at and expires_at < utcnow()):
+            enabled = True
+            status = "active"
 
     if not license_active:
         enabled = False
@@ -1295,6 +1380,9 @@ def _serialize_service(
     payload: dict[str, Any] = {
         "enabled": enabled,
         "status": status,
+        "tier": tier,
+        "tier_label": SERVICE_TIER_BADGE_LABELS.get(tier, SERVICE_TIER_BADGE_LABELS[SERVICE_TIER_DEFAULT]),
+        "tier_tone": SERVICE_TIER_BADGE_TONE.get(tier, "violet"),
     }
     if plan_code:
         payload["plan_code"] = plan_code
