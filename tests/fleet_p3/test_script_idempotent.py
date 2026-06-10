@@ -255,6 +255,37 @@ def test_remove_appears_before_add_for_every_managed_resource():
 
 # ─── defensive belt-and-braces for /ppp profile and /ip pool ────────────────
 
+def test_radius_entry_is_force_enabled_after_add():
+    """The first live CHR install hit a case where the /radius entry landed
+    with Flags: X - DISABLED (so PPP AAA + the entry both existed, but no
+    RADIUS packets ever reached the proxy). The script MUST force the
+    entry enabled after the add/re-add so any prior disabled state is
+    corrected on every (re-)import."""
+    script = _render()
+    flat = script.replace(" \\\n", " ")
+    # The enable line MUST exist, target the comment tag, and come AFTER
+    # the add so it acts on the row we just inserted.
+    enable_line = '/radius enable [find comment="hobe-fleet-radius"]'
+    assert enable_line in script, (
+        f"missing radius enable line: expected {enable_line!r}"
+    )
+    lines = flat.splitlines()
+
+    def first_index(needle: str) -> int:
+        for i, line in enumerate(lines):
+            if needle in line:
+                return i
+        return -1
+
+    add_idx = first_index('comment="hobe-fleet-radius"')
+    enable_idx = first_index('/radius enable')
+    assert add_idx != -1 and enable_idx != -1
+    assert enable_idx > add_idx, (
+        f"/radius enable (line {enable_idx}) must come AFTER the add "
+        f"that places comment=\"hobe-fleet-radius\" (line {add_idx})."
+    )
+
+
 def test_ppp_profile_has_defensive_remove():
     """The current template only `set`s the built-in default-encryption profile
     — but the owner's real-router re-import hit «name can't repeat» for PPP
@@ -370,10 +401,15 @@ def _row_matches_find(row, find):
 
 
 class _FakeCHR:
-    """Toy RouterOS state machine that enforces add-uniqueness per table."""
+    """Toy RouterOS state machine that enforces add-uniqueness per table.
+
+    Rows track a synthetic ``_disabled`` field so the simulator can
+    reproduce the «landed disabled» bug class and prove `enable [find …]`
+    fixes it.
+    """
 
     def __init__(self):
-        self.tables = {t: [] for t in _TABLE_KEY}
+        self.tables: dict[str, list[dict]] = {t: [] for t in _TABLE_KEY}
         self.errors: list[str] = []
 
     def add(self, table, kwargs, line_no):
@@ -385,23 +421,51 @@ class _FakeCHR:
                     f"{keyspec}={[kwargs.get(k, '') for k in keyspec]}"
                 )
                 return
-        self.tables[table].append(kwargs)
+        # RouterOS default: many tables land with disabled=no, but the live
+        # CHR has demonstrated /radius can come up disabled. The simulator
+        # plays it safe: every newly-added row defaults to ENABLED in our
+        # model so the test of `enable` is meaningful (we'll explicitly
+        # force a disabled state in `force_disable_radius_for_bug_repro`).
+        row = dict(kwargs)
+        row.setdefault("_disabled", False)
+        self.tables[table].append(row)
 
     def remove(self, table, find, line_no):
         before = len(self.tables[table])
         self.tables[table] = [r for r in self.tables[table] if not _row_matches_find(r, find)]
         return before - len(self.tables[table])
 
+    def enable(self, table, find, line_no):
+        """`/<table> enable [find …]` → flips _disabled=False on matches."""
+        for row in self.tables[table]:
+            if _row_matches_find(row, find):
+                row["_disabled"] = False
+
+    # Test helper — repro the live-CHR bug class.
+    def force_disable_radius(self):
+        for row in self.tables["/radius"]:
+            row["_disabled"] = True
+
 
 def _apply_script_to(chr_state, script_text):
     flat = re.sub(r"\\\n\s*", " ", script_text)
     table = None
+    # A line may be a table selector (`/radius`) OR a table selector + op
+    # on the same line (`/radius enable [find comment=…]`). Handle both.
     for n, raw in enumerate(flat.splitlines(), start=1):
         line = raw.split(";#", 1)[0].rstrip()
         s = line.strip()
         if not s or s.startswith("#"):
             continue
         if s.startswith("/"):
+            # `/radius enable [find …]` — table selector + op on one line.
+            m = re.match(r'^(/[\w \-]+?) (enable|disable) (\[find [^\]]+\])$', s)
+            if m:
+                t = m.group(1)
+                if t in _TABLE_KEY:
+                    chr_state.enable(t, _parse_find(m.group(3)), n)
+                continue
+            # Otherwise it's just a table selector — switch context.
             table = s if s in _TABLE_KEY else s
             continue
         if s.startswith("remove "):
@@ -438,3 +502,43 @@ def test_double_apply_is_clean_no_repeat_errors_no_duplicates():
             f"{table}: state diverged between applies — 1st={len(snapshot_1[table])}, "
             f"2nd={len(snapshot_2[table])}"
         )
+    # And the radius entry MUST be enabled after BOTH applies — this is what
+    # broke the first live install (entry existed but disabled, PPP used
+    # RADIUS, no packets ever reached the proxy).
+    for snap, label in ((snapshot_1, "1st"), (snapshot_2, "2nd")):
+        radius = snap["/radius"]
+        assert len(radius) == 1, f"{label} apply: expected 1 /radius row, got {len(radius)}"
+        assert radius[0].get("_disabled") is False, (
+            f"{label} apply: /radius entry ended up disabled — the `enable` "
+            f"line must run after the add."
+        )
+
+
+def test_radius_enable_recovers_a_disabled_entry_on_reimport():
+    """Regression repro: simulate the live-CHR bug where /radius came up
+    DISABLED. Apply once → entry enabled. Force-disable the row (mimics the
+    state the owner found on the real router). Re-apply. The entry MUST end
+    up enabled again because of the `/radius enable [find comment="…"]`
+    line — without it, the re-import would `remove` + `add` cleanly but
+    the new row could once again land disabled (we don't control the
+    default), and AAA would silently keep failing.
+
+    The enable line is the belt-and-braces that closes this hole."""
+    script = _render()
+    chr_state = _FakeCHR()
+
+    _apply_script_to(chr_state, script)
+    assert chr_state.tables["/radius"][0]["_disabled"] is False
+
+    # Mimic what the owner found on the real CHR.
+    chr_state.force_disable_radius()
+    assert chr_state.tables["/radius"][0]["_disabled"] is True
+
+    # Re-import — should heal the entry.
+    _apply_script_to(chr_state, script)
+    assert chr_state.errors == [], chr_state.errors
+    assert len(chr_state.tables["/radius"]) == 1
+    assert chr_state.tables["/radius"][0]["_disabled"] is False, (
+        "/radius re-import did not heal a disabled entry — the `enable [find …]` "
+        "line is missing or in the wrong order."
+    )

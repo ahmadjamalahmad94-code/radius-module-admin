@@ -57,6 +57,14 @@
      `set`-based blocks (/radius incoming, /ppp aaa, /ppp profile, the
      pptp/sstp/ipsec server enable lines) are intrinsically idempotent.
 
+   RADIUS ENTRY ALWAYS ENABLED (fix/fleet-endpoint-and-idempotency):
+     After `/radius add … comment="hobe-fleet-radius"`, the script forces
+     the entry to enabled via `/radius enable [find comment="…"]`. The
+     first live CHR install hit a case where the entry landed disabled
+     (`Flags: X - DISABLED`) and no RADIUS packets ever reached the
+     proxy even though PPP AAA was wired to RADIUS and the entry existed.
+     The explicit enable closes that hole on every (re-)import.
+
    ENDPOINT FORMAT (fix/fleet-endpoint-and-idempotency):
      `/interface wireguard peers` peers MUST use host-only
      ``endpoint-address=<host>`` with a separate ``endpoint-port=<n>``.
@@ -117,6 +125,12 @@ add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }
     authentication-port=1812 accounting-port=1813 \
     src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
     comment="hobe-fleet-radius"
+# Guarantee the entry is ENABLED. The first live install hit this: PPP AAA
+# was using RADIUS and the entry existed, but `/radius print detail` showed
+# Flags: X - DISABLED, so no packets ever reached the proxy. Belt-and-braces
+# `enable` against the comment tag forces disabled=no on every (re-)import,
+# regardless of what state a prior run or operator edit left it in.
+/radius enable [find comment="hobe-fleet-radius"]
 /radius incoming
 # Enable CoA / Disconnect listener so panel can kill/move sessions (RFC 5176)
 set accept=yes port=3799
