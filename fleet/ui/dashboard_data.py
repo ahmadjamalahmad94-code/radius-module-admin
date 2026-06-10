@@ -261,7 +261,16 @@ def check_now(chr_id: int, *, now: datetime | None = None) -> dict:
 
 
 def _try_delegate_to_monitor(chr_id: int) -> dict | None:
-    """Soft import so a missing monitor module never breaks the dashboard."""
+    """Soft import so a missing monitor module never breaks the dashboard.
+
+    The real monitor (``fleet.health.monitor.check_now``) returns a
+    ``RunSummary`` dataclass — NOT a dict. Before this fix the wrapper
+    only special-cased dicts and fell through to ``{"ok": True,
+    "checked": "monitor"}`` for the dataclass, so the dashboard JS read
+    no ``state`` and the toast said «الحالة الآن: غير معروفة عبر مراقب
+    الصحّة» even when the monitor had just marked the node ``up``.
+    Unpack the outcome for ``chr_id`` into the shape the UI expects.
+    """
     try:
         from fleet.health.monitor import check_now as monitor_check_now  # type: ignore[attr-defined]
     except Exception:
@@ -273,7 +282,35 @@ def _try_delegate_to_monitor(chr_id: int) -> dict | None:
     if isinstance(result, dict):
         result.setdefault("checked", "monitor")
         return result
-    return {"ok": True, "checked": "monitor"}
+    # Dataclass path (RunSummary). Find the outcome row for our node.
+    outcomes = list(getattr(result, "outcomes", ()) or ())
+    outcome = next((o for o in outcomes if int(getattr(o, "chr_id", -1)) == int(chr_id)), None)
+
+    # Fold in the persisted FleetChrHealth row so consecutive counters
+    # land in the same response shape as the fallback path uses.
+    health = db.session.get(FleetChrHealth, chr_id)
+    if outcome is None and health is None:
+        return {"ok": True, "checked": "monitor",
+                "state": "unknown", "error": "monitor reported no outcome"}
+
+    state = (
+        getattr(outcome, "state", None)
+        or (health.state if health is not None else "unknown")
+    )
+    transition_obj = getattr(outcome, "transition", None) if outcome is not None else None
+    transition = (
+        f"{transition_obj.from_state}->{transition_obj.to_state}"
+        if transition_obj is not None else None
+    )
+    return {
+        "ok": bool(outcome.ok) if outcome is not None else (state == "up"),
+        "checked": "monitor",
+        "state": state,
+        "latency_ms": getattr(outcome, "latency_ms", None) if outcome is not None else None,
+        "consecutive_fail": int(health.consecutive_fail or 0) if health is not None else 0,
+        "consecutive_ok":   int(health.consecutive_ok or 0)   if health is not None else 0,
+        "transition": transition,
+    }
 
 
 def _fallback_check(chr_id: int, *, now: datetime) -> dict:
