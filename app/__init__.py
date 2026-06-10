@@ -82,6 +82,10 @@ def create_app(config_object=None, **overrides) -> Flask:
     # Phase 7 panel: enforcement-outcome ingest + UI dashboard.
     from fleet.control.routes_enforcement import bp as fleet_p7_enforcement_bp
     from fleet.ui.routes_p7 import bp as fleet_p7_ui_bp
+    # P8-B: rebalance + forced-failover dashboard (/admin/fleet/p8/).
+    # Uses fleet.brain.orchestrator_adapter — real engine when Task A's
+    # plan_rebalance / execute_rebalance are importable, stub otherwise.
+    from fleet.ui.routes_p8 import bp as fleet_p8_ui_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -113,6 +117,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_placement_decision_bp)
     app.register_blueprint(fleet_p7_enforcement_bp)
     app.register_blueprint(fleet_p7_ui_bp)
+    app.register_blueprint(fleet_p8_ui_bp)
 
     @app.get("/")
     def root():
