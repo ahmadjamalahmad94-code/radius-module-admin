@@ -373,23 +373,26 @@ def _emit_event(transition: Transition, node_name: str, *, latency_ms: float | N
 
 
 def _notify_hook(event: Event) -> None:
-    """Hand the transition off to the Phase-8 orchestrator + (future P9) notifier.
+    """Fan a health transition out to BOTH downstream consumers (union of P8+P9).
 
-    Phase 4 was pure sensing. As of Phase 8, a ``health_down`` event
-    auto-invokes the rebalance orchestrator, which produces a forced-
-    evacuation plan and records it. The plan is advisory when the
-    panel's ``live_apply_enabled`` flag is OFF (it lands as
-    ``fleet_placement_decisions`` rows the proxy can read later); when
-    ON, the proxy enforces it via CoA. Other transition kinds (up,
-    degraded, unknown) are routed only to the future P9 notifier and
-    are ignored by the orchestrator.
+    * **Phase 9 notifier** (``fleet.notify.notifier.dispatch_event``) — runs the
+      alert rule matrix; disabled kinds / unconfigured channels are a no-op.
+    * **Phase 8 orchestrator** (``fleet.brain.rebalance.on_monitor_event``) — a
+      ``health_down`` event auto-invokes the rebalance orchestrator, which records
+      a forced-evacuation plan (advisory when ``live_apply_enabled`` is OFF; the
+      proxy enforces it via CoA when ON). Other kinds are ignored by it.
 
-    All failures are caught + logged so an orchestrator bug never
-    breaks the sensor loop (the monitor must keep recording metrics
-    regardless).
+    Each consumer is wrapped in its own try/except so neither can break the probe
+    loop — the monitor MUST keep recording metrics regardless. Dropping either
+    would silently disable notifications or auto-failover.
     """
+    try:
+        from fleet.notify.notifier import dispatch_event
+        dispatch_event(event)
+    except Exception:  # never let alerting break the health cycle
+        logger.exception("fleet.notify dispatch failed for kind=%s", event.kind)
     logger.debug(
-        "fleet.health: event %s for chr_id=%s queued for future notifier",
+        "fleet.health: event %s for chr_id=%s fanned out to notifier + orchestrator",
         event.kind, event.chr_id,
     )
     try:

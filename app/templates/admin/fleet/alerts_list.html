@@ -1,0 +1,172 @@
+{% extends "admin/base_new.html" %}
+{% block title %}تنبيهات الأسطول{% endblock %}
+{% block page_title %}تنبيهات الأسطول{% endblock %}
+{% block page_subtitle %} — أحدث الإشعارات التي أرسلها النظام للمالك{% endblock %}
+
+{% block head_extra %}
+<style>
+  .p9-hero{
+    background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+    border-radius: var(--cc-r-hero);
+    box-shadow: var(--cc-sh-hero);
+    color:#fff;
+    padding: var(--cc-sp-9) var(--cc-sp-11);
+    display:flex; align-items:center; gap: var(--cc-sp-9);
+    margin-block-end: var(--cc-gap-section);
+  }
+  .p9-hero-icon{
+    width:60px;height:60px;border-radius: var(--cc-r-card);
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.28);
+    display:flex;align-items:center;justify-content:center;
+    font-size:26px;flex-shrink:0;
+  }
+  .p9-hero-title{font-size: var(--cc-fs-h1);font-weight:900;line-height:1.15;margin-block-end:6px;}
+  .p9-hero-sub{font-size: var(--cc-fs-body-s);opacity:.9;max-width:60ch;line-height:1.7;}
+  .p9-hero-actions{margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;}
+  .p9-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    height:36px;padding:0 14px;border-radius: var(--cc-btn-radius);
+    background:#fff;color:#0f172a;font-weight:800;font-size:13px;
+    border:none;cursor:pointer;text-decoration:none;
+  }
+  .p9-btn--ghost{background: rgba(255,255,255,.16); color:#fff;}
+
+  .p9-kpis{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap: var(--cc-sp-6); margin-block-end: var(--cc-gap-section);
+  }
+  .p9-kpi{
+    background: var(--cc-card-bg);
+    border:1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-6) var(--cc-sp-7);
+  }
+  .p9-kpi-label{font-size: var(--cc-fs-tiny);color: var(--cc-text-mute);font-weight:800;text-transform:uppercase;letter-spacing:.4px;}
+  .p9-kpi-value{font-size:28px;font-weight:900;color: var(--cc-text);margin-block-start:4px;}
+  .p9-kpi.is-crit .p9-kpi-value{color:#b91c1c;}
+  .p9-kpi.is-warn .p9-kpi-value{color:#92400e;}
+  .p9-kpi.is-ok   .p9-kpi-value{color:#15803d;}
+
+  .p9-card{
+    background: var(--cc-card-bg);
+    border:1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    overflow:hidden;
+  }
+  .p9-card-head{
+    display:flex;align-items:center;gap: var(--cc-sp-5);
+    padding: var(--cc-sp-6) var(--cc-sp-8);
+    border-block-end:1px solid var(--cc-border);
+    background: var(--hb-bg);
+  }
+  .p9-card-title{font-size: var(--cc-fs-h3);font-weight:900;color: var(--cc-text);flex:1;}
+
+  .p9-table{width:100%;border-collapse:separate;border-spacing:0;}
+  .p9-table th,.p9-table td{padding:10px 14px;font-size: var(--cc-fs-body-s);text-align:right;}
+  .p9-table th{background: var(--hb-bg);color: var(--cc-text-soft);font-weight:800;border-block-end:1px solid var(--cc-border);}
+  .p9-table tr+tr td{border-block-start:1px solid var(--cc-border);}
+  .p9-table td .p9-body{display:block;color: var(--cc-text-soft);font-size: var(--cc-fs-tiny);margin-block-start:4px;white-space:pre-line;}
+
+  .p9-pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:800;}
+  .p9-pill--crit{background:#fef2f2;color:#b91c1c;}
+  .p9-pill--warn{background:#fef3c7;color:#92400e;}
+  .p9-pill--info{background:#dbeafe;color:#1e40af;}
+  .p9-pill--sent{background:#dcfce7;color:#166534;}
+  .p9-pill--queued{background:#fef3c7;color:#92400e;}
+  .p9-pill--failed{background:#fee2e2;color:#991b1b;}
+  .p9-pill--suppressed{background:#e2e8f0;color:#475569;}
+
+  .p9-empty{
+    padding: var(--cc-sp-9);
+    text-align:center;color: var(--cc-text-mute);
+    font-size: var(--cc-fs-body-s);
+  }
+  .p9-ack-btn{
+    appearance:none;background:#eef2ff;color:#4338ca;
+    border:1px solid #c7d2fe;border-radius:8px;
+    padding:4px 10px;font-size:12px;font-weight:800;cursor:pointer;
+  }
+  .p9-ack-btn:hover{background:#e0e7ff;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p9-hero">
+  <div class="p9-hero-icon" aria-hidden="true"><i class="fa-solid fa-bell"></i></div>
+  <div>
+    <div class="p9-hero-title">تنبيهات الأسطول</div>
+    <div class="p9-hero-sub">
+      كل حدث مهم في الأسطول — سقوط عقدة، إعادة توزيع، تحديث DNS، تجاوز سعة — يظهر هنا ويُرسَل للمالك على القنوات المُفعَّلة. أزرار «تأكيد القراءة» تُحرِّر الخانة لإطلاق تنبيه جديد عند تكرار الحالة.
+    </div>
+    <div class="p9-hero-actions">
+      <a class="p9-btn p9-btn--ghost" href="{{ url_for('fleet_notify_ui.alerts_settings') }}">
+        <i class="fa-solid fa-sliders"></i> إعدادات التنبيهات
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="p9-kpis">
+  <div class="p9-kpi"><div class="p9-kpi-label">الإجمالي</div><div class="p9-kpi-value">{{ kpis.total }}</div></div>
+  <div class="p9-kpi is-warn"><div class="p9-kpi-label">في الانتظار</div><div class="p9-kpi-value">{{ kpis.queued }}</div></div>
+  <div class="p9-kpi is-ok"><div class="p9-kpi-label">مُرسَلة</div><div class="p9-kpi-value">{{ kpis.sent }}</div></div>
+  <div class="p9-kpi is-crit"><div class="p9-kpi-label">فشل الإرسال</div><div class="p9-kpi-value">{{ kpis.failed }}</div></div>
+  <div class="p9-kpi"><div class="p9-kpi-label">مكبوحة</div><div class="p9-kpi-value">{{ kpis.suppressed }}</div></div>
+  <div class="p9-kpi is-crit"><div class="p9-kpi-label">أحداث حرجة</div><div class="p9-kpi-value">{{ kpis.crit }}</div></div>
+</div>
+
+<div class="p9-card">
+  <div class="p9-card-head">
+    <span class="p9-card-title">آخر 100 تنبيه</span>
+  </div>
+
+  {% if alerts %}
+  <table class="p9-table">
+    <thead>
+      <tr>
+        <th>الوقت</th>
+        <th>الحدث</th>
+        <th>الخطورة</th>
+        <th>القناة</th>
+        <th>المُستلِم</th>
+        <th>الحالة</th>
+        <th>محاولات</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in alerts %}
+      <tr>
+        <td><span dir="ltr">{{ a.created_at }}</span></td>
+        <td>
+          <strong>{{ a.event_kind_label }}</strong>
+          <span class="p9-body">{{ a.body }}</span>
+        </td>
+        <td><span class="p9-pill p9-pill--{{ a.severity }}">{{ a.severity }}</span></td>
+        <td><span dir="ltr">{{ a.channel }}</span></td>
+        <td><span dir="ltr">{{ a.recipient }}</span></td>
+        <td><span class="p9-pill p9-pill--{{ a.status }}">{{ a.status }}</span></td>
+        <td>{{ a.retries }}</td>
+        <td>
+          {% if a.status in ('queued','sent') %}
+          <form method="post" action="{{ url_for('fleet_notify_ui.alert_ack', alert_id=a.id) }}" style="display:inline">
+            {{ csrf_input() }}
+            <button type="submit" class="p9-ack-btn"><i class="fa-solid fa-check"></i> تأكيد</button>
+          </form>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p9-empty">
+    <i class="fa-solid fa-circle-check" style="font-size:24px;color:#16a34a;display:block;margin-block-end:8px"></i>
+    لا توجد تنبيهات. سيظهر هنا أي حدث مهم في الأسطول فور وقوعه.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

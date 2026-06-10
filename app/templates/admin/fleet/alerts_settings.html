@@ -1,0 +1,178 @@
+{% extends "admin/base_new.html" %}
+{% block title %}إعدادات تنبيهات الأسطول{% endblock %}
+{% block page_title %}إعدادات تنبيهات الأسطول{% endblock %}
+{% block page_subtitle %} — اختر أي الأحداث تُرسل للمالك وعلى أي قنوات{% endblock %}
+
+{% block head_extra %}
+<style>
+  .p9s-hero{
+    background: linear-gradient(135deg,#312e81 0%,#5b21b6 100%);
+    border-radius: var(--cc-r-hero);
+    box-shadow: var(--cc-sh-hero);
+    color:#fff;
+    padding: var(--cc-sp-9) var(--cc-sp-11);
+    display:flex; align-items:center; gap: var(--cc-sp-9);
+    margin-block-end: var(--cc-gap-section);
+  }
+  .p9s-hero-icon{
+    width:60px;height:60px;border-radius: var(--cc-r-card);
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.28);
+    display:flex;align-items:center;justify-content:center;
+    font-size:26px;flex-shrink:0;
+  }
+  .p9s-hero-title{font-size: var(--cc-fs-h1);font-weight:900;line-height:1.15;margin-block-end:6px;}
+  .p9s-hero-sub{font-size: var(--cc-fs-body-s);opacity:.9;max-width:60ch;line-height:1.7;}
+
+  .p9s-card{
+    background: var(--cc-card-bg);
+    border:1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    overflow:hidden;
+    margin-block-end: var(--cc-gap-section);
+  }
+  .p9s-card-head{
+    display:flex;align-items:center;gap: var(--cc-sp-5);
+    padding: var(--cc-sp-6) var(--cc-sp-8);
+    border-block-end:1px solid var(--cc-border);
+    background: var(--hb-bg);
+  }
+  .p9s-card-title{font-size: var(--cc-fs-h3);font-weight:900;color: var(--cc-text);flex:1;}
+  .p9s-card-body{padding: var(--cc-sp-8);}
+
+  .p9s-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--cc-sp-5);
+  }
+  .p9s-row{
+    display:flex;align-items:center;gap: var(--cc-sp-5);
+    padding: var(--cc-sp-5) var(--cc-sp-6);
+    border:1px solid var(--cc-border);
+    border-radius: var(--cc-r-lg);
+    background: var(--cc-card-bg);
+    transition: border-color var(--cc-anim-fast), background var(--cc-anim-fast);
+  }
+  .p9s-row:has(input[type=checkbox]:checked){
+    border-color:#c4b5fd;background:#f5f3ff;
+  }
+  .p9s-row-info{flex:1;}
+  .p9s-row-label{font-size: var(--cc-fs-body-s);font-weight:800;color: var(--cc-text);}
+  .p9s-row-meta{font-size: var(--cc-fs-tiny);color: var(--cc-text-mute);margin-block-start:3px;}
+  .p9s-row .p9s-toggle{
+    position:relative;width:42px;height:22px;appearance:none;
+    background: var(--cc-border-2);border-radius:999px;cursor:pointer;
+    transition: background var(--cc-anim-fast);flex-shrink:0;outline:none;
+  }
+  .p9s-row .p9s-toggle::after{
+    content:'';position:absolute;inset-block-start:3px;inset-inline-end:3px;
+    width:16px;height:16px;border-radius:999px;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.18);
+    transition: inset-inline-end var(--cc-anim-fast);
+  }
+  .p9s-row .p9s-toggle:checked{background:#7c3aed;}
+  .p9s-row .p9s-toggle:checked::after{inset-inline-end: calc(100% - 19px);}
+
+  .p9s-sev{
+    display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;
+    font-size:11px;font-weight:800;
+  }
+  .p9s-sev--crit{background:#fef2f2;color:#b91c1c;}
+  .p9s-sev--warn{background:#fef3c7;color:#92400e;}
+  .p9s-sev--info{background:#dbeafe;color:#1e40af;}
+
+  .p9s-channel{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 12px;border-radius:999px;
+    background: var(--cc-tint-bg);
+    border:1px solid var(--cc-border);
+    font-size: var(--cc-fs-body-s);font-weight:800;
+    cursor:pointer; margin-inline-end: var(--cc-sp-4);
+  }
+  .p9s-channel input{margin:0;accent-color:#7c3aed;}
+  .p9s-channel:has(input:checked){background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6;}
+
+  .p9s-foot{
+    display:flex;align-items:center;gap: var(--cc-sp-5);
+    padding-block-start: var(--cc-sp-6);
+    border-block-start:1px solid var(--cc-border);
+    margin-block-start: var(--cc-sp-7);
+  }
+  .p9s-btn-primary{
+    display:inline-flex;align-items:center;gap:6px;
+    height: var(--cc-btn-h);padding:0 var(--cc-sp-9);border-radius: var(--cc-btn-radius);
+    background:#7c3aed;color:#fff;border:none;font-weight:800;
+    font-size: var(--cc-fs-body);cursor:pointer;
+  }
+  .p9s-btn-primary:hover{background:#6d28d9;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p9s-hero">
+  <div class="p9s-hero-icon" aria-hidden="true"><i class="fa-solid fa-sliders"></i></div>
+  <div>
+    <div class="p9s-hero-title">إعدادات تنبيهات الأسطول</div>
+    <div class="p9s-hero-sub">
+      عطّل الأحداث التي لا تهمك (مثل تحديث DNS أو نجاح كل عملية نقل) — الأحداث الحرجة (سقوط عقدة، تجاوز سعة، فشل إخلاء) مفعَّلة افتراضياً. القنوات هنا تشترك في إعدادات «قنوات التواصل» الموجودة في الإعدادات العامة.
+    </div>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('fleet_notify_ui.alerts_settings_save') }}">
+  {{ csrf_input() }}
+
+  <div class="p9s-card">
+    <div class="p9s-card-head">
+      <span class="p9s-card-title">القنوات المستخدمة</span>
+    </div>
+    <div class="p9s-card-body">
+      <p style="font-size: var(--cc-fs-body-s);color: var(--cc-text-soft);margin:0 0 var(--cc-sp-6)">
+        تنبيهات الأسطول تُرسَل على هذه القنوات فقط (ضمن القنوات المُكوَّنة في إعدادات الرسائل). إذا لم تختر شيئاً سيستخدم النظام كل القنوات المُفعَّلة.
+      </p>
+      {% for c in channels %}
+      <label class="p9s-channel">
+        <input type="checkbox" name="channels" value="{{ c }}"
+               {% if c in active_channels %}checked{% endif %}>
+        {{ c }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="p9s-card">
+    <div class="p9s-card-head">
+      <span class="p9s-card-title">أنواع الأحداث</span>
+    </div>
+    <div class="p9s-card-body">
+      <div class="p9s-grid">
+        {% for k in kinds %}
+        <label class="p9s-row" for="kind-{{ k.kind }}">
+          <div class="p9s-row-info">
+            <div class="p9s-row-label">{{ k.label }}</div>
+            <div class="p9s-row-meta">
+              <span class="p9s-sev p9s-sev--{{ k.default_severity }}">{{ k.default_severity }}</span>
+              <code dir="ltr" style="margin-inline-start:6px;background:var(--cc-tint-bg);padding:1px 6px;border-radius:6px;font-size:11px">{{ k.kind }}</code>
+            </div>
+          </div>
+          <input class="p9s-toggle" type="checkbox" role="switch"
+                 id="kind-{{ k.kind }}"
+                 name="enabled_kinds" value="{{ k.kind }}"
+                 {% if k.enabled %}checked{% endif %}>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="p9s-foot">
+        <button type="submit" class="p9s-btn-primary">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ التفضيلات
+        </button>
+        <a href="{{ url_for('fleet_notify_ui.alerts_list') }}" style="font-size: var(--cc-fs-body-s);color: var(--cc-text-soft);text-decoration:none">
+          ← عرض التنبيهات الأخيرة
+        </a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
