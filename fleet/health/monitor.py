@@ -529,12 +529,75 @@ def _denormalize_node_status(node: FleetChrNode, transition: Transition, now: da
     (its hot index ``idx_fleet_chr_status``). We keep that in sync with
     ``fleet_chr_health.state`` so the brain never has to JOIN. The check
     constraint on ``status`` accepts our values.
+
+    Operator-set states are protected: ``disabled`` is never overwritten
+    by a probe (the operator turned the node off — health probes do not
+    re-enable it). ``drain`` is independent (separate boolean column)
+    and is left alone here.
     """
+    if node.status == "disabled":
+        # Operator has the node off; the monitor does not flip it back on.
+        if transition.to_state == "up":
+            node.last_ping_ok_at = now
+        return
     if transition.to_state == "up":
         node.status = "up"
         node.last_ping_ok_at = now
     elif transition.to_state == "down":
         node.status = "down"
+
+
+def _reconcile_node_status(node: FleetChrNode, health: "FleetChrHealth", *, ok_now: bool, now: datetime) -> None:
+    """Make ``node.status`` consistent with ``health.state`` on EVERY probe.
+
+    Without this reconcile, a node can get stuck in ``provisioning``
+    forever: ``_denormalize_node_status`` only fires on a *new*
+    transition, so once ``health.state`` is already ``up`` (e.g. from a
+    prior pass) the node's registry status is never touched again. This
+    was the live regression — wg-mgmt handshake, ICMP, and health all
+    showed up; the dashboard kept saying ``provisioning``; the
+    routing-table publisher treated the row inconsistently.
+
+    Rules (each protects an operator intent):
+
+    * ``disabled``      — never overwritten. The operator turned the
+                          node off; a successful probe does not turn it
+                          back on. ``last_ping_ok_at`` is still bumped
+                          so the dashboard shows liveness.
+    * ``up`` health     — promote ``provisioning``/``down``/empty
+                          registry status to ``up``. This is the
+                          headline promotion: a CHR whose wg-mgmt is
+                          live AND ICMP is replying AND hysteresis says
+                          up MUST be ``status='up'`` so the routing
+                          table publishes it and the brain ranks it.
+    * ``down`` health   — registry follows. Already covered by
+                          ``_denormalize_node_status`` on the
+                          transition; this is the no-transition tail
+                          (consecutive down probes after the initial
+                          flip) where we keep the snapshot in sync.
+    * ``unknown``       — leave registry alone. ``provisioning`` stays
+                          ``provisioning`` until the FIRST verified up.
+    * ``degraded``      — leave registry as ``up`` (degraded is a
+                          shedding state, not an outage) unless the
+                          operator explicitly set something else.
+    """
+    if node.status == "disabled":
+        if ok_now:
+            node.last_ping_ok_at = now
+        return
+    state = (health.state or "unknown")
+    if state == "up":
+        # Promote provisioning / down / empty / mismatched-up to up.
+        if node.status != "up":
+            node.status = "up"
+        if ok_now:
+            node.last_ping_ok_at = now
+    elif state == "down":
+        if node.status != "down":
+            node.status = "down"
+    # state in {"unknown", "degraded"} → don't touch node.status.
+    # An unknown health is the "we don't know yet" state; a provisioning
+    # node must stay provisioning until verified up at least once.
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -671,6 +734,16 @@ def _run(
             transitions.append(transition)
             _denormalize_node_status(node, transition, now)
             _emit_event(transition, node_name=target.name, latency_ms=result.latency_ms)
+
+        # 3b. ALWAYS reconcile the registry snapshot with the rolling
+        # health row — even when no transition fired. Without this, a
+        # node whose health was already ``up`` (from a prior pass) but
+        # whose ``fleet_chr_nodes.status`` is still ``provisioning``
+        # never gets promoted, and the dashboard / routing-table
+        # publisher / brain ranking all see the stale value. The
+        # reconciler respects operator intent (``disabled`` is never
+        # overwritten; ``drain`` is a separate column and untouched).
+        _reconcile_node_status(node, health, ok_now=bool(result.ok), now=now)
 
         outcomes.append(NodeOutcome(
             chr_id=target.chr_id,
