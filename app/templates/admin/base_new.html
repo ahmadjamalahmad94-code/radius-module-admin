@@ -330,7 +330,7 @@
 
       {# ── ⑧ الإعدادات ─────────────────────────────────────────────── #}
       {% if 'settings' not in hidden_sections %}
-      {% set _g8 = ep in ['admin.settings_page','admin.settings_admins','admin.settings_whatsapp','admin.sections_settings','admin_messaging.settings'] %}
+      {% set _g8 = ep in ['admin.settings_page','admin.settings_admins','admin.settings_whatsapp','admin.settings_platform','admin.sections_settings','admin_messaging.settings'] %}
       <div class="adm-group {% if _g8 %}is-active is-open{% endif %}" data-group="settings">
         <button class="adm-group-head"
                 type="button"
@@ -347,6 +347,11 @@
           <a href="{{ url_for('admin.settings_page') }}"
              class="adm-link {% if ep == 'admin.settings_page' %}is-active{% endif %}">
             الإعدادات العامة
+          </a>
+          <a href="{{ url_for('admin.settings_platform') }}"
+             class="adm-link {% if ep == 'admin.settings_platform' %}is-active{% endif %}">
+            <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
+            إعدادات المنصة
           </a>
           {% endif %}
           {% if 'settings.admins' not in hidden_sections %}

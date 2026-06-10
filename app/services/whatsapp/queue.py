@@ -34,11 +34,20 @@ _CANCELABLE_STATUSES = ("queued", "failed")
 
 
 def _max_attempts_default() -> int:
-    """Default max attempts from config (``WHATSAPP_MAX_ATTEMPTS``)."""
+    """Default max attempts — UI-editable via /admin/settings/platform.
+
+    Resolver chain (Setting row -> app.config -> built-in default 3) lives
+    in :mod:`app.services.platform_settings`. Falls back gracefully if the
+    settings module can't be reached (test bootstrap, etc.).
+    """
     try:
-        return int(current_app.config.get("WHATSAPP_MAX_ATTEMPTS") or 3)
-    except (TypeError, ValueError):
-        return 3
+        from ..platform_settings import get_int
+        return get_int("WHATSAPP_MAX_ATTEMPTS", 3)
+    except Exception:  # noqa: BLE001
+        try:
+            return int(current_app.config.get("WHATSAPP_MAX_ATTEMPTS") or 3)
+        except (TypeError, ValueError):
+            return 3
 
 
 # ---------------------------------------------------------------------------

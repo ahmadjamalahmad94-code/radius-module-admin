@@ -28,8 +28,39 @@ def sign_license_payload(body: dict[str, Any], secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _hmac_root_secret(app: Flask) -> str:
+    """DB-first resolver for the HMAC root secret.
+
+    The owner sets/rotates the secret in the UI; it's stored encrypted in
+    the ``Setting`` table. The env var ``LICENSE_CHECK_HMAC_SECRET`` is the
+    fallback for bootstrap (first boot before the owner has touched the UI).
+    """
+    try:
+        from .services import platform_settings as ps
+        with app.app_context() if not _has_app_context() else _noop():
+            db_val = ps.get_secret("LICENSE_CHECK_HMAC_SECRET")
+        if db_val:
+            return db_val
+    except Exception:  # noqa: BLE001 - never crash signature check on settings error
+        pass
+    return str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
+
+
+def _has_app_context() -> bool:
+    try:
+        from flask import has_app_context
+        return bool(has_app_context())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+class _noop:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
 def license_integration_secret(app: Flask, license_key: str) -> str:
-    root_secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
+    root_secret = _hmac_root_secret(app)
     key = str(license_key or "").strip().upper()
     if not root_secret or not key:
         return ""
@@ -39,15 +70,23 @@ def license_integration_secret(app: Flask, license_key: str) -> str:
 
 def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
     signature = str(body.get("signature") or body.get("hmac_signature") or "").strip().lower()
-    required = bool(app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED"))
-    allow_unsigned = bool(app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED"))
+    # DB-first policy knobs (UI-editable). The env var stays as the bootstrap
+    # fallback so behavior is unchanged on a fresh install before the owner
+    # touches /admin/settings/platform.
+    try:
+        from .services import platform_settings as ps
+        required = ps.get_bool("LICENSE_CHECK_SIGNATURE_REQUIRED")
+        allow_unsigned = ps.get_bool("LICENSE_CHECK_ALLOW_UNSIGNED")
+    except Exception:  # noqa: BLE001
+        required = bool(app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED"))
+        allow_unsigned = bool(app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED"))
 
     if not signature:
         if required or not allow_unsigned:
             raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
         return "unsigned"
 
-    secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
+    secret = _hmac_root_secret(app)
     if not secret:
         raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
@@ -57,7 +96,11 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
         raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
     now = int(time.time())
-    skew = int(app.config.get("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", 300))
+    try:
+        from .services import platform_settings as ps
+        skew = ps.get_int("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS")
+    except Exception:  # noqa: BLE001
+        skew = int(app.config.get("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", 300))
     if abs(now - timestamp) > skew:
         raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
 
@@ -127,7 +170,13 @@ def _parse_timestamp(value) -> int:
 
 
 def _remember_nonce(app: Flask, nonce: str, now: int) -> None:
-    replay_window = int(app.config.get("LICENSE_CHECK_REPLAY_WINDOW_SECONDS", 600))
+    try:
+        from .services import platform_settings as ps
+        replay_window = ps.get_int("LICENSE_CHECK_REPLAY_WINDOW_SECONDS")
+    except Exception:  # noqa: BLE001
+        replay_window = int(app.config.get("LICENSE_CHECK_REPLAY_WINDOW_SECONDS", 600))
+    # NONCE_CACHE_MAX stays env-only — it's a memory cap, not an operational
+    # knob, and changes per-process state that callers can't observe.
     max_items = int(app.config.get("LICENSE_CHECK_NONCE_CACHE_MAX", 5000))
     cache: OrderedDict[str, int] = app.extensions.setdefault("license_nonce_cache", OrderedDict())
 

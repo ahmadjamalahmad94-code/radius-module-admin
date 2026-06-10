@@ -1,0 +1,527 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إعدادات المنصة{% endblock %}
+{% block page_title %}إعدادات المنصة{% endblock %}
+{% block page_subtitle %}مفاتيح كانت سابقًا في ملف البيئة — كلها الآن قابلة للتحرير من هنا.{% endblock %}
+
+{% block head_extra %}
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   إعدادات المنصة — مهاجَرة من البيئة. يرث المتغيرات من admin_tokens.css.
+   كل القياسات من --cc-sp-* / --cc-gap-section / --cc-r-* / --cc-fs-*.
+   ════════════════════════════════════════════════════════════════════ */
+.pf-page { display: grid; gap: var(--cc-gap-section); }
+
+/* ── Hero ────────────────────────────────────────────────────────── */
+.pf-hero {
+  background: var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow: var(--cc-sh-hero);
+  padding: var(--cc-sp-10) var(--cc-sp-12);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-10);
+  position: relative;
+  overflow: hidden;
+}
+.pf-hero-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-h1);
+  flex-shrink: 0;
+}
+.pf-hero-title { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); line-height: var(--cc-lh-tight); margin-block-end: var(--cc-sp-2); }
+.pf-hero-sub   { font-size: var(--cc-fs-body-s); opacity: .85; font-weight: var(--cc-fw-medium); line-height: var(--cc-lh-default); }
+
+/* ── KPI strip ──────────────────────────────────────────────────── */
+.pf-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--cc-gap-inline);
+}
+.pf-kpi {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  padding: var(--cc-sp-8);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-7);
+}
+.pf-kpi-icon {
+  width: 38px; height: 38px;
+  border-radius: var(--cc-r-lg);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--tile-purple-bg);
+  color: var(--tile-purple-fg);
+  font-size: var(--cc-fs-h3);
+}
+.pf-kpi-icon.is-green { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+.pf-kpi-icon.is-amber { background: var(--tile-amber-bg);  color: var(--tile-amber-fg);  }
+.pf-kpi-value { font-size: var(--cc-fs-h1); font-weight: var(--cc-fw-display); color: var(--cc-text); line-height: 1; }
+.pf-kpi-label { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); font-weight: var(--cc-fw-medium); margin-block-start: var(--cc-sp-2); }
+
+/* ── Group card ─────────────────────────────────────────────────── */
+.pf-card {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  overflow: hidden;
+}
+.pf-card-head {
+  display: flex; align-items: center; gap: var(--cc-sp-6);
+  padding: var(--cc-sp-7) var(--cc-sp-9);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--hb-bg);
+}
+.pf-card-head-icon {
+  width: 34px; height: 34px;
+  border-radius: var(--cc-r-lg);
+  background: var(--tile-purple-bg);
+  color: var(--tile-purple-fg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--cc-fs-body-s);
+  flex-shrink: 0;
+}
+.pf-card-head-title {
+  font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text);
+}
+.pf-card-head-meta {
+  margin-inline-start: auto;
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+}
+.pf-card-body { padding: var(--cc-sp-9) var(--cc-sp-11); }
+
+/* ── Field grid ─────────────────────────────────────────────────── */
+.pf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--cc-gap-section);
+}
+@media (max-width: 720px) { .pf-grid { grid-template-columns: 1fr; } }
+
+.pf-field { display: flex; flex-direction: column; gap: var(--cc-sp-3); }
+.pf-field--full { grid-column: 1 / -1; }
+
+.pf-label {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text-soft);
+  display: flex; align-items: center; gap: var(--cc-sp-3);
+  flex-wrap: wrap;
+}
+
+.pf-label-key {
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  background: var(--cc-tint-bg);
+  padding: 2px var(--cc-sp-3);
+  border-radius: var(--cc-r-sm);
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+.pf-badge {
+  font-size: 10px;
+  font-weight: var(--cc-fw-heavy);
+  padding: 2px var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.pf-badge--db    { background: var(--tile-green-bg); color: var(--tile-green-fg); }
+.pf-badge--config{ background: var(--tile-blue-bg);  color: var(--tile-blue-fg);  }
+.pf-badge--default { background: var(--tile-grey-bg);color: var(--tile-grey-fg);  }
+.pf-badge--pending { background: var(--tile-amber-bg); color: var(--tile-amber-fg); }
+.pf-badge--secret  { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+
+.pf-input,
+.pf-select {
+  width: 100%;
+  height: var(--cc-input-h);
+  padding-inline: var(--cc-sp-6);
+  background: var(--cc-input-bg);
+  border: 1px solid var(--cc-input-border);
+  border-radius: var(--cc-input-radius);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+  outline: none;
+  transition: border-color var(--cc-anim-fast) var(--cc-ease),
+              box-shadow var(--cc-anim-fast) var(--cc-ease),
+              background var(--cc-anim-fast) var(--cc-ease);
+}
+.pf-input:focus, .pf-select:focus {
+  background: var(--cc-input-bg-focus);
+  border-color: var(--cc-brand);
+  box-shadow: var(--cc-input-ring);
+}
+.pf-input.is-mono { font-family: var(--cc-font-mono); direction: ltr; unicode-bidi: embed; }
+
+/* Switch (toggle) — replaces a bare checkbox for boolean fields */
+.pf-toggle {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-5);
+  padding: var(--cc-sp-3) var(--cc-sp-4);
+  background: var(--cc-tint-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-lg);
+  cursor: pointer;
+  width: max-content;
+}
+.pf-toggle input { display: none; }
+.pf-toggle-switch {
+  position: relative;
+  width: 38px; height: 22px;
+  background: var(--cc-border-2);
+  border-radius: var(--cc-r-pill);
+  transition: background var(--cc-anim-fast) var(--cc-ease);
+}
+.pf-toggle-switch::after {
+  content:''; position:absolute; top:2px; inset-inline-start:2px;
+  width:18px; height:18px; background:#fff; border-radius:50%;
+  transition: inset-inline-start var(--cc-anim-fast) var(--cc-ease);
+}
+.pf-toggle input:checked ~ .pf-toggle-switch { background: var(--cc-brand); }
+.pf-toggle input:checked ~ .pf-toggle-switch::after { inset-inline-start: 18px; }
+.pf-toggle-text { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-bold); color: var(--cc-text-soft); }
+
+.pf-hint {
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+  line-height: var(--cc-lh-default);
+}
+.pf-secret-mask {
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  background: var(--cc-tint-bg);
+  border: 1px dashed var(--cc-border);
+  border-radius: var(--cc-r-sm);
+  padding: var(--cc-sp-3) var(--cc-sp-5);
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+/* Save / Reset toolbar */
+.pf-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--cc-sp-6);
+  padding: var(--cc-sp-7) var(--cc-sp-11);
+  border-block-start: 1px solid var(--cc-border);
+  background: var(--cc-tint-bg);
+}
+.pf-toolbar-info { font-size: var(--cc-fs-tiny); color: var(--cc-text-mute); font-weight: var(--cc-fw-medium); }
+.pf-btn {
+  height: var(--cc-btn-h);
+  display: inline-flex; align-items: center;
+  gap: var(--cc-sp-4);
+  padding-inline: var(--cc-sp-9);
+  border-radius: var(--cc-btn-radius);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+.pf-btn--primary { background: var(--cc-btn-primary-bg); color:#fff; box-shadow: var(--cc-sh-glow); }
+.pf-btn--primary:hover { background: var(--cc-btn-primary-hover); color:#fff; }
+.pf-btn--ghost { background: transparent; color: var(--cc-text-mute); }
+.pf-btn--ghost:hover { color: var(--hb-red); }
+
+/* Toast */
+.pf-toast {
+  position: fixed;
+  inset-block-end: var(--cc-sp-11);
+  inset-inline-start: var(--cc-sp-11);
+  background: var(--cc-text);
+  color: #fff;
+  padding: var(--cc-sp-5) var(--cc-sp-9);
+  border-radius: var(--cc-r-pill);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  box-shadow: var(--cc-sh-pop);
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cc-anim-med) var(--cc-ease);
+}
+.pf-toast.is-visible { opacity: 1; }
+.pf-toast--ok    { background: var(--hb-green); color:#fff; }
+.pf-toast--err   { background: var(--hb-red);   color:#fff; }
+.pf-toast--warn  { background: var(--hb-amber); color: var(--cc-text); }
+</style>
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<div class="pf-page">
+
+  {# ── Hero ────────────────────────────────────────────────────── #}
+  <div class="pf-hero">
+    <div class="pf-hero-icon" aria-hidden="true">
+      <i class="fa-solid fa-sliders"></i>
+    </div>
+    <div>
+      <div class="pf-hero-title">إعدادات المنصة (مهاجَرة من البيئة)</div>
+      <div class="pf-hero-sub">
+        كل الحقول أدناه كانت سابقًا في ملف <span class="mono ltr">.env</span> فقط — الآن قابلة للتحرير من هنا.
+        أولوية القراءة: قاعدة البيانات أولًا، ثم متغيرات البيئة، ثم القيمة الافتراضية.
+        الأسرار مشفّرة في القاعدة ولا تُعرَض ولا تُسجَّل بصيغة مكشوفة.
+      </div>
+    </div>
+  </div>
+
+  {# ── KPIs ──────────────────────────────────────────────────────── #}
+  <div class="pf-kpis">
+    <div class="pf-kpi">
+      <div class="pf-kpi-icon"><i class="fa-solid fa-list-check"></i></div>
+      <div>
+        <div class="pf-kpi-value">{{ health.total }}</div>
+        <div class="pf-kpi-label">إجمالي المفاتيح المُهاجَرة</div>
+      </div>
+    </div>
+    <div class="pf-kpi">
+      <div class="pf-kpi-icon is-green"><i class="fa-solid fa-database"></i></div>
+      <div>
+        <div class="pf-kpi-value">{{ health.with_db_override }}</div>
+        <div class="pf-kpi-label">قِيَم محفوظة في القاعدة (تتجاوز البيئة)</div>
+      </div>
+    </div>
+    <div class="pf-kpi">
+      <div class="pf-kpi-icon is-amber"><i class="fa-solid fa-hourglass-half"></i></div>
+      <div>
+        <div class="pf-kpi-value">{{ health.secrets_pending }}</div>
+        <div class="pf-kpi-label">أسرار بانتظار تفعيلك</div>
+      </div>
+    </div>
+  </div>
+
+  {# ── The form ─────────────────────────────────────────────────── #}
+  <form method="post"
+        action="{{ url_for('admin.settings_platform_save') }}"
+        id="pf-form"
+        autocomplete="off"
+        spellcheck="false">
+    {{ csrf_input() }}
+
+    {% for group, views in groups.items() %}
+      <div class="pf-card" id="grp-{{ loop.index }}">
+        <div class="pf-card-head">
+          <span class="pf-card-head-icon" aria-hidden="true">
+            <i class="fa-solid fa-{% if 'Rate' in group %}gauge-high{% elif 'تراخيص' in group %}shield-halved{% elif 'واتساب' in group %}message{% elif 'السجلات' in group %}list-ul{% else %}key{% endif %}"></i>
+          </span>
+          <span class="pf-card-head-title">{{ group }}</span>
+          <span class="pf-card-head-meta">{{ views|length }} حقل</span>
+        </div>
+        <div class="pf-card-body">
+          <div class="pf-grid">
+            {% for v in views %}
+              <div class="pf-field{% if v.kind == 'secret' %} pf-field--full{% endif %}">
+                <label class="pf-label" for="pf-{{ v.key }}">
+                  <span>{{ v.label_ar }}</span>
+                  <span class="pf-label-key">{{ v.key }}</span>
+                  {% if v.has_db_override %}
+                    <span class="pf-badge pf-badge--db">قاعدة البيانات</span>
+                  {% elif v.source == 'config' %}
+                    <span class="pf-badge pf-badge--config">من البيئة</span>
+                  {% else %}
+                    <span class="pf-badge pf-badge--default">افتراضي</span>
+                  {% endif %}
+                  {% if v.kind == 'secret' %}
+                    <span class="pf-badge pf-badge--secret">مشفّر</span>
+                    {% if v.needs_owner_input %}
+                      <span class="pf-badge pf-badge--pending">بانتظار تفعيلك</span>
+                    {% endif %}
+                  {% endif %}
+                </label>
+
+                {% if v.kind == 'bool' %}
+                  <label class="pf-toggle">
+                    <input type="checkbox" name="{{ v.key }}" value="1" {{ 'checked' if v.bool_value }}>
+                    <span class="pf-toggle-switch" aria-hidden="true"></span>
+                    <span class="pf-toggle-text">{{ 'مفعّل' if v.bool_value else 'معطّل' }}</span>
+                  </label>
+
+                {% elif v.kind == 'enum' %}
+                  <select class="pf-select" id="pf-{{ v.key }}" name="{{ v.key }}">
+                    {% for choice in v.enum_choices %}
+                      <option value="{{ choice }}" {{ 'selected' if choice == v.value }}>{{ choice }}</option>
+                    {% endfor %}
+                  </select>
+
+                {% elif v.kind == 'int' %}
+                  <input class="pf-input is-mono"
+                         id="pf-{{ v.key }}"
+                         name="{{ v.key }}"
+                         type="number"
+                         step="1"
+                         {% if v.min_value is not none %}min="{{ v.min_value }}"{% endif %}
+                         {% if v.max_value is not none %}max="{{ v.max_value }}"{% endif %}
+                         value="{{ v.value }}"
+                         dir="ltr">
+
+                {% elif v.kind == 'secret' %}
+                  <div style="display: flex; flex-direction: column; gap: var(--cc-sp-3)">
+                    <input class="pf-input is-mono"
+                           id="pf-{{ v.key }}"
+                           name="{{ v.key }}"
+                           type="password"
+                           value=""
+                           placeholder="{{ v.masked if v.masked != '—' else 'الصق القيمة الجديدة هنا' }}"
+                           autocomplete="new-password"
+                           dir="ltr">
+                    <div class="pf-secret-mask">
+                      المعروض الآن: {{ v.masked }}
+                    </div>
+                  </div>
+
+                {% else %}
+                  <input class="pf-input"
+                         id="pf-{{ v.key }}"
+                         name="{{ v.key }}"
+                         type="text"
+                         value="{{ v.value }}">
+                {% endif %}
+
+                <div class="pf-hint">
+                  {{ v.hint_ar }}
+                  {% if v.has_db_override %}
+                    {# Inline reset to default — uses the styled confirm modal below #}
+                    <a href="#"
+                       data-reset-key="{{ v.key }}"
+                       data-reset-label="{{ v.label_ar }}"
+                       style="color: var(--hb-red); margin-inline-start: var(--cc-sp-4); font-weight: 700;">
+                      <i class="fa-solid fa-rotate-left"></i> إعادة للقيمة الافتراضية
+                    </a>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+
+    {# ── Save toolbar ───────────────────────────────────────────── #}
+    <div class="pf-card">
+      <div class="pf-toolbar">
+        <div class="pf-toolbar-info">
+          <i class="fa-solid fa-circle-info"></i>
+          الأسرار: اتركها فارغة للإبقاء على القيمة المحفوظة. القيم الجديدة تطبّق فورًا (بدون إعادة تشغيل).
+        </div>
+        <button class="pf-btn pf-btn--primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i>
+          حفظ كل التعديلات
+        </button>
+      </div>
+    </div>
+  </form>
+
+  {# Reset confirm forms — one tiny hidden form per resettable key #}
+  {% for group, views in groups.items() %}
+    {% for v in views if v.has_db_override %}
+      <form id="reset-{{ v.key }}"
+            method="post"
+            action="{{ url_for('admin.settings_platform_reset', key=v.key) }}"
+            style="display:none">
+        {{ csrf_input() }}
+      </form>
+    {% endfor %}
+  {% endfor %}
+</div>
+
+{# Styled confirm overlay — replaces window.confirm everywhere on this page. #}
+<div class="pf-confirm-overlay" id="pf-confirm-overlay" hidden
+     style="position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:9100; display:flex; align-items:center; justify-content:center">
+  <div style="background:#fff; border-radius: var(--cc-r-card); padding: var(--cc-sp-11); min-width:320px; max-width:480px; box-shadow: var(--cc-sh-pop); text-align:center">
+    <div id="pf-confirm-message"
+         style="font-size: var(--cc-fs-body); font-weight: var(--cc-fw-bold); color: var(--cc-text); margin-block-end: var(--cc-sp-9);">—</div>
+    <div style="display:flex; justify-content:center; gap: var(--cc-sp-6)">
+      <button class="pf-btn pf-btn--ghost" type="button" id="pf-confirm-cancel">إلغاء</button>
+      <button class="pf-btn pf-btn--primary" type="button" id="pf-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<div class="pf-toast" id="pf-toast" role="status" aria-live="polite" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* Toast — no native alert anywhere. */
+  function showToast(msg, kind) {
+    var t = document.getElementById('pf-toast');
+    if (!t) return;
+    t.className = 'pf-toast' + (kind ? ' pf-toast--' + kind : '') + ' is-visible';
+    t.textContent = String(msg || '');
+    t.hidden = false;
+    setTimeout(function () {
+      t.classList.remove('is-visible');
+      setTimeout(function () { t.hidden = true; }, 320);
+    }, 2400);
+  }
+  window.showToast = showToast;
+
+  /* Styled confirm — replaces native confirm() for any [data-reset-key]. */
+  var overlay   = document.getElementById('pf-confirm-overlay');
+  var msgEl     = document.getElementById('pf-confirm-message');
+  var okBtn     = document.getElementById('pf-confirm-ok');
+  var cancelBtn = document.getElementById('pf-confirm-cancel');
+  var pendingForm = null;
+
+  function openConfirm(msg, form) {
+    msgEl.textContent = msg;
+    pendingForm = form;
+    overlay.hidden = false;
+  }
+  function closeConfirm() {
+    overlay.hidden = true;
+    pendingForm = null;
+  }
+  okBtn.addEventListener('click', function () {
+    if (pendingForm) {
+      var f = pendingForm; pendingForm = null;
+      overlay.hidden = true;
+      f.submit();
+    }
+  });
+  cancelBtn.addEventListener('click', closeConfirm);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeConfirm(); });
+
+  document.querySelectorAll('a[data-reset-key]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      var key   = a.getAttribute('data-reset-key');
+      var label = a.getAttribute('data-reset-label') || key;
+      var form  = document.getElementById('reset-' + key);
+      if (!form) return;
+      openConfirm('إعادة "' + label + '" إلى القيمة الافتراضية؟ سيُحذف التجاوز من القاعدة.', form);
+    });
+  });
+
+  /* Live toggle-text label */
+  document.querySelectorAll('.pf-toggle input[type="checkbox"]').forEach(function (cb) {
+    var text = cb.parentElement && cb.parentElement.querySelector('.pf-toggle-text');
+    if (!text) return;
+    cb.addEventListener('change', function () {
+      text.textContent = cb.checked ? 'مفعّل' : 'معطّل';
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -241,13 +241,17 @@ def _install_rate_limits(app: Flask) -> None:
 
     @app.before_request
     def check_rate_limit():
-        if not app.config.get("RATE_LIMITS_ENABLED", True):
+        # Read rate-limit knobs through the platform_settings resolver so the
+        # owner can tune them live from /admin/settings/platform without a
+        # restart. The resolver chain is: Setting row -> app.config -> default.
+        from .services import platform_settings as ps
+        if not ps.get_bool("RATE_LIMITS_ENABLED"):
             return None
         if request.endpoint == "auth.login_post":
             retry_after = retry_after_for(
                 f"login:{client_ip(app.config.get('TRUST_PROXY_HEADERS', False))}",
-                int(app.config.get("LOGIN_RATE_LIMIT_MAX", 10)),
-                int(app.config.get("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 900)),
+                ps.get_int("LOGIN_RATE_LIMIT_MAX"),
+                ps.get_int("LOGIN_RATE_LIMIT_WINDOW_SECONDS"),
             )
             if retry_after:
                 return rate_limited_response(retry_after)
@@ -256,16 +260,16 @@ def _install_rate_limits(app: Flask) -> None:
             license_key = str(body.get("license_key") or "").strip().upper()
             retry_after = retry_after_for(
                 f"license-check-ip:{client_ip(app.config.get('TRUST_PROXY_HEADERS', False))}",
-                int(app.config.get("LICENSE_CHECK_RATE_LIMIT_MAX", 120)),
-                int(app.config.get("LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS", 60)),
+                ps.get_int("LICENSE_CHECK_RATE_LIMIT_MAX"),
+                ps.get_int("LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS"),
             )
             if retry_after:
                 return rate_limited_response(retry_after)
             if license_key:
                 retry_after = retry_after_for(
                     f"license-check-key:{license_key}",
-                    int(app.config.get("LICENSE_KEY_RATE_LIMIT_MAX", 600)),
-                    int(app.config.get("LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS", 300)),
+                    ps.get_int("LICENSE_KEY_RATE_LIMIT_MAX"),
+                    ps.get_int("LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS"),
                 )
                 if retry_after:
                     return rate_limited_response(retry_after)

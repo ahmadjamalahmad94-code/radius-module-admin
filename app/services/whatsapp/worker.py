@@ -51,10 +51,15 @@ def get_provider(account) -> MetaCloudWhatsAppProvider:
 
 
 def _batch_size_default() -> int:
+    """Batch size — UI-editable via /admin/settings/platform."""
     try:
-        return int(current_app.config.get("WHATSAPP_DRAIN_BATCH_SIZE") or 50)
-    except (TypeError, ValueError):
-        return 50
+        from ..platform_settings import get_int
+        return get_int("WHATSAPP_DRAIN_BATCH_SIZE", 50)
+    except Exception:  # noqa: BLE001
+        try:
+            return int(current_app.config.get("WHATSAPP_DRAIN_BATCH_SIZE") or 50)
+        except (TypeError, ValueError):
+            return 50
 
 
 def _resolve_template_name(account_customer_id: int, row: WhatsAppMessageQueue) -> str | None:
