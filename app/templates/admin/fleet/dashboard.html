@@ -335,11 +335,12 @@
           <th>IP عام</th>
           <th>الحالة</th>
           <th>ملاحظات</th>
+          <th style="text-align:end">إجراءات</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="fd-pending-tbody">
         {% for j in pending_jobs %}
-          <tr>
+          <tr data-job-id="{{ j.id }}" data-job-name="{{ j.name }}">
             <td class="mono">#{{ j.id }}</td>
             <td class="mono">{{ j.name }}</td>
             <td>{{ j.provider }}</td>
@@ -367,12 +368,80 @@
                 <span style="color:#9ca3af;font-size:12px">—</span>
               {% endif %}
             </td>
+            <td style="text-align:end">
+              <div class="fd-row-actions" style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                {# Advance — only meaningful before the auto-advance ceiling. #}
+                {% if j.status in ('draft', 'keys_generated') %}
+                  <button type="button" class="fd-pj-btn fd-pj-advance"
+                          data-job-id="{{ j.id }}"
+                          data-job-name="{{ j.name }}"
+                          title="دفع الجوب لتوليد المفاتيح والسكربت">
+                    <i class="fa-solid fa-forward-step fd-pj-icon"></i>
+                    <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
+                    متابعة
+                  </button>
+                {% endif %}
+                <button type="button" class="fd-pj-btn fd-pj-delete"
+                        data-job-id="{{ j.id }}"
+                        data-job-name="{{ j.name }}"
+                        data-chr-id="{{ j.chr_id or '' }}"
+                        title="حذف هذا الجوب{% if j.chr_id %} وإزالة العقدة #{{ j.chr_id }} المرتبطة{% endif %}">
+                  <i class="fa-solid fa-trash fd-pj-icon"></i>
+                  <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
+                  حذف
+                </button>
+              </div>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+{# CSRF helper + endpoint templates the pending-card JS needs. #}
+<form id="fd-pending-csrf" style="display:none">{{ csrf_input() }}</form>
+<script src="{{ url_for('static', filename='js/admin_fleet_pending_actions.js') }}"
+        data-advance-url="{{ url_for('admin_fleet_onboarding.advance', job_id=0) }}"
+        data-delete-url="{{ url_for('admin_fleet_onboarding.delete_job', job_id=0) }}" defer></script>
+
+{# Styled confirm dialog (replaces native confirm() for delete). Reuses the
+   same shape the rest of this page already uses for the check-now flow. #}
+<div class="fd-pj-confirm" id="fd-pj-confirm" role="dialog" aria-modal="true"
+     style="position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.35)">
+  <div style="background:#fff;border-radius:14px;padding:20px 22px;max-width:460px;width:92%;box-shadow:0 24px 48px -20px rgba(15,23,42,.4)">
+    <div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+      <i class="fa-solid fa-triangle-exclamation" style="color:#b45309"></i> تأكيد
+    </div>
+    <div id="fd-pj-confirm-msg" style="font-size:13px;color:#1f2937;line-height:1.65;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" id="fd-pj-confirm-cancel"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        إلغاء
+      </button>
+      <button type="button" id="fd-pj-confirm-ok"
+              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;font-weight:700;font-size:13px;cursor:pointer">
+        تأكيد
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .fd-pj-btn {
+    height: 30px; padding-inline: 10px; border-radius: 8px;
+    font-weight: 700; font-size: 12px; cursor: pointer;
+    border: 1px solid #e5e7eb; background: #fff; color: #1f2937;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .fd-pj-advance { color: #1e40af; border-color: #1e40af; background: #fff; }
+  .fd-pj-advance:hover { background: #eff6ff; }
+  .fd-pj-delete  { color: #b91c1c; border-color: #fecaca; background: #fff; }
+  .fd-pj-delete:hover  { background: #fef2f2; }
+  .fd-pj-btn[disabled] { opacity: .55; cursor: not-allowed; }
+  .fd-pj-btn.is-busy .fd-pj-icon { display: none; }
+  .fd-pj-btn.is-busy .fa-spinner { display: inline-block; }
+</style>
 {% endif %}
 
 {# ═══════════════════════════════════════════════════════════════════════
