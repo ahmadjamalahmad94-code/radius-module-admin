@@ -373,16 +373,33 @@ def _emit_event(transition: Transition, node_name: str, *, latency_ms: float | N
 
 
 def _notify_hook(event: Event) -> None:
-    """TODO(P9-T1, fleet.notify): hand ``event`` to the alert rule matrix.
+    """Hand the transition off to the Phase-8 orchestrator + (future P9) notifier.
 
-    Phase 4 is pure sensing — no notifications go out from here. The hook
-    exists so a later wiring touch is a one-line import-and-call, with
-    the body of THIS module unchanged.
+    Phase 4 was pure sensing. As of Phase 8, a ``health_down`` event
+    auto-invokes the rebalance orchestrator, which produces a forced-
+    evacuation plan and records it. The plan is advisory when the
+    panel's ``live_apply_enabled`` flag is OFF (it lands as
+    ``fleet_placement_decisions`` rows the proxy can read later); when
+    ON, the proxy enforces it via CoA. Other transition kinds (up,
+    degraded, unknown) are routed only to the future P9 notifier and
+    are ignored by the orchestrator.
+
+    All failures are caught + logged so an orchestrator bug never
+    breaks the sensor loop (the monitor must keep recording metrics
+    regardless).
     """
     logger.debug(
         "fleet.health: event %s for chr_id=%s queued for future notifier",
         event.kind, event.chr_id,
     )
+    try:
+        from fleet.brain.rebalance import on_monitor_event as _on_monitor_event
+        _on_monitor_event(event)
+    except Exception:  # noqa: BLE001 — sensor must never crash on the hook
+        logger.exception(
+            "fleet.health: orchestrator hook raised for event %s/chr_id=%s",
+            event.kind, event.chr_id,
+        )
 
 
 def _denormalize_node_status(node: FleetChrNode, transition: Transition, now: datetime) -> None:
