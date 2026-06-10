@@ -6,23 +6,45 @@
 
 {% block content %}
 <style>
-  .chrc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
-  .chrc-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; }
-  .chrc-card .v { font-size:22px; font-weight:800; color:#0f172a; }
-  .chrc-card .l { font-size:12px; color:#64748b; margin-top:2px; }
-  .chrc-table { width:100%; border-collapse:collapse; font-size:13px; }
-  .chrc-table th, .chrc-table td { padding:8px 10px; border-bottom:1px solid #eef0f6; text-align:start; }
-  .chrc-table th { color:#475569; font-weight:700; background:#f8fafc; }
-  .chrc-table td.mono, .chrc-table th.mono { font-family:ui-monospace,monospace; direction:ltr; }
-  .chrc-actions { display:flex; gap:6px; flex-wrap:wrap; }
-  .chrc-badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; }
-  .chrc-badge--on { background:#dcfce7; color:#166534; }
-  .chrc-badge--off { background:#fee2e2; color:#991b1b; }
-  .chrc-danger { background:#b91c1c; color:#fff; }
-  .chrc-unavail { padding:12px 14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:9px; color:#9a3412; font-size:13px; }
+  /* Page-local touches — heavy lifting (table padding, card padding, tab strip)
+     comes from admin_design_sweep.css. We only keep what's specific to this
+     page: the system-info KPI grid and the per-row danger button.            */
+  .chrc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--cc-gap-inline);
+    margin-block-end: var(--cc-sp-7);
+  }
+  .chrc-kpi {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-tile);
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+  }
+  .chrc-kpi-v { font-size: 22px; font-weight: var(--cc-fw-display); color: var(--cc-text); line-height: 1.1; }
+  .chrc-kpi-l { font-size: var(--cc-fs-tiny);  color: var(--cc-text-mute); margin-block-start: var(--cc-sp-2); font-weight: var(--cc-fw-medium); }
+  .chrc-badge { display: inline-block; padding: 2px 10px; border-radius: var(--cc-r-pill); font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold); }
+  .chrc-badge--on  { background: var(--tile-green-bg); color: var(--tile-green-fg); }
+  .chrc-badge--off { background: var(--tile-red-bg);   color: var(--tile-red-fg);   }
+  .chrc-actions { display: flex; gap: var(--cc-sp-3); flex-wrap: wrap; }
+  .chrc-actions form { display: inline-flex; }
+  .chrc-unavail {
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+    background: var(--tile-amber-bg);
+    border: 1px solid var(--hb-amber);
+    border-radius: var(--cc-r-lg);
+    color: var(--tile-amber-fg);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-medium);
+  }
+  .chrc-danger {
+    background: var(--hb-red);
+    color: #fff !important;
+    border: 1px solid var(--hb-red);
+  }
+  .chrc-danger:hover { background: var(--tile-red-fg); border-color: var(--tile-red-fg); }
 </style>
 
-{# يعرض «غير متاح» لقسم رفضه CHR (مثلاً 400) دون إسقاط بقية الصفحة. #}
 {% macro section_unavailable(sec) %}
   <div class="chrc-unavail">
     <i class="fa-solid fa-circle-exclamation"></i> غير متاح — تعذّر قراءة هذا القسم من CHR.
@@ -30,225 +52,289 @@
   </div>
 {% endmacro %}
 
+{# Reusable mini-table renderer keeps the markup DRY across the four tabs.
+   Each call passes the section dict and a config tuple list. #}
+{% macro chr_table(sec, columns, empty_msg) %}
+  {% if not sec.available %}{{ section_unavailable(sec) }}
+  {% elif sec.rows %}
+    <div class="hub-table-wrap">
+      <table class="hub-table">
+        <thead>
+          <tr>{% for c in columns %}<th{% if c.cls %} class="{{ c.cls }}"{% endif %}>{{ c.title }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for it in sec.rows %}
+            <tr>{% for c in columns %}{{ c.cell(it)|safe }}{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {{ hub.empty(empty_msg) }}
+  {% endif %}
+{% endmacro %}
+
 {% if not data.ok %}
   {% call hub.section("حالة الاتصال", icon="triangle-exclamation") %}
-    <div style="padding:14px 16px;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;color:#991b1b">
+    <div class="chrc-unavail" style="background:var(--tile-red-bg);border-color:var(--hb-red);color:var(--tile-red-fg)">
       <i class="fa-solid fa-plug-circle-xmark"></i>
       <b>CHR غير مضبوط.</b> {{ data.message or "أكمل إعداد الاتصال أولًا." }}
-      <div style="margin-top:10px">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings"><i class="fa-solid fa-gear"></i> إعدادات CHR</a>
+      <div style="margin-top: var(--cc-sp-6)">
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings">
+          <i class="fa-solid fa-gear"></i> إعدادات CHR
+        </a>
       </div>
     </div>
   {% endcall %}
 {% elif not data.reachable %}
   {% call hub.section("حالة الاتصال", icon="triangle-exclamation") %}
-    <div style="padding:14px 16px;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;color:#991b1b">
+    <div class="chrc-unavail" style="background:var(--tile-red-bg);border-color:var(--hb-red);color:var(--tile-red-fg)">
       <i class="fa-solid fa-plug-circle-xmark"></i>
       <b>تعذّر الوصول إلى CHR.</b>
       {{ data.system.error or "تحقّق من بيانات الاتصال في الإعدادات وأن REST مفعّل." }}
-      <div style="margin-top:10px">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings"><i class="fa-solid fa-gear"></i> إعدادات CHR</a>
+      <div style="margin-top: var(--cc-sp-6)">
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings">
+          <i class="fa-solid fa-gear"></i> إعدادات CHR
+        </a>
       </div>
     </div>
   {% endcall %}
 {% else %}
 
-  {# ── لقطة النظام ── #}
-  {% call hub.section("نظام CHR", icon="microchip") %}
-    {% if data.system.available %}
-    <div class="chrc-grid">
-      <div class="chrc-card"><div class="v">{{ data.system.identity or "—" }}</div><div class="l">الهوية</div></div>
-      <div class="chrc-card"><div class="v">{{ data.system.version or "—" }}</div><div class="l">إصدار RouterOS</div></div>
-      <div class="chrc-card"><div class="v">{{ data.system.uptime or "—" }}</div><div class="l">مدة التشغيل</div></div>
-      <div class="chrc-card"><div class="v">{{ data.system.cpu_load or "—" }}%</div><div class="l">حمل المعالج</div></div>
-      <div class="chrc-card"><div class="v">{{ data.counts.ppp_active }}</div><div class="l">جلسات نشطة (PPP)</div></div>
-      <div class="chrc-card"><div class="v">{{ data.counts.ipsec_active }}</div><div class="l">جلسات IPsec نشطة</div></div>
-    </div>
-    {% else %}{{ section_unavailable(data.system) }}{% endif %}
-  {% endcall %}
+  {# ═══════════════════════════════════════════════════════════════════
+     The 6 stacked sections from the previous version are now grouped into
+     4 tabs — one view at a time, no more vertical scrolling marathon.
+     ═══════════════════════════════════════════════════════════════════ #}
+  {% call hub.tab_bar(tabs=[
+       {"key":"overview",  "label":"نظرة عامة", "icon":"microchip"},
+       {"key":"ppp",       "label":"PPP",       "icon":"user-shield",
+        "count": data.counts.ppp_secrets if data.sections.ppp_secrets.available else None},
+       {"key":"ipsec",     "label":"IPsec",     "icon":"key",
+        "count": data.counts.ipsec_users if data.sections.ipsec_users.available else None},
+       {"key":"interfaces","label":"الواجهات",  "icon":"network-wired",
+        "count": data.counts.interfaces if data.sections.interfaces.available else None},
+     ], default="overview") %}
 
-  {% set s = data.sections.ppp_secrets %}
-  {% call hub.section("مستخدمو الأنفاق (PPP)", icon="user-shield", meta=(data.counts.ppp_secrets ~ " حساب") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th>الاسم</th><th>الخدمة</th><th>البروفايل</th><th>الحالة</th><th>إجراءات</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          {% set sid = it['.id'] or it.get('id') %}
-          {% set disabled = (it.get('disabled') in ['true','yes',true]) %}
-          <tr>
-            <td class="mono">{{ it.get('name') or '—' }}</td>
-            <td class="mono">{{ it.get('service') or '—' }}</td>
-            <td class="mono">{{ it.get('profile') or '—' }}</td>
-            <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
-            <td>
-              <div class="chrc-actions">
-                <form method="post" action="{{ url_for('admin_chr.ppp_toggle') }}">
-                  {{ csrf_input() }}
-                  <input type="hidden" name="secret_id" value="{{ sid }}">
-                  <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
-                  <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
-                  <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
-                </form>
-                <form method="post" action="{{ url_for('admin_chr.ppp_remove') }}"
-                      onsubmit="return confirm('حذف الحساب {{ it.get('name') or sid }} نهائيًا من CHR؟');">
-                  {{ csrf_input() }}
-                  <input type="hidden" name="secret_id" value="{{ sid }}">
-                  <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
-                  <input type="hidden" name="confirm" value="yes">
-                  <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-trash"></i></button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا توجد حسابات PPP على CHR.") }}{% endif %}
-  {% endcall %}
+    {# ── Tab 1: Overview ─────────────────────────────────────────── #}
+    {% call hub.tab_panel("overview") %}
+      {% call hub.section("نظام CHR", icon="microchip") %}
+        {% if data.system.available %}
+          <div class="chrc-grid">
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.system.identity or "—" }}</div><div class="chrc-kpi-l">الهوية</div></div>
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.system.version or "—" }}</div><div class="chrc-kpi-l">إصدار RouterOS</div></div>
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.system.uptime or "—" }}</div><div class="chrc-kpi-l">مدة التشغيل</div></div>
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.system.cpu_load or "—" }}%</div><div class="chrc-kpi-l">حمل المعالج</div></div>
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.counts.ppp_active }}</div><div class="chrc-kpi-l">جلسات نشطة (PPP)</div></div>
+            <div class="chrc-kpi"><div class="chrc-kpi-v">{{ data.counts.ipsec_active }}</div><div class="chrc-kpi-l">جلسات IPsec نشطة</div></div>
+          </div>
+        {% else %}{{ section_unavailable(data.system) }}{% endif %}
+      {% endcall %}
 
-  {% set s = data.sections.ipsec_users %}
-  {% call hub.section("مستخدمو IPsec (IKEv2)", icon="key", meta=(data.counts.ipsec_users ~ " مستخدم") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th>الاسم</th><th>الحالة</th><th>تعليق</th><th>إجراءات</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          {% set uid = it['.id'] or it.get('id') %}
-          {% set disabled = (it.get('disabled') in ['true','yes',true]) %}
-          <tr>
-            <td class="mono">{{ it.get('name') or '—' }}</td>
-            <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
-            <td>{{ it.get('comment') or '—' }}</td>
-            <td>
-              <div class="chrc-actions">
-                <form method="post" action="{{ url_for('admin_chr.ipsec_toggle') }}">
-                  {{ csrf_input() }}
-                  <input type="hidden" name="user_id" value="{{ uid }}">
-                  <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
-                  <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
-                  <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
-                </form>
-                <form method="post" action="{{ url_for('admin_chr.ipsec_remove') }}"
-                      onsubmit="return confirm('حذف مستخدم IPsec {{ it.get('name') or uid }} نهائيًا من CHR؟');">
-                  {{ csrf_input() }}
-                  <input type="hidden" name="user_id" value="{{ uid }}">
-                  <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
-                  <input type="hidden" name="confirm" value="yes">
-                  <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-trash"></i></button>
-                </form>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا يوجد مستخدمو IPsec (أو لم تُهيّأ هذه القائمة على CHR بعد) — رؤية IKEv2 عبر «هويات IPsec» و«جلسات IPsec النشطة» أدناه.") }}{% endif %}
-  {% endcall %}
+      {% call hub.section("إجراءات إدارية", icon="triangle-exclamation") %}
+        <p class="hub-field-hint" style="margin: 0 0 var(--cc-sp-6)">إجراءات غير قابلة للتراجع — تتطلّب تأكيدًا.</p>
+        <form method="post" action="{{ url_for('admin_chr.reboot') }}">
+          {{ csrf_input() }}
+          <input type="hidden" name="confirm" value="yes">
+          <button class="hub-btn chrc-danger" type="submit"
+                  data-confirm="إعادة تشغيل CHR الآن؟ سينقطع كل الاتصالات مؤقتًا.">
+            <i class="fa-solid fa-power-off"></i> إعادة تشغيل CHR
+          </button>
+        </form>
+      {% endcall %}
+    {% endcall %}
 
-  {% set s = data.sections.ppp_active %}
-  {% call hub.section("الجلسات النشطة", icon="bolt", meta=(data.counts.ppp_active ~ " PPP") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th>الاسم</th><th>الخدمة</th><th class="mono">العنوان</th><th>مدة الاتصال</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          <tr>
-            <td class="mono">{{ it.get('name') or '—' }}</td>
-            <td class="mono">{{ it.get('service') or '—' }}</td>
-            <td class="mono">{{ it.get('address') or '—' }}</td>
-            <td class="mono">{{ it.get('uptime') or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا توجد جلسات PPP نشطة حاليًا.") }}{% endif %}
-  {% endcall %}
+    {# ── Tab 2: PPP (secrets + active) ───────────────────────────── #}
+    {% call hub.tab_panel("ppp") %}
+      {% call hub.section("مستخدمو الأنفاق (PPP)", icon="user-shield",
+                          meta=(data.counts.ppp_secrets ~ " حساب") if data.sections.ppp_secrets.available else "") %}
+        {% set s = data.sections.ppp_secrets %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th>الاسم</th><th>الخدمة</th><th>البروفايل</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                {% set sid = it['.id'] or it.get('id') %}
+                {% set disabled = (it.get('disabled') in ['true','yes',true]) %}
+                <tr>
+                  <td class="mono">{{ it.get('name') or '—' }}</td>
+                  <td class="mono">{{ it.get('service') or '—' }}</td>
+                  <td class="mono">{{ it.get('profile') or '—' }}</td>
+                  <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
+                  <td>
+                    <div class="chrc-actions">
+                      <form method="post" action="{{ url_for('admin_chr.ppp_toggle') }}">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="secret_id" value="{{ sid }}">
+                        <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
+                        <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
+                        <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin_chr.ppp_remove') }}">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="secret_id" value="{{ sid }}">
+                        <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
+                        <input type="hidden" name="confirm" value="yes">
+                        <button class="hub-btn chrc-danger" type="submit"
+                                data-confirm="حذف الحساب {{ it.get('name') or sid }} نهائيًا من CHR؟">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا توجد حسابات PPP على CHR.") }}{% endif %}
+      {% endcall %}
 
-  {% set s = data.sections.ipsec_active %}
-  {% call hub.section("جلسات IPsec النشطة", icon="bolt", meta=(data.counts.ipsec_active ~ " جلسة") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th class="mono">العنوان البعيد</th><th class="mono">التبادل</th><th>الحالة</th><th>مدة الاتصال</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          <tr>
-            <td class="mono">{{ it.get('remote-address') or '—' }}</td>
-            <td class="mono">{{ it.get('state') or it.get('exchange-mode') or '—' }}</td>
-            <td class="mono">{{ it.get('responder') and 'responder' or '—' }}</td>
-            <td class="mono">{{ it.get('uptime') or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا توجد جلسات IPsec نشطة حاليًا.") }}{% endif %}
-  {% endcall %}
+      {% call hub.section("الجلسات النشطة (PPP)", icon="bolt",
+                          meta=(data.counts.ppp_active ~ " جلسة") if data.sections.ppp_active.available else "") %}
+        {% set s = data.sections.ppp_active %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th>الاسم</th><th>الخدمة</th><th class="mono">العنوان</th><th>مدة الاتصال</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                <tr>
+                  <td class="mono">{{ it.get('name') or '—' }}</td>
+                  <td class="mono">{{ it.get('service') or '—' }}</td>
+                  <td class="mono">{{ it.get('address') or '—' }}</td>
+                  <td class="mono">{{ it.get('uptime') or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا توجد جلسات PPP نشطة حاليًا.") }}{% endif %}
+      {% endcall %}
+    {% endcall %}
 
-  {% set s = data.sections.ipsec_identities %}
-  {% call hub.section("هويات IPsec", icon="fingerprint", meta=(data.counts.ipsec_identities ~ " هوية") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th class="mono">Peer</th><th class="mono">طريقة المصادقة</th><th class="mono">Mode Config</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          <tr>
-            <td class="mono">{{ it.get('peer') or '—' }}</td>
-            <td class="mono">{{ it.get('auth-method') or '—' }}</td>
-            <td class="mono">{{ it.get('mode-config') or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا توجد هويات IPsec.") }}{% endif %}
-  {% endcall %}
+    {# ── Tab 3: IPsec (users + active + identities) ──────────────── #}
+    {% call hub.tab_panel("ipsec") %}
+      {% call hub.section("مستخدمو IPsec (IKEv2)", icon="key",
+                          meta=(data.counts.ipsec_users ~ " مستخدم") if data.sections.ipsec_users.available else "") %}
+        {% set s = data.sections.ipsec_users %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th>الاسم</th><th>الحالة</th><th>تعليق</th><th>إجراءات</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                {% set uid = it['.id'] or it.get('id') %}
+                {% set disabled = (it.get('disabled') in ['true','yes',true]) %}
+                <tr>
+                  <td class="mono">{{ it.get('name') or '—' }}</td>
+                  <td>{% if disabled %}<span class="chrc-badge chrc-badge--off">معطّل</span>{% else %}<span class="chrc-badge chrc-badge--on">مفعّل</span>{% endif %}</td>
+                  <td>{{ it.get('comment') or '—' }}</td>
+                  <td>
+                    <div class="chrc-actions">
+                      <form method="post" action="{{ url_for('admin_chr.ipsec_toggle') }}">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="user_id" value="{{ uid }}">
+                        <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
+                        <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
+                        <button class="hub-btn hub-btn--ghost" type="submit">{{ 'تفعيل' if disabled else 'تعطيل' }}</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin_chr.ipsec_remove') }}">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="user_id" value="{{ uid }}">
+                        <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
+                        <input type="hidden" name="confirm" value="yes">
+                        <button class="hub-btn chrc-danger" type="submit"
+                                data-confirm="حذف مستخدم IPsec {{ it.get('name') or uid }} نهائيًا من CHR؟">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا يوجد مستخدمو IPsec — رؤية IKEv2 عبر «هويات IPsec» و«جلسات IPsec النشطة» أدناه.") }}{% endif %}
+      {% endcall %}
 
-  {% set s = data.sections.interfaces %}
-  {% call hub.section("الواجهات", icon="network-wired", meta=(data.counts.interfaces ~ " واجهة") if s.available else "") %}
-    {% if not s.available %}{{ section_unavailable(s) }}
-    {% elif s.rows %}
-    <div style="overflow-x:auto">
-      <table class="chrc-table">
-        <thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th></tr></thead>
-        <tbody>
-          {% for it in s.rows %}
-          {% set running = (it.get('running') in ['true','yes',true]) %}
-          <tr>
-            <td class="mono">{{ it.get('name') or '—' }}</td>
-            <td class="mono">{{ it.get('type') or '—' }}</td>
-            <td>{% if running %}<span class="chrc-badge chrc-badge--on">يعمل</span>{% else %}<span class="chrc-badge chrc-badge--off">متوقف</span>{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}{{ hub.empty("لا توجد واجهات.") }}{% endif %}
-  {% endcall %}
+      {% call hub.section("جلسات IPsec النشطة", icon="bolt",
+                          meta=(data.counts.ipsec_active ~ " جلسة") if data.sections.ipsec_active.available else "") %}
+        {% set s = data.sections.ipsec_active %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th class="mono">العنوان البعيد</th><th class="mono">التبادل</th><th>الحالة</th><th>مدة الاتصال</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                <tr>
+                  <td class="mono">{{ it.get('remote-address') or '—' }}</td>
+                  <td class="mono">{{ it.get('state') or it.get('exchange-mode') or '—' }}</td>
+                  <td class="mono">{{ it.get('responder') and 'responder' or '—' }}</td>
+                  <td class="mono">{{ it.get('uptime') or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا توجد جلسات IPsec نشطة حاليًا.") }}{% endif %}
+      {% endcall %}
 
-  {# ── إجراءات إدارية حسّاسة ── #}
-  {% call hub.section("إجراءات إدارية", icon="triangle-exclamation") %}
-    <p class="hub-field-hint" style="margin:0 0 12px">إجراءات غير قابلة للتراجع — تتطلّب تأكيدًا.</p>
-    <form method="post" action="{{ url_for('admin_chr.reboot') }}"
-          onsubmit="return confirm('إعادة تشغيل CHR الآن؟ سينقطع كل الاتصالات مؤقتًا.');">
-      {{ csrf_input() }}
-      <input type="hidden" name="confirm" value="yes">
-      <button class="hub-btn chrc-danger" type="submit"><i class="fa-solid fa-power-off"></i> إعادة تشغيل CHR</button>
-    </form>
-  {% endcall %}
+      {% call hub.section("هويات IPsec", icon="fingerprint",
+                          meta=(data.counts.ipsec_identities ~ " هوية") if data.sections.ipsec_identities.available else "") %}
+        {% set s = data.sections.ipsec_identities %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th class="mono">Peer</th><th class="mono">طريقة المصادقة</th><th class="mono">Mode Config</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                <tr>
+                  <td class="mono">{{ it.get('peer') or '—' }}</td>
+                  <td class="mono">{{ it.get('auth-method') or '—' }}</td>
+                  <td class="mono">{{ it.get('mode-config') or '—' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا توجد هويات IPsec.") }}{% endif %}
+      {% endcall %}
+    {% endcall %}
+
+    {# ── Tab 4: Interfaces ───────────────────────────────────────── #}
+    {% call hub.tab_panel("interfaces") %}
+      {% call hub.section("الواجهات", icon="network-wired",
+                          meta=(data.counts.interfaces ~ " واجهة") if data.sections.interfaces.available else "") %}
+        {% set s = data.sections.interfaces %}
+        {% if not s.available %}{{ section_unavailable(s) }}
+        {% elif s.rows %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th>الاسم</th><th>النوع</th><th>الحالة</th></tr></thead>
+              <tbody>
+                {% for it in s.rows %}
+                {% set running = (it.get('running') in ['true','yes',true]) %}
+                <tr>
+                  <td class="mono">{{ it.get('name') or '—' }}</td>
+                  <td class="mono">{{ it.get('type') or '—' }}</td>
+                  <td>{% if running %}<span class="chrc-badge chrc-badge--on">يعمل</span>{% else %}<span class="chrc-badge chrc-badge--off">متوقف</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}{{ hub.empty("لا توجد واجهات.") }}{% endif %}
+      {% endcall %}
+    {% endcall %}
+
+  {% endcall %}{# /tab_bar #}
 
 {% endif %}
 {% endblock %}
