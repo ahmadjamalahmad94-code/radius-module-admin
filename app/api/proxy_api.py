@@ -107,29 +107,77 @@ def _resolve_secret(vault_ref: str, customer_id: int) -> str:
         return ""
 
 
+# wg-mgmt pool → wg-data pool conversion. Onboarding mints the wg-data
+# address by mirroring the wg-mgmt host octet into the parallel 10.98.0/24
+# pool (see fleet/registry/onboarding_service.py §6.3). We replay the same
+# rule here so the proxy can resolve "RADIUS arrived from 10.98.0.11 →
+# this is chr-vpn-1" without us having to migrate a new column onto
+# FleetChrNode at production.
+_WG_MGMT_PREFIX = "10.99."
+_WG_DATA_PREFIX = "10.98."
+
+
+def _derive_wg_data_ip(wg_mgmt_ip: str | None) -> str:
+    """Return the wg-data IP for a node given its wg-mgmt IP.
+
+    Empty / non-mgmt-pool input ⇒ empty string. We never fabricate an
+    address; the proxy gets the empty string and falls back to its
+    legacy public-IP allowlist for that node.
+    """
+    if not wg_mgmt_ip:
+        return ""
+    s = wg_mgmt_ip.strip()
+    if s.startswith(_WG_MGMT_PREFIX):
+        return _WG_DATA_PREFIX + s[len(_WG_MGMT_PREFIX):]
+    # Defensive: a CHR that for some reason lives outside the canonical
+    # 10.99/16 pool gets no derived address rather than a wrong one.
+    return ""
+
+
 @bp.get("/routing-table")
 def routing_table():
-    """Return the active ProxyRealmRoute entries the proxy uses for routing.
+    """Return the routing table the proxy needs to forward RADIUS traffic.
 
-    Response shape:
-    {
-      "ok": true,
-      "generated_at": "2026-06-08T12:00:00Z",
-      "routes": [
-        {
-          "realm": "client5",
-          "customer_id": 3,
-          "target_ip": "10.200.5.2",
-          "auth_port": 1812,
-          "acct_port": 1813,
-          "secret": "<actual radius shared secret>",
-          "allowed_chr_ips": ["x.x.x.x", ...]  // empty = all CHR nodes
-        }
-      ],
-      "chr_nodes": [
-        {"name": "chr-exit-01", "public_ip": "x.x.x.x", "status": "active"}
-      ]
-    }
+    Two SOURCES of CHR nodes are merged into ``chr_nodes[]``:
+
+    * **Fleet registry** (``fleet_chr_nodes``) — produced by the onboarding
+      wizard. Status vocabulary ``provisioning | up | degraded | down | disabled``.
+      A node is published as soon as it is ``enabled = TRUE`` AND
+      ``drain = FALSE`` AND ``status NOT IN ('disabled', 'down')`` —
+      i.e. ``provisioning``, ``up``, and ``degraded`` are all routable
+      (a fresh CHR must be reachable before its first telemetry, otherwise
+      first-light traffic has nowhere to go).
+    * **Legacy CHR-console table** (``chr_nodes``, ``app.models.ChrNode``) —
+      pre-fleet table some operators still rely on. Kept as a secondary
+      source, filtered to ``status="active"`` for backward compatibility.
+
+    Each entry carries the fields the proxy needs to map an incoming RADIUS
+    packet back to a node identity:
+
+      * ``name``          – registry node name (telemetry / placement key).
+      * ``public_ip``     – front-door candidate + RADIUS-from-internet IP.
+      * ``wg_data_ip``    – the RADIUS source IP the proxy actually SEES
+                            (RADIUS arrives over the wg-data tunnel from
+                            ``10.98.0.X``). Derived from ``wg_mgmt_ip``
+                            by swapping the management-pool prefix
+                            ``10.99.`` → data-pool prefix ``10.98.``
+                            (parallel pools — see onboarding §6.3 /
+                            ``fleet/registry/onboarding_service.py``).
+      * ``wg_mgmt_ip``    – control-plane address (api-ssl, CoA listener).
+      * ``status``        – the underlying registry status string.
+      * ``enabled``       – administrative on/off switch.
+      * ``drain``         – fleet drain flag (no new placements).
+      * ``source``        – ``"fleet"`` or ``"legacy"`` so a future change
+                            of source can be debugged without re-reading
+                            this file.
+
+    ``routes[]`` is the realm table (``ProxyRealmRoute``). It is **only
+    populated by the owner via the Infra → Proxy Routes admin UI**. New
+    rows land with ``status="draft"`` and stay invisible to the proxy
+    until the owner explicitly switches them to ``"active"``. An empty
+    ``routes[]`` is therefore EXPECTED on a fresh install — see the
+    ``realms_status`` summary in the response footer for a quick health
+    line the operator can read at a glance.
     """
     denied = _auth_required()
     if denied:
@@ -142,19 +190,39 @@ def routing_table():
         .all()
     )
 
-    # Build CHR IP lookup for allowed_chr_node_ids
-    chr_nodes = {n.id: n for n in ChrNode.query.all()}
+    # Build legacy + fleet CHR IP/name lookups for allowed_chr_node_ids.
+    legacy_chr_nodes = {n.id: n for n in ChrNode.query.all()}
+
+    # Fleet registry (the post-Phase-2 table the onboarding wizard writes).
+    # Lazy import so the module still boots on a branch without fleet.
+    fleet_chr_nodes_q = []
+    try:
+        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+        fleet_chr_nodes_q = (
+            FleetChrNode.query
+            .filter(FleetChrNode.enabled.is_(True))
+            .filter(FleetChrNode.drain.is_(False))
+            .filter(FleetChrNode.status.notin_(("disabled", "down")))
+            .order_by(FleetChrNode.name.asc())
+            .all()
+        )
+    except Exception as exc:  # noqa: BLE001 — defensive
+        current_app.logger.warning(
+            "routing_table: fleet_chr_nodes read failed (%s); skipping fleet source",
+            exc.__class__.__name__,
+        )
 
     routes_out = []
     for r in routes_q:
         # Resolve actual secret from vault
         secret_value = _resolve_secret(r.secret_vault_ref, r.customer_id)
 
-        # Resolve allowed CHR IPs
+        # Resolve allowed CHR IPs from the LEGACY table (ProxyRealmRoute
+        # historically keyed `allowed_chr_node_ids` against `chr_nodes.id`).
         allowed_ips: list[str] = []
         if r.allowed_chr_node_ids:
             for nid in r.allowed_chr_node_ids:
-                node = chr_nodes.get(nid)
+                node = legacy_chr_nodes.get(nid)
                 if node and node.public_ip:
                     allowed_ips.append(node.public_ip)
 
@@ -168,17 +236,46 @@ def routing_table():
             "allowed_chr_ips": allowed_ips,
         })
 
-    chr_list = [
-        {
+    # ── Build chr_nodes[] from BOTH sources, fleet-first, deduped by name. ──
+    chr_list: list[dict] = []
+    seen_names: set[str] = set()
+    for n in fleet_chr_nodes_q:
+        if not n.name:
+            continue
+        chr_list.append({
             "name": n.name,
             "public_ip": n.public_ip,
-            "management_ip": n.management_ip,
+            "wg_mgmt_ip": n.wg_mgmt_ip,
+            "wg_data_ip": _derive_wg_data_ip(n.wg_mgmt_ip),
             "status": n.status,
+            "enabled": bool(n.enabled),
+            "drain": bool(n.drain),
+            "source": "fleet",
+        })
+        seen_names.add(n.name)
+    # Legacy entries — kept for backward compatibility with operators
+    # who still drive the CHR-console table. Filtered to active per the
+    # pre-fix behaviour.
+    for n in legacy_chr_nodes.values():
+        if n.status != "active":
+            continue
+        if n.name in seen_names:
+            continue
+        chr_list.append({
+            "name": n.name,
+            "public_ip": n.public_ip,
+            "wg_mgmt_ip": n.management_ip,
+            "wg_data_ip": _derive_wg_data_ip(n.management_ip),
+            "status": n.status,
+            "enabled": True,                 # legacy: filtered on status == "active"
+            "drain": False,
+            "source": "legacy",
+            # Keep the legacy fields too so an older proxy that reads them
+            # continues to work without a config change.
+            "management_ip": n.management_ip,
             "enabled_services": n.enabled_services,
-        }
-        for n in chr_nodes.values()
-        if n.status == "active"
-    ]
+        })
+        seen_names.add(n.name)
 
     # Phase 7: surface the UI-controlled live-apply switch (default OFF).
     # The proxy reads this to decide whether to ENFORCE moves/CoA — see
@@ -206,6 +303,45 @@ def routing_table():
     except Exception:  # noqa: BLE001 — read path must be defensive
         movable_users = []
 
+    # Realms diagnostic — answers "why is routes[] empty?" in one read.
+    # If the owner has only DRAFT realms, the proxy needs to be told
+    # exactly that so the operator knows where to look (Admin → Infra →
+    # Proxy Routes). Counts are cheap and the field shape is additive.
+    try:
+        total_realms = ProxyRealmRoute.query.count()
+        draft_realms = ProxyRealmRoute.query.filter_by(status="draft").count()
+        suspended_realms = ProxyRealmRoute.query.filter_by(status="suspended").count()
+    except Exception:  # noqa: BLE001 — defensive
+        total_realms = draft_realms = suspended_realms = 0
+    realms_status = {
+        "active": len(routes_out),
+        "draft": draft_realms,
+        "suspended": suspended_realms,
+        "total": total_realms,
+        "hint": (
+            "إنشئ ProxyRealmRoute ثم اضبط الحالة إلى active "
+            "من Admin → البنية التحتية → مسارات الوكيل"
+            if total_realms == 0 or len(routes_out) == 0 else ""
+        ),
+    }
+
+    # Debug logging — owner-toggleable. Single structured line per call.
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog(
+            "routing-table",
+            chr_nodes=len(chr_list),
+            fleet=len([c for c in chr_list if c["source"] == "fleet"]),
+            legacy=len([c for c in chr_list if c["source"] == "legacy"]),
+            realms_active=len(routes_out),
+            realms_draft=draft_realms,
+            realms_total=total_realms,
+            live_apply=live_apply_enabled,
+            movable_users=len(movable_users),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
     return jsonify({
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -214,6 +350,7 @@ def routing_table():
         "chr_nodes": chr_list,
         "live_apply_enabled": live_apply_enabled,
         "movable_users": movable_users,
+        "realms_status": realms_status,
     })
 
 
@@ -265,6 +402,19 @@ def heartbeat():
 
     # Flag realms the proxy couldn't find — useful for misconfiguration alerts
     unknown = body.get("realms_not_found") or []
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog(
+            "heartbeat",
+            proxy_id=body.get("proxy_id", "?"),
+            routes_loaded=body.get("routes_loaded"),
+            requests_total=body.get("requests_total"),
+            requests_rejected=body.get("requests_rejected"),
+            unknown_realms_in=len(unknown),
+            active_realms_in=len(active_realms),
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return jsonify({
         "ok": True,
         "ack": {

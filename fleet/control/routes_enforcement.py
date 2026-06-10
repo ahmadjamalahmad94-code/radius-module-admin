@@ -108,6 +108,11 @@ def enforcement_ingest():
     body = request.get_json(silent=True) or {}
     ok, problem = _validate(body)
     if not ok:
+        try:
+            from app.services.proxy_api_debug import dlog
+            dlog("enforcement", accepted=False, reason="bad_request", detail=problem)
+        except Exception:  # noqa: BLE001
+            pass
         return jsonify({"ok": False, "error": "bad_request", "detail": problem}), 400
 
     node_name = str(body["node"]).strip()
@@ -183,6 +188,18 @@ def enforcement_ingest():
     except Exception:
         pass
 
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog(
+            "enforcement",
+            accepted=True, action=action, result=result,
+            user=user, node=node_name,
+            previous_node=previous_node or "",
+            acct_session_id=acct_session_id or "",
+            decision_id=decision_id, event_id=ev.id,
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return jsonify({
         "ok": True,
         "idempotent": False,

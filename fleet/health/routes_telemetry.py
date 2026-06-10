@@ -89,14 +89,32 @@ def proxy_telemetry():
     # ``silent=True`` so a non-JSON body returns 400, not 500.
     payload = request.get_json(silent=True)
     if payload is None:
+        try:
+            from app.services.proxy_api_debug import dlog
+            dlog("telemetry", accepted=False, reason="non_json_body")
+        except Exception:  # noqa: BLE001
+            pass
         return _err("bad_request", 400, "request body must be JSON")
+
+    node_name_hint = (payload or {}).get("node", "?")
 
     # ── Validate + persist ─────────────────────────────────────────────────
     try:
         node, _row, sample = ingest_payload(payload)
     except TelemetryValidationError as exc:
+        try:
+            from app.services.proxy_api_debug import dlog
+            dlog("telemetry", accepted=False, node=node_name_hint,
+                 reason=f"validation:{exc.code}", detail=exc.detail or "")
+        except Exception:  # noqa: BLE001
+            pass
         return _err(exc.code, 400, exc.detail)
     except UnknownNodeError as exc:
+        try:
+            from app.services.proxy_api_debug import dlog
+            dlog("telemetry", accepted=False, node=exc.node, reason="unknown_node")
+        except Exception:  # noqa: BLE001
+            pass
         return _err("unknown_node", 404, f"node {exc.node!r} is not enrolled")
 
     # Commit append-only insert. Any unexpected SQLAlchemy error is mapped to
@@ -108,6 +126,13 @@ def proxy_telemetry():
         return _err("server_error", 500, "telemetry persist failed")
 
     # ── Response ────────────────────────────────────────────────────────────
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog("telemetry", accepted=True, node=node.name,
+             cpu=getattr(sample, "cpu_util", None),
+             sessions=getattr(sample, "active_sessions", None))
+    except Exception:  # noqa: BLE001
+        pass
     return jsonify({
         "ok": True,
         "node": node.name,
