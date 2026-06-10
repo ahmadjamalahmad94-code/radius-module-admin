@@ -407,9 +407,19 @@
             </div>
           {% endif %}
           {% if j.last_error %}
-            <div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;font-weight:700">
+            <div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;font-weight:700;flex-wrap:wrap">
               <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px"></i>
-              <span><strong>سبب الخطأ:</strong> {{ j.last_error }}</span>
+              <span style="flex:1;min-width:240px"><strong>سبب الخطأ:</strong> {{ j.last_error }}</span>
+              {# fix/fleet-infrastructure-settings: any «بانتظار إعداد …» last_error
+                 means the fleet-infra constants are missing — link directly to the
+                 settings page so the operator never has to hunt for it. #}
+              {% if 'بانتظار' in j.last_error %}
+                <a href="{{ url_for('fleet_ui.fleet_infrastructure') }}"
+                   class="fd-pj-btn"
+                   style="color:#991b1b;border-color:#991b1b;background:#fff;text-decoration:none">
+                  <i class="fa-solid fa-wrench"></i> فتح إعدادات البنية
+                </a>
+              {% endif %}
             </div>
           {% endif %}
         </div>

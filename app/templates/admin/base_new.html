@@ -269,6 +269,10 @@
              class="adm-link {% if ep == 'fleet_ui.dns_frontdoor' %}is-active{% endif %}">
             {{ _('الباب الأمامي (DNS)') }}
           </a>
+          <a href="{{ url_for('fleet_ui.fleet_infrastructure') }}"
+             class="adm-link {% if ep == 'fleet_ui.fleet_infrastructure' %}is-active{% endif %}">
+            {{ _('إعدادات البنية') }}
+          </a>
           <a href="{{ url_for('fleet_p7.dashboard') }}"
              class="adm-link {% if ep.startswith('fleet_p7.') %}is-active{% endif %}">
             {{ _('التطبيق الحي والتحريك') }}
