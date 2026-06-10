@@ -193,6 +193,38 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 acti
 /ip route
 # (no default via wg-mgmt — intentionally absent)
 
+# ---- 11. Panel-side read-only API user (live-metrics poller) ----
+# A dedicated RouterOS user the panel logs in as to read CPU, /ppp/active
+# count and interface bytes. Bound to api-ssl ONLY on the wg-mgmt
+# address (NOT the WAN). Idempotent: remove-then-add. The block is
+# skipped entirely when the panel hasn't set both API_USER and
+# API_PASSWORD — keeps the script installable on a virgin node before
+# the operator has configured the credentials in
+# «إعدادات بنية الأسطول».
+{% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+/user
+remove [find name="{{ API_USER }}"]
+add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
+    comment="hobe-fleet-api-readonly"
+
+# Bind api-ssl to the wg-mgmt address. We always disable the plain
+# binary ``api`` on 8728 and only enable ``api-ssl`` on the chosen
+# port bound to the wg-mgmt interface — never on the WAN.
+/ip service
+set api-ssl disabled=no port={{ API_PORT|default(8443) }} address={{ WG_MGMT_ADDR }}
+set api        disabled=yes  ;# never the plain binary API; SSL only
+
+/ip firewall filter
+remove [find comment="hobe-fleet-fw-api-ssl"]
+add chain=input in-interface=wg-mgmt protocol=tcp dst-port={{ API_PORT|default(8443) }} \
+    action=accept comment="hobe-fleet-fw-api-ssl"
+{% else %}
+# Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
+# the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
+# sessions / bandwidth until the operator configures these in
+# «إعدادات بنية الأسطول → بيانات اعتماد قراءة المقاييس».
+{% endif %}
+
 # CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
 # ============================================================
 # END unified script — bindings above are the ONLY per-CHR delta.

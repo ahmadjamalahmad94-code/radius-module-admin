@@ -325,6 +325,16 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
     "DNS_PUSH": "1.1.1.1",
     "GW_LOCAL_ADDR": "10.255.255.1",
     "WAN_IFACE": "ether1",
+    # Panel-side read-only RouterOS API user (live-metrics poller).
+    # When ``API_USER`` AND ``API_PASSWORD`` are BOTH non-empty the unified
+    # script provisions a ``read``-group user reachable only over wg-mgmt
+    # (the api-ssl service is bound to the management address; api on
+    # 8728 stays off). When either is empty the script SKIPS the block —
+    # the panel just won't have control-plane metrics until the operator
+    # sets these in «إعدادات بنية الأسطول».
+    "API_USER": "",
+    "API_PASSWORD": "",
+    "API_PORT": 8443,
 }
 
 # Pool the wg-mgmt control-plane addresses are allocated from (§6.3).
@@ -543,6 +553,21 @@ class OnboardingService:
             reason = summary_ar(missing)
             raise OnboardingError(reason)
         script = self.renderer.render(bindings)
+        # Persist the API creds onto the node row so the live-metrics
+        # poller can log in with the exact password the script just
+        # provisioned. We only stage credentials when both fields are
+        # present (the script render itself is what installs the user
+        # on the CHR); the password is encrypted at rest via the same
+        # Fernet wrapper the customer vault uses.
+        api_user = str(bindings.get("API_USER") or "").strip()
+        api_password = str(bindings.get("API_PASSWORD") or "")
+        if api_user and api_password and job.chr_id:
+            from fleet.health.routeros_creds import set_credentials
+            node_row = db.session.get(FleetChrNode, job.chr_id)
+            if node_row is not None:
+                set_credentials(node_row, username=api_user, password=api_password)
+                if bindings.get("API_PORT"):
+                    node_row.routeros_api_port = int(bindings["API_PORT"])
         job.generated_script_ref = "sha256:" + hashlib.sha256(script.encode("utf-8")).hexdigest()
         job.advance("script_generated")
         db.session.commit()
@@ -647,6 +672,32 @@ class OnboardingService:
         # fleet-constant
         for key in _FLEET_CONST_DEFAULTS:
             bindings[key] = self._const(key)
+
+        # API user provisioning (live-metrics poller). Resolution: per-node
+        # override on the FleetChrNode row beats Setting layer beats the
+        # fleet defaults from routeros_creds. We render the PLAINTEXT
+        # password into the script; the panel stores it encrypted on the
+        # node row in :meth:`prepare_metrics_credentials` so the poller can
+        # decrypt it later. Empty user OR password → the template's
+        # ``{% if API_USER and API_PASSWORD %}`` skips the entire block.
+        try:
+            from fleet.health.routeros_creds import (
+                decrypt_password as _dec_pwd,
+                get_default_password_plaintext,
+                get_default_user,
+            )
+            override_user = (node.routeros_api_user or "").strip()
+            override_pwd = _dec_pwd(node.routeros_api_password_enc or "")
+            if override_user and override_pwd:
+                bindings["API_USER"] = override_user
+                bindings["API_PASSWORD"] = override_pwd
+            elif not bindings.get("API_USER") or not bindings.get("API_PASSWORD"):
+                bindings["API_USER"] = get_default_user()
+                bindings["API_PASSWORD"] = get_default_password_plaintext()
+            if node.routeros_api_port:
+                bindings["API_PORT"] = int(node.routeros_api_port)
+        except Exception:  # noqa: BLE001 — never break onboarding on a creds probe
+            pass
         return bindings
 
 

@@ -149,7 +149,29 @@ def create_app(config_object=None, **overrides) -> Flask:
         with app.app_context():
             init_database(app)
 
+    _start_workers(app)
+
     return app
+
+
+def _start_workers(app: Flask) -> None:
+    """Spawn fleet background workers (daemon threads).
+
+    Currently:
+      * ``fleet.health.metrics_poller`` — polls RouterOS over wg-mgmt and
+        writes ``fleet_chr_metrics`` rows with ``source='control'`` so
+        the dashboard renders real CPU / sessions / bandwidth.
+
+    Every worker is opt-in via a config flag and gated by ``TESTING`` so
+    unit tests + the CLI never spawn background threads they didn't ask
+    for. Errors during start-up are logged and swallowed: a worker
+    misconfig must NOT keep the app from booting.
+    """
+    try:
+        from fleet.health.metrics_poller import start_background_poller
+        start_background_poller(app)
+    except Exception:  # noqa: BLE001 — never fail app boot on a worker
+        app.logger.exception("fleet metrics poller failed to start")
 
 
 def _configure_logging(app: Flask) -> None:
@@ -498,6 +520,16 @@ def ensure_schema_compatibility(app: Flask) -> None:
     if "chr_nodes" in tables:
         _add_columns_if_missing("chr_nodes", {
             "routeros_password_enc": "TEXT NOT NULL DEFAULT ''",
+        })
+
+    # FleetChrNode — per-CHR RouterOS API credentials for the live-metrics
+    # poller. The columns are NEW (added on this branch) so on a fresh
+    # db.create_all() they're already present; this heal exists for the
+    # LIVE deployment where the table predates this branch.
+    if "fleet_chr_nodes" in tables:
+        _add_columns_if_missing("fleet_chr_nodes", {
+            "routeros_api_user": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "routeros_api_password_enc": "TEXT NOT NULL DEFAULT ''",
         })
 
     # ProxyRealmRoute — separate allow-list column for FLEET CHR ids
