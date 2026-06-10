@@ -69,6 +69,9 @@ def create_app(config_object=None, **overrides) -> Flask:
     # auth; delegates ranking to fleet.brain (real impl) or local stub
     # adapter; audits each served decision into fleet_placement_decisions.
     from fleet.brain.routes_placement_decision import bp as fleet_placement_decision_bp
+    # Phase 7 panel: enforcement-outcome ingest + UI dashboard.
+    from fleet.control.routes_enforcement import bp as fleet_p7_enforcement_bp
+    from fleet.ui.routes_p7 import bp as fleet_p7_ui_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -96,6 +99,8 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_ui_bp)
     app.register_blueprint(fleet_telemetry_bp)
     app.register_blueprint(fleet_placement_decision_bp)
+    app.register_blueprint(fleet_p7_enforcement_bp)
+    app.register_blueprint(fleet_p7_ui_bp)
 
     @app.get("/")
     def root():
