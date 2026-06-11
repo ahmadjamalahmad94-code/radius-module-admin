@@ -95,25 +95,46 @@
     var cancel  = document.getElementById('hub-confirm-cancel');
     var pendingForm = null;
     var pendingResolve = null;
+    var pendingSubmitter = null;   // the [data-confirm] control that opened us
 
     function close() {
       overlay.hidden = true;
       pendingForm = null;
+      pendingSubmitter = null;
       if (pendingResolve) { try { pendingResolve(false); } catch (_) {} }
       pendingResolve = null;
     }
-    function open(msg, form, resolve) {
+    function open(msg, form, resolve, submitter) {
       msgEl.textContent = String(msg || 'هل أنت متأكد؟');
       pendingForm = form || null;
       pendingResolve = resolve || null;
+      pendingSubmitter = submitter || null;
       overlay.hidden = false;
+    }
+
+    // Submit a form, PRESERVING the submitter's name/value when the
+    // trigger is a real submit control (e.g. <button name="auto_generate"
+    // value="1">). Plain form.submit() drops that pair — which silently
+    // broke multi-button forms (the operator clicked «توليد» but the
+    // server saw a bare save). requestSubmit(submitter) keeps it. For a
+    // type="button" trigger (not a submitter) requestSubmit() would throw,
+    // so we fall back to form.submit().
+    function submitForm(f, submitter) {
+      var isSubmitControl = submitter
+        && submitter.type !== 'button'
+        && (submitter.tagName === 'BUTTON' || submitter.tagName === 'INPUT');
+      if (isSubmitControl && typeof f.requestSubmit === 'function') {
+        try { f.requestSubmit(submitter); return; } catch (_) { /* fall through */ }
+      }
+      f.submit();
     }
 
     okBtn.addEventListener('click', function () {
       if (pendingForm) {
-        var f = pendingForm; pendingForm = null;
+        var f = pendingForm; var s = pendingSubmitter;
+        pendingForm = null; pendingSubmitter = null;
         overlay.hidden = true;
-        f.submit();
+        submitForm(f, s);
       } else if (pendingResolve) {
         var r = pendingResolve; pendingResolve = null;
         overlay.hidden = true;
@@ -128,7 +149,10 @@
       if (!overlay.hidden && e.key === 'Escape') close();
     });
 
-    // Any [data-confirm] submit button hooks the modal:
+    // Any [data-confirm] button/link hooks the modal. This is the SINGLE
+    // confirm system across the admin app — pages must NOT ship their own
+    // [data-confirm] interceptor (two interceptors = two stacked overlays =
+    // dead buttons, the fleet-infra «توليد مفتاح اللوحة» incident).
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('button[data-confirm], a[data-confirm]');
       if (!btn) return;
@@ -136,7 +160,11 @@
       var form = btn.closest('form');
       if (!form) return;
       e.preventDefault();
-      open(msg, form, null);
+      // Stop other delegated handlers (legacy page-local confirm code) from
+      // also firing on the same click — defence in depth against a second
+      // modal opening behind ours.
+      e.stopPropagation();
+      open(msg, form, null, btn);
     }, true);
 
     // Promise-based API (for JS-driven actions):
