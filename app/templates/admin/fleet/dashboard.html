@@ -444,6 +444,36 @@
 {# Top-of-page CSRF (also used by the JS for X-CSRFToken) #}
 <form id="fd-csrf-form" style="display:none">{{ csrf_input() }}</form>
 
+{# ── Singleton↔Fleet cross-reference notice ──
+   When the «CHR الواحد» credentials at /admin/settings#chr point at the SAME
+   IP as a node already onboarded in the fleet, the operator is maintaining
+   the same physical CHR's credentials in two places. Surface a one-line
+   banner pointing at the consolidation doc. ── #}
+{% if singleton_chr_match %}
+<div role="status" aria-live="polite"
+     style="display:flex;gap:12px;align-items:flex-start;background:#eef2ff;
+            border:1px solid #c7d2fe;border-radius:14px;padding:13px 17px;
+            margin-block-end:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);">
+  <div style="width:36px;height:36px;border-radius:10px;flex:none;display:grid;
+              place-items:center;background:#6366f1;color:#fff;font-size:15px;">
+    <i class="fa-solid fa-link" aria-hidden="true"></i>
+  </div>
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:800;color:#3730a3;font-size:13.5px;margin-bottom:4px;">
+      هذا الـCHR موجود في الأسطول — وحّد بيانات الاعتماد
+    </div>
+    <div style="font-size:12.5px;color:#4338ca;line-height:1.75;">
+      عنوان <code dir="ltr" style="background:#fff;padding:1px 6px;border-radius:5px;border:1px solid #c7d2fe;font-family:ui-monospace,monospace;">{{ singleton_chr_match.host }}</code>
+      مضبوط في
+      <a href="{{ url_for('admin.settings_page') }}#chr"
+         style="color:#312e81;font-weight:800;text-decoration:underline;">«MikroTik CHR — نمط الـCHR الواحد»</a>
+      كما هو موجود في الأسطول كعقدة <b>«{{ singleton_chr_match.node_name }}»</b>.
+      أبقِ نسخة واحدة كمصدر للحقيقة — راجع <code>docs/CONSOLIDATION.md</code> لخطوات التوحيد.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="fd-hero">
   <div class="fd-hero-icon"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i></div>
   <div class="fd-hero-body">

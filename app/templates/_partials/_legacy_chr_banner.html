@@ -1,0 +1,38 @@
+{# ══════════════════════════════════════════════════════════════════
+   Deprecation banner — shown on every legacy /admin/infra/chr-nodes*
+   page. The legacy ChrNode table is being retired in favor of the
+   canonical «أسطول CHR» fleet. After the migration (step 5) lands,
+   step 6 of docs/CONSOLIDATION.md drops the table and these routes.
+
+   Design-system styling: amber pill + clear next-action link.
+   ══════════════════════════════════════════════════════════════════ #}
+<div class="cc-banner cc-banner--warn" role="status" aria-live="polite"
+     style="display:flex;gap:14px;align-items:flex-start;background:#fef3c7;
+            border:1px solid #fcd34d;border-radius:14px;padding:14px 18px;
+            margin-block-end:16px;box-shadow:0 1px 3px rgba(15,23,42,.06);">
+  <div style="width:38px;height:38px;border-radius:10px;flex:none;display:grid;
+              place-items:center;background:#fbbf24;color:#fff;font-size:16px;">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+  </div>
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:800;color:#92400e;font-size:14px;margin-bottom:4px;">
+      تمت ترقية إدارة العقد إلى «أسطول CHR»
+    </div>
+    <div style="font-size:12.5px;color:#78350f;line-height:1.75;">
+      هذه الصفحة قديمة وأصبحت للعرض فقط. الإنشاء والتعديل والاستطلاع تمّت إزالتهم —
+      أضف العقد الجديدة من
+      <a href="{{ url_for('fleet_ui.onboarding_wizard') }}"
+         style="color:#7c2d12;font-weight:800;text-decoration:underline;">
+         معالج إضافة CHR</a>،
+      وأدر الأسطول من
+      <a href="{{ url_for('fleet_ui.fleet_dashboard') }}"
+         style="color:#7c2d12;font-weight:800;text-decoration:underline;">
+         لوحة الأسطول</a>،
+      وارحّل العقد الموجودة الآن إلى الأسطول من
+      <a href="{{ url_for('admin_infra.consolidation_page') }}"
+         style="color:#7c2d12;font-weight:800;text-decoration:underline;">
+         صفحة الترحيل</a>.
+      بعد إكمال الترحيل ستُحذف هذه الصفحة كاملة.
+    </div>
+  </div>
+</div>

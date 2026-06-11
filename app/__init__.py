@@ -630,6 +630,10 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("fleet_chr_nodes", {
             "routeros_api_user": "VARCHAR(80) NOT NULL DEFAULT ''",
             "routeros_api_password_enc": "TEXT NOT NULL DEFAULT ''",
+            # Anchors the idempotent legacy→fleet migration (services/fleet_consolidation.py).
+            # Nullable on purpose: only rows imported FROM the legacy chr_nodes
+            # table carry a value; native fleet rows leave it NULL.
+            "legacy_chr_node_id": "INTEGER",
         })
 
     # ProxyRealmRoute — separate allow-list column for FLEET CHR ids
