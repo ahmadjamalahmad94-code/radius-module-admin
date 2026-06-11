@@ -136,10 +136,10 @@
     try { return await res.json(); } catch (_) { return {}; }
   }
   function rowFor(jobId) {
-    return document.querySelector('#fd-pending-tbody tr[data-job-id="' + jobId + '"]');
+    return document.querySelector('#fd-pending-tbody [data-job-id="' + jobId + '"]');
   }
   function pendingCount() {
-    return document.querySelectorAll("#fd-pending-tbody tr").length;
+    return document.querySelectorAll("#fd-pending-tbody .pj-card").length;
   }
   function refreshPageAfterChange() {
     // A full page reload keeps every dependent surface in sync — the KPI

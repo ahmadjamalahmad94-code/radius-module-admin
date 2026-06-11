@@ -245,28 +245,8 @@
   .fb-source--brain{background:#e7f8ef;color:#15803d;}
   .fb-source--fallback{background:#fff4e0;color:#b45309;}
   .fb-source i{font-size:11px;}
-  .fb-list{display:flex;flex-direction:column;gap:12px;}
-  .fb-row{display:grid;grid-template-columns:58px 1.4fr 0.9fr 2fr;gap:16px;align-items:center;
-    padding:16px;border:1px solid var(--fdx-line);border-radius:16px;background:#fff;transition:box-shadow .14s;}
-  .fb-row:hover{box-shadow:var(--fdx-sh);}
-  .fb-row.is-excluded{background:#fcfcfd;border-color:#fde2e2;}
-  .fb-row.is-best{border-color:#86efac;box-shadow:0 0 0 3px #e7f8ef inset;}
-  .fb-rank{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;
-    font-weight:900;font-size:18px;background:var(--fdx-brand-soft);color:var(--fdx-brand);}
-  .fb-row.is-best .fb-rank{background:#15803d;color:#fff;}
-  .fb-row.is-excluded .fb-rank{background:#fdecec;color:#b91c1c;}
-  .fb-rank-sup{font-size:9px;font-weight:800;margin-block-end:-2px;opacity:.9;}
-  .fb-id-name{font-weight:900;font-size:14px;color:var(--fdx-ink);}
-  .fb-id-meta{font-size:11.5px;color:var(--fdx-mut);margin-top:3px;}
-  .fb-id-meta .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
-  .fb-excluded-reason{display:inline-flex;align-items:center;gap:6px;background:#fdecec;color:#b91c1c;
-    padding:3px 9px;border-radius:var(--fdx-r-pill);font-size:11px;font-weight:800;margin-top:6px;}
-  .fb-score-num{font-size:24px;font-weight:900;color:var(--fdx-ink);line-height:1;font-variant-numeric:tabular-nums;}
-  .fb-score-cap{font-size:11px;color:var(--fdx-mut);margin-top:3px;}
-  .fb-score-bar{margin-top:7px;height:6px;border-radius:999px;background:#eef2f7;overflow:hidden;}
-  .fb-score-bar>span{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#22c55e);border-radius:inherit;}
-  .fb-row.is-excluded .fb-score-bar>span{background:#cbd5e1;}
-  .fb-chips{display:flex;flex-wrap:wrap;gap:7px;}
+  /* shared factor chips (reused by the new ranking rows) */
+  .fb-chips{display:flex;flex-wrap:wrap;gap:8px;}
   .fb-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:var(--fdx-r-pill);
     font-size:11.5px;font-weight:800;border:1px solid transparent;white-space:nowrap;}
   .fb-chip i{font-size:8px;}
@@ -276,13 +256,111 @@
   .fb-chip--info{background:var(--fdx-brand-soft);color:var(--fdx-brand-ink);border-color:#c7d2fe;}
   .fb-chip-detail{display:block;font-size:11px;color:var(--fdx-mut);font-weight:600;margin-top:3px;padding-inline-start:2px;}
   .fb-chip-wrap{display:flex;flex-direction:column;}
-  .fb-section-sub{margin-block-start:16px;margin-block-end:8px;font-size:12.5px;font-weight:800;color:var(--fdx-ink2);
+  .fb-section-sub{margin-block-start:18px;margin-block-end:10px;font-size:12.5px;font-weight:800;color:var(--fdx-ink2);
     display:flex;align-items:center;gap:7px;}
   .fb-section-sub i{color:#b91c1c;}
 
+  /* ══ RANKING — reimagined as clean horizontal cards (.rk-*) ══════════ */
+  .rk-list{display:flex;flex-direction:column;gap:14px;}
+  .rk-row{position:relative;background:var(--fdx-card);border:1px solid var(--fdx-line);border-radius:18px;
+    padding:18px 20px 18px 22px;box-shadow:var(--fdx-sh);overflow:hidden;transition:transform .14s,box-shadow .14s;
+    display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;}
+  .rk-row:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(15,23,42,.05),0 18px 36px -20px rgba(15,23,42,.3);}
+  .rk-row::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#c7d2fe;}
+  .rk-row.is-best::before{background:linear-gradient(180deg,#22c55e,#15803d);}
+  .rk-row.is-excluded{background:#fdfcfc;border-color:#fde2e2;}
+  .rk-row.is-excluded::before{background:#fca5a5;}
+
+  .rk-medal{width:56px;height:56px;border-radius:16px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;background:var(--fdx-brand-soft);color:var(--fdx-brand);box-shadow:inset 0 0 0 1px #e0e7ff;}
+  .rk-medal-sup{font-size:8.5px;font-weight:800;letter-spacing:.4px;opacity:.85;margin-block-end:-2px;}
+  .rk-medal-num{font-size:21px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;}
+  .rk-medal>i{font-size:20px;}
+  .rk-row.is-best .rk-medal{background:linear-gradient(160deg,#16a34a,#15803d);color:#fff;box-shadow:0 8px 18px -8px rgba(21,128,61,.6);}
+  .rk-row.is-excluded .rk-medal{background:#fdecec;color:#b91c1c;box-shadow:inset 0 0 0 1px #fecaca;}
+
+  .rk-ident{min-width:0;}
+  .rk-name{font-weight:900;font-size:15.5px;color:var(--fdx-ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;letter-spacing:-.2px;}
+  .rk-best-tag{font-size:11px;font-weight:800;color:#15803d;background:#e7f8ef;padding:2px 9px;border-radius:var(--fdx-r-pill);}
+  .rk-meta{font-size:12px;color:var(--fdx-mut);margin-top:4px;}
+  .rk-meta .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .rk-excluded-reason{display:inline-flex;align-items:center;gap:6px;background:#fdecec;color:#b91c1c;
+    padding:3px 10px;border-radius:var(--fdx-r-pill);font-size:11px;font-weight:800;margin-top:8px;}
+
+  .rk-score{text-align:end;min-width:140px;}
+  .rk-score-num{font-size:30px;font-weight:900;color:var(--fdx-ink);line-height:1;font-variant-numeric:tabular-nums;}
+  .rk-score-num small{font-size:13px;font-weight:800;color:var(--fdx-mut);}
+  .rk-score-cap{font-size:10.5px;color:var(--fdx-mut);margin-top:4px;font-weight:600;}
+  .rk-bar{margin-top:9px;height:7px;border-radius:999px;background:#eef2f7;overflow:hidden;}
+  .rk-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4f46e5,#22c55e);}
+  .rk-row.is-excluded .rk-score-num{color:#94a3b8;}
+  .rk-row.is-excluded .rk-bar>span{background:#cbd5e1;}
+
+  .rk-factors{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:9px;
+    margin-block-start:4px;padding-block-start:14px;border-block-start:1px solid var(--fdx-line2);}
+
+  /* ══ PENDING — onboarding pipeline cards with a live stepper (.pj-*) ══ */
+  .pj-list{display:flex;flex-direction:column;gap:16px;}
+  .pj-card{position:relative;background:var(--fdx-card);border:1px solid var(--fdx-line);border-radius:18px;
+    padding:18px 20px 18px 22px;box-shadow:var(--fdx-sh);overflow:hidden;}
+  .pj-card::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#818cf8;}
+  .pj-card--failed{border-color:#fecaca;background:#fffafa;}
+  .pj-card--failed::before{background:#ef4444;}
+
+  .pj-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .pj-ident{flex:1;min-width:220px;}
+  .pj-name{font-weight:900;font-size:15px;color:var(--fdx-ink);display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .pj-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:800;color:var(--fdx-brand-ink);
+    background:var(--fdx-brand-soft);padding:2px 9px;border-radius:var(--fdx-r-pill);}
+  .pj-meta{font-size:12px;color:var(--fdx-mut);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .pj-meta .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fdx-ink2);}
+  .pj-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .pj-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  /* stepper */
+  .pj-steps{display:flex;align-items:flex-start;margin:18px 0 4px;}
+  .pj-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;min-width:0;}
+  .pj-step::before{content:"";position:absolute;inset-block-start:13px;inset-inline-end:50%;width:100%;height:2px;
+    background:#e8edf3;z-index:0;}
+  .pj-step:first-child::before{display:none;}
+  .pj-step.is-done::before{background:#22c55e;}
+  .pj-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:900;background:#eef2f7;color:#94a3b8;position:relative;z-index:1;border:2px solid #fff;
+    box-shadow:0 0 0 1px #e2e8f0;}
+  .pj-step.is-done .pj-dot{background:#22c55e;color:#fff;box-shadow:0 0 0 1px #22c55e;}
+  .pj-step.is-current .pj-dot{background:var(--fdx-brand);color:#fff;box-shadow:0 0 0 4px var(--fdx-brand-soft);}
+  .pj-step-label{font-size:10px;font-weight:700;color:var(--fdx-mut);text-align:center;line-height:1.3;white-space:nowrap;}
+  .pj-step.is-current .pj-step-label{color:var(--fdx-brand-ink);font-weight:800;}
+  .pj-step.is-done .pj-step-label{color:var(--fdx-ink2);}
+
+  .pj-info{margin-block-start:14px;padding-block-start:13px;border-block-start:1px solid var(--fdx-line2);
+    display:flex;flex-direction:column;gap:7px;font-size:12.5px;line-height:1.65;}
+  .pj-info-row{color:var(--fdx-ink2);display:flex;gap:8px;align-items:baseline;}
+  .pj-info-row i{margin-top:1px;}
+  .pj-info-row strong{color:var(--fdx-ink);font-weight:800;}
+  .pj-info-row--next{color:var(--fdx-ink);}
+  .pj-err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:11px 13px;
+    display:flex;gap:9px;align-items:flex-start;font-weight:700;flex-wrap:wrap;font-size:12.5px;line-height:1.6;}
+
+  .pj-btn{height:34px;padding-inline:13px;border-radius:10px;font-weight:800;font-size:12px;cursor:pointer;
+    border:1px solid var(--fdx-line);background:#fff;color:var(--fdx-ink2);
+    display:inline-flex;align-items:center;gap:7px;text-decoration:none;transition:background .14s,border-color .14s,color .14s;}
+  .pj-btn:hover{background:#f8fafc;border-color:#cbd5e1;color:var(--fdx-ink);}
+  .pj-btn--advance{color:var(--fdx-brand);border-color:#dfe3fb;}
+  .pj-btn--advance:hover{background:var(--fdx-brand-soft);border-color:#c7d2fe;}
+  .pj-btn--script{color:#047857;border-color:#a7f3d0;}
+  .pj-btn--script:hover{background:#ecfdf5;border-color:#6ee7b7;}
+  .pj-btn--delete{color:#b91c1c;border-color:#fecaca;}
+  .pj-btn--delete:hover{background:#fef2f2;border-color:#fca5a5;}
+  .pj-btn[disabled]{opacity:.55;cursor:not-allowed;}
+  .pj-btn .fa-spinner{display:none;}
+  .pj-btn.is-busy .fd-pj-icon{display:none;}
+  .pj-btn.is-busy .fa-spinner{display:inline-block;}
+
   @media (max-width:900px){
-    .fb-row{grid-template-columns:58px 1fr;}
-    .fb-row>div:nth-child(3),.fb-row>div:nth-child(4){grid-column:1 / -1;}
+    .rk-row{grid-template-columns:auto 1fr;}
+    .rk-score{grid-column:1 / -1;text-align:start;}
+    .pj-step-label{font-size:9px;}
     .fd-hero{padding:20px;}
   }
 </style>
@@ -378,124 +456,123 @@
    surfaced so the operator can see + retry from the UI.
    ═══════════════════════════════════════════════════════════════════════ #}
 {% if pending_jobs %}
-<div class="fd-card">
-  <div class="fd-card-head">
-    <div class="fd-card-title">
-      <i class="fa-solid fa-spinner"></i> عمليات الإضافة قيد التنفيذ
-    </div>
-    <div class="fd-card-spacer"></div>
-    <span class="fb-source" style="background:#eef2ff;color:#4338ca">
-      <i class="fa-solid fa-list-check"></i> {{ pending_jobs|length }} عملية
-    </span>
+<div class="fd-card-head">
+  <div class="fd-card-title">
+    <i class="fa-solid fa-spinner"></i> عمليات الإضافة قيد التنفيذ
   </div>
-  <div style="font-size:12.5px;color:#475569;margin-block-end:12px;line-height:1.7">
-    قائمة الجوْب الموجودة حالياً لإضافة عقد جديدة — من إرسال نموذج المعالج حتى تثبيت العقدة
-    على الأسطول. العقد التي وصلت لمرحلة «تم توليد المفاتيح» تظهر أيضاً تحت «عقد CHR»
-    أدناه بحالة «تجهيز».
-  </div>
+  <div class="fd-card-spacer"></div>
+  <span class="fb-source" style="background:var(--fdx-brand-soft);color:var(--fdx-brand-ink)">
+    <i class="fa-solid fa-list-check"></i> {{ pending_jobs|length }} عملية
+  </span>
+</div>
+<p style="font-size:12.5px;color:var(--fdx-ink2);line-height:1.7;margin:0 0 18px">
+  عمليات إضافة العقد الجارية — من إرسال نموذج المعالج حتى أوّل اتصال للعقدة. بمجرّد أن
+  تتّصل العقدة وتعمل تختفي من هنا تلقائياً وتظهر تحت «العقد» و«الترتيب».
+</p>
 
-  {# fix/fleet-script-view-instructions:
-     Re-laid the per-job display from a flat table row into a card with TWO
-     visible bands (identity + transparency) so the owner sees in one glance:
-       (1) WHAT the status means in Arabic,
-       (2) what the NEXT step is from where the job sits now,
-       (3) any last_error LOUDLY (not buried in a noted column).
-     The «عرض السكربت» button is added when the job has reached a status
-     where a script can be rendered (keys_generated or above). #}
-  <div id="fd-pending-tbody" class="fd-pj-list" style="display:flex;flex-direction:column;gap:12px">
-    {% for j in pending_jobs %}
-      <div class="fd-pj-card" data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
-           style="border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;background:#fff{% if j.last_error %};border-color:#fecaca;background:#fef2f2{% endif %}">
+{# Each job is a self-contained pipeline card: identity + a live stepper that
+   lights up done↦current↦upcoming stages, the plain-Arabic meaning + next
+   step, a loud last_error band, and the action row. JS hooks
+   (.fd-pj-advance / .fd-pj-view-script / .fd-pj-delete + data-job-id) and the
+   #fd-pending-tbody container id are preserved verbatim. #}
+{% set _pj_steps = ['مسودة','مفاتيح','سكربت','دفع','تحقّق','نشطة'] %}
+<div id="fd-pending-tbody" class="pj-list">
+  {% for j in pending_jobs %}
+    <article class="pj-card{% if j.is_failed %} pj-card--failed{% endif %}"
+             data-job-id="{{ j.id }}" data-job-name="{{ j.name }}">
 
-        {# ─── identity band ───────────────────────────────────────── #}
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px">
-            <div class="mono" style="font-weight:800;font-size:14px">#{{ j.id }} · {{ j.name }}</div>
-            <div style="color:#475569;font-size:12.5px">
-              · <span class="mono">{{ j.public_ip }}</span>
-              · {{ j.provider }}
-            </div>
+      {# ── identity + status badge ── #}
+      <div class="pj-top">
+        <div class="pj-ident">
+          <div class="pj-name">
+            <span class="pj-num">#{{ j.id }}</span>
+            <span>{{ j.name }}</span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            {% if j.status == 'draft' %}
-              <span class="fd-badge fd-badge--prov">{{ j.status_label }}</span>
-            {% elif j.status == 'failed' %}
-              <span class="fd-badge fd-badge--down">{{ j.status_label }}</span>
-            {% elif j.status in ('keys_generated','script_generated','pushed','verifying') %}
-              <span class="fd-badge fd-badge--prov">{{ j.status_label }}</span>
-            {% else %}
-              <span class="fd-badge fd-badge--off">{{ j.status_label }}</span>
-            {% endif %}
-            {% if j.chr_id %}
-              <span class="fd-badge fd-badge--off" title="مرتبطة بعقدة #{{ j.chr_id }} ضمن «عقد CHR»">عقدة #{{ j.chr_id }}</span>
-            {% endif %}
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-            {% if j.status in ('draft', 'keys_generated') %}
-              <button type="button" class="fd-pj-btn fd-pj-advance"
-                      data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
-                      title="دفع الجوب لتوليد المفاتيح والسكربت">
-                <i class="fa-solid fa-forward-step fd-pj-icon"></i>
-                <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
-                متابعة
-              </button>
-            {% endif %}
-            {% if j.has_script %}
-              <button type="button" class="fd-pj-btn fd-pj-view-script"
-                      data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
-                      style="color:#047857;border-color:#047857"
-                      title="عرض / نسخ / تنزيل سكربت RouterOS لهذه العقدة">
-                <i class="fa-solid fa-code fd-pj-icon"></i>
-                <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
-                عرض السكربت
-              </button>
-            {% endif %}
-            <button type="button" class="fd-pj-btn fd-pj-delete"
-                    data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
-                    data-chr-id="{{ j.chr_id or '' }}"
-                    title="حذف هذا الجوب{% if j.chr_id %} وإزالة العقدة #{{ j.chr_id }} المرتبطة{% endif %}">
-              <i class="fa-solid fa-trash fd-pj-icon"></i>
-              <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
-              حذف
-            </button>
+          <div class="pj-meta">
+            <span class="mono" dir="ltr">{{ j.public_ip }}</span>
+            <span>· {{ j.provider }}</span>
+            {% if j.chr_id %}<span title="مرتبطة بعقدة #{{ j.chr_id }} ضمن «العقد»">· عقدة #{{ j.chr_id }}</span>{% endif %}
           </div>
         </div>
-
-        {# ─── transparency band: meaning + next step + last_error ─── #}
-        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e5e7eb;display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.65">
-          {% if j.status_meaning %}
-            <div style="color:#1f2937">
-              <i class="fa-solid fa-circle-info" style="color:#0284c7"></i>
-              <strong>الحالة:</strong> {{ j.status_meaning }}
-            </div>
-          {% endif %}
-          {% if j.next_step %}
-            <div style="color:#0f172a">
-              <i class="fa-solid fa-arrow-right" style="color:#0f766e"></i>
-              <strong>الخطوة التالية:</strong> {{ j.next_step }}
-            </div>
-          {% endif %}
-          {% if j.last_error %}
-            <div style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;font-weight:700;flex-wrap:wrap">
-              <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px"></i>
-              <span style="flex:1;min-width:240px"><strong>سبب الخطأ:</strong> {{ j.last_error }}</span>
-              {# fix/fleet-infrastructure-settings: any «بانتظار إعداد …» last_error
-                 means the fleet-infra constants are missing — link directly to the
-                 settings page so the operator never has to hunt for it. #}
-              {% if 'بانتظار' in j.last_error %}
-                <a href="{{ url_for('fleet_ui.fleet_infrastructure') }}"
-                   class="fd-pj-btn"
-                   style="color:#991b1b;border-color:#991b1b;background:#fff;text-decoration:none">
-                  <i class="fa-solid fa-wrench"></i> فتح إعدادات البنية
-                </a>
-              {% endif %}
-            </div>
+        <div class="pj-badges">
+          {% if j.is_failed %}
+            <span class="fd-badge fd-badge--down"><i class="fa-solid fa-circle"></i> {{ j.status_label }}</span>
+          {% else %}
+            <span class="fd-badge fd-badge--prov"><i class="fa-solid fa-circle"></i> {{ j.status_label }}</span>
           {% endif %}
         </div>
-
       </div>
-    {% endfor %}
-  </div>
+
+      {# ── pipeline stepper (failed cards skip it — the red state is enough) ── #}
+      {% if not j.is_failed %}
+        <div class="pj-steps" aria-label="مراحل الإضافة">
+          {% for label in _pj_steps %}
+            <div class="pj-step{% if loop.index0 < j.step_index %} is-done{% elif loop.index0 == j.step_index %} is-current{% endif %}">
+              <div class="pj-dot">
+                {% if loop.index0 < j.step_index %}<i class="fa-solid fa-check"></i>{% else %}{{ loop.index }}{% endif %}
+              </div>
+              <div class="pj-step-label">{{ label }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {# ── meaning + next step + last_error ── #}
+      <div class="pj-info">
+        {% if j.status_meaning %}
+          <div class="pj-info-row">
+            <i class="fa-solid fa-circle-info" style="color:#0284c7"></i>
+            <span><strong>الحالة:</strong> {{ j.status_meaning }}</span>
+          </div>
+        {% endif %}
+        {% if j.next_step %}
+          <div class="pj-info-row pj-info-row--next">
+            <i class="fa-solid fa-arrow-right" style="color:#0f766e"></i>
+            <span><strong>الخطوة التالية:</strong> {{ j.next_step }}</span>
+          </div>
+        {% endif %}
+        {% if j.last_error %}
+          <div class="pj-err">
+            <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px"></i>
+            <span style="flex:1;min-width:240px"><strong>سبب الخطأ:</strong> {{ j.last_error }}</span>
+            {# any «بانتظار إعداد …» error means fleet-infra constants are missing — link straight there #}
+            {% if 'بانتظار' in j.last_error %}
+              <a href="{{ url_for('fleet_ui.fleet_infrastructure') }}" class="pj-btn pj-btn--delete">
+                <i class="fa-solid fa-wrench"></i> فتح إعدادات البنية
+              </a>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      {# ── actions ── #}
+      <div class="pj-actions" style="margin-block-start:14px;justify-content:flex-end">
+        {% if j.status in ('draft', 'keys_generated') %}
+          <button type="button" class="pj-btn pj-btn--advance fd-pj-advance"
+                  data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
+                  title="دفع الجوب لتوليد المفاتيح والسكربت">
+            <i class="fa-solid fa-forward-step fd-pj-icon"></i>
+            <i class="fa-solid fa-spinner fa-spin"></i> متابعة
+          </button>
+        {% endif %}
+        {% if j.has_script %}
+          <button type="button" class="pj-btn pj-btn--script fd-pj-view-script"
+                  data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
+                  title="عرض / نسخ / تنزيل سكربت RouterOS لهذه العقدة">
+            <i class="fa-solid fa-code fd-pj-icon"></i>
+            <i class="fa-solid fa-spinner fa-spin"></i> عرض السكربت
+          </button>
+        {% endif %}
+        <button type="button" class="pj-btn pj-btn--delete fd-pj-delete"
+                data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
+                data-chr-id="{{ j.chr_id or '' }}"
+                title="حذف هذا الجوب{% if j.chr_id %} وإزالة العقدة #{{ j.chr_id }} المرتبطة{% endif %}">
+          <i class="fa-solid fa-trash fd-pj-icon"></i>
+          <i class="fa-solid fa-spinner fa-spin"></i> حذف
+        </button>
+      </div>
+    </article>
+  {% endfor %}
 </div>
 
 {# CSRF helper + endpoint templates the pending-card JS needs. #}
@@ -679,41 +756,37 @@
     {% set _eligible = ranking|selectattr('eligible')|list %}
     {% set _excluded = ranking|rejectattr('eligible')|list %}
 
-    <div class="fb-list">
+    <div class="rk-list">
       {% for r in _eligible %}
-        <div class="fb-row {% if loop.first %}is-best{% endif %}" data-node-id="{{ r.node_id }}">
-          <div class="fb-rank" title="الرتبة {{ r.rank }}">
-            <div style="display:flex;flex-direction:column;align-items:center">
-              <span class="fb-rank-sup">رتبة</span>
-              <span>#{{ r.rank }}</span>
+        <article class="rk-row{% if loop.first %} is-best{% endif %}" data-node-id="{{ r.node_id }}">
+          <div class="rk-medal" title="الرتبة {{ r.rank }}">
+            <span class="rk-medal-sup">رتبة</span>
+            <span class="rk-medal-num">#{{ r.rank }}</span>
+          </div>
+          <div class="rk-ident">
+            <div class="rk-name">
+              {{ r.name }}{% if loop.first %}<span class="rk-best-tag"><i class="fa-solid fa-crown"></i> الأفضل حالياً</span>{% endif %}
+            </div>
+            <div class="rk-meta">
+              <span class="mono" dir="ltr">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
             </div>
           </div>
-          <div>
-            <div class="fb-id-name">{{ r.name }}{% if loop.first %} · <span style="color:#047857">الأفضل حالياً</span>{% endif %}</div>
-            <div class="fb-id-meta">
-              <span class="mono">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
-            </div>
+          <div class="rk-score">
+            {# score_pct is normalised 0..100 by brain_view._assign_display_scores —
+               never render r.score*100 (raw weighted sums can exceed 1.0). #}
+            <div class="rk-score-num">{{ r.score_pct }}<small> / 100</small></div>
+            <div class="rk-score-cap">نقاط الترتيب</div>
+            <div class="rk-bar"><span style="width:{{ r.score_pct }}%"></span></div>
           </div>
-          <div>
-            {# Display score is normalised to 0..100 relative to the top
-               (see brain_view._assign_display_scores). NEVER render
-               `r.score * 100` here — the brain path returns raw weighted
-               sums that can exceed 1.0 and would blow past 100. #}
-            <div class="fb-score-num">{{ r.score_pct }}</div>
-            <div class="fb-score-cap">نقاط من 100</div>
-            <div class="fb-score-bar"><span style="width:{{ r.score_pct }}%"></span></div>
-          </div>
-          <div class="fb-chips">
+          <div class="rk-factors">
             {% for chip in r.factors %}
               <span class="fb-chip-wrap">
-                <span class="fb-chip fb-chip--{{ chip.level }}">
-                  <i class="fa-solid fa-circle"></i> {{ chip.label }}
-                </span>
+                <span class="fb-chip fb-chip--{{ chip.level }}"><i class="fa-solid fa-circle"></i> {{ chip.label }}</span>
                 {% if chip.detail %}<span class="fb-chip-detail">{{ chip.detail }}</span>{% endif %}
               </span>
             {% endfor %}
           </div>
-        </div>
+        </article>
       {% endfor %}
     </div>
 
@@ -721,38 +794,33 @@
       <div class="fb-section-sub">
         <i class="fa-solid fa-ban"></i> عقد مُستبعَدة من الترتيب الفعّال ({{ _excluded|length }})
       </div>
-      <div class="fb-list">
+      <div class="rk-list">
         {% for r in _excluded %}
-          <div class="fb-row is-excluded" data-node-id="{{ r.node_id }}">
-            <div class="fb-rank" title="مُستبعَدة">
-              <i class="fa-solid fa-ban"></i>
-            </div>
-            <div>
-              <div class="fb-id-name">{{ r.name }}</div>
-              <div class="fb-id-meta">
-                <span class="mono">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
+          <article class="rk-row is-excluded" data-node-id="{{ r.node_id }}">
+            <div class="rk-medal" title="مُستبعَدة"><i class="fa-solid fa-ban"></i></div>
+            <div class="rk-ident">
+              <div class="rk-name">{{ r.name }}</div>
+              <div class="rk-meta">
+                <span class="mono" dir="ltr">{{ r.public_ip }}</span>{% if r.provider_name %} · {{ r.provider_name }}{% endif %}
               </div>
-              <span class="fb-excluded-reason">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                مُستبعَد: {{ r.excluded_reason or 'سبب غير معروف' }}
+              <span class="rk-excluded-reason">
+                <i class="fa-solid fa-triangle-exclamation"></i> مُستبعَد: {{ r.excluded_reason or 'سبب غير معروف' }}
               </span>
             </div>
-            <div>
-              <div class="fb-score-num" style="color:#94a3b8">{{ r.score_pct }}</div>
-              <div class="fb-score-cap">لن تُختار للجلسات الجديدة</div>
-              <div class="fb-score-bar"><span style="width:{{ r.score_pct }}%"></span></div>
+            <div class="rk-score">
+              <div class="rk-score-num">{{ r.score_pct }}<small> / 100</small></div>
+              <div class="rk-score-cap">لن تُختار للجلسات الجديدة</div>
+              <div class="rk-bar"><span style="width:{{ r.score_pct }}%"></span></div>
             </div>
-            <div class="fb-chips">
+            <div class="rk-factors">
               {% for chip in r.factors %}
                 <span class="fb-chip-wrap">
-                  <span class="fb-chip fb-chip--{{ chip.level }}">
-                    <i class="fa-solid fa-circle"></i> {{ chip.label }}
-                  </span>
+                  <span class="fb-chip fb-chip--{{ chip.level }}"><i class="fa-solid fa-circle"></i> {{ chip.label }}</span>
                   {% if chip.detail %}<span class="fb-chip-detail">{{ chip.detail }}</span>{% endif %}
                 </span>
               {% endfor %}
             </div>
-          </div>
+          </article>
         {% endfor %}
       </div>
     {% endif %}

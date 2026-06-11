@@ -109,7 +109,20 @@ def fleet_dashboard():
         .limit(20)
         .all()
     )
-    pending_job_views = [_onboarding_job_view(j) for j in pending_jobs]
+    # A job whose linked CHR node is already connected/live has, from the
+    # operator's point of view, FINISHED onboarding — the node already shows
+    # under «العقد» and «الترتيب». Keep it out of «قيد التنفيذ» so a working,
+    # connected node never keeps nagging as "in-progress". This is a
+    # presentation-only filter: the job row stays in the DB for audit, and we
+    # never force an illegal state-machine jump (script_generated→active).
+    live_node_ids = {
+        v.node.id for v in node_views if v.health.state in ("up", "degraded")
+    }
+    pending_job_views = [
+        _onboarding_job_view(j)
+        for j in pending_jobs
+        if not (j.chr_id and j.chr_id in live_node_ids)
+    ]
 
     return render_template(
         "admin/fleet/dashboard.html",
@@ -171,6 +184,18 @@ _STATUSES_WITH_SCRIPT = frozenset({
     "keys_generated", "script_generated", "pushed", "verifying", "active",
 })
 
+# Ordinal position of each status along the onboarding pipeline, used by the
+# dashboard's «قيد التنفيذ» stepper to light up completed vs upcoming stages.
+# ``failed`` has no position (rendered as its own red state).
+_STATUS_STEP_INDEX = {
+    "draft":            0,
+    "keys_generated":   1,
+    "script_generated": 2,
+    "pushed":           3,
+    "verifying":        4,
+    "active":           5,
+}
+
 
 def _onboarding_job_view(job) -> dict:
     """Plain-dict view of an OnboardingJob for the dashboard template."""
@@ -190,6 +215,8 @@ def _onboarding_job_view(job) -> dict:
         "status_label": _ONBOARDING_STATUS_AR.get(status, status),
         "status_meaning": _ONBOARDING_STATUS_MEANING_AR.get(status, ""),
         "next_step": _ONBOARDING_NEXT_STEP_AR.get(status, ""),
+        "step_index": _STATUS_STEP_INDEX.get(status, 0),
+        "is_failed": status == "failed",
         "has_script": has_script,
         "chr_id": job.chr_id,
         "provider": form.get("provider") or "—",
