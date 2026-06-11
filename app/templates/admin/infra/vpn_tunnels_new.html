@@ -267,21 +267,10 @@
         </div>
 
         {# عقدة CHR #}
-        <div class="vt-field">
-          <label class="vt-label" for="vt-node">
-            عقدة CHR <span class="vt-required" aria-hidden="true">*</span>
-          </label>
-          <select class="vt-input" id="vt-node" name="chr_node_id" required
-                  aria-describedby="vt-hint-node">
-            <option value="">— اختر العقدة —</option>
-            {% for n in chr_nodes %}
-            <option value="{{ n.id }}"{% if n.status != 'active' %} disabled{% endif %}>
-              {{ n.name }} ({{ n.public_ip }}){% if n.status != 'active' %} — غير متاحة{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-          <p class="vt-hint" id="vt-hint-node">الخادم الذي سيُنشأ عليه النفق</p>
-        </div>
+        {# Node selector removed — VPN tunnel provisioning runs against the
+           central singleton (chr_settings.resolved()). The follow-up that
+           retires the singleton in favour of a per-FleetChrNode picker will
+           reintroduce a node dropdown wired to fleet_chr_nodes. #}
 
         {# IP المخصص #}
         <div class="vt-field">

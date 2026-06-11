@@ -34,7 +34,7 @@ import time
 import pytest
 
 from app.extensions import db
-from app.models import ChrNode, Customer, Setting
+from app.models import Customer, Setting
 
 from fleet.registry.models_chr import FleetChrNode, FleetProvider
 
@@ -224,47 +224,21 @@ def test_wg_data_ip_empty_for_non_canonical_mgmt_pool(proxy_app, client):
 
 
 # ════════════════════════════════════════════════════════════════════════
-# 2. Legacy ChrNode still published (Phase-4 contract gap #1 unchanged)
+# 2. Source tag is always "fleet" after step 6 of docs/CONSOLIDATION.md
 # ════════════════════════════════════════════════════════════════════════
 
 
-def test_legacy_chr_node_active_still_published(proxy_app, client):
-    n = ChrNode(
-        name="chr-legacy-01",
-        public_ip="203.0.113.50",
-        capacity_mbps=1000, max_reserved_mbps=800,
-        status="active",
-        management_ip="10.99.0.99",
-    )
-    db.session.add(n); db.session.commit()
-    r = client.get(URL, headers={"X-Proxy-Token": _token()})
-    entry = next(e for e in r.get_json()["chr_nodes"]
-                 if e["name"] == "chr-legacy-01")
-    assert entry["public_ip"] == "203.0.113.50"
-    assert entry["source"] == "legacy"
-    # Legacy fields kept for backward compat.
-    assert entry.get("management_ip") == "10.99.0.99"
-    # And wg-data is still derived from the legacy management_ip
-    # (the proxy needs SOMETHING to allowlist).
-    assert entry["wg_data_ip"] == "10.98.0.99"
-
-
-def test_fleet_node_wins_over_legacy_with_same_name(proxy_app, client):
-    """A fleet node + legacy node with the same name → fleet entry wins
-    (the wizard is the post-Phase-2 source of truth)."""
-    _live_node(name="chr-shared", public_ip="178.105.244.200",
-               wg_mgmt_ip="10.99.0.7", status="up")
-    db.session.add(ChrNode(
-        name="chr-shared",
-        public_ip="203.0.113.7",
-        capacity_mbps=1000, max_reserved_mbps=800,
-        status="active",
-    )); db.session.commit()
+def test_every_published_node_carries_source_fleet(proxy_app, client):
+    """The chr_nodes[] entries the proxy reads were sourced from BOTH the
+    fleet and the legacy chr_nodes table in earlier branches. After step 6
+    the legacy table is gone and every published entry must be tagged
+    ``source='fleet'``."""
+    _live_node()
+    _live_node(name="chr-vpn-2", public_ip="178.105.244.113",
+               wg_mgmt_ip="10.99.0.12", status="up")
     entries = client.get(URL, headers={"X-Proxy-Token": _token()}).get_json()["chr_nodes"]
-    matches = [e for e in entries if e["name"] == "chr-shared"]
-    assert len(matches) == 1
-    assert matches[0]["source"] == "fleet"
-    assert matches[0]["public_ip"] == "178.105.244.200"
+    assert entries, "fleet nodes should publish"
+    assert all(e["source"] == "fleet" for e in entries), entries
 
 
 # ════════════════════════════════════════════════════════════════════════
