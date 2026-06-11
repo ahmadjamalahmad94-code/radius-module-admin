@@ -468,6 +468,40 @@ def generate_panel_wg_keypair() -> dict[str, str]:
     return {"public_key": kp.public_key, "regenerated": had_previous}
 
 
+def set_panel_pubkey(value: str) -> dict[str, bool]:
+    """Manually set ``PANEL_WG_PUBKEY`` to a pubkey the operator pasted from
+    the panel host (where they ran ``wg genkey | tee /etc/wireguard/wg-mgmt.key
+    | wg pubkey``). The private side stays on the host — we never see it.
+
+    If a panel-minted private key was previously stored under the out-of-band
+    slot (i.e. the operator had clicked «توليد مفتاح اللوحة» on a prior visit),
+    we delete that ciphertext row so the on-host private key is now the only
+    authoritative copy — no orphaned private-key ciphertext drifts in the DB.
+
+    Returns ``{"replaced": bool, "cleared_server_privkey": bool}`` for the
+    UI to flash an honest message.
+    """
+    clean = _validate_pubkey(value, "مفتاح اللوحة العام")
+    had_previous = bool(_raw_get("PANEL_WG_PUBKEY"))
+    cleared_priv = False
+    priv_row = db.session.get(Setting, _PANEL_PRIVKEY_SLOT)
+    if priv_row is not None:
+        db.session.delete(priv_row)
+        cleared_priv = True
+    _raw_set("PANEL_WG_PUBKEY", clean)
+    db.session.commit()
+    return {"replaced": had_previous, "cleared_server_privkey": cleared_priv}
+
+
+def panel_privkey_is_on_server() -> bool:
+    """True iff a server-minted PANEL_WG_PRIVKEY ciphertext row exists.
+
+    Drives the «تنزيل المفتاح الخاص» UI affordance: only shown after a
+    server-side ``generate_panel_wg_keypair()``, hidden after a manual paste
+    (which wipes the private side)."""
+    return db.session.get(Setting, _PANEL_PRIVKEY_SLOT) is not None
+
+
 def panel_pubkey_is_set() -> bool:
     return bool(_raw_get("PANEL_WG_PUBKEY"))
 
@@ -502,6 +536,7 @@ __all__ = [
     "is_fleet_ready",
     "missing_required",
     "set_panel_endpoint",
+    "set_panel_pubkey",
     "set_proxy_pubkey",
     "set_proxy_endpoint",
     "split_endpoint",
@@ -511,4 +546,6 @@ __all__ = [
     "generate_panel_wg_keypair",
     "panel_pubkey_is_set",
     "panel_pubkey_for_display",
+    "panel_privkey_is_on_server",
+    "get_panel_wg_private_key_decrypted",
 ]
