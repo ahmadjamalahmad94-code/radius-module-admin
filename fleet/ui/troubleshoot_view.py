@@ -81,13 +81,12 @@ def _routing_table_chr_entries() -> list[dict[str, Any]]:
     """Replay the panel's published chr_nodes[] (same code path the proxy
     consumes — so the verdict reflects what the proxy WOULD see).
 
-    Local import avoids a route-time circular: ``fleet.ui.routes`` imports
-    this module, ``app.api.proxy_api`` imports models that reference fleet.
+    Fleet-only after step 6 of docs/CONSOLIDATION.md. Local import avoids
+    a route-time circular: ``fleet.ui.routes`` imports this module, and
+    ``app.api.proxy_api`` imports models that reference fleet.
     """
     from app.api.proxy_api import _derive_wg_data_ip  # noqa: F401  (used above)
-    from app.models import ChrNode
 
-    legacy = {n.id: n for n in ChrNode.query.all()}
     fleet: list[FleetChrNode] = []
     try:
         fleet = (
@@ -101,7 +100,6 @@ def _routing_table_chr_entries() -> list[dict[str, Any]]:
         fleet = []
 
     entries: list[dict[str, Any]] = []
-    seen_names: set[str] = set()
     for n in fleet:
         if not n.name:
             continue
@@ -113,19 +111,6 @@ def _routing_table_chr_entries() -> list[dict[str, Any]]:
             "source": "fleet",
             "status": n.status,
         })
-        seen_names.add(n.name)
-    for n in legacy.values():
-        if n.status != "active" or n.name in seen_names:
-            continue
-        entries.append({
-            "name": n.name,
-            "public_ip": n.public_ip,
-            "wg_mgmt_ip": n.management_ip,
-            "wg_data_ip": _derive_wg_data_ip(n.management_ip),
-            "source": "legacy",
-            "status": n.status,
-        })
-        seen_names.add(n.name)
     return entries
 
 

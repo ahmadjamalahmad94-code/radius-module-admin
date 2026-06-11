@@ -36,7 +36,7 @@ import time
 import pytest
 
 from app.extensions import db
-from app.models import ChrNode, Customer, CustomerRadiusInstance, ProxyRealmRoute
+from app.models import Customer, CustomerRadiusInstance, ProxyRealmRoute
 
 from fleet.registry.models_chr import FleetChrNode, FleetProvider
 
@@ -104,7 +104,12 @@ def _make_fleet_node(**kw) -> FleetChrNode:
     return n
 
 
-def _make_realm(*, fleet_ids=None, legacy_ids=None) -> ProxyRealmRoute:
+def _make_realm(*, fleet_ids=None) -> ProxyRealmRoute:
+    """Build a per-realm route allow-listing the given fleet node ids.
+
+    The legacy `allowed_chr_node_ids` allow-list was dropped in step 6 of
+    docs/CONSOLIDATION.md; this helper now reflects the fleet-only world.
+    """
     cust = _customer()
     inst = CustomerRadiusInstance(
         customer_id=cust.id,
@@ -120,7 +125,6 @@ def _make_realm(*, fleet_ids=None, legacy_ids=None) -> ProxyRealmRoute:
         target_radius_ip="10.200.0.2",
         status="active",
         allowed_fleet_chr_node_ids=list(fleet_ids or []),
-        allowed_chr_node_ids=list(legacy_ids or []),
     )
     db.session.add(r); db.session.commit()
     return r
@@ -150,25 +154,6 @@ def test_fleet_node_realm_publishes_both_public_and_wg_data(proxy_app, client):
     assert allowed.index("178.105.244.112") < allowed.index("10.98.0.11")
 
 
-def test_legacy_node_realm_also_publishes_derived_wg_data(proxy_app, client):
-    """Legacy ChrNode.management_ip 10.99.0.99 → wg-data 10.98.0.99.
-    The per-realm allowlist must publish both — the legacy `chr_nodes`
-    table is still on production for some operators."""
-    legacy = ChrNode(
-        name="chr-legacy-01",
-        public_ip="203.0.113.50",
-        capacity_mbps=1000, max_reserved_mbps=800,
-        status="active",
-        management_ip="10.99.0.99",
-    )
-    db.session.add(legacy); db.session.commit()
-    _make_realm(legacy_ids=[legacy.id])
-    body = client.get(URL, headers={"X-Proxy-Token": _token()}).get_json()
-    allowed = body["routes"][0]["allowed_chr_ips"]
-    assert "203.0.113.50" in allowed
-    assert "10.98.0.99" in allowed
-
-
 def test_quirky_mgmt_pool_falls_back_to_public_only(proxy_app, client):
     """A fleet node with wg_mgmt outside 10.99/16 has no derived wg-data IP.
     The per-realm allowlist falls back to the public IP only — we never
@@ -183,20 +168,14 @@ def test_quirky_mgmt_pool_falls_back_to_public_only(proxy_app, client):
     )
 
 
-def test_no_duplicates_when_two_nodes_share_an_ip(proxy_app, client):
-    """If a fleet and a legacy node carry the same public_ip (or someone
-    set up overlapping shells while migrating), the allowlist must not
-    duplicate addresses — duplicates would force the proxy to dedupe."""
+def test_no_duplicates_in_per_realm_allowlist(proxy_app, client):
+    """The per-realm allowlist must not publish the same IP twice. With
+    fleet-only sourcing (after step 6 of docs/CONSOLIDATION.md) the only
+    way duplicates could appear would be a bug in the (public_ip, wg_data_ip)
+    pair derivation — pin it explicitly."""
     fleet = _make_fleet_node(name="chr-fl", public_ip="203.0.113.40",
                              wg_mgmt_ip="10.99.0.40")
-    legacy = ChrNode(
-        name="chr-leg", public_ip="203.0.113.40",   # same!
-        capacity_mbps=1000, max_reserved_mbps=800,
-        status="active",
-        management_ip="10.99.0.40",                  # same!
-    )
-    db.session.add(legacy); db.session.commit()
-    _make_realm(fleet_ids=[fleet.id], legacy_ids=[legacy.id])
+    _make_realm(fleet_ids=[fleet.id])
     body = client.get(URL, headers={"X-Proxy-Token": _token()}).get_json()
     allowed = body["routes"][0]["allowed_chr_ips"]
     assert sorted(allowed) == sorted(set(allowed)), f"duplicates: {allowed}"

@@ -616,12 +616,6 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "expires_at": datetime_type,
             "completed_at": datetime_type,
         })
-    # CHR Nodes — encrypted RouterOS password column (Phase 5).
-    if "chr_nodes" in tables:
-        _add_columns_if_missing("chr_nodes", {
-            "routeros_password_enc": "TEXT NOT NULL DEFAULT ''",
-        })
-
     # FleetChrNode — per-CHR RouterOS API credentials for the live-metrics
     # poller. The columns are NEW (added on this branch) so on a fresh
     # db.create_all() they're already present; this heal exists for the
@@ -636,16 +630,87 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "legacy_chr_node_id": "INTEGER",
         })
 
-    # ProxyRealmRoute — separate allow-list column for FLEET CHR ids
-    # (fleet_chr_nodes), distinct from the legacy chr_nodes ids the older
-    # routes were created with. The two tables have independent
-    # autoincrement sequences so a single column cannot tell them apart;
-    # we keep them as two columns and the routing-table query unions
-    # both at resolve time. Idempotent heal for pre-fix DBs.
+    # ProxyRealmRoute — fleet allow-list column. (Pre-step-6 schemas had a
+    # separate ``allowed_chr_node_ids_json`` for the legacy chr_nodes table;
+    # that column is dropped a few lines below.)
     if "proxy_realm_routes" in tables:
         _add_columns_if_missing("proxy_realm_routes", {
             "allowed_fleet_chr_node_ids_json": "TEXT NOT NULL DEFAULT '[]'",
         })
+
+    # ════════════════════════════════════════════════════════════════════
+    # Step 6 of docs/CONSOLIDATION.md — DESTRUCTIVE removal of the legacy
+    # ``chr_nodes`` registry. Owner decision: the whole legacy system is
+    # gone and the fleet is canonical, so we drop the tables and migrate
+    # service_allocations.chr_node_id → fleet_chr_node_id.
+    #
+    # All operations below are GUARDED + IDEMPOTENT — a fresh DB created
+    # by db.create_all() never has the legacy tables/columns in the first
+    # place, so every block is a quiet no-op.
+    # ════════════════════════════════════════════════════════════════════
+
+    # ── 6.A: service_allocations.chr_node_id → fleet_chr_node_id.
+    # The model now FKs into fleet_chr_nodes(id); the old FK pointed at
+    # ``chr_nodes(id)`` which we drop below. Since the data is explicitly
+    # experimental, we ZERO-OUT the column (NULL) before renaming so any
+    # stale legacy id can never accidentally collide with an unrelated
+    # fleet id. SQLite ≥ 3.25 and PostgreSQL both support RENAME COLUMN.
+    if "service_allocations" in tables:
+        sa_cols = {c["name"] for c in inspect(db.engine).get_columns("service_allocations")}
+        if "chr_node_id" in sa_cols and "fleet_chr_node_id" not in sa_cols:
+            db.session.execute(text("UPDATE service_allocations SET chr_node_id = NULL"))
+            db.session.execute(text(
+                "ALTER TABLE service_allocations RENAME COLUMN chr_node_id TO fleet_chr_node_id"
+            ))
+            db.session.commit()
+        elif "chr_node_id" in sa_cols and "fleet_chr_node_id" in sa_cols:
+            # Belt-and-braces: both columns somehow coexist (manual edit?). Drop
+            # the dead legacy column so it can't drift further.
+            try:
+                db.session.execute(text("ALTER TABLE service_allocations DROP COLUMN chr_node_id"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+    # ── 6.B: proxy_realm_routes.allowed_chr_node_ids_json — drop. The
+    # column is no longer referenced by Python; the fleet allow-list lives
+    # in ``allowed_fleet_chr_node_ids_json`` (created/healed above).
+    if "proxy_realm_routes" in tables:
+        prr_cols = {c["name"] for c in inspect(db.engine).get_columns("proxy_realm_routes")}
+        if "allowed_chr_node_ids_json" in prr_cols:
+            try:
+                db.session.execute(text(
+                    "ALTER TABLE proxy_realm_routes DROP COLUMN allowed_chr_node_ids_json"
+                ))
+                db.session.commit()
+            except Exception:
+                # Older SQLite (< 3.35) — leave the column in place; the
+                # Python model doesn't read or write it, so it stays inert.
+                db.session.rollback()
+
+    # ── 6.C: drop the legacy tables themselves. Order matters because the
+    # legacy chr_node_metrics.chr_node_id FKs into chr_nodes. We re-read the
+    # table list after the SA rename so the inspector sees fresh schema.
+    tables_now = set(inspect(db.engine).get_table_names())
+    if "chr_node_metrics" in tables_now:
+        try:
+            db.session.execute(text("DROP TABLE chr_node_metrics"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    if "chr_nodes" in tables_now:
+        try:
+            db.session.execute(text("DROP TABLE chr_nodes"))
+            db.session.commit()
+        except Exception:
+            # PostgreSQL may need CASCADE when an FK that we couldn't drop
+            # earlier is still hanging on. Try once more with cascade.
+            db.session.rollback()
+            try:
+                db.session.execute(text("DROP TABLE chr_nodes CASCADE"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
     # Instance Activation Tokens — single-use Admin Bridge bootstrap tokens.
     # The table itself is created fresh by db.create_all() on new DBs.

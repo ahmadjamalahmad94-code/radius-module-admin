@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 
 from ..extensions import db
-from ..models import ChrNode, CustomerRadiusInstance, ProxyRealmRoute, utcnow
+from ..models import CustomerRadiusInstance, ProxyRealmRoute, utcnow
 from ..services.customer_vault import get_secret_by_ref  # tries vault lookup
 
 bp = Blueprint("proxy_api", __name__, url_prefix="/api/proxy")
@@ -160,10 +160,6 @@ def routing_table():
       eligibility (Phase-5 contract), so a ``down`` node stays in the
       allowlist but receives no NEW logins — once it recovers it can
       take traffic again without a routing-table refresh fight.
-    * **Legacy CHR-console table** (``chr_nodes``, ``app.models.ChrNode``) —
-      pre-fleet table some operators still rely on. Kept as a secondary
-      source, filtered to ``status="active"`` for backward compatibility.
-
     Each entry carries the fields the proxy needs to map an incoming RADIUS
     packet back to a node identity:
 
@@ -180,8 +176,11 @@ def routing_table():
       * ``status``        – the underlying registry status string.
       * ``enabled``       – administrative on/off switch.
       * ``drain``         – fleet drain flag (no new placements).
-      * ``source``        – ``"fleet"`` or ``"legacy"`` so a future change
-                            of source can be debugged without re-reading
+      * ``source``        – always ``"fleet"`` after step 6 of
+                            docs/CONSOLIDATION.md. The field is preserved
+                            so proxy clients that pinned the contract
+                            keep parsing — and so a future change of
+                            source can be debugged without re-reading
                             this file.
 
     ``routes[]`` is the realm table (``ProxyRealmRoute``). It is **only
@@ -203,11 +202,10 @@ def routing_table():
         .all()
     )
 
-    # Build legacy + fleet CHR IP/name lookups for allowed_chr_node_ids.
-    legacy_chr_nodes = {n.id: n for n in ChrNode.query.all()}
-
     # Fleet registry (the post-Phase-2 table the onboarding wizard writes).
-    # Lazy import so the module still boots on a branch without fleet.
+    # Step 6 of docs/CONSOLIDATION.md dropped the legacy chr_nodes union;
+    # this is the only source now. The lazy import keeps the module
+    # bootable on the (no-fleet) branches the CI matrix still touches.
     fleet_chr_nodes_q = []
     try:
         from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
@@ -238,21 +236,16 @@ def routing_table():
         # Resolve actual secret from vault
         secret_value = _resolve_secret(r.secret_vault_ref, r.customer_id)
 
-        # Resolve allowed CHR IPs from BOTH the legacy and the fleet
-        # registries. The two tables have independent autoincrement
-        # sequences and their ids could otherwise collide, so the model
-        # carries them in separate columns and we union them here.
-        #
-        # We publish BOTH the public IP AND the wg-data IP for every
-        # eligible node. RADIUS may legitimately arrive over either path:
-        #   * public_ip   — RADIUS-from-internet (legacy / no wg tunnel)
+        # Resolve allowed CHR IPs from the fleet registry. We publish BOTH
+        # the public IP AND the wg-data IP for every eligible node — RADIUS
+        # may legitimately arrive over either path:
+        #   * public_ip   — RADIUS-from-internet (no wg tunnel).
         #   * wg_data_ip  — the canonical post-fleet path. The CHR sends
         #                   over the wg-data tunnel and the proxy SEES the
         #                   10.98.0.X source address, NOT the public IP.
         # Without wg_data_ip in this per-realm allowlist the proxy logs
-        # "Packet from unknown CHR IP 10.98.0.11 — dropped" even though
-        # chr_nodes[].wg_data_ip would otherwise allowlist the address —
-        # the live-deploy failure on chr-vpn-1.
+        # "Packet from unknown CHR IP 10.98.0.11 — dropped" — the live
+        # regression chr-vpn-1 hit. See tests/fix_routing_table/.
         allowed_ips: list[str] = []
         seen: set[str] = set()
 
@@ -267,12 +260,6 @@ def routing_table():
                 continue
             _push(node.public_ip)
             _push(_derive_wg_data_ip(node.wg_mgmt_ip))
-        for nid in (r.allowed_chr_node_ids or []):
-            node = legacy_chr_nodes.get(nid)
-            if node is None:
-                continue
-            _push(node.public_ip)
-            _push(_derive_wg_data_ip(node.management_ip))
 
         routes_out.append({
             "realm": r.realm,
@@ -284,9 +271,8 @@ def routing_table():
             "allowed_chr_ips": allowed_ips,
         })
 
-    # ── Build chr_nodes[] from BOTH sources, fleet-first, deduped by name. ──
+    # ── Build chr_nodes[] from the fleet registry only. ──
     chr_list: list[dict] = []
-    seen_names: set[str] = set()
     for n in fleet_chr_nodes_q:
         if not n.name:
             continue
@@ -300,30 +286,6 @@ def routing_table():
             "drain": bool(n.drain),
             "source": "fleet",
         })
-        seen_names.add(n.name)
-    # Legacy entries — kept for backward compatibility with operators
-    # who still drive the CHR-console table. Filtered to active per the
-    # pre-fix behaviour.
-    for n in legacy_chr_nodes.values():
-        if n.status != "active":
-            continue
-        if n.name in seen_names:
-            continue
-        chr_list.append({
-            "name": n.name,
-            "public_ip": n.public_ip,
-            "wg_mgmt_ip": n.management_ip,
-            "wg_data_ip": _derive_wg_data_ip(n.management_ip),
-            "status": n.status,
-            "enabled": True,                 # legacy: filtered on status == "active"
-            "drain": False,
-            "source": "legacy",
-            # Keep the legacy fields too so an older proxy that reads them
-            # continues to work without a config change.
-            "management_ip": n.management_ip,
-            "enabled_services": n.enabled_services,
-        })
-        seen_names.add(n.name)
 
     # Phase 7: surface the UI-controlled live-apply switch (default OFF).
     # The proxy reads this to decide whether to ENFORCE moves/CoA — see
@@ -379,8 +341,7 @@ def routing_table():
         dlog(
             "routing-table",
             chr_nodes=len(chr_list),
-            fleet=len([c for c in chr_list if c["source"] == "fleet"]),
-            legacy=len([c for c in chr_list if c["source"] == "legacy"]),
+            fleet=len(chr_list),  # fleet-only after step 6
             realms_active=len(routes_out),
             realms_draft=draft_realms,
             realms_total=total_realms,
@@ -479,19 +440,42 @@ def heartbeat():
 
 @bp.get("/chr-nodes")
 def chr_nodes_list():
-    """Return active CHR node IPs the proxy should accept RADIUS from."""
+    """Return active CHR node IPs the proxy should accept RADIUS from.
+
+    Fleet-only after step 6 of docs/CONSOLIDATION.md. Filters mirror the
+    routing-table query so a node that's published in one is published in
+    both: enabled + not draining + not admin-disabled (status != disabled).
+    Control-plane health ('down' / 'degraded') is intentionally NOT a
+    publication gate — placement health is the brain's concern.
+    """
     denied = _auth_required()
     if denied:
         return denied
 
-    nodes = ChrNode.query.filter_by(status="active").all()
+    try:
+        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+    except Exception:  # noqa: BLE001 — defensive: branch w/o fleet
+        return jsonify({"ok": True, "chr_nodes": []})
+
+    nodes = (
+        FleetChrNode.query
+        .filter(FleetChrNode.enabled.is_(True))
+        .filter(FleetChrNode.drain.is_(False))
+        .filter(FleetChrNode.status != "disabled")
+        .order_by(FleetChrNode.name.asc())
+        .all()
+    )
     return jsonify({
         "ok": True,
         "chr_nodes": [
             {
                 "name": n.name,
                 "public_ip": n.public_ip,
-                "enabled_services": n.enabled_services,
+                # No per-service flag exists on FleetChrNode — every fleet
+                # node carries the standard stack (SSTP/PPTP/L2TP/IPsec +
+                # WireGuard) wired by the onboarding wizard. The proxy
+                # uses the IP for filtering, not this list.
+                "enabled_services": ["sstp", "pptp", "l2tp_ipsec", "ikev2_ipsec", "wireguard_data"],
             }
             for n in nodes
         ],

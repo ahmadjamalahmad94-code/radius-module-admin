@@ -47,16 +47,18 @@
       </div>
 
       <div class="hub-field" id="chr-node-field">
-        <label>عقدة CHR <span class="hub-required">*</span></label>
+        <label>عقدة CHR من الأسطول <span class="hub-required">*</span></label>
         <select class="hub-input" name="chr_node_id">
           <option value="">— اختر عقدة —</option>
           {% for n in chr_nodes %}
           {% set ns = node_stats.get(n.id, {}) %}
           {% set badge = ns.get('badge','ok') %}
+          {% set cap = n.link_speed_mbps|int %}
+          {% set remaining = (cap - ns.get('reserved',0)) if cap > 0 else 0 %}
           <option value="{{ n.id }}"
             {% if badge == 'full' %}disabled{% endif %}>
-            {{ n.name }} — {{ n.location or '' }}
-            (متاح: {{ n.max_reserved_mbps - ns.get('reserved',0) }} Mbps)
+            {{ n.name }}{% if n.public_ip %} — {{ n.public_ip }}{% endif %}
+            {% if cap > 0 %}(متاح: {{ remaining }} Mbps){% endif %}
             {% if badge == 'full' %} ⛔ ممتلئ{% elif badge == 'warning' %} ⚠️ تحذير{% endif %}
           </option>
           {% endfor %}
@@ -129,9 +131,9 @@
       <div>
         <span class="badge badge-blue mono" style="font-size:13px">{{ a.service_type }}</span>
         <strong style="margin-right:8px">{{ a.service_label_ar }}</strong>
-        {% if a.chr_node %}
+        {% if a.fleet_chr_node %}
           <span style="font-size:12px;color:var(--hub-muted)">
-            على <span class="mono">{{ a.chr_node.name }}</span>
+            على <span class="mono">{{ a.fleet_chr_node.name }}</span>
           </span>
         {% elif a.runs_on_customer_vps %}
           <span style="font-size:12px;color:#7c3aed">يعمل على VPS العميل</span>

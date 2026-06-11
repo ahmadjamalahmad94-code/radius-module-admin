@@ -13,7 +13,7 @@ import time
 import pytest
 
 from app.extensions import db
-from app.models import ChrNode
+from fleet.registry.models_chr import FleetChrNode, FleetProvider
 
 SHARED_SECRET = "test-proxy-shared-secret-32-chars-long-xxxxxxxxx"
 ROUTING_URL = "/api/proxy/routing-table"
@@ -30,12 +30,18 @@ def configured_app(app):
 
 @pytest.fixture()
 def active_chr(configured_app):
-    node = ChrNode(
+    """A live fleet CHR — post-step-6 the routing-table only reads the fleet."""
+    prov = FleetProvider(name="p4-test", cost_model="open", price_per_tb=0)
+    db.session.add(prov); db.session.flush()
+    node = FleetChrNode(
+        provider_id=prov.id,
         name="chr-exit-routing-01",
         public_ip="203.0.113.77",
-        capacity_mbps=1000,
-        max_reserved_mbps=800,
-        status="active",
+        wg_mgmt_ip="10.99.0.77", wg_mgmt_pubkey="x",
+        routeros_api_port=8443, routeros_api_user="", routeros_api_password_enc="",
+        coa_port=3799,
+        max_sessions=1000, link_speed_mbps=1000,
+        status="up", enabled=True, drain=False,
     )
     db.session.add(node)
     db.session.commit()

@@ -1481,93 +1481,11 @@ SERVICE_TYPE_CHOICES = (
 )
 
 
-class ChrNode(TimestampMixin, db.Model):
-    """Dedicated MikroTik CHR node that carries heavy VPN/exit traffic.
-
-    The license panel owns the registry. A node can serve multiple customers
-    simultaneously within its reserved capacity. It does NOT store customer
-    RADIUS secrets — it points to the Central RADIUS Proxy.
-
-    Capacity policy: warn at 70 %, block new allocations at 85 %.
-    """
-    __tablename__ = "chr_nodes"
-    __table_args__ = (
-        db.UniqueConstraint("name", name="uq_chr_nodes_name"),
-        db.Index("ix_chr_nodes_status_location", "status", "location"),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(80), nullable=False)          # chr-exit-01
-    public_ip = db.Column(db.String(64), nullable=False)
-    management_ip = db.Column(db.String(64), default="", nullable=False)  # mgmt WG IP
-    domain = db.Column(db.String(255), default="", nullable=False)        # chr1.hoberadius.com
-    location = db.Column(db.String(100), default="", nullable=False)
-    # Physical link and soft allocation ceiling
-    capacity_mbps = db.Column(db.Integer, nullable=False)
-    max_reserved_mbps = db.Column(db.Integer, nullable=False)
-    max_active_sessions = db.Column(db.Integer, nullable=True)
-    max_customers = db.Column(db.Integer, nullable=True)
-    # Services offered on this node (JSON list of SERVICE_TYPE_CHOICES values)
-    enabled_services_json = db.Column(db.Text, default='["sstp"]', nullable=False)
-    # RouterOS REST access for metrics polling and admin console
-    routeros_host = db.Column(db.String(255), default="", nullable=False)
-    routeros_user = db.Column(db.String(80), default="", nullable=False)
-    routeros_port = db.Column(db.Integer, default=443, nullable=False)
-    # Fernet-encrypted RouterOS REST password (same key as customer vault)
-    routeros_password_enc = db.Column(db.Text, default="", nullable=False)
-    # pending | active | maintenance | decommissioned
-    status = db.Column(db.String(20), default="pending", nullable=False, index=True)
-    notes = db.Column(db.Text, default="", nullable=False)
-    last_seen_at = db.Column(db.DateTime, nullable=True)
-    # Device facts captured from RouterOS on every successful poll (version,
-    # board-name, uptime, cpu-count, total memory, architecture). JSON text for
-    # portability; existing DBs get the column via ensure_schema_compatibility.
-    device_facts_json = db.Column(db.Text, default="{}", nullable=False)
-
-    metrics = db.relationship(
-        "ChrNodeMetric", back_populates="chr_node",
-        lazy="dynamic", cascade="all, delete-orphan",
-    )
-    allocations = db.relationship(
-        "ServiceAllocation", back_populates="chr_node", lazy="dynamic",
-    )
-
-    @property
-    def enabled_services(self) -> list:
-        return json_loads(self.enabled_services_json, ["sstp"])
-
-    @enabled_services.setter
-    def enabled_services(self, value: list) -> None:
-        self.enabled_services_json = json_dumps(value or [])
-
-    @property
-    def device_facts(self) -> dict:
-        return json_loads(self.device_facts_json, {})
-
-    @device_facts.setter
-    def device_facts(self, value: dict) -> None:
-        self.device_facts_json = json_dumps(value or {})
-
-
-class ChrNodeMetric(db.Model):
-    """Point-in-time performance snapshot pushed by the CHR metrics agent."""
-    __tablename__ = "chr_node_metrics"
-    __table_args__ = (
-        db.Index("ix_chr_node_metrics_node_time", "chr_node_id", "measured_at"),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    chr_node_id = db.Column(db.Integer, db.ForeignKey("chr_nodes.id"), nullable=False, index=True)
-    measured_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
-    current_rx_mbps = db.Column(db.Numeric(10, 2), default=0, nullable=False)
-    current_tx_mbps = db.Column(db.Numeric(10, 2), default=0, nullable=False)
-    active_sessions = db.Column(db.Integer, default=0, nullable=False)
-    cpu_percent = db.Column(db.Numeric(5, 2), nullable=True)
-    memory_percent = db.Column(db.Numeric(5, 2), nullable=True)
-    traffic_today_bytes = db.Column(db.BigInteger, default=0, nullable=False)
-    traffic_month_bytes = db.Column(db.BigInteger, default=0, nullable=False)
-
-    chr_node = db.relationship("ChrNode", back_populates="metrics")
+# NOTE — the legacy ``ChrNode`` and ``ChrNodeMetric`` classes were deleted in
+# step 6 of docs/CONSOLIDATION.md. The canonical CHR registry is the fleet
+# (``fleet.registry.models_chr.FleetChrNode`` + ``fleet.health.models_health.
+# FleetChrMetric``). The startup heal in ``app/__init__.py`` drops both
+# legacy tables idempotently if they're still present on an older database.
 
 
 class CustomerRadiusInstance(TimestampMixin, db.Model):
@@ -1622,13 +1540,16 @@ class ServiceAllocation(TimestampMixin, db.Model):
     commercial terms. The customer NEVER creates or modifies allocations
     directly — they only consume the limits pushed from this record.
 
-    ``chr_node_id`` is NULL for wireguard_data that runs on the customer's
-    own VPS (no central CHR involved).
+    ``fleet_chr_node_id`` is NULL for wireguard_data that runs on the
+    customer's own VPS (no central CHR involved). The FK points at the
+    canonical fleet registry (``fleet_chr_nodes``) — the legacy
+    ``chr_nodes`` column was renamed in step 6 of docs/CONSOLIDATION.md
+    and is no longer accessible from Python.
     """
     __tablename__ = "service_allocations"
     __table_args__ = (
         db.Index("ix_sa_customer_type_status", "customer_id", "service_type", "status"),
-        db.Index("ix_sa_chr_node_status", "chr_node_id", "status"),
+        db.Index("ix_sa_fleet_chr_node_status", "fleet_chr_node_id", "status"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1640,8 +1561,11 @@ class ServiceAllocation(TimestampMixin, db.Model):
     service_type = db.Column(db.String(30), nullable=False, index=True)
     # pending | active | suspended | expired | cancelled
     status = db.Column(db.String(20), default="pending", nullable=False, index=True)
-    # Which CHR node handles this service (NULL for customer-local wireguard_data)
-    chr_node_id = db.Column(db.Integer, db.ForeignKey("chr_nodes.id"), nullable=True, index=True)
+    # Which fleet CHR node handles this service (NULL for customer-local wireguard_data).
+    # Renamed from chr_node_id by the step-6 schema heal — see app/__init__.py.
+    fleet_chr_node_id = db.Column(
+        db.Integer, db.ForeignKey("fleet_chr_nodes.id"), nullable=True, index=True,
+    )
     # Speed and quota
     speed_limit_mbps = db.Column(db.Integer, nullable=False)
     transfer_limit_bytes = db.Column(db.BigInteger, nullable=True)   # NULL = unlimited
@@ -1656,7 +1580,11 @@ class ServiceAllocation(TimestampMixin, db.Model):
     created_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)
 
     customer = db.relationship("Customer", back_populates="service_allocations")
-    chr_node = db.relationship("ChrNode", back_populates="allocations")
+    # ``fleet_chr_node`` is a lazy relationship into the fleet registry — kept
+    # as a string-named target so the import order stays simple.
+    fleet_chr_node = db.relationship(
+        "FleetChrNode", foreign_keys=[fleet_chr_node_id], lazy="joined",
+    )
     radius_instance = db.relationship("CustomerRadiusInstance", back_populates="service_allocations")
     created_by = db.relationship("Admin", foreign_keys=[created_by_admin_id])
     usage_snapshots = db.relationship(
@@ -1684,7 +1612,7 @@ class ServiceAllocation(TimestampMixin, db.Model):
 
     @property
     def runs_on_customer_vps(self) -> bool:
-        return self.service_type == "wireguard_data" and self.chr_node_id is None
+        return self.service_type == "wireguard_data" and self.fleet_chr_node_id is None
 
 
 class ServiceUsageSnapshot(db.Model):
@@ -1740,32 +1668,17 @@ class ProxyRealmRoute(TimestampMixin, db.Model):
     target_acct_port = db.Column(db.Integer, default=1813, nullable=False)
     # Vault reference for shared RADIUS secret (actual value lives in CustomerSecret)
     secret_vault_ref = db.Column(db.String(120), default="", nullable=False)
-    # JSON list of LEGACY ChrNode IDs (app.models.ChrNode — CHR-console table)
-    # allowed to route through this entry (empty = all).
-    allowed_chr_node_ids_json = db.Column(db.Text, default="[]", nullable=False)
     # JSON list of FLEET CHR node IDs (fleet.registry.models_chr.FleetChrNode —
-    # the Phase-4 fleet registry, populated by the onboarding wizard).
-    # Kept as a SEPARATE column because the two tables have independent
-    # autoincrement sequences and their ids would otherwise collide. The
-    # routing-table query unions both lists when resolving allowed_chr_ips.
-    # See the gap-analysis in commit "fix(fleet): onboarding e2e gaps" —
-    # before this column existed, an operator who picked a FleetChrNode in
-    # the admin UI would silently get an empty allowed_chr_ips list because
-    # the proxy resolved the id against the legacy table only.
+    # the canonical fleet registry, populated by the onboarding wizard).
+    # The legacy ``allowed_chr_node_ids_json`` column was dropped in step 6 of
+    # docs/CONSOLIDATION.md; the heal in app/__init__.py removes it
+    # idempotently from older databases.
     allowed_fleet_chr_node_ids_json = db.Column(db.Text, default="[]", nullable=False)
     # active | suspended | draft
     status = db.Column(db.String(20), default="draft", nullable=False, index=True)
 
     customer = db.relationship("Customer")
     radius_instance = db.relationship("CustomerRadiusInstance", back_populates="proxy_realm_route")
-
-    @property
-    def allowed_chr_node_ids(self) -> list:
-        return json_loads(self.allowed_chr_node_ids_json, [])
-
-    @allowed_chr_node_ids.setter
-    def allowed_chr_node_ids(self, value: list) -> None:
-        self.allowed_chr_node_ids_json = json_dumps(value or [])
 
     @property
     def allowed_fleet_chr_node_ids(self) -> list:

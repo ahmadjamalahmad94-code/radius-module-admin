@@ -1,10 +1,15 @@
-"""بنية CHR المتعددة — مسارات المسؤول (blueprint: admin_infra).
+"""البنية التحتية — مسارات المسؤول (blueprint: admin_infra).
 
 تغطي هذه الوحدة:
-- سجل عقد CHR المخصّصة (ChrNode) + مقاييسها
 - تسجيل نسخ RADIUS العملاء (CustomerRadiusInstance)
-- تخصيصات الخدمة لكل عميل (ServiceAllocation)
+- تخصيصات الخدمة لكل عميل (ServiceAllocation) على عقد الأسطول
 - مسارات التوجيه في وكيل RADIUS المركزي (ProxyRealmRoute)
+- لوحة صحة الخدمات (لقطة المضيف + جامع مقاييس الأسطول)
+- مكتبة سكربتات RouterOS كمرجع
+
+سجل عقد CHR انتقل بالكامل إلى الأسطول (fleet/registry/models_chr.FleetChrNode)
+بعد تنفيذ step 6 من docs/CONSOLIDATION.md؛ المسارات القديمة على
+/admin/infra/chr-nodes حُذفت.
 
 الحماية: كل المسارات تستلزم تسجيل الدخول بالتلقائي عبر login_required.
 إنشاء وتعديل ServiceAllocation يتطلّب صلاحية super_admin لأنها قرارات تجارية.
@@ -19,8 +24,6 @@ from sqlalchemy import func
 from ..auth.routes import audit, current_admin, login_required, super_admin_required
 from ..extensions import db
 from ..models import (
-    ChrNode,
-    ChrNodeMetric,
     Customer,
     CustomerRadiusInstance,
     ProxyRealmRoute,
@@ -29,9 +32,52 @@ from ..models import (
     ServiceUsageSnapshot,
     utcnow,
 )
-from ..services.chr_metrics import collect_all_nodes as _collect_all_nodes, is_stale as _is_stale
 
 bp = Blueprint("admin_infra", __name__, url_prefix="/admin/infra")
+
+
+def _fleet_nodes_for_admin():
+    """Return the fleet nodes the operator can pick from in admin forms.
+
+    Filters to ``enabled=True`` and status not ``disabled`` — i.e. anything
+    the brain could place traffic on. Returns an empty list if the fleet
+    registry tables aren't present (older DB), so the form still renders.
+    """
+    try:
+        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+        return (
+            FleetChrNode.query
+            .filter(FleetChrNode.enabled.is_(True))
+            .filter(FleetChrNode.status != "disabled")
+            .order_by(FleetChrNode.name.asc())
+            .all()
+        )
+    except Exception:
+        return []
+
+
+def _fleet_node_or_none(node_id):
+    """Resolve a fleet node id → row, or None when not found / table absent."""
+    if not node_id:
+        return None
+    try:
+        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+        return FleetChrNode.query.get(int(node_id))
+    except Exception:
+        return None
+
+
+def _fleet_reserved_mbps(node) -> int:
+    """Sum of speed_limit_mbps for non-terminal allocations on a fleet node."""
+    if node is None:
+        return 0
+    result = db.session.query(
+        func.coalesce(func.sum(ServiceAllocation.speed_limit_mbps), 0)
+    ).filter(
+        ServiceAllocation.fleet_chr_node_id == node.id,
+        ServiceAllocation.status.in_(["active", "pending"]),
+    ).scalar()
+    return int(result or 0)
 
 
 def _utcnow() -> datetime:
@@ -63,17 +109,6 @@ def _parse_dt(val: str) -> datetime | None:
         except ValueError:
             continue
     return None
-
-
-def _reserved_mbps(node: ChrNode) -> int:
-    """Sum of speed_limit_mbps for active/pending allocations on this node."""
-    result = db.session.query(
-        func.coalesce(func.sum(ServiceAllocation.speed_limit_mbps), 0)
-    ).filter(
-        ServiceAllocation.chr_node_id == node.id,
-        ServiceAllocation.status.in_(["active", "pending"]),
-    ).scalar()
-    return int(result or 0)
 
 
 def _capacity_badge(reserved: int, max_reserved: int) -> str:
@@ -108,145 +143,14 @@ def _latest_snapshot(alloc_id: int) -> ServiceUsageSnapshot | None:
     )
 
 
-def _encrypt_node_password(raw: str) -> str:
-    """يشفّر كلمة مرور RouterOS للعقدة (Fernet). يُعيد '' عند فشل التشفير."""
-    try:
-        from ..services.customer_vault_crypto import encrypt_secret, encryption_available
-        if not encryption_available():
-            return ""
-        return encrypt_secret(raw)
-    except Exception:
-        return ""
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CHR Nodes
-# ──────────────────────────────────────────────────────────────────────────────
-
-@bp.get("/chr-nodes")
-@login_required
-def chr_nodes_list():
-    nodes = ChrNode.query.order_by(ChrNode.status, ChrNode.name).all()
-    node_stats = []
-    for n in nodes:
-        reserved = _reserved_mbps(n)
-        node_stats.append({
-            "node": n,
-            "reserved_mbps": reserved,
-            "available_mbps": max(0, n.max_reserved_mbps - reserved),
-            "capacity_badge": _capacity_badge(reserved, n.max_reserved_mbps),
-            "active_allocs": ServiceAllocation.query.filter_by(
-                chr_node_id=n.id, status="active"
-            ).count(),
-            "is_stale": _is_stale(n),
-        })
-    return render_template(
-        "admin/infra/chr_nodes_new.html",
-        node_stats=node_stats,
-        service_choices=SERVICE_TYPE_CHOICES,
-    )
-
-
-@bp.post("/chr-nodes/create")
-@super_admin_required
-def chr_node_create():
-    """Retired — node creation moved to the fleet onboarding wizard.
-
-    The handler is preserved (kept registered) so any tab the operator still
-    has open POSTs to a friendly redirect instead of a 404. The legacy table
-    is read-only from now on; step 5 (legacy→fleet migration) is the right
-    way to bring existing nodes into the fleet, and step 6 drops the table.
-    """
-    flash(
-        "إنشاء عقدة CHR من هذه الصفحة أُلغي. أضف العقد الجديدة من «معالج إضافة CHR».",
-        "warning",
-    )
-    return redirect(url_for("fleet_ui.onboarding_wizard"))
-
-
-@bp.get("/chr-nodes/<int:node_id>")
-@login_required
-def chr_node_detail(node_id: int):
-    node = ChrNode.query.get_or_404(node_id)
-    reserved = _reserved_mbps(node)
-    recent_metrics = (
-        ChrNodeMetric.query
-        .filter_by(chr_node_id=node_id)
-        .order_by(ChrNodeMetric.measured_at.desc())
-        .limit(24)
-        .all()
-    )
-    allocations = (
-        ServiceAllocation.query
-        .filter_by(chr_node_id=node_id)
-        .order_by(ServiceAllocation.status, ServiceAllocation.created_at.desc())
-        .all()
-    )
-    # Live-health derivation — the detail page was reading telemetry into the
-    # metrics LOG but the header still showed the raw lifecycle field
-    # (``status='pending'``) even while fresh CPU/RAM/session samples were
-    # arriving, which read as "connected here, not there". Surface the latest
-    # sample + a single ``is_live`` flag (fresh telemetry) so the UI can show
-    # an accurate live state alongside the (separate) registration lifecycle.
-    stale = _is_stale(node)
-    latest_metric = recent_metrics[0] if recent_metrics else None
-    is_live = bool(latest_metric) and not stale
-    return render_template(
-        "admin/infra/chr_detail_new.html",
-        node=node,
-        reserved_mbps=reserved,
-        available_mbps=max(0, node.max_reserved_mbps - reserved),
-        capacity_badge=_capacity_badge(reserved, node.max_reserved_mbps),
-        recent_metrics=recent_metrics,
-        latest_metric=latest_metric,
-        is_live=is_live,
-        active_alloc_count=sum(1 for a in allocations if a.status == "active"),
-        allocations=allocations,
-        service_choices=SERVICE_TYPE_CHOICES,
-        stale=stale,
-    )
-
-
-@bp.post("/chr-nodes/<int:node_id>/edit")
-@super_admin_required
-def chr_node_edit(node_id: int):
-    """Retired — edit lifecycle moved to the fleet registry API.
-
-    See ``chr_node_create`` docstring for the rationale. Operators editing
-    a still-shown legacy row should run the migration (step 5) to move the
-    node into the fleet, where it can be edited normally.
-    """
-    # Make sure the id resolves so we 404 on garbage IDs rather than silently
-    # redirecting. This keeps audit/intrusion logs meaningful.
-    ChrNode.query.get_or_404(node_id)
-    flash(
-        "تعديل عقد CHR من هذه الصفحة أُلغي. شغّل الترحيل إلى الأسطول ثم عدّلها من «لوحة الأسطول».",
-        "warning",
-    )
-    return redirect(url_for("fleet_ui.fleet_dashboard"))
-
-
-@bp.post("/chr-nodes/<int:node_id>/poll")
-@super_admin_required
-def chr_node_poll(node_id: int):
-    """Retired — the fleet metrics-poller writes telemetry every cycle."""
-    ChrNode.query.get_or_404(node_id)
-    flash(
-        "الاستطلاع اليدوي لم يعد ضروريًا — جامع مقاييس الأسطول يعمل في الخلفية.",
-        "info",
-    )
-    return redirect(url_for("fleet_ui.fleet_dashboard"))
-
-
-@bp.post("/chr-nodes/poll-all")
-@super_admin_required
-def chr_nodes_poll_all():
-    """Retired — fleet metrics-poller covers this in the background."""
-    flash(
-        "الاستطلاع اليدوي لم يعد ضروريًا — جامع مقاييس الأسطول يعمل في الخلفية.",
-        "info",
-    )
-    return redirect(url_for("fleet_ui.fleet_dashboard"))
+# ══════════════════════════════════════════════════════════════════════════════
+# Legacy `/admin/infra/chr-nodes*` views were deleted in step 6 of
+# docs/CONSOLIDATION.md. The fleet onboarding wizard + dashboard own the
+# whole CHR lifecycle now (add / edit / disable / drain). The few
+# deprecation-shim handlers that lingered between step 5 and step 6 are
+# gone too — if someone POSTs to those URLs after the upgrade they'll get
+# a clean 404, which is what we want.
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -346,13 +250,14 @@ def customer_service_allocations(customer_id: int):
         .order_by(ServiceAllocation.status, ServiceAllocation.created_at.desc())
         .all()
     )
-    chr_nodes = ChrNode.query.filter_by(status="active").order_by(ChrNode.name).all()
+    # Fleet nodes only — the legacy chr_nodes table was dropped in step 6.
+    fleet_nodes = _fleet_nodes_for_admin()
     node_stats = {
         n.id: {
-            "reserved": _reserved_mbps(n),
-            "badge": _capacity_badge(_reserved_mbps(n), n.max_reserved_mbps),
+            "reserved": _fleet_reserved_mbps(n),
+            "badge": _capacity_badge(_fleet_reserved_mbps(n), int(n.link_speed_mbps or 0)),
         }
-        for n in chr_nodes
+        for n in fleet_nodes
     }
     radius_instance = CustomerRadiusInstance.query.filter_by(customer_id=customer_id).first()
 
@@ -363,7 +268,9 @@ def customer_service_allocations(customer_id: int):
         "admin/infra/customer_service_allocations.html",
         customer=customer,
         allocations=allocations,
-        chr_nodes=chr_nodes,
+        # Template name kept (``chr_nodes``) so the existing form markup
+        # doesn't have to be re-templated — the items are FleetChrNode rows.
+        chr_nodes=fleet_nodes,
         node_stats=node_stats,
         radius_instance=radius_instance,
         service_choices=SERVICE_TYPE_CHOICES,
@@ -381,23 +288,27 @@ def service_allocation_create(customer_id: int):
         flash("نوع الخدمة غير صالح.", "error")
         return redirect(url_for("admin_infra.customer_service_allocations", customer_id=customer_id))
 
-    chr_node_id = _int(request.form.get("chr_node_id"))
+    # The form field name stayed ``chr_node_id`` for template-stability; the
+    # value it carries is a FleetChrNode id, resolved through the fleet
+    # registry by _fleet_node_or_none.
+    node_id = _int(request.form.get("chr_node_id"))
     # wireguard_data may run on customer VPS (no CHR)
-    if service_type != "wireguard_data" and not chr_node_id:
+    if service_type != "wireguard_data" and not node_id:
         flash("لازم تختار عقدة CHR لهذه الخدمة.", "error")
         return redirect(url_for("admin_infra.customer_service_allocations", customer_id=customer_id))
 
-    if chr_node_id:
-        node = ChrNode.query.get(chr_node_id)
+    if node_id:
+        node = _fleet_node_or_none(node_id)
         if not node:
-            flash("عقدة CHR غير موجودة.", "error")
+            flash("عقدة CHR غير موجودة في الأسطول.", "error")
             return redirect(url_for("admin_infra.customer_service_allocations", customer_id=customer_id))
-        reserved = _reserved_mbps(node)
+        reserved = _fleet_reserved_mbps(node)
+        cap = int(node.link_speed_mbps or 0)
         speed = _int(request.form.get("speed_limit_mbps"), 0) or 0
-        if reserved + speed > node.max_reserved_mbps:
+        if cap > 0 and reserved + speed > cap:
             flash(
                 f"السرعة المطلوبة ({speed} Mbps) تتجاوز السعة المتاحة "
-                f"على {node.name} ({node.max_reserved_mbps - reserved} Mbps متبقية).",
+                f"على {node.name} ({cap - reserved} Mbps متبقية).",
                 "error",
             )
             return redirect(url_for("admin_infra.customer_service_allocations", customer_id=customer_id))
@@ -408,7 +319,7 @@ def service_allocation_create(customer_id: int):
         radius_instance_id=radius_instance.id if radius_instance else None,
         service_type=service_type,
         status="pending",
-        chr_node_id=chr_node_id,
+        fleet_chr_node_id=node_id,
         speed_limit_mbps=_int(request.form.get("speed_limit_mbps"), 0) or 0,
         transfer_limit_bytes=_int(request.form.get("transfer_limit_gb")) and
                               (_int(request.form.get("transfer_limit_gb")) * 1024 ** 3),
@@ -424,7 +335,7 @@ def service_allocation_create(customer_id: int):
     audit(
         "service_allocation_create", "service_allocation", alloc.id,
         f"إنشاء تخصيص {service_type} للعميل {customer.company_name}",
-        {"service_type": service_type, "chr_node_id": chr_node_id},
+        {"service_type": service_type, "fleet_chr_node_id": node_id},
     )
     db.session.commit()
     flash(f"تم إنشاء تخصيص {alloc.service_label_ar} بنجاح.", "success")
@@ -485,13 +396,8 @@ def service_allocation_edit(alloc_id: int):
 def proxy_routes_list():
     """List proxy-realm routes + render the create modal.
 
-    The modal exposes BOTH CHR sources side by side: the legacy
-    CHR-console table (``app.models.ChrNode``) and the fleet registry
-    (``fleet.registry.models_chr.FleetChrNode``, populated by the
-    onboarding wizard). Prior to this fix the modal only listed legacy
-    nodes — a fleet CHR onboarded via the wizard was invisible, which
-    is why the live deployment debug needed manual SQL on
-    ``allowed_chr_node_ids_json``.
+    Allow-list source is the fleet registry only — the legacy ``chr_nodes``
+    table was dropped in step 6 of docs/CONSOLIDATION.md.
     """
     routes = (
         ProxyRealmRoute.query
@@ -499,22 +405,7 @@ def proxy_routes_list():
         .order_by(ProxyRealmRoute.status, ProxyRealmRoute.realm)
         .all()
     )
-    chr_nodes = ChrNode.query.filter_by(status="active").order_by(ChrNode.name).all()
-    fleet_chr_nodes = []
-    try:
-        from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
-        fleet_chr_nodes = (
-            FleetChrNode.query
-            .filter(FleetChrNode.enabled.is_(True))
-            .filter(FleetChrNode.status.notin_(("disabled",)))
-            .order_by(FleetChrNode.name.asc())
-            .all()
-        )
-    except Exception as exc:  # noqa: BLE001 — defensive
-        current_app.logger.warning(
-            "proxy_routes_list: fleet_chr_nodes load failed (%s); skipping fleet source",
-            exc.__class__.__name__,
-        )
+    fleet_chr_nodes = _fleet_nodes_for_admin()
     customers_without_instance = (
         Customer.query
         .outerjoin(CustomerRadiusInstance, CustomerRadiusInstance.customer_id == Customer.id)
@@ -526,7 +417,10 @@ def proxy_routes_list():
     return render_template(
         "admin/infra/proxy_routes_new.html",
         routes=routes,
-        chr_nodes=chr_nodes,
+        # Template still iterates ``chr_nodes`` (legacy slot) — empty after
+        # step 6 — and ``fleet_chr_nodes`` for the fleet allowlist. Kept for
+        # template-stability; a follow-up can drop the legacy slot entirely.
+        chr_nodes=[],
         fleet_chr_nodes=fleet_chr_nodes,
         instances=instances,
         customers_without_instance=customers_without_instance,
@@ -553,11 +447,8 @@ def proxy_route_create():
         flash(f"مسار الـ Realm \u00ab{realm}\u00bb موجود مسبقًا.", "error")
         return redirect(url_for("admin_infra.proxy_routes_list"))
     instance = CustomerRadiusInstance.query.get_or_404(radius_instance_id)
-    # Two separate allow-lists \u2014 legacy and fleet \u2014 because the two
-    # tables have independent autoincrement sequences and their ids
-    # would otherwise collide. routing-table queries union both at
-    # resolve time.
-    allowed_node_ids = [_int(x) for x in request.form.getlist("allowed_chr_node_ids") if _int(x)]
+    # Only the fleet allow-list survives step 6 \u2014 the legacy chr_nodes table
+    # is gone, so ``allowed_chr_node_ids`` is no longer wired up.
     allowed_fleet_node_ids = [_int(x) for x in request.form.getlist("allowed_fleet_chr_node_ids") if _int(x)]
     raw_status = _str(request.form.get("status"), 20) or "active"
     status = raw_status if raw_status in _PROXY_ROUTE_STATUSES else "active"
@@ -571,7 +462,6 @@ def proxy_route_create():
         secret_vault_ref=_str(request.form.get("secret_vault_ref"), 120),
         status=status,
     )
-    route.allowed_chr_node_ids = allowed_node_ids
     route.allowed_fleet_chr_node_ids = allowed_fleet_node_ids
     db.session.add(route)
     db.session.flush()
@@ -580,7 +470,6 @@ def proxy_route_create():
         f"\u0625\u0646\u0634\u0627\u0621 \u0645\u0633\u0627\u0631 Proxy \u0644\u0644\u0640 Realm: {realm}",
         {
             "status": status,
-            "allowed_legacy_chr_ids": allowed_node_ids,
             "allowed_fleet_chr_ids": allowed_fleet_node_ids,
         },
     )
@@ -876,62 +765,8 @@ def system_health():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Legacy → Fleet consolidation (step 5 of docs/CONSOLIDATION.md)
-#
-# UI-runnable, idempotent migration. The page lets the owner preview the move
-# (dry-run) and then execute it — no terminal, no SQL. All endpoints are
-# super_admin only; results are audited.
+# /admin/infra/consolidation was the legacy → fleet migration tool (step 5 of
+# docs/CONSOLIDATION.md). Step 6 dropped the legacy chr_nodes table outright,
+# so the page has nothing to do; both routes are removed. The audit-log entry
+# ``fleet_consolidation_run`` stays in history for forensics.
 # ════════════════════════════════════════════════════════════════════════════
-@bp.get("/consolidation")
-@super_admin_required
-def consolidation_page():
-    """Preview + run the legacy chr_nodes → fleet_chr_nodes migration."""
-    from ..services.fleet_consolidation import (
-        fleet_tables_available,
-        legacy_chr_node_id_column_present,
-        plan_migration,
-    )
-    legacy_count = ChrNode.query.count()
-    if not fleet_tables_available():
-        plan = None
-        error = "fleet_schema_not_ready"
-    elif not legacy_chr_node_id_column_present():
-        plan = None
-        error = "schema_heal_pending"
-    else:
-        plan = plan_migration()
-        error = plan.error
-    return render_template(
-        "admin/infra/consolidation.html",
-        legacy_count=legacy_count,
-        plan=plan,
-        error=error,
-    )
-
-
-@bp.post("/consolidation/run")
-@super_admin_required
-def consolidation_run():
-    """Execute the migration for real. Idempotent — safe to click twice."""
-    from ..services.fleet_consolidation import run_migration, to_jsonable
-    result = run_migration(dry_run=False)
-    payload = to_jsonable(result)
-    audit(
-        "fleet_consolidation_run",
-        "chr_node",
-        0,
-        f"ترحيل {result.imported} عقدة CHR قديمة إلى الأسطول "
-        f"(تم سابقًا: {result.skipped_existing}، متعذّر: {result.skipped_invalid}، "
-        f"تخصيصات أُعيد توجيهها: {result.allocations_rewritten}).",
-        payload,
-    )
-    db.session.commit()
-    if result.error:
-        flash(f"تعذّر إكمال الترحيل: {result.error}", "error")
-    else:
-        flash(
-            f"تم الترحيل: استيراد {result.imported}، تم سابقًا {result.skipped_existing}، "
-            f"تخطٍّ {result.skipped_invalid}، تخصيصات أُعيد توجيهها {result.allocations_rewritten}.",
-            "success" if result.imported or result.allocations_rewritten else "info",
-        )
-    return redirect(url_for("admin_infra.consolidation_page"))

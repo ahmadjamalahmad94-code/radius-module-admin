@@ -126,11 +126,10 @@
             </span>
           </td>
 
-          {# عقد CHR المسموحة (الأسطول + التقليدي) #}
+          {# عقد CHR المسموحة (الأسطول فقط — التقليدي حُذف في step 6) #}
           <td>
             {% set _fleet_ids = r.allowed_fleet_chr_node_ids %}
-            {% set _legacy_ids = r.allowed_chr_node_ids %}
-            {% if not _fleet_ids and not _legacy_ids %}
+            {% if not _fleet_ids %}
               <span class="infra-pill infra-pill--grey">كل العقد</span>
             {% else %}
               <div style="display:flex;flex-wrap:wrap;gap:var(--cc-sp-2)">
@@ -138,12 +137,6 @@
                   {% set n = fleet_chr_nodes|selectattr('id','eq',nid)|first %}
                   {% if n %}
                     <span class="pr-node-chip pr-mono" title="fleet">⚡ {{ n.name }}</span>
-                  {% endif %}
-                {% endfor %}
-                {% for nid in _legacy_ids %}
-                  {% set n = chr_nodes|selectattr('id','eq',nid)|first %}
-                  {% if n %}
-                    <span class="pr-node-chip pr-mono" title="legacy">{{ n.name }}</span>
                   {% endif %}
                 {% endfor %}
               </div>
@@ -306,27 +299,6 @@
             اتركه فارغاً لقبول كل عقد الأسطول.
           </p>
         </div>
-
-        {# عقد CHR المسموحة — CHR-Console التقليدي #}
-        {% if chr_nodes %}
-        <div class="pr-field pr-field--full">
-          <label class="pr-label">
-            عقد CHR-Console التقليدية (إن وُجدت)
-          </label>
-          <div class="pr-checkgroup" aria-describedby="hint-r-nodes">
-            {% for n in chr_nodes %}
-            <label class="pr-check">
-              <input type="checkbox" name="allowed_chr_node_ids" value="{{ n.id }}">
-              <span class="pr-mono">{{ n.name }}</span>
-              <span class="pr-check__sub">{{ n.public_ip }}</span>
-            </label>
-            {% endfor %}
-          </div>
-          <p class="pr-hint" id="hint-r-nodes">
-            عقد سجّلت قبل تفعيل أسطول CHR — كلاهما يعمل جنباً إلى جنب.
-          </p>
-        </div>
-        {% endif %}
 
         {# الحالة المبدئية — افتراضي: نشط حتى يستخدم الراوتر فوراً #}
         <div class="pr-field pr-field--full">
