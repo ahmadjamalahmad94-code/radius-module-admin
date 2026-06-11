@@ -3337,6 +3337,155 @@ def payment_request_apply_license(payment_request_id: int):
     return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
 
 
+@bp.post("/payments/requests/<int:payment_request_id>/approve-and-credit")
+@login_required
+def payment_request_approve_and_credit(payment_request_id: int):
+    """One-click: approve the proof AND credit the customer in a single action.
+
+    Mirrors the two existing endpoints (approve, apply-license) but runs them
+    sequentially so the owner has a single "اعتماد + قيد للعميل" button on
+    the review queue. Either step failing reverts the workflow with a flash
+    message and leaves the row in its pre-action state.
+    """
+    payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
+    try:
+        LicensePaymentReviewService().approve(
+            payment_request=payment_request,
+            reviewed_by=session.get("admin_id"),
+            review_note=request.form.get("review_note") or "",
+        )
+    except LicensePaymentValidationError as exc:
+        flash(payment_error_message(exc), "error")
+        return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    audit("license_payment_approved", "license_payment_request", str(payment_request.id),
+          f"Approved payment {payment_request.reference_code}")
+    try:
+        result = LicensePaymentApplyService().apply_paid_payment(
+            payment_request=payment_request,
+            actor_admin_id=session.get("admin_id"),
+            period_months=_int("period_months", 1),
+        )
+    except LicensePaymentValidationError as exc:
+        # Approval already committed; surface the apply failure so the operator
+        # can retry via the dedicated apply button.
+        db.session.commit()
+        flash(f"تم قبول الدفع لكن لم يكتمل القيد: {payment_error_message(exc)}", "warning")
+        return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+    flash(f"تم قبول الدفع وقيده للعميل ({result.get('status')}).", "success")
+    return redirect(url_for("admin.payment_request_detail", payment_request_id=payment_request.id))
+
+
+@bp.get("/settings/payment-gateways")
+@login_required
+def settings_payment_gateways():
+    """Owner-only settings page for the 3 API gateways (JawalPay / PalPay /
+    Bank of Palestine). Manual transfer needs no API creds and is handled
+    on the customer payment form itself.
+    """
+    from ..services import payment_gateways as pg
+    snapshots = []
+    for name in pg.GATEWAY_ORDER:
+        adapter = pg.get_adapter(name)
+        creds_masked = pg.masked_credentials(name)
+        configured = adapter.configured(pg.resolved_credentials(name))
+        snapshots.append({
+            "name": name,
+            "label_ar": adapter.label_ar,
+            "fields": [
+                {"key": k, "is_secret": pg._is_secret_field(k), "value": creds_masked.get(k, "")}
+                for k in adapter.cred_keys
+            ],
+            "enabled": pg.adapter_enabled(name),
+            "configured": configured,
+        })
+    return render_template(
+        "admin/settings/payment_gateways.html",
+        gateways=snapshots,
+    )
+
+
+@bp.post("/settings/payment-gateways/<gateway>")
+@login_required
+def settings_payment_gateway_save(gateway: str):
+    """Persist credentials + enable flag for ONE gateway.
+
+    Credentials are encrypted via the panel's app master Fernet key (same
+    key used for WhatsApp / CHR settings). Secret fields are left UNCHANGED
+    if the operator submits an empty value (so the form doesn't blow away
+    a stored key just because the masked placeholder wasn't re-typed).
+    Audit metadata records only which fields were touched (booleans), never
+    the plaintext values.
+    """
+    from ..services import payment_gateways as pg
+    try:
+        adapter = pg.get_adapter(gateway)
+    except KeyError:
+        abort(404)
+
+    submitted: dict[str, str] = {}
+    fields_touched: dict[str, bool] = {}
+    for field in adapter.cred_keys:
+        raw = (request.form.get(field) or "").strip()
+        if pg._is_secret_field(field):
+            # Secrets: an empty value means "leave existing stored key as is".
+            if raw:
+                submitted[field] = raw
+                fields_touched[field] = True
+        else:
+            submitted[field] = raw
+            fields_touched[field] = bool(raw)
+
+    try:
+        pg.store_credentials(gateway, submitted)
+    except RuntimeError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.settings_payment_gateways"))
+
+    enabled = bool(request.form.get("enabled"))
+    pg.set_adapter_enabled(gateway, enabled)
+
+    audit(
+        action="payment_gateway_settings_saved",
+        entity_type="payment_gateway",
+        entity_id=gateway,
+        summary=f"حفظ إعدادات بوابة {adapter.label_ar}",
+        metadata={
+            "gateway": gateway,
+            "enabled": enabled,
+            "fields_touched": fields_touched,  # booleans only — never plaintext
+        },
+    )
+    db.session.commit()
+    flash(f"تم حفظ إعدادات بوابة {adapter.label_ar}.", "success")
+    return redirect(url_for("admin.settings_payment_gateways") + f"#gw-{gateway}")
+
+
+@bp.get("/payments/proofs/<int:proof_id>/receipt")
+@login_required
+def payment_proof_receipt(proof_id: int):
+    """Stream a stored receipt image to the admin (auth-only, never public).
+
+    The file lives outside the static tree (instance_path/payment_proofs/...).
+    We resolve the path via :func:`payment_proofs.receipt_full_path` which
+    guards against directory traversal.
+    """
+    from ..services.payment_proofs import receipt_full_path, receipt_mime
+    proof = db.get_or_404(LicensePaymentProof, proof_id)
+    image_path = (proof.image_path or "").strip()
+    if not image_path:
+        abort(404)
+    full = receipt_full_path(image_path)
+    if not full:
+        abort(404)
+    return send_file(
+        str(full),
+        mimetype=receipt_mime(full),
+        as_attachment=False,
+        download_name=f"receipt-{proof.id}{full.suffix}",
+        max_age=0,
+    )
+
+
 @bp.get("/payments/reports")
 @login_required
 def payment_reports():

@@ -1,0 +1,334 @@
+{% extends "_partials/portal_base.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}دفع جديد — {{ customer.company_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* ============================================================
+     Customer payment submission — local styles
+     كل المسافات تتبع نظام التصميم العام (--cc-sp-*, --cc-gap-*)
+  ============================================================ */
+  .pay-page { max-width: 820px; margin-inline: auto; display: grid; gap: var(--cc-gap-section, 16px); }
+
+  /* ----- Method picker ----- */
+  .pay-methods {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--cc-sp-6, 12px);
+  }
+  .pay-method-card { position: relative; }
+  .pay-method-card input[type="radio"] {
+    position: absolute; opacity: 0; pointer-events: none;
+  }
+  .pay-method-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-3, 6px);
+    padding: var(--cc-sp-7, 14px) var(--cc-sp-6, 12px);
+    background: var(--cc-input-bg, #F4F1FE);
+    border: 2px solid var(--cc-border-2, #E3E1EC);
+    border-radius: var(--cc-r-tile, 14px);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .14s ease, background .14s ease;
+  }
+  .pay-method-label:hover { background: var(--hb-bg-hover, #E6E2F2); }
+  .pay-method-card input[type="radio"]:checked + .pay-method-label {
+    border-color: var(--cc-brand, #6B5AED);
+    background: var(--cc-brand-softer, #F4F1FE);
+  }
+  .pay-method-card input[type="radio"]:disabled + .pay-method-label {
+    opacity: .45; cursor: not-allowed; background: var(--cc-tint-bg, #FAFAFA);
+  }
+  .pay-method-icon { font-size: 26px; color: var(--cc-brand, #6B5AED); }
+  .pay-method-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--cc-text, #1F2937);
+  }
+  .pay-method-sub {
+    font-size: 11px;
+    color: var(--cc-text-mute, #94A3B8);
+  }
+
+  /* ----- Receipt drop area (shown only when manual_transfer selected) ----- */
+  .pay-receipt-pane {
+    display: none;
+    margin-top: var(--cc-sp-7, 14px);
+  }
+  .pay-receipt-pane.is-active { display: block; }
+
+  .pay-dropzone {
+    border: 2px dashed var(--cc-border-2, #E3E1EC);
+    border-radius: var(--cc-r-tile, 14px);
+    padding: var(--cc-sp-11, 24px) var(--cc-sp-8, 16px);
+    text-align: center;
+    background: var(--cc-tint-bg, #FAFAFA);
+    cursor: pointer;
+    transition: border-color .14s ease, background .14s ease;
+  }
+  .pay-dropzone:hover, .pay-dropzone.is-hover {
+    border-color: var(--cc-brand, #6B5AED);
+    background: var(--cc-brand-softer, #F4F1FE);
+  }
+  .pay-dropzone-icon {
+    font-size: 32px;
+    color: var(--cc-brand, #6B5AED);
+    margin-block-end: var(--cc-sp-4, 8px);
+  }
+  .pay-dropzone-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cc-text, #1F2937);
+  }
+  .pay-dropzone-sub {
+    font-size: 12px;
+    color: var(--cc-text-mute, #94A3B8);
+    margin-block-start: var(--cc-sp-2, 4px);
+  }
+  .pay-receipt-preview {
+    display: none;
+    margin-block-start: var(--cc-sp-6, 12px);
+    border: 1px solid var(--cc-border, #EEEDF3);
+    border-radius: var(--cc-r-lg, 10px);
+    padding: var(--cc-sp-5, 10px);
+    background: #fff;
+    font-size: 12px;
+  }
+  .pay-receipt-preview.is-active { display: flex; align-items: center; gap: var(--cc-sp-5, 10px); }
+  .pay-receipt-preview img { max-width: 90px; max-height: 90px; border-radius: 6px; }
+  .pay-receipt-clear {
+    margin-inline-start: auto;
+    background: none; border: none; color: var(--hb-red, #EF4444);
+    cursor: pointer; font-weight: 700; font-size: 12px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pay-page">
+
+  {{ hub.hero("إرسال دفعة جديدة",
+              subtitle="اختر طريقة الدفع، أدخل المبلغ، وأرفق صورة الإيصال إذا كان تحويلاً يدوياً.",
+              icon="credit-card") }}
+
+  {% call hub.section("بيانات الدفع", icon="receipt") %}
+    <form method="post"
+          action="{{ url_for('public.customer_portal_pay_submit') }}"
+          enctype="multipart/form-data"
+          id="pay-form"
+          style="display: grid; gap: var(--cc-gap-section, 16px);"
+          autocomplete="off">
+      {{ csrf_input() }}
+
+      {# ── Method picker ── #}
+      <div>
+        <label class="hub-label" id="pay-method-label">طريقة الدفع</label>
+        <div class="pay-methods" role="radiogroup" aria-labelledby="pay-method-label">
+          {% for key, label, enabled, configured in methods %}
+            {%- set is_manual = (key == "manual_transfer") -%}
+            <div class="pay-method-card">
+              <input type="radio"
+                     id="pay-method-{{ key }}"
+                     name="method"
+                     value="{{ key }}"
+                     {{ 'checked' if (form.get('method') == key) or (loop.first and not form.get('method')) }}
+                     {{ '' if enabled else 'disabled' }}
+                     data-is-manual="{{ '1' if is_manual else '0' }}">
+              <label class="pay-method-label" for="pay-method-{{ key }}">
+                <span class="pay-method-icon">
+                  {% if key == "manual_transfer" %}<i class="fa-solid fa-building-columns"></i>
+                  {% elif key == "jawalpay" %}<i class="fa-solid fa-mobile-screen"></i>
+                  {% elif key == "palpay" %}<i class="fa-solid fa-wallet"></i>
+                  {% elif key == "bank_of_palestine" %}<i class="fa-solid fa-landmark"></i>
+                  {% else %}<i class="fa-solid fa-credit-card"></i>{% endif %}
+                </span>
+                <span class="pay-method-title">{{ label }}</span>
+                {% if not enabled %}
+                  <span class="pay-method-sub">غير مفعّلة بعد</span>
+                {% elif not is_manual %}
+                  <span class="pay-method-sub">دفع إلكتروني</span>
+                {% else %}
+                  <span class="pay-method-sub">إيصال + مراجعة</span>
+                {% endif %}
+              </label>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Amount + currency + purpose ── #}
+      <div class="hub-form-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: var(--cc-gap-section, 16px);">
+        <div class="hub-field">
+          <label for="pay-amount">المبلغ</label>
+          <input class="hub-input mono"
+                 type="number"
+                 step="0.01"
+                 min="0.01"
+                 name="amount"
+                 id="pay-amount"
+                 value="{{ form.get('amount', '') }}"
+                 required>
+        </div>
+        <div class="hub-field">
+          <label for="pay-currency">العملة</label>
+          <select class="hub-input" name="currency" id="pay-currency">
+            {% for c in currencies %}
+              <option value="{{ c }}" {{ 'selected' if (form.get('currency') == c) or (not form.get('currency') and c == default_currency) }}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="hub-field">
+          <label for="pay-purpose">سبب الدفع</label>
+          <select class="hub-input" name="purpose" id="pay-purpose">
+            {% for key, label in purposes %}
+              <option value="{{ key }}" {{ 'selected' if form.get('purpose') == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {# ── Manual transfer pane (receipt + reference + note) ── #}
+      <div class="pay-receipt-pane" id="pay-receipt-pane">
+        <div class="hub-field">
+          <label>صورة الإيصال (JPG / PNG / WEBP / PDF — حتى ٥ ميغابايت)</label>
+          <label class="pay-dropzone" for="pay-receipt-file">
+            <i class="fa-solid fa-cloud-arrow-up pay-dropzone-icon"></i>
+            <div class="pay-dropzone-title">انقر لاختيار صورة الإيصال أو أفلتها هنا</div>
+            <div class="pay-dropzone-sub">حد أقصى ٥ ميغابايت — اللصور مخزنة بأمان ولا تظهر للعموم</div>
+            <input type="file"
+                   name="receipt"
+                   id="pay-receipt-file"
+                   accept="image/jpeg,image/png,image/webp,application/pdf"
+                   style="display:none">
+          </label>
+          <div class="pay-receipt-preview" id="pay-receipt-preview">
+            <span class="pay-receipt-preview-meta" id="pay-receipt-meta">—</span>
+            <button type="button" class="pay-receipt-clear" id="pay-receipt-clear">إزالة</button>
+          </div>
+        </div>
+
+        <div class="hub-form-grid" style="grid-template-columns: 1fr 1fr; gap: var(--cc-gap-section, 16px); margin-top: var(--cc-sp-7, 14px)">
+          <div class="hub-field">
+            <label for="pay-reference">رقم المرجع البنكي (اختياري)</label>
+            <input class="hub-input mono"
+                   type="text"
+                   name="reference_number"
+                   id="pay-reference"
+                   placeholder="مثال: 123456789"
+                   value="{{ form.get('reference_number', '') }}">
+          </div>
+          <div class="hub-field">
+            <label for="pay-note">ملاحظة (اختياري)</label>
+            <input class="hub-input"
+                   type="text"
+                   name="note"
+                   id="pay-note"
+                   placeholder="أي تفاصيل تساعد المراجع"
+                   value="{{ form.get('note', '') }}">
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: var(--cc-sp-6, 12px); margin-top: var(--cc-sp-6, 12px)">
+        <a class="hub-btn hub-btn--ghost" href="{{ url_for('public.customer_portal_dashboard') }}">إلغاء</a>
+        <button class="hub-btn hub-btn--primary" type="submit">
+          <i class="fa-solid fa-paper-plane"></i>
+          إرسال الدفعة
+        </button>
+      </div>
+    </form>
+  {% endcall %}
+
+</div>
+
+<div class="hub-toast" id="pay-toast" role="status" aria-live="polite" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* ── Toast بدل alert/confirm ───────────────────────────────── */
+  window.showToast = function (msg, variant) {
+    var t = document.getElementById('pay-toast');
+    if (!t) return;
+    t.className = 'hub-toast hub-toast--' + (variant || 'info') + ' is-visible';
+    t.textContent = String(msg || '');
+    t.hidden = false;
+    setTimeout(function () {
+      t.classList.remove('is-visible');
+      setTimeout(function () { t.hidden = true; }, 320);
+    }, 2400);
+  };
+
+  /* ── Method radio → toggle receipt pane ──────────────────── */
+  var pane = document.getElementById('pay-receipt-pane');
+  function refreshPane() {
+    var picked = document.querySelector('input[name="method"]:checked');
+    var isManual = picked && picked.getAttribute('data-is-manual') === '1';
+    pane.classList.toggle('is-active', !!isManual);
+    var receiptInput = document.getElementById('pay-receipt-file');
+    if (receiptInput) receiptInput.required = !!isManual;
+  }
+  document.querySelectorAll('input[name="method"]').forEach(function (r) {
+    r.addEventListener('change', refreshPane);
+  });
+  refreshPane();
+
+  /* ── Receipt picker + preview ────────────────────────────── */
+  var fileInput = document.getElementById('pay-receipt-file');
+  var preview   = document.getElementById('pay-receipt-preview');
+  var meta      = document.getElementById('pay-receipt-meta');
+  var clearBtn  = document.getElementById('pay-receipt-clear');
+  var dropzone  = document.querySelector('.pay-dropzone');
+
+  var MAX = 5 * 1024 * 1024;
+  var OK_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+
+  function showFile(f) {
+    if (!f) { preview.classList.remove('is-active'); return; }
+    if (OK_TYPES.indexOf(f.type) === -1) {
+      showToast('صيغة الملف غير مدعومة. JPG / PNG / WEBP / PDF فقط.', 'error');
+      fileInput.value = '';
+      return;
+    }
+    if (f.size > MAX) {
+      showToast('حجم الملف يتجاوز ٥ ميغابايت.', 'error');
+      fileInput.value = '';
+      return;
+    }
+    meta.textContent = f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+    preview.classList.add('is-active');
+  }
+  fileInput.addEventListener('change', function () { showFile(fileInput.files[0]); });
+  clearBtn.addEventListener('click', function () {
+    fileInput.value = '';
+    preview.classList.remove('is-active');
+  });
+
+  /* Drag & drop */
+  ['dragenter','dragover'].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('is-hover');
+    });
+  });
+  ['dragleave','drop'].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('is-hover');
+    });
+  });
+  dropzone.addEventListener('drop', function (e) {
+    var dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length) {
+      fileInput.files = dt.files;
+      showFile(dt.files[0]);
+    }
+  });
+})();
+</script>
+{% endblock %}

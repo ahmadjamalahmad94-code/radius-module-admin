@@ -36,16 +36,41 @@
 
   {% call hub.section("قرار المراجعة", icon="gavel") %}
     {% if payment_request.status in ["proof_submitted", "under_review"] %}
-      <form method="post" action="{{ url_for('admin.payment_request_approve', payment_request_id=payment_request.id) }}" style="margin-bottom:14px">
+      {# Approve + credit in one step — the recommended path now that the
+         credit hook is wired through LicensePaymentApplyService. The standalone
+         approve button below is kept for the rare case the owner wants to
+         credit later (e.g. capacity_increase that needs manual follow-up). #}
+      <form method="post"
+            action="{{ url_for('admin.payment_request_approve_and_credit', payment_request_id=payment_request.id) }}"
+            id="pay-approve-credit-form"
+            style="margin-bottom:14px">
         {{ csrf_input() }}
         <div class="hub-field">
           <label>ملاحظة قبول (اختيارية)</label>
           <textarea class="hub-textarea" name="review_note" rows="2" placeholder="مرجع قصير للمراجعة لاحقًا"></textarea>
         </div>
-        <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px">
-          <i class="fa-solid fa-circle-check"></i> {{ _('قبول الدفع') }}
+        <div class="hub-field" style="max-width:180px">
+          <label>{{ _('المدة (شهر)') }}</label>
+          <input class="hub-input" name="period_months" type="number" min="1" value="1">
+        </div>
+        <button class="hub-btn hub-btn--primary" type="submit" style="margin-top:10px"
+                data-confirm="هل تؤكّد قبول هذا الدفع وقيده للعميل؟">
+          <i class="fa-solid fa-circle-check"></i> {{ _('اعتماد + قيد للعميل') }}
         </button>
       </form>
+      <details style="border-top:1px dashed var(--hub-line); padding-top:12px; margin-bottom:14px">
+        <summary style="cursor:pointer; color:var(--cc-text-mute,#94A3B8); font-size:12px">
+          قبول الدفع فقط (دون قيد فوري للعميل)
+        </summary>
+        <form method="post" action="{{ url_for('admin.payment_request_approve', payment_request_id=payment_request.id) }}" style="margin-top:10px">
+          {{ csrf_input() }}
+          <textarea class="hub-textarea" name="review_note" rows="2" placeholder="ملاحظة قبول"></textarea>
+          <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit" style="margin-top:10px"
+                  data-confirm="قبول الدفع دون قيده. يمكنك القيد لاحقاً.">
+            <i class="fa-solid fa-circle-check"></i> قبول فقط
+          </button>
+        </form>
+      </details>
       <div style="border-top:1px dashed var(--hub-line); padding-top:12px">
         <form method="post" action="{{ url_for('admin.payment_request_reject', payment_request_id=payment_request.id) }}">
           {{ csrf_input() }}
@@ -53,7 +78,8 @@
             <label>سبب الرفض</label>
             <textarea class="hub-textarea" name="review_note" rows="2" placeholder="يظهر في السجل الإداري"></textarea>
           </div>
-          <button class="hub-btn hub-btn--danger" type="submit" style="margin-top:10px">
+          <button class="hub-btn hub-btn--danger" type="submit" style="margin-top:10px"
+                  data-confirm="رفض هذا الإثبات. هل أنت متأكد؟">
             <i class="fa-solid fa-circle-xmark"></i> رفض الإثبات
           </button>
         </form>
@@ -97,6 +123,7 @@
     <table class="hub-table">
       <thead>
         <tr>
+          <th>صورة الإيصال</th>
           <th>المرجع</th>
           <th>ملاحظة العميل</th>
           <th>حالة المراجعة</th>
@@ -108,6 +135,25 @@
       <tbody>
         {% for proof in proofs %}
           <tr>
+            <td>
+              {% if proof.image_path %}
+                {%- set _is_pdf = (proof.image_path or "").lower().endswith(".pdf") -%}
+                <a href="{{ url_for('admin.payment_proof_receipt', proof_id=proof.id) }}"
+                   target="_blank" rel="noopener"
+                   style="display:inline-flex; align-items:center; gap:6px; text-decoration:none">
+                  {% if _is_pdf %}
+                    <i class="fa-solid fa-file-pdf" style="font-size:22px; color:var(--hb-red,#EF4444)"></i>
+                    <span style="font-size:12px; color:var(--cc-text,#1F2937)">PDF</span>
+                  {% else %}
+                    <img src="{{ url_for('admin.payment_proof_receipt', proof_id=proof.id) }}"
+                         alt="إيصال {{ proof.id }}"
+                         style="width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--cc-border,#EEEDF3)">
+                  {% endif %}
+                </a>
+              {% else %}
+                <span class="hub-muted" style="font-size:12px">—</span>
+              {% endif %}
+            </td>
             <td class="mono">{{ proof.reference_number or "—" }}</td>
             <td>{{ proof.note or "—" }}</td>
             <td>{{ (proof.review_status or "pending")|status_label }}</td>
@@ -116,7 +162,7 @@
             <td class="date">{{ proof.submitted_at|dt }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6">{{ hub.empty("لا توجد إثباتات بعد.", icon="receipt") }}</td></tr>
+          <tr><td colspan="7">{{ hub.empty("لا توجد إثباتات بعد.", icon="receipt") }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -152,4 +198,62 @@
     {% endif %}
   {% endcall %}
 </div>
+
+{# Styled confirm — replaces native confirm() for any [data-confirm] button.
+   No window.confirm/alert anywhere; the modal is an in-flow overlay. #}
+<div class="pay-confirm-overlay" id="pay-confirm-overlay" hidden
+     style="position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:9000; display:flex; align-items:center; justify-content:center">
+  <div class="pay-confirm-box"
+       style="background:#fff; border-radius:14px; padding:24px; min-width:320px; max-width:480px; box-shadow:0 8px 22px rgba(0,0,0,.12); text-align:center">
+    <div style="font-size:14px; font-weight:700; color:var(--cc-text,#1F2937); margin-bottom:16px"
+         id="pay-confirm-message">—</div>
+    <div style="display:flex; justify-content:center; gap:12px">
+      <button class="hub-btn hub-btn--ghost" type="button" id="pay-confirm-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="pay-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<div class="hub-toast" id="pay-toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+  /* Styled confirm — wraps any submit-button [data-confirm] form submission. */
+  var overlay = document.getElementById('pay-confirm-overlay');
+  var msgEl   = document.getElementById('pay-confirm-message');
+  var okBtn   = document.getElementById('pay-confirm-ok');
+  var cancelBtn = document.getElementById('pay-confirm-cancel');
+  var pendingForm = null;
+
+  function openConfirm(msg, form) {
+    msgEl.textContent = msg;
+    pendingForm = form;
+    overlay.hidden = false;
+  }
+  function closeConfirm() {
+    overlay.hidden = true;
+    pendingForm = null;
+  }
+  okBtn.addEventListener('click', function () {
+    if (pendingForm) {
+      var f = pendingForm; pendingForm = null;
+      overlay.hidden = true;
+      f.submit();
+    }
+  });
+  cancelBtn.addEventListener('click', closeConfirm);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeConfirm(); });
+
+  document.querySelectorAll('button[data-confirm]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      var msg = btn.getAttribute('data-confirm') || 'هل أنت متأكد؟';
+      var form = btn.closest('form');
+      if (!form) return;
+      e.preventDefault();
+      openConfirm(msg, form);
+    });
+  });
+})();
+</script>
 {% endblock %}

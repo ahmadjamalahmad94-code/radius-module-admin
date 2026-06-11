@@ -29,9 +29,21 @@
 {% if payment_request.status == "pending" %}
   {% call hub.section("إرسال إثبات الدفع", icon="upload") %}
     <p class="hub-field-hint">بعد إرسال الإثبات، سيقوم المدير بمراجعته. لا يتم تفعيل الترخيص قبل قبول الدفع إداريًا.</p>
-    <form method="post" action="{{ url_for('public.payment_portal_submit_proof', request_id=payment_request.id) }}" style="display:grid; gap:12px; margin-top:14px">
+    <form method="post"
+          action="{{ url_for('public.payment_portal_submit_proof', request_id=payment_request.id) }}"
+          enctype="multipart/form-data"
+          style="display:grid; gap:12px; margin-top:14px">
       {{ csrf_input() }}
       <input type="hidden" name="token" value="{{ token }}">
+      <div class="hub-field">
+        <label>صورة الإيصال <span style="color:var(--hb-red,#EF4444)">*</span></label>
+        <input class="hub-input"
+               type="file"
+               name="receipt"
+               accept="image/jpeg,image/png,image/webp,application/pdf"
+               required>
+        <div class="hub-field-hint">JPG / PNG / WEBP / PDF — حد أقصى ٥ ميغابايت. تُخزَّن بأمان ولا تظهر للعموم.</div>
+      </div>
       <div class="hub-field">
         <label>رقم عملية الدفع أو المرجع</label>
         <input class="hub-input mono" name="reference_number" placeholder="مثال: 123456789">
