@@ -11,6 +11,7 @@ from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required, super_admin_required
 from ..extensions import db
+from ..license_signing import mask_license_key as _mask_key
 from ..models import (
     AuditLog,
     ChrSpeedProfile,
@@ -535,6 +536,7 @@ def customer_detail(customer_id: int):
     _paid_count = sum(1 for pr in _payment_requests if getattr(pr, "status", "") == "paid")
     _pending_count = sum(1 for pr in _payment_requests if getattr(pr, "status", "") in ("pending", "proof_submitted"))
     _total_paid = sum(getattr(pr, "amount", 0) or 0 for pr in _payment_requests if getattr(pr, "status", "") == "paid")
+    observed_devices = _observed_devices_for_license(current_license)
     return render_template(
         "admin/customers/detail_new.html",
         customer=customer,
@@ -561,7 +563,71 @@ def customer_detail(customer_id: int):
         paid_count=_paid_count,
         pending_count=_pending_count,
         total_paid=_total_paid,
+        observed_devices=observed_devices,
+        masked_license_key=_mask_key(current_license.license_key) if current_license else "",
     )
+
+
+def _observed_devices_for_license(lic) -> list[dict]:
+    """Distinct radius instances seen for this license (simple-link card).
+
+    Latest LicenseCheck row per fingerprint — the devices list the operator
+    sees under «ربط الريدياس». Empty fingerprints collapse into one
+    "(بدون بصمة)" row since the fingerprint is optional in bearer mode.
+    """
+    if lic is None:
+        return []
+    rows = (
+        LicenseCheck.query
+        .filter_by(license_id=lic.id)
+        .order_by(LicenseCheck.checked_at.desc())
+        .limit(300)
+        .all()
+    )
+    seen: dict[str, dict] = {}
+    for row in rows:
+        fp = (row.fingerprint or "").strip() or "—"
+        if fp in seen:
+            continue
+        seen[fp] = {
+            "fingerprint": fp,
+            "hostname": row.hostname or "—",
+            "ip_address": row.ip_address or "—",
+            "version": row.version or "—",
+            "result": row.result,
+            "checked_at": row.checked_at,
+        }
+        if len(seen) >= 6:
+            break
+    return list(seen.values())
+
+
+@bp.post("/customers/<int:customer_id>/license/regenerate-key")
+@super_admin_required
+def regenerate_license_key(customer_id: int):
+    """Reissue the customer's license key (simple-link rotation).
+
+    In bearer mode the key IS the credential, so rotation = regenerate. The
+    old key stops authenticating immediately; the operator pastes the new
+    key into the customer's radius (one field). Super-admin only + audited
+    (masked — the full key is visible on the customer page itself).
+    """
+    customer = db.get_or_404(Customer, customer_id)
+    lic = find_best_customer_license(customer)
+    if lic is None:
+        flash("لا يوجد ترخيص لهذا العميل ليُعاد توليد مفتاحه.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    old_masked = _mask_key(lic.license_key)
+    lic.license_key = generate_license_key()
+    db.session.add(lic)
+    audit(
+        "license_key_regenerated", "license", str(lic.id),
+        f"إعادة توليد مفتاح الترخيص للعميل {customer.company_name} ({old_masked} ← {_mask_key(lic.license_key)})",
+        {"customer_id": customer.id, "old_key": old_masked, "new_key": _mask_key(lic.license_key)},
+    )
+    db.session.commit()
+    flash("تم توليد مفتاح ترخيص جديد. حدّث المفتاح في ريدياس العميل — المفتاح القديم توقّف فورًا.", "warning")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
 
 
 def _customer_gdrive_status(customer_id: int) -> dict:
@@ -1908,7 +1974,7 @@ def license_create():
     )
     db.session.add(lic)
     db.session.flush()
-    audit("license_generated", "license", str(lic.id), f"Generated license {lic.license_key}", {
+    audit("license_generated", "license", str(lic.id), f"Generated license {_mask_key(lic.license_key)}", {
         "customer_id": customer.id,
         "plan_id": plan.id,
     })
@@ -2316,7 +2382,7 @@ def license_add_fingerprint(license_id: int):
     if fp and fp not in items:
         items.append(fp)
         lic.fingerprints = items
-        audit("fingerprint_added", "license", str(lic.id), f"Added fingerprint to {lic.license_key}", {"fingerprint": fp})
+        audit("fingerprint_added", "license", str(lic.id), f"Added fingerprint to {_mask_key(lic.license_key)}", {"fingerprint": fp})
         db.session.commit()
         flash("تمت إضافة البصمة.", "success")
     return redirect(url_for("admin.license_detail", license_id=lic.id))
@@ -2329,7 +2395,7 @@ def license_remove_fingerprint(license_id: int):
     fp = (request.form.get("fingerprint") or "").strip()
     items = [item for item in lic.fingerprints if item != fp]
     lic.fingerprints = items
-    audit("fingerprint_removed", "license", str(lic.id), f"Removed fingerprint from {lic.license_key}", {"fingerprint": fp})
+    audit("fingerprint_removed", "license", str(lic.id), f"Removed fingerprint from {_mask_key(lic.license_key)}", {"fingerprint": fp})
     db.session.commit()
     flash("تم حذف البصمة.", "success")
     return redirect(url_for("admin.license_detail", license_id=lic.id))

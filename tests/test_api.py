@@ -13,12 +13,21 @@ def test_health_endpoint_returns_ok(client):
     assert res.get_json()["ok"] is True
 
 
-def test_license_check_requires_key_and_fingerprint(client):
-    res = client.post("/api/license/check", json={"license_key": "HBR-2026-ABCD-EFGH-1234"})
+def test_license_check_requires_key_only(client):
+    # Simple-link: the fingerprint is optional now — only the key is required.
+    res = client.post("/api/license/check", json={})
     assert res.status_code == 422
     body = res.get_json()
     assert body["active"] is False
     assert body["mode"] == "denied"
+
+    # Key without fingerprint is no longer a 422 — it resolves normally
+    # (unknown key → 200 with active=False / not_found).
+    res = client.post("/api/license/check", json={"license_key": "HBR-2026-ABCD-EFGH-1234"})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["active"] is False
+    assert body["status"] == "not_found"
 
 
 def test_license_check_rejects_oversized_payload(client):

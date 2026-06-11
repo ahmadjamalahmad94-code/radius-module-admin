@@ -1109,6 +1109,110 @@
 
     <div class="cd-grid cd-grid-stack">
 
+      {# ── ربط الريدياس — الربط المبسّط: مفتاح الترخيص وحده (SIMPLE_LINK_CONTRACT §4).
+           هذا هو المكان الرسمي الذي يأخذ منه المشغّل مفتاح الربط — كان «السر»
+           سابقًا يظهر فقط في بوابة العميل، وهذا ما أربك التشغيل. ── #}
+      <div>
+        <div class="cd-section-title">
+          <i class="fa-solid fa-link" aria-hidden="true"></i>
+          ربط الريدياس — مفتاح واحد يكفي
+        </div>
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          الصق هذا المفتاح في ريدياس العميل (حقل واحد) — يوثّق الجسر، يجلب حدود الاشتراك،
+          يربط صفحته، ويرفع النسخ الاحتياطية. بدون سر إضافي ولا كود تفعيل.
+        </p>
+
+        {% if current_license %}
+          <div class="cd-cred-box">
+            <span class="cd-cred-label">مفتاح الترخيص</span>
+            {% if is_super_admin %}
+              <span class="cd-cred-val mono ltr" id="cd-license-key-val" style="filter:blur(4px);user-select:none">{{ current_license.license_key }}</span>
+              <button type="button" class="cd-cred-copy" onclick="cdRevealKey()" title="إظهار / إخفاء" aria-label="إظهار أو إخفاء مفتاح الترخيص">
+                <i class="fa-solid fa-eye" aria-hidden="true" id="cd-license-key-eye"></i>
+              </button>
+              <button type="button" class="cd-cred-copy" onclick="cdCopy('{{ current_license.license_key }}')" title="{{ _('نسخ') }}" aria-label="نسخ مفتاح الترخيص">
+                <i class="fa-solid fa-copy" aria-hidden="true"></i>
+              </button>
+            {% else %}
+              <span class="cd-cred-val mono ltr">{{ masked_license_key }}</span>
+            {% endif %}
+          </div>
+
+          {% if is_super_admin %}
+            <form id="cd-regen-key-form" method="post"
+                  action="{{ url_for('admin.regenerate_license_key', customer_id=customer.id) }}"
+                  style="display:none">{{ csrf_input() }}</form>
+            <button type="button"
+                    data-confirm-form="cd-regen-key-form"
+                    data-confirm-title="إعادة توليد مفتاح الترخيص"
+                    data-confirm-msg="سيتوقّف المفتاح الحالي فورًا وستحتاج للصق المفتاح الجديد في ريدياس العميل. هل أنت متأكد؟"
+                    data-confirm-ok="إعادة التوليد"
+                    data-confirm-variant="danger"
+                    style="height:34px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4);margin-top:var(--cc-sp-4)">
+              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> إعادة توليد المفتاح
+            </button>
+          {% endif %}
+
+          {# الأجهزة المرصودة — آخر فحص لكل بصمة (البصمة اختيارية في الوضع المبسّط) #}
+          <div class="cd-section-title" style="margin-block-start:var(--cc-sp-8);font-size:var(--cc-fs-body)">
+            <i class="fa-solid fa-server" aria-hidden="true"></i>
+            الأجهزة المرصودة
+          </div>
+          {% if observed_devices %}
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:var(--cc-fs-small)">
+                <thead>
+                  <tr style="color:var(--cc-text-mute);text-align:right">
+                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">البصمة</th>
+                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">المضيف</th>
+                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">IP</th>
+                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">آخر فحص</th>
+                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">النتيجة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for d in observed_devices %}
+                  <tr style="border-top:1px solid var(--cc-border)">
+                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ d.fingerprint }}">{{ d.fingerprint[:18] }}{% if d.fingerprint|length > 18 %}…{% endif %}</td>
+                    <td style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.hostname }}</td>
+                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.ip_address }}</td>
+                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.checked_at.strftime('%Y-%m-%d %H:%M') if d.checked_at else '—' }}</td>
+                    <td style="padding:var(--cc-sp-3) var(--cc-sp-4)">
+                      {% if d.result == 'active' %}<span style="color:#15803d;font-weight:700">نشط</span>
+                      {% elif d.result == 'grace' %}<span style="color:#b45309;font-weight:700">سماح</span>
+                      {% else %}<span style="color:#b91c1c;font-weight:700">{{ d.result }}</span>{% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p style="font-size:var(--cc-fs-small);color:var(--cc-text-mute);margin:0">
+              لم يتواصل أي ريدياس بهذا المفتاح بعد — يظهر الجهاز هنا مع أول فحص.
+            </p>
+          {% endif %}
+
+          {% if is_super_admin %}
+          <script>
+          function cdRevealKey() {
+            var el = document.getElementById('cd-license-key-val');
+            var eye = document.getElementById('cd-license-key-eye');
+            if (!el) return;
+            var hidden = el.style.filter !== 'none';
+            el.style.filter = hidden ? 'none' : 'blur(4px)';
+            el.style.userSelect = hidden ? 'text' : 'none';
+            if (eye) eye.className = hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+          }
+          </script>
+          {% endif %}
+        {% else %}
+          <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);padding:var(--cc-sp-5) 0">
+            لا يوجد ترخيص لهذا العميل بعد — أنشئ ترخيصًا أولًا ليظهر مفتاح الربط.
+          </p>
+        {% endif %}
+      </div>
+
       {# RADIUS Credentials #}
       <div>
         <div class="cd-section-title">

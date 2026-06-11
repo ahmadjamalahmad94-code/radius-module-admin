@@ -45,14 +45,36 @@ def _backups_root() -> Path:
 
 
 def verify_instance_secret(app: Flask, license_key: str, provided_secret: str) -> bool:
-    """Validate the X-HobeRadius-Admin-Secret header.
+    """Validate the backup-upload credential.
 
-    Accepts EITHER the per-license integration secret OR the root
-    LICENSE_CHECK_HMAC_SECRET — mirroring how verify_license_signature()
-    accepts both, so the backup upload works regardless of which secret the
-    operator configured as HOBERADIUS_ADMIN_SHARED_SECRET on the instance.
+    Simple-link (docs/SIMPLE_LINK_CONTRACT.md §4): the LICENSE KEY itself is
+    the credential — the instance may send it as the secret, or send no
+    separate secret at all (the body ``license_key`` is the bearer; the
+    license is resolved right after this check and a bogus key 404s).
+
+    Legacy clients keep working: the per-license integration secret and the
+    root LICENSE_CHECK_HMAC_SECRET are still accepted.
     """
     provided = str(provided_secret or "").strip()
+    key_norm = str(license_key or "").strip().upper()
+
+    # ── Bearer path: the license key IS the secret ────────────────────────
+    try:
+        from ..license_signing import bearer_auth_enabled
+        bearer_on = bearer_auth_enabled(app)
+    except Exception:  # noqa: BLE001 - defensive: fall back to legacy-only
+        bearer_on = False
+    if bearer_on and key_norm:
+        if provided and hmac.compare_digest(provided.upper(), key_norm):
+            return True
+        if not provided:
+            # No separate secret sent — the body license_key is the bearer
+            # credential. record_backup_upload resolves it immediately after
+            # and 404s unknown keys, so acceptance here never stores data
+            # for a non-existent license.
+            return True
+
+    # ── Legacy path: derived integration secret or root secret ───────────
     candidates = [
         license_integration_secret(app, license_key),
         str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "").strip(),
@@ -64,7 +86,7 @@ def verify_instance_secret(app: Flask, license_key: str, provided_secret: str) -
     # Consistency with the other integration endpoints: if the panel allows
     # unsigned license checks (lenient / non-production posture), accept the
     # upload the same way contract/identity sync are accepted. In production
-    # (signature required), only the shared-secret header above is honoured.
+    # (signature required), only the credentials above are honoured.
     required = bool(app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED"))
     allow_unsigned = bool(app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED"))
     if not required and allow_unsigned:
