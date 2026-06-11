@@ -31,8 +31,12 @@ def test_deployment_env_keeps_required_production_safety_flags():
     assert "LICENSE_PANEL_ENV=production" in env
     assert "SESSION_COOKIE_SECURE=1" in env
     assert "TRUST_PROXY_HEADERS=1" in env
-    assert "LICENSE_CHECK_ALLOW_UNSIGNED=0" in env
-    assert "LICENSE_CHECK_SIGNATURE_REQUIRED=1" in env
+    # Legacy LICENSE_CHECK_ALLOW_UNSIGNED / SIGNATURE_REQUIRED knobs retired
+    # with the bearer-only link contract — they must NOT reappear in the
+    # template (silent re-introduction would be a regression).
+    assert "LICENSE_CHECK_ALLOW_UNSIGNED" not in env
+    assert "LICENSE_CHECK_SIGNATURE_REQUIRED" not in env
+    assert "LICENSE_CHECK_HMAC_SECRET" not in env
     assert "replace-with-" in env
     assert "admin12345" not in env
 

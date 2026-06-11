@@ -66,16 +66,12 @@ def create_app(config_object=None, **overrides) -> Flask:
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
     from .public.routes import bp as public_bp
-    # Bridge-token bidirectional sync — one canonical store per license,
-    # rotatable from either side, reflected through the existing bridge:
-    #   GET/POST /admin/customers/<id>/bridge-token[/rotate]
-    #   POST    /api/integration/hoberadius/bridge-token/report
-    # Importing the service module registers the BridgeTokenState ORM
-    # on db.metadata so db.create_all() builds the bridge_token_states
-    # table on a fresh DB.
-    from .services import bridge_token_sync as _bridge_token_sync  # noqa: F401
-    from .admin.bridge_token_routes import bp as admin_bridge_token_bp
-    from .api.bridge_token_routes import bp as api_bridge_token_bp
+    # NOTE — the rotatable «bridge token» surface was retired together with
+    # the legacy linking-auth removal (the only way to authenticate the bridge
+    # is now the license-key bearer; nothing to rotate, nothing to sync). The
+    # blueprints + the ``BridgeTokenState`` model are gone. The
+    # ``bridge_token_states`` table on older DBs is left alone — it carries
+    # no auth meaning anymore.
     # CHR Fleet (Phase 3): registry/onboarding/provider APIs + admin UI.
     # Importing the modules also pulls in their ORM models so the fleet tables
     # land in db.metadata for db.create_all(). The P3-gate integrator wires all
@@ -118,8 +114,7 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(admin_bridge_token_bp)
-    app.register_blueprint(api_bridge_token_bp)
+    # bridge-token blueprints retired with the linking-auth cleanup.
     app.register_blueprint(admin_vault_bp)
     app.register_blueprint(admin_chr_bp)
     app.register_blueprint(admin_landing_bp)
@@ -313,13 +308,10 @@ def _validate_production_config(app: Flask) -> None:
         raise RuntimeError("Production/bootstrap deployment requires RATE_LIMITS_ENABLED=1.")
     if production_mode and not app.config.get("SESSION_COOKIE_SECURE", False):
         raise RuntimeError("Production requires SESSION_COOKIE_SECURE=1.")
-    if app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED", False):
-        raise RuntimeError("Production/bootstrap deployment requires LICENSE_CHECK_ALLOW_UNSIGNED=0.")
-    if not app.config.get("LICENSE_CHECK_SIGNATURE_REQUIRED", False):
-        raise RuntimeError("Production/bootstrap deployment requires LICENSE_CHECK_SIGNATURE_REQUIRED=1.")
-    hmac_secret = str(app.config.get("LICENSE_CHECK_HMAC_SECRET") or "")
-    if len(hmac_secret) < 32 or hmac_secret.startswith("replace-with-"):
-        raise RuntimeError("Production/bootstrap deployment requires a strong LICENSE_CHECK_HMAC_SECRET.")
+    # Legacy strict-signature gates removed alongside the bearer-only
+    # link contract (docs/SIMPLE_LINK_CONTRACT.md). Production now only
+    # requires DATABASE_URL + RATE_LIMITS_ENABLED + SESSION_COOKIE_SECURE,
+    # all checked above.
 
 
 def _is_bootstrap_mode(app: Flask) -> bool:
@@ -753,15 +745,9 @@ def ensure_schema_compatibility(app: Flask) -> None:
         except Exception:
             db.session.rollback()
 
-    # Instance Activation Tokens — single-use Admin Bridge bootstrap tokens.
-    # The table itself is created fresh by db.create_all() on new DBs.
-    # On live DBs the table may pre-exist; guard to heal any additive columns.
-    if "instance_activation_tokens" in tables:
-        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
-        _add_columns_if_missing("instance_activation_tokens", {
-            "used_fingerprint": "VARCHAR(255) NOT NULL DEFAULT ''",
-            "used_at": datetime_type,
-        })
+    # ``instance_activation_tokens`` table was retired with the activation-code
+    # mechanism (legacy linking auth). The table is left alone on older DBs;
+    # the panel never reads/writes it. No model, no heal.
 
 
 def _add_columns_if_missing(table_name: str, columns: dict[str, str]) -> None:

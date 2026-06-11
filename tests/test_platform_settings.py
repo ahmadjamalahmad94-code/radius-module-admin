@@ -137,14 +137,14 @@ def test_secret_stored_as_ciphertext(app):
 def test_secret_snapshot_never_returns_plaintext(app):
     from app.services import platform_settings as ps
     plain = "another-secret-1234567890ABCDEF"
-    ps.set_value("LICENSE_CHECK_HMAC_SECRET", plain)
+    ps.set_value("RADIUS_PROXY_SHARED_SECRET", plain)
     db.session.commit()
     snap = ps.snapshot()
     # Find the SettingView for the HMAC secret across all groups
     found = None
     for views in snap.values():
         for v in views:
-            if v.key == "LICENSE_CHECK_HMAC_SECRET":
+            if v.key == "RADIUS_PROXY_SHARED_SECRET":
                 found = v
     assert found is not None
     assert found.value == ""           # never echo the plaintext
@@ -196,14 +196,14 @@ def test_save_form_keeps_existing_secret_when_blank(app):
 
 def test_save_form_replaces_secret_when_supplied(app):
     from app.services import platform_settings as ps
-    ps.save_form({"LICENSE_CHECK_HMAC_SECRET": "first-1234567890abcdefghij"})
+    ps.save_form({"RADIUS_PROXY_SHARED_SECRET": "first-1234567890abcdefghij"})
     db.session.commit()
-    assert ps.get_secret("LICENSE_CHECK_HMAC_SECRET") == "first-1234567890abcdefghij"
+    assert ps.get_secret("RADIUS_PROXY_SHARED_SECRET") == "first-1234567890abcdefghij"
 
-    result = ps.save_form({"LICENSE_CHECK_HMAC_SECRET": "second-abcdefghij1234567890"})
+    result = ps.save_form({"RADIUS_PROXY_SHARED_SECRET": "second-abcdefghij1234567890"})
     db.session.commit()
-    assert ps.get_secret("LICENSE_CHECK_HMAC_SECRET") == "second-abcdefghij1234567890"
-    assert "LICENSE_CHECK_HMAC_SECRET" in result["secrets_rotated"]
+    assert ps.get_secret("RADIUS_PROXY_SHARED_SECRET") == "second-abcdefghij1234567890"
+    assert "RADIUS_PROXY_SHARED_SECRET" in result["secrets_rotated"]
 
 
 def test_save_form_checkbox_semantics_for_booleans(app):
@@ -229,12 +229,12 @@ def test_save_form_audit_metadata_never_contains_plaintext(app):
 
     plain = "secret-never-in-audit-XYZ1234567890"
     ps.save_form(
-        {"LICENSE_CHECK_HMAC_SECRET": plain, "LOGIN_RATE_LIMIT_MAX": "11"},
+        {"RADIUS_PROXY_SHARED_SECRET": plain, "LOGIN_RATE_LIMIT_MAX": "11"},
         actor_audit=fake_audit,
     )
     assert captured
     md = captured[0]["metadata"]
-    assert md["secrets_rotated"] == ["LICENSE_CHECK_HMAC_SECRET"]
+    assert md["secrets_rotated"] == ["RADIUS_PROXY_SHARED_SECRET"]
     # Nothing in metadata should equal the plaintext or contain it.
     import json
     assert plain not in json.dumps(md, ensure_ascii=False)

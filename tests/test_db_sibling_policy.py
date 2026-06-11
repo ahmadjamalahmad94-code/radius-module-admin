@@ -182,9 +182,6 @@ def test_explicit_env_url_equal_to_default_is_accepted(monkeypatch):
             "SQLALCHEMY_DATABASE_URI": Config.DEFAULT_DATABASE_URI,
             "RATE_LIMITS_ENABLED": True,
             "SESSION_COOKIE_SECURE": True,
-            "LICENSE_CHECK_ALLOW_UNSIGNED": False,
-            "LICENSE_CHECK_SIGNATURE_REQUIRED": True,
-            "LICENSE_CHECK_HMAC_SECRET": "x" * 48,
         }
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     # Must NOT raise — the env var exists, so the URL is explicit.
@@ -209,9 +206,6 @@ def test_missing_env_url_is_rejected_in_production(monkeypatch):
             "SQLALCHEMY_DATABASE_URI": Config.DEFAULT_DATABASE_URI,
             "RATE_LIMITS_ENABLED": True,
             "SESSION_COOKIE_SECURE": True,
-            "LICENSE_CHECK_ALLOW_UNSIGNED": False,
-            "LICENSE_CHECK_SIGNATURE_REQUIRED": True,
-            "LICENSE_CHECK_HMAC_SECRET": "x" * 48,
         }
     with pytest.raises(RuntimeError) as exc:
         _validate_production_config(_FakeApp())

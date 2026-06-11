@@ -8,7 +8,7 @@ from sqlalchemy import inspect, text
 from app import create_app, init_database, seed_defaults
 from app.config import TestingConfig
 from app.extensions import db
-from app.license_signing import license_integration_secret, sign_license_payload
+from app.license_signing import sign_license_payload  # kept as test util only
 from app.models import (
     AuditLog,
     Customer,
@@ -76,12 +76,9 @@ def _signed_payload_with(license_key: str, *, nonce: str, extra: dict, secret: s
 
 
 def _strict_app():
-    return create_app(
-        TestingConfig,
-        LICENSE_CHECK_HMAC_SECRET=SIGNING_SECRET,
-        LICENSE_CHECK_SIGNATURE_REQUIRED=True,
-        LICENSE_CHECK_ALLOW_UNSIGNED=False,
-    )
+    # Legacy strict-signature flags retired with bearer-only link contract.
+    # Name kept so call sites compile; produces a normal TestingConfig app.
+    return create_app(TestingConfig)
 
 
 def test_init_database_upgrades_old_license_payment_request_schema(tmp_path):
@@ -339,7 +336,6 @@ def test_license_new_page_renders(client):
 
 
 def test_customer_portal_shows_radius_runtime_license_setup(client):
-    client.application.config["LICENSE_CHECK_HMAC_SECRET"] = SIGNING_SECRET
     _login(client)
     customer, lic = _customer_with_license()
     user = CustomerUser(customer_id=customer.id, username="portal-owner", email="portal@example.com", full_name="Owner", role_key="owner", active=True)
@@ -355,7 +351,10 @@ def test_customer_portal_shows_radius_runtime_license_setup(client):
     assert "قيم الربط الجاهزة للنسخ" not in body
     assert "HOBERADIUS_ADMIN_BASE_URL" not in body
     assert lic.license_key in body
-    assert license_integration_secret(client.application, lic.license_key) in body
+    # Legacy «سر التوقيع» / HOBERADIUS_ADMIN_SHARED_SECRET retired with the
+    # bearer-only link contract — the panel must NOT echo any derived secret.
+    assert "HOBERADIUS_ADMIN_SHARED_SECRET" not in body
+    assert "سر التوقيع" not in body
 
 
 def test_customer_portal_password_change_increments_version(client):
@@ -682,23 +681,9 @@ def test_runtime_contract_includes_services_limits_and_user_version():
         assert body["customer_users_version"] == 2
 
 
-def test_runtime_contract_accepts_per_license_portal_secret():
-    app = _strict_app()
-    with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        _customer, lic = _customer_with_license()
-        client = app.test_client()
-        secret = license_integration_secret(app, lic.license_key)
-
-        res = client.post(
-            "/api/integration/hoberadius/runtime-contract",
-            json=_signed_payload(lic.license_key, nonce="portal-secret", secret=secret),
-            base_url="https://license-panel.test",
-        )
-
-        assert res.status_code == 200
-        assert res.get_json()["license"]["active"] is True
+# test_runtime_contract_accepts_per_license_portal_secret — retired with the
+# derived per-license bind secret (legacy linking auth). Bearer is the only
+# credential now and is covered exhaustively in tests/test_simple_link_bearer.py.
 
 
 def test_runtime_password_change_requires_https_and_updates_version():
@@ -799,7 +784,6 @@ def test_customer_service_request_opens_ticket_and_admin_pages_render(client):
 
 
 def test_admin_service_request_payment_confirm_and_approve_updates_contract(client):
-    client.application.config["LICENSE_CHECK_HMAC_SECRET"] = SIGNING_SECRET
     _login(client)
     customer, lic = _customer_with_license()
     db.session.add(PlatformPaymentSettings(
