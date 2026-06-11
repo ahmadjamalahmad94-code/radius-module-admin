@@ -372,9 +372,13 @@ def _render(api_user: str, api_password: str, api_port: int = 8443) -> str:
     cfg = RouterosTemplateConfig(
         api_user=api_user, api_password=api_password, api_port=api_port,
     )
+    # /24 — the live-metrics wire fix (fix/fleet-metrics-wire-bugs). With
+    # /32 the CHR had no connected route back to the panel at 10.99.0.1,
+    # so the SYN-ACK from a panel REST call fell to the WAN default route
+    # and never returned over wg-mgmt → connect_failed.
     keys = ChrKeyMaterial(
-        mgmt_privkey="MGMT==", mgmt_addr="10.99.0.11/32",
-        data_privkey="DATA==", data_addr="10.98.0.11/32",
+        mgmt_privkey="MGMT==", mgmt_addr="10.99.0.11/24",
+        data_privkey="DATA==", data_addr="10.98.0.11/24",
     )
 
     class _N:
@@ -384,23 +388,59 @@ def _render(api_user: str, api_password: str, api_port: int = 8443) -> str:
 
 
 def test_script_provisions_api_user_when_bindings_present():
+    """§11 enables www-ssl (REST over HTTPS) — NOT api-ssl (binary).
+
+    Three live-incident assertions baked in (fix/fleet-metrics-wire-bugs):
+    1. www-ssl is the enabled service (matches the REST collector at
+       app/services/routeros_client.py).
+    2. A self-signed cert is created + assigned (RouterOS will not bind
+       www-ssl without one).
+    3. The source-IP ACL on the service equals the PANEL's wg-mgmt IP
+       (10.99.0.1/32), NOT the CHR's own IP.
+    """
     script = _render("hobe-panel", "TopSecretP@ss", 8443)
     assert '/user' in script
     assert 'name="hobe-panel"' in script
     assert 'group=read' in script
     assert 'password="TopSecretP@ss"' in script
     assert 'hobe-fleet-api-readonly' in script
-    # api-ssl bound to the wg-mgmt address; binary api disabled.
-    assert 'set api-ssl disabled=no port=8443 address=10.99.0.11/32' in script
-    assert 'set api        disabled=yes' in script
-    # Firewall rule scoped to wg-mgmt interface only.
+    # Inspect actual CONFIG lines (substrings appear in the §11
+    # explanatory comment that documents the previous bug shapes).
+    config_lines = [
+        l for l in script.splitlines()
+        if l.strip().startswith("set ") and not l.lstrip().startswith("#")
+    ]
+    # (1) www-ssl is the listening service.
+    assert any('set www-ssl disabled=no' in l for l in config_lines)
+    assert 'port=8443' in script
+    assert 'certificate=hobe-fleet-api-cert' in script
+    # (2) Cert provisioning + signing
+    assert 'add name=hobe-fleet-api-cert' in script
+    assert 'sign hobe-fleet-api-cert' in script
+    # (3) ACL points at the PANEL's wg-mgmt IP (10.99.0.1/32 default).
+    assert 'address=10.99.0.1/32' in script
+    # Every other service flavour is OFF — narrow the surface explicitly.
+    assert any('set api ' in l and 'disabled=yes' in l for l in config_lines)
+    assert any('set api-ssl ' in l and 'disabled=yes' in l for l in config_lines)
+    assert any('set www ' in l and 'disabled=yes' in l for l in config_lines)
+    # No active enable on api or api-ssl in the config lines.
+    assert not any(
+        'set api-ssl' in l and 'disabled=no' in l for l in config_lines
+    )
+    # Firewall rule still scoped to wg-mgmt interface only.
     assert 'in-interface=wg-mgmt protocol=tcp dst-port=8443' in script
 
 
 def test_script_skips_api_block_when_creds_blank():
     script = _render("", "", 8443)
     assert 'hobe-fleet-api-readonly' not in script
-    assert 'set api-ssl disabled=no' not in script
+    # No live ACTIVE www-ssl enable when the block is skipped. We match
+    # the actual config line shape (`set www-ssl disabled=no port=...`),
+    # not the substring `disabled=no` which appears in unrelated comment
+    # examples of the §11 header.
+    assert 'set www-ssl disabled=no port=' not in script
+    # Cert provisioning is also skipped.
+    assert 'add name=hobe-fleet-api-cert' not in script
     # The "skipped" comment is present so an operator inspecting the
     # script knows why and where to set the missing values.
     assert 'Live-metrics API user skipped' in script

@@ -664,9 +664,19 @@ class OnboardingService:
             "ROUTER_IDENTITY": node.name,
             "CHR_PUBLIC_IP": node.public_ip,
             "WG_MGMT_PRIVKEY": mgmt_priv,
-            "WG_MGMT_ADDR": f"{node.wg_mgmt_ip}/32",
+            # /24 — wg-mgmt is the shared 10.99.0.0/24 control net; /32
+            # left the CHR with no connected route back to the panel at
+            # 10.99.0.1 (SYN-ACK fell to the default route on WAN and
+            # never made it back over wg-mgmt → connect_failed on the
+            # live-metrics poller). /24 gives RouterOS the connected
+            # subnet route it needs. Mirrors PANEL_WG_ADDR's /24 cohort.
+            "WG_MGMT_ADDR": f"{node.wg_mgmt_ip}/24",
             "WG_DATA_PRIVKEY": data_priv,
-            "WG_DATA_ADDR": f"{data_ip}/32",
+            # /24 — same reasoning on the data plane. The CHR's wg-data
+            # addr (10.98.0.X) is the RADIUS src-address back to the
+            # proxy at 10.98.0.1; without the connected /24 the RADIUS
+            # reply path mirrored the broken wg-mgmt return path.
+            "WG_DATA_ADDR": f"{data_ip}/24",
             "WG_DATA_ADDR_IP": data_ip,
         }
         # fleet-constant

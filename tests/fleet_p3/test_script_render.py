@@ -66,9 +66,9 @@ def fleet_cfg() -> RouterosTemplateConfig:
 def chr_a() -> tuple[SimpleNamespace, ChrKeyMaterial]:
     return _fake_node("contabo-de-01", "203.0.113.11"), ChrKeyMaterial(
         mgmt_privkey="CHR_A_MGMT_PRIV_xxxxxxxxxxxxxxxxxxxxxxxxx",
-        mgmt_addr="10.99.0.11/32",
+        mgmt_addr="10.99.0.11/24",
         data_privkey="CHR_A_DATA_PRIV_yyyyyyyyyyyyyyyyyyyyyyyyy",
-        data_addr="10.98.0.11/32",
+        data_addr="10.98.0.11/24",
         wan_iface="ether1",
     )
 
@@ -77,9 +77,9 @@ def chr_a() -> tuple[SimpleNamespace, ChrKeyMaterial]:
 def chr_b() -> tuple[SimpleNamespace, ChrKeyMaterial]:
     return _fake_node("hetzner-fi-02", "198.51.100.22"), ChrKeyMaterial(
         mgmt_privkey="CHR_B_MGMT_PRIV_zzzzzzzzzzzzzzzzzzzzzzzzz",
-        mgmt_addr="10.99.0.22/32",
+        mgmt_addr="10.99.0.22/24",
         data_privkey="CHR_B_DATA_PRIV_wwwwwwwwwwwwwwwwwwwwwwwww",
-        data_addr="10.98.0.22/32",
+        data_addr="10.98.0.22/24",
         wan_iface="vlan-wan",
     )
 
@@ -348,7 +348,7 @@ class TestBindingBoundaries:
         node, keys = chr_a
         bindings = build_bindings(node, keys, fleet_cfg)
         assert bindings["WG_DATA_ADDR"] == keys.data_addr
-        # ip part of "10.98.0.11/32" must equal "10.98.0.11"
+        # ip part of "10.98.0.11/24" must equal "10.98.0.11"
         assert bindings["WG_DATA_ADDR_IP"] == keys.data_addr.split("/", 1)[0]
 
     def test_changing_only_fleet_constant_changes_both_renders_identically(
