@@ -452,6 +452,28 @@ Implemented in `app/api/proxy_api.py`.
 > pool gets `wg_data_ip: ""` and the proxy falls back to the legacy
 > public-IP allowlist for that node.
 
+> **`routes[].allowed_chr_ips` (live-deploy hotfix `fix/routing-table-wg-data-ip-publish`):**
+> Per-realm CHR allowlist. As of this hotfix the panel publishes BOTH
+> the public IP AND the derived wg-data IP for every node referenced in
+> `r.allowed_fleet_chr_node_ids` / `r.allowed_chr_node_ids`. Order is
+> stable: public first, wg-data second, no duplicates.
+>
+> **Proxy obligation:** when a RADIUS packet arrives, treat the source
+> address as authorised for the realm if it appears in EITHER the
+> per-realm `allowed_chr_ips` OR the global `chr_nodes[]` set
+> (matching ON `public_ip` OR `wg_data_ip`). Pre-hotfix proxies that
+> only check `public_ip` will drop RADIUS that arrived over the
+> wg-data tunnel — the live 2026-06 `unknown CHR IP 10.98.0.11`
+> incident.
+>
+> **Allowlist build rule (proxy side):**
+> ```
+> allowed_sources(node) = { node.public_ip } ∪ { node.wg_data_ip if non-empty }
+> ```
+> A node outside the canonical 10.99/16 pool publishes `wg_data_ip=""`;
+> the proxy falls back to the public IP alone for it (no fabricated
+> 10.98 address).
+
 > **`chr_nodes[].source` (live-deploy hotfix):** The panel publishes nodes
 > from BOTH the new fleet registry (`fleet_chr_nodes`, populated by the
 > onboarding wizard) AND the legacy CHR-console table (`chr_nodes`,
@@ -596,3 +618,15 @@ to show which is live.
   thin shell over `fleet.brain.brain_adapter` which delegates to the real brain
   when available and falls back to a score-column stub otherwise; the wire
   shape is identical either way.
+- **2026-06 hotfix** (`fix/routing-table-wg-data-ip-publish`) — `routes[].allowed_chr_ips`
+  is now the UNION of `node.public_ip` and `node.wg_data_ip` for every node
+  referenced by a realm. Pre-fix it carried `public_ip` only, so a proxy
+  enforcing the per-realm allowlist before the global `chr_nodes[]` map
+  dropped legitimate RADIUS arriving over the wg-data tunnel
+  (`unknown CHR IP 10.98.0.11 — dropped`). The fix is additive — old
+  proxies that read `public_ip` only continue to work; new proxies SHOULD
+  treat the allowlist as the full set of legal sources for the realm.
+  Companion panel-side guards (in `app/services/reserved_subnets.py`) keep
+  PPP/SSTP/L2TP pools out of the wg-mgmt (10.99/24) and wg-data (10.98/24)
+  reserved subnets, so the collision that triggered the live failure is
+  now structurally impossible from the UI.

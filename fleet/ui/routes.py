@@ -345,6 +345,42 @@ def _node_view_to_payload(view) -> dict:
     }
 
 
+@bp.get("/troubleshoot")
+@login_required
+def fleet_troubleshoot_index():
+    """Per-CHR troubleshooter — every node side-by-side.
+
+    Answers the four end-to-end checks the operator needs after adding a
+    CHR from the wizard:
+
+      * wg-mgmt IP / derived wg-data IP
+      * Proxy recognition (chr_nodes[].wg_data_ip published?)
+      * PPP pool not colliding with the reserved /24s
+      * RADIUS reachability hint (Reject vs timeout)
+
+    The page is read-only (no actions); each row links to the node-detail
+    page for fixes.
+    """
+    from fleet.ui.troubleshoot_view import build_all_views
+    views = build_all_views()
+    return render_template(
+        "admin/fleet/troubleshoot.html",
+        views=views,
+        any_blockers=any(not v.all_green for v in views),
+    )
+
+
+@bp.get("/troubleshoot/<int:node_id>.json")
+@login_required
+def fleet_troubleshoot_node_json(node_id: int):
+    """JSON view for the dashboard JS auto-refresh."""
+    from fleet.ui.troubleshoot_view import build_view
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({"ok": True, "view": build_view(node).to_dict()})
+
+
 @bp.get("/onboarding/new")
 @login_required
 def onboarding_wizard():

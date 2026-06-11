@@ -151,11 +151,24 @@ def ensure_on_chr(profile: ChrSpeedProfile):
     بالـrate-limit. بدون local/remote-address لا يأخذ العميل IPv4."""
     from flask import current_app
     from . import chr_settings
+    from .reserved_subnets import (
+        ReservedSubnetError,
+        assert_address_not_reserved,
+        assert_pool_range_not_reserved,
+    )
     cfg = current_app.config
     pool_name = (cfg.get("CHR_PPP_ADDRESS_POOL") or "ppp-vpn-pool").strip() or "ppp-vpn-pool"
-    local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.98.0.1").strip() or "10.98.0.1"
-    pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.98.0.10-10.98.0.250").strip()
+    local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.10.0.1").strip() or "10.10.0.1"
+    pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.10.0.10-10.10.0.250").strip()
     use_enc = bool(cfg.get("CHR_PPP_USE_ENCRYPTION", True))
+    # The PPP gateway address + the client pool MUST NOT overlap the wg-mgmt
+    # / wg-data /24s. Otherwise the CHR routes RADIUS toward a PPP client
+    # instead of the wg-data peer (the chr-vpn-1 collision of 2026-06).
+    try:
+        assert_address_not_reserved(local_addr, field_label="CHR_PPP_LOCAL_ADDRESS")
+        assert_pool_range_not_reserved(pool_ranges, field_label="CHR_PPP_POOL_RANGES")
+    except ReservedSubnetError as exc:
+        raise SpeedProfileError(str(exc)) from exc
     client = chr_settings.build_client()
     client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
     client.ensure_ppp_profile(
