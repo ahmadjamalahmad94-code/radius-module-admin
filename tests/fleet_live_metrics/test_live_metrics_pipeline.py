@@ -414,9 +414,14 @@ def test_script_provisions_api_user_when_bindings_present():
     assert any('set www-ssl disabled=no' in l for l in config_lines)
     assert 'port=8443' in script
     assert 'certificate=hobe-fleet-api-cert' in script
-    # (2) Cert provisioning + signing
+    # (2) Cert provisioning + signing — CA-then-leaf (fix/fleet-cert-self-sign).
+    # Live bug on chr-vpn-2: `sign <leaf>` without ca= fails «CA not found»
+    # on some v7 builds → www-ssl never bound. The leaf MUST be signed by
+    # the local CA explicitly.
+    assert 'add name=hobe-fleet-ca' in script
+    assert 'sign hobe-fleet-ca' in script
     assert 'add name=hobe-fleet-api-cert' in script
-    assert 'sign hobe-fleet-api-cert' in script
+    assert 'sign hobe-fleet-api-cert ca=hobe-fleet-ca' in script
     # (3) ACL points at the PANEL's wg-mgmt IP (10.99.0.1/32 default).
     assert 'address=10.99.0.1/32' in script
     # Every other service flavour is OFF — narrow the surface explicitly.
@@ -439,8 +444,9 @@ def test_script_skips_api_block_when_creds_blank():
     # not the substring `disabled=no` which appears in unrelated comment
     # examples of the §11 header.
     assert 'set www-ssl disabled=no port=' not in script
-    # Cert provisioning is also skipped.
+    # Cert provisioning (CA + leaf) is also skipped.
     assert 'add name=hobe-fleet-api-cert' not in script
+    assert 'add name=hobe-fleet-ca' not in script
     # The "skipped" comment is present so an operator inspecting the
     # script knows why and where to set the missing values.
     assert 'Live-metrics API user skipped' in script
@@ -461,6 +467,56 @@ def test_script_api_user_block_is_idempotent():
     add_idx = user_section.find('add name="hobe-panel"')
     assert remove_idx >= 0 and add_idx >= 0
     assert remove_idx < add_idx
+
+
+def test_cert_block_is_ca_then_leaf_in_order(app):
+    """fix/fleet-cert-self-sign — the exact §11 PKI sequence, in order:
+
+      remove leaf → remove CA → add CA → sign CA → (delay) →
+      add leaf → sign leaf ca=CA → (delay) → set www-ssl certificate=leaf
+
+    Live failure on chr-vpn-2 (RouterOS v7): `sign <leaf>` without `ca=`
+    errored «CA not found», leaving www-ssl pointed at an unsigned cert
+    so the listener never bound. Order matters: the CA must be signed
+    BEFORE the leaf references it, and www-ssl must be configured AFTER
+    the leaf exists + is signed (the :delay guards async-ish sign builds).
+    """
+    script = _render("hobe-panel", "x", 8443)
+
+    pos = {
+        "rm_leaf": script.index('remove [find name="hobe-fleet-api-cert"]'),
+        "rm_ca": script.index('remove [find name="hobe-fleet-ca"]'),
+        "add_ca": script.index('add name=hobe-fleet-ca'),
+        "sign_ca": script.index('sign hobe-fleet-ca'),
+        "add_leaf": script.index('add name=hobe-fleet-api-cert'),
+        "sign_leaf": script.index('sign hobe-fleet-api-cert ca=hobe-fleet-ca'),
+        "set_wss": script.index('set www-ssl disabled=no'),
+    }
+    assert pos["rm_leaf"] < pos["rm_ca"] < pos["add_ca"] < pos["sign_ca"] \
+        < pos["add_leaf"] < pos["sign_leaf"] < pos["set_wss"]
+
+    # CA template carries CA key-usage; leaf carries a TLS-server profile.
+    assert 'key-usage=key-cert-sign,crl-sign' in script
+    assert 'key-usage=digital-signature,key-encipherment,tls-server' in script
+
+    # A :delay follows EACH sign before the cert is consumed (async-sign
+    # builds) — one between sign-CA and add-leaf, one between sign-leaf
+    # and the www-ssl set.
+    assert ':delay' in script[pos["sign_ca"]:pos["add_leaf"]]
+    assert ':delay' in script[pos["sign_leaf"]:pos["set_wss"]]
+
+    # www-ssl consumes the LEAF (never the CA).
+    assert 'certificate=hobe-fleet-api-cert' in script
+    assert 'certificate=hobe-fleet-ca' not in script
+
+
+def test_firewall_hoists_tolerate_rule_already_at_top(app):
+    """The move-to-top hoists are wrapped in :do/on-error so a rule that
+    is already at index 0 («can not move rule before itself» on some v7
+    builds) doesn't spray errors during re-import."""
+    script = _render("hobe-panel", "x", 8443)
+    for c in ("hobe-fleet-fw-mgmt", "hobe-fleet-fw-coa", "hobe-fleet-fw-radius"):
+        assert f':do {{ /ip firewall filter move [find comment="{c}"] destination=0 }} on-error={{}}' in script
 
 
 # ════════════════════════════════════════════════════════════════════════
