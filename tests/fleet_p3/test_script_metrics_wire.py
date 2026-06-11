@@ -137,14 +137,25 @@ def test_metrics_service_is_www_ssl_not_api_ssl():
 
 def test_self_signed_certificate_is_provisioned():
     """RouterOS refuses to bind www-ssl without ``certificate=…``. The
-    script must create + sign a self-signed cert so the listener opens."""
+    script must create + sign a working cert so the listener opens.
+
+    fix/fleet-cert-self-sign: `sign <leaf>` WITHOUT ``ca=`` fails with
+    «CA not found» on some v7 builds (live on chr-vpn-2) — the script now
+    provisions a tiny local CA and signs the leaf WITH it explicitly.
+    """
     script = _render_full()
-    # Cleanup + create + sign — idempotent re-imports replace the cert.
+    # Cleanup + create + sign — idempotent re-imports replace both certs.
     assert 'remove [find name="hobe-fleet-api-cert"]' in script
+    assert 'remove [find name="hobe-fleet-ca"]' in script
+    # CA template (CA key-usage), self-signed.
+    assert "add name=hobe-fleet-ca" in script
+    assert "key-usage=key-cert-sign,crl-sign" in script
+    assert "sign hobe-fleet-ca" in script
+    # Server leaf with a TLS-server profile, signed BY the CA (never bare).
     assert "add name=hobe-fleet-api-cert" in script
     assert "common-name=hobe-fleet-api" in script
-    assert "key-usage=tls-server" in script
-    assert "sign hobe-fleet-api-cert" in script
+    assert "key-usage=digital-signature,key-encipherment,tls-server" in script
+    assert "sign hobe-fleet-api-cert ca=hobe-fleet-ca" in script
 
 
 def test_www_ssl_service_assigns_the_cert():

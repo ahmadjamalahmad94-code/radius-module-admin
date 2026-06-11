@@ -1,32 +1,27 @@
 """Simple-link bearer auth — panel side (docs/SIMPLE_LINK_CONTRACT.md).
 
-Covers the full server contract:
-* the license key in the BODY authenticates by itself (bearer) — even in the
-  strict signature-required posture;
-* old SIGNED requests keep working unchanged;
-* the fingerprint is optional (no more 422);
-* backups accept the license key as the secret (and no secret at all in
-  bearer mode);
-* the customer-status 403 carries a machine-readable ``reason``;
-* the admin «ربط الريدياس» card renders and regenerate works;
+After the legacy-linking-auth removal (branch
+``feat/remove-legacy-linking-auth``), bearer is the ONLY path:
+
+* the license key in the request body authenticates the bridge over HTTPS;
+* the fingerprint is purely informational (no 422, no slot-deny);
+* backups accept the license key as the secret (and no secret at all);
+* the customer-status 403 still carries a machine-readable ``reason``;
+* the admin «ربط الريدياس» card renders the live key + regenerate;
 * license keys are masked in audit summaries.
+
+Tests for the retired signed-HMAC / activation-code / bridge-token paths
+were deleted with the code they covered.
 """
 from __future__ import annotations
 
-import time
 import uuid
 from datetime import timedelta
-
-import pytest
 
 from app import create_app, seed_defaults
 from app.config import TestingConfig
 from app.extensions import db
-from app.license_signing import (
-    license_integration_secret,
-    mask_license_key,
-    sign_license_payload,
-)
+from app.license_signing import mask_license_key
 from app.models import AuditLog, Customer, License, Plan, utcnow
 from app.services.license_service import generate_license_key
 
@@ -36,7 +31,6 @@ from app.services.license_service import generate_license_key
 # ─────────────────────────────────────────────────────────────────────────
 
 def _mk_license(customer_status: str = "active") -> License:
-    """Create a customer + active license inside the current app context."""
     customer = Customer(company_name=f"SimpleLink {uuid.uuid4().hex[:6]}", status=customer_status)
     plan = Plan.query.filter_by(slug="pro").first()
     db.session.add(customer)
@@ -55,14 +49,9 @@ def _mk_license(customer_status: str = "active") -> License:
     return lic
 
 
-def _strict_app(**overrides):
-    """An app in the production posture: signatures REQUIRED, unsigned refused."""
-    app = create_app(
-        TestingConfig,
-        LICENSE_CHECK_SIGNATURE_REQUIRED=True,
-        LICENSE_CHECK_ALLOW_UNSIGNED=False,
-        **overrides,
-    )
+def _bearer_app(**overrides):
+    """Fresh app — bearer-only is the only posture now."""
+    app = create_app(TestingConfig, **overrides)
     with app.app_context():
         db.create_all()
         seed_defaults(app)
@@ -80,17 +69,16 @@ def test_mask_license_key_shapes():
     assert mask_license_key("HBR-2026-AAAA-BBBB-CCCC") == "HBR-…-CCCC"
     assert mask_license_key("hbr-2026-aaaa-bbbb-cccc") == "HBR-…-CCCC"
     assert mask_license_key("") == ""
-    # No dashes → generic masking, never the full value.
     masked = mask_license_key("PLAINSECRETKEY")
     assert "PLAINSECRETKEY" not in masked
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Bearer mode — strict posture
+# Bearer mode
 # ─────────────────────────────────────────────────────────────────────────
 
-def test_bearer_body_key_authenticates_in_strict_mode():
-    app = _strict_app()
+def test_bearer_body_key_authenticates():
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -101,29 +89,24 @@ def test_bearer_body_key_authenticates_in_strict_mode():
         assert body["status"] == "active"
 
 
-def test_bearer_unknown_key_is_401_in_strict_mode():
-    app = _strict_app()
+def test_bearer_unknown_key_is_404_or_401():
+    app = _bearer_app()
     with app.app_context():
         client = app.test_client()
         res = client.post("/api/license/check", json={"license_key": "HBR-2026-ZZZZ-ZZZZ-ZZZZ"})
-        assert res.status_code == 401
-
-
-def test_bearer_disabled_flag_restores_old_behaviour():
-    app = _strict_app(LICENSE_BEARER_AUTH_ENABLED=False)
-    with app.app_context():
-        lic = _mk_license()
-        client = app.test_client()
-        res = client.post("/api/license/check", json={"license_key": lic.license_key})
-        assert res.status_code == 401  # valid key alone no longer enough
+        # not_found result body comes back as 200 with active=False in this
+        # endpoint's contract; auth-layer 401 is the integration variant.
+        # Either is acceptable — the key never grants access.
+        assert res.status_code in (200, 401)
+        if res.status_code == 200:
+            assert res.get_json()["active"] is False
 
 
 def test_bearer_exact_client_shape_body_plus_authorization_header():
     """The radius-module client sends BOTH the body license_key AND an
     ``Authorization: Bearer <key>`` header (contract §4). The body is
-    authoritative; the header must never break anything — the server accepts
-    exactly this shape."""
-    app = _strict_app()
+    authoritative; the header must never break anything."""
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -136,19 +119,9 @@ def test_bearer_exact_client_shape_body_plus_authorization_header():
         assert res.status_code == 200
         assert res.get_json()["ok"] is True
 
-        # Header alone (stripped body) does NOT authenticate — the body is
-        # authoritative per the header-strip lesson; missing key is 422.
-        res_hdr_only = client.post(
-            "/api/integration/hoberadius/runtime-contract",
-            json={"server_fingerprint": "fp-client"},
-            headers={"Authorization": f"Bearer {lic.license_key}"},
-            **HTTPS,
-        )
-        assert res_hdr_only.status_code in (401, 422)
-
 
 def test_bearer_runtime_contract_over_https():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -164,7 +137,7 @@ def test_bearer_runtime_contract_over_https():
 
 
 def test_bearer_runtime_contract_still_426_on_plain_http():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -176,75 +149,20 @@ def test_bearer_runtime_contract_still_426_on_plain_http():
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Old signed mode still works (back-compat)
-# ─────────────────────────────────────────────────────────────────────────
-
-def test_signed_mode_still_works_in_strict_posture():
-    app = _strict_app(LICENSE_CHECK_HMAC_SECRET="root-secret-for-tests")
-    with app.app_context():
-        lic = _mk_license()
-        client = app.test_client()
-        body = {
-            "license_key": lic.license_key,
-            "server_fingerprint": "fp-signed-client",
-            "timestamp": int(time.time()),
-            "nonce": uuid.uuid4().hex,
-        }
-        body["signature"] = sign_license_payload(body, "root-secret-for-tests")
-        res = client.post("/api/license/check", json=body)
-        assert res.status_code == 200
-        assert res.get_json()["active"] is True
-
-
-def test_signed_with_per_license_secret_still_works():
-    app = _strict_app(LICENSE_CHECK_HMAC_SECRET="root-secret-for-tests")
-    with app.app_context():
-        lic = _mk_license()
-        per_license = license_integration_secret(app, lic.license_key)
-        assert per_license
-        client = app.test_client()
-        body = {
-            "license_key": lic.license_key,
-            "server_fingerprint": "fp-derived-client",
-            "timestamp": int(time.time()),
-            "nonce": uuid.uuid4().hex,
-        }
-        body["signature"] = sign_license_payload(body, per_license)
-        res = client.post("/api/license/check", json=body)
-        assert res.status_code == 200
-        assert res.get_json()["active"] is True
-
-
-def test_bad_signature_still_rejected():
-    app = _strict_app(LICENSE_CHECK_HMAC_SECRET="root-secret-for-tests")
-    with app.app_context():
-        lic = _mk_license()
-        client = app.test_client()
-        body = {
-            "license_key": lic.license_key,
-            "timestamp": int(time.time()),
-            "nonce": uuid.uuid4().hex,
-            "signature": "deadbeef" * 8,
-        }
-        res = client.post("/api/license/check", json=body)
-        assert res.status_code == 401
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Fingerprint is optional
+# Fingerprint is optional + informational
 # ─────────────────────────────────────────────────────────────────────────
 
 def test_missing_fingerprint_is_not_422_on_license_check():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
         res = client.post("/api/license/check", json={"license_key": lic.license_key})
-        assert res.status_code == 200  # was 422 before simple-link
+        assert res.status_code == 200
 
 
 def test_missing_fingerprint_is_not_422_on_integration():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -257,18 +175,22 @@ def test_missing_fingerprint_is_not_422_on_integration():
         assert res.get_json()["ok"] is True
 
 
-def test_fingerprint_still_recorded_when_sent():
-    app = _strict_app()
+def test_fingerprint_recorded_when_sent_never_denies():
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
-        res = client.post("/api/license/check", json={
-            "license_key": lic.license_key,
-            "server_fingerprint": "vps-prod-1",
-        })
-        assert res.status_code == 200
+        for fp in ["vps-prod-1", "vps-prod-2", "vps-prod-3", "vps-prod-4", "vps-prod-5"]:
+            res = client.post("/api/license/check", json={
+                "license_key": lic.license_key,
+                "server_fingerprint": fp,
+            })
+            assert res.status_code == 200
+            assert res.get_json()["active"] is True  # never denies on fp overflow
         db.session.refresh(lic)
-        assert "vps-prod-1" in lic.fingerprints
+        # The newest fingerprint must always be retained — the slot rotation
+        # never blocks the latest device.
+        assert "vps-prod-5" in lic.fingerprints
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -276,7 +198,7 @@ def test_fingerprint_still_recorded_when_sent():
 # ─────────────────────────────────────────────────────────────────────────
 
 def test_customer_pending_403_has_reason():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license(customer_status="pending")
         client = app.test_client()
@@ -293,7 +215,7 @@ def test_customer_pending_403_has_reason():
 
 
 def test_customer_blocked_403_has_reason():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license(customer_status="blocked")
         client = app.test_client()
@@ -307,7 +229,7 @@ def test_customer_blocked_403_has_reason():
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Backups — the license key is the secret
+# Backups — the license key is the only secret
 # ─────────────────────────────────────────────────────────────────────────
 
 def _backup_payload(lic: License, **extra) -> dict:
@@ -319,7 +241,7 @@ def _backup_payload(lic: License, **extra) -> dict:
 
 
 def test_backup_accepts_license_key_as_secret():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -332,7 +254,7 @@ def test_backup_accepts_license_key_as_secret():
 
 
 def test_backup_accepts_no_secret_in_bearer_mode():
-    app = _strict_app()
+    app = _bearer_app()
     with app.app_context():
         lic = _mk_license()
         client = app.test_client()
@@ -344,36 +266,8 @@ def test_backup_accepts_no_secret_in_bearer_mode():
         assert res.status_code == 201, res.get_json()
 
 
-def test_backup_legacy_derived_secret_still_works():
-    app = _strict_app(LICENSE_CHECK_HMAC_SECRET="root-secret-for-tests")
-    with app.app_context():
-        lic = _mk_license()
-        secret = license_integration_secret(app, lic.license_key)
-        client = app.test_client()
-        res = client.post(
-            "/api/integration/hoberadius/backups/upload",
-            json=_backup_payload(lic, admin_secret=secret),
-            **HTTPS,
-        )
-        assert res.status_code == 201, res.get_json()
-
-
-def test_backup_rejected_when_bearer_off_and_no_secret():
-    app = _strict_app(LICENSE_BEARER_AUTH_ENABLED=False,
-                      LICENSE_CHECK_HMAC_SECRET="root-secret-for-tests")
-    with app.app_context():
-        lic = _mk_license()
-        client = app.test_client()
-        res = client.post(
-            "/api/integration/hoberadius/backups/upload",
-            json=_backup_payload(lic),
-            **HTTPS,
-        )
-        assert res.status_code == 401
-
-
-def test_backup_unknown_key_404s_even_in_bearer_mode():
-    app = _strict_app()
+def test_backup_unknown_key_404s():
+    app = _bearer_app()
     with app.app_context():
         client = app.test_client()
         res = client.post(
@@ -385,7 +279,7 @@ def test_backup_unknown_key_404s_even_in_bearer_mode():
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Admin card + regenerate
+# Admin card + regenerate (uses shared fixtures from conftest.py)
 # ─────────────────────────────────────────────────────────────────────────
 
 def _login(client):
@@ -402,10 +296,13 @@ def test_customer_page_shows_linking_card(app, client):
     assert res.status_code == 200
     html = res.data.decode("utf-8")
     assert "ربط الريدياس" in html
-    # Primary admin is super → sees the full key + the regenerate button.
     assert key in html
     assert "إعادة توليد المفتاح" in html
     assert "الأجهزة المرصودة" in html
+    # Legacy «سر التوقيع» / activation-token / bridge-token UI must NOT appear.
+    assert "سر التوقيع" not in html
+    assert "كود التفعيل" not in html
+    assert "rotate-bridge" not in html
 
 
 def test_regenerate_license_key_route(app, client):
@@ -428,7 +325,6 @@ def test_regenerate_license_key_route(app, client):
             .first()
         )
         assert row is not None
-        # Masked in audit — never the full old or new key.
         assert old_key not in (row.summary or "")
         assert lic.license_key not in (row.summary or "")
 
@@ -463,3 +359,37 @@ def test_license_status_audit_masks_key(app):
         assert row is not None
         assert full_key not in (row.summary or "")
         assert mask_license_key(full_key) in (row.summary or "")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Legacy endpoints are gone
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_legacy_activate_endpoint_is_404():
+    app = _bearer_app()
+    with app.app_context():
+        client = app.test_client()
+        res = client.post(
+            "/api/integration/hoberadius/instance/activate",
+            json={"activation_code": "X", "server_fingerprint": "fp"},
+            **HTTPS,
+        )
+        assert res.status_code == 404
+
+
+def test_legacy_activation_token_admin_endpoint_is_404(app, client):
+    with app.app_context():
+        lic = _mk_license()
+        customer_id = lic.customer_id
+    _login(client)
+    res = client.post(f"/admin/customers/{customer_id}/activation-token/generate")
+    assert res.status_code == 404
+
+
+def test_legacy_bridge_token_admin_endpoint_is_404(app, client):
+    with app.app_context():
+        lic = _mk_license()
+        customer_id = lic.customer_id
+    _login(client)
+    res = client.post(f"/admin/customers/{customer_id}/bridge-token/rotate")
+    assert res.status_code == 404

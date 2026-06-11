@@ -69,17 +69,11 @@ class Config:
     LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS = _env_int("LICENSE_CHECK_RATE_LIMIT_WINDOW_SECONDS", 60)
     LICENSE_KEY_RATE_LIMIT_MAX = _env_int("LICENSE_KEY_RATE_LIMIT_MAX", 600)
     LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS = _env_int("LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS", 300)
-    LICENSE_CHECK_HMAC_SECRET = os.environ.get("LICENSE_CHECK_HMAC_SECRET", "")
-    LICENSE_CHECK_SIGNATURE_REQUIRED = _env_bool("LICENSE_CHECK_SIGNATURE_REQUIRED", _is_strict_deployment_env())
-    LICENSE_CHECK_ALLOW_UNSIGNED = _env_bool("LICENSE_CHECK_ALLOW_UNSIGNED", not _is_strict_deployment_env())
-    # Simple-link bearer mode (docs/SIMPLE_LINK_CONTRACT.md): the license key
-    # carried in the request BODY authenticates the bridge by itself over
-    # HTTPS — no HMAC signature / derived bind-secret required. Signed
-    # requests keep working regardless of this flag (back-compat).
-    LICENSE_BEARER_AUTH_ENABLED = _env_bool("LICENSE_BEARER_AUTH_ENABLED", True)
-    LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS = _env_int("LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", 300)
-    LICENSE_CHECK_REPLAY_WINDOW_SECONDS = _env_int("LICENSE_CHECK_REPLAY_WINDOW_SECONDS", 600)
-    LICENSE_CHECK_NONCE_CACHE_MAX = _env_int("LICENSE_CHECK_NONCE_CACHE_MAX", 5000)
+    # Legacy linking-auth flags (LICENSE_CHECK_HMAC_SECRET / SIGNATURE_REQUIRED
+    # / ALLOW_UNSIGNED / BEARER_AUTH_ENABLED / clock-skew & nonce knobs) were
+    # retired with the bearer-only link contract (docs/SIMPLE_LINK_CONTRACT.md).
+    # The license key in the request BODY authenticates the bridge over HTTPS;
+    # no HMAC signature / derived bind-secret / nonce replay window remains.
     TRUST_PROXY_HEADERS = _env_bool("TRUST_PROXY_HEADERS", False)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
