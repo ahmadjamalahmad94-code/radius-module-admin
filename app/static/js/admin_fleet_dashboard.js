@@ -131,7 +131,7 @@
   // Row updates from JSON payload returned by the server
   // ────────────────────────────────────────────────────────────────────
   function applyRowPayload(row) {
-    const tr = document.querySelector('tr[data-node-id="' + row.id + '"]');
+    const tr = document.querySelector('[data-node-id="' + row.id + '"]');
     if (!tr) return;
     const h = row.health || {};
     const m = row.metric || {};
@@ -214,7 +214,7 @@
   }
 
   async function runCheck(nodeIds, btn) {
-    const tr = btn ? btn.closest("tr") : null;
+    const tr = btn ? btn.closest("[data-node-id]") : null;
     if (tr) tr.classList.add("is-checking");
     if (btn) {
       btn.classList.add("is-busy");
@@ -262,7 +262,7 @@
       if (!ok) return;
       setBusy(checkAllBtn, true);
       // Mark every row as busy.
-      document.querySelectorAll("#fd-nodes-tbl tbody tr").forEach((tr) => tr.classList.add("is-checking"));
+      document.querySelectorAll(".node-card").forEach((tr) => tr.classList.add("is-checking"));
       try {
         const res = await fetch(CHECK_ALL_URL, {
           method: "POST",
@@ -290,7 +290,7 @@
         toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.");
       } finally {
         setBusy(checkAllBtn, false);
-        document.querySelectorAll("#fd-nodes-tbl tbody tr").forEach((tr) => tr.classList.remove("is-checking"));
+        document.querySelectorAll(".node-card").forEach((tr) => tr.classList.remove("is-checking"));
       }
     });
   }
@@ -309,7 +309,7 @@
   // also keep the strip in sync.
   // ────────────────────────────────────────────────────────────────────
   function recomputeKpis() {
-    const cells = document.querySelectorAll('#fd-nodes-tbl [data-cell="health-state"] .fd-badge:first-child');
+    const cells = document.querySelectorAll('.node-card [data-cell="health-state"] .fd-badge:first-child');
     const c = { up: 0, degraded: 0, down: 0, unknown: 0 };
     cells.forEach((el) => {
       if (el.classList.contains("fd-badge--up")) c.up++;
@@ -352,7 +352,7 @@
           toast("error", "تعذّر تحديد عنوان الطلب.");
           return;
         }
-        const tr = btn.closest("tr");
+        const tr = btn.closest("[data-node-id]");
         if (tr) tr.classList.add("is-checking");
         btn.classList.add("is-busy");
         btn.disabled = true;
