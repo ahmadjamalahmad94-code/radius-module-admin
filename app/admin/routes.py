@@ -1287,16 +1287,24 @@ def _fill_customer_vpn_entitlement(customer: Customer, entitlement: CustomerVpnE
     entitlement.notes = (request.form.get("notes") or "").strip()[:2000]
     entitlement.updated_by_admin_id = session.get("admin_id")
 
+    # «السرعة المتماثلة» (سياسة المالك): قيمة واحدة ⇒ تنزيل = رفع. الواجهة الجديدة
+    # ترسل ``speed_mbps``؛ نحسب قيمتي التنزيل/الرفع من حقل واحد قبل أي تحقق كي لا
+    # تتسرَّب قيمة غير متماثلة بالخطأ. النموذج غير المتماثل (متقدّم) يترك
+    # ``speed_mbps`` فارغًا ويرسل القيمتين منفصلتين.
+    _speed_sym = (request.form.get("speed_mbps") or "").strip()
+    _down_raw = _speed_sym or request.form.get("download_mbps")
+    _up_raw = _speed_sym or request.form.get("upload_mbps")
+
     if selected_plan and _should_apply_vpn_plan_defaults():
         apply_plan_defaults(entitlement, selected_plan)
     elif will_be_active:
-        entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
-        entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.download_mbps = validate_vpn_speed(_down_raw, "download_mbps")
+        entitlement.upload_mbps = validate_vpn_speed(_up_raw, "upload_mbps")
         entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
         entitlement.max_locations = validate_positive_limit(request.form.get("max_locations") or 1, "max_locations")
     else:
-        entitlement.download_mbps = parse_optional_positive_int(request.form.get("download_mbps"), "download_mbps")
-        entitlement.upload_mbps = parse_optional_positive_int(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.download_mbps = parse_optional_positive_int(_down_raw, "download_mbps")
+        entitlement.upload_mbps = parse_optional_positive_int(_up_raw, "upload_mbps")
         entitlement.max_vpn_users = parse_optional_positive_int(request.form.get("max_vpn_users"), "max_vpn_users")
         entitlement.max_locations = parse_optional_positive_int(request.form.get("max_locations"), "max_locations") or 1
 
@@ -1346,6 +1354,10 @@ def customer_vpn_tunnel_create(customer_id: int):
         speed_profile_id = int(request.form.get("speed_profile_id") or 0) or None
     except (TypeError, ValueError):
         speed_profile_id = None
+    # «السرعة المتماثلة»: قيمة واحدة في ``speed_mbps`` ⇒ تنزيل = رفع لنفس النفق.
+    _sym_speed = (request.form.get("speed_mbps") or "").strip()
+    _down_raw = _sym_speed or request.form.get("download_mbps")
+    _up_raw = _sym_speed or request.form.get("upload_mbps")
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -1354,8 +1366,8 @@ def customer_vpn_tunnel_create(customer_id: int):
             profile=request.form.get("profile") or "",
             max_connections=max_connections,
             speed_profile_id=speed_profile_id,
-            download_mbps=request.form.get("download_mbps") or None,
-            upload_mbps=request.form.get("upload_mbps") or None,
+            download_mbps=_down_raw or None,
+            upload_mbps=_up_raw or None,
             monthly_quota_gb=request.form.get("monthly_quota_gb") or None,
             throttle_down_mbps=request.form.get("throttle_down_mbps") or None,
             throttle_up_mbps=request.form.get("throttle_up_mbps") or None,
@@ -1477,6 +1489,7 @@ def chr_speed_profiles():
         "admin/chr_speed_profiles.html",
         profiles=sp.list_profiles(),
         rate_limit_string=sp.rate_limit_string,
+        per_direction_label=sp.per_direction_label,
         chr_enabled=bool(fleet_nodes),
     )
 
@@ -1899,8 +1912,14 @@ def vpn_service_enable(vpn_plan_id: int):
 def _fill_vpn_plan(vpn_plan: VpnServicePlan) -> None:
     vpn_plan.name = (request.form.get("name") or "").strip()
     vpn_plan.description = (request.form.get("description") or "").strip()[:2000]
-    vpn_plan.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
-    vpn_plan.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+    # «السرعة المتماثلة»: قيمة واحدة ⇒ تنزيل = رفع. النموذج الافتراضي الجديد يرسل
+    # ``speed_mbps`` (انظر vpn_service_form.html)؛ نُملِئ الحقلين منها قبل أي تحقق
+    # كي لا يحدث اختلاف بالخطأ. النموذج غير المتماثل (متقدّم) يرسل القيمتين منفصلتين.
+    _speed_sym = (request.form.get("speed_mbps") or "").strip()
+    _down = _speed_sym or request.form.get("download_mbps")
+    _up = _speed_sym or request.form.get("upload_mbps")
+    vpn_plan.download_mbps = validate_vpn_speed(_down, "download_mbps")
+    vpn_plan.upload_mbps = validate_vpn_speed(_up, "upload_mbps")
     raw_code = (request.form.get("code") or "").strip() or f"vpn_{vpn_plan.download_mbps}m"
     vpn_plan.code = clean_vpn_plan_code(raw_code)
     vpn_plan.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")

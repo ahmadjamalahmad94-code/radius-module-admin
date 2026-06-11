@@ -405,13 +405,13 @@
           <label>عدد الاتصالات المتزامنة</label>
           <input class="ac-input" type="number" name="max_connections" min="1" value="1">
         </div>
-        <div class="ac-field">
-          <label>تنزيل مخصّص (Mbps)</label>
-          <input class="ac-input" type="number" name="download_mbps" min="1" max="100000">
-        </div>
-        <div class="ac-field">
-          <label>رفع مخصّص (Mbps)</label>
-          <input class="ac-input" type="number" name="upload_mbps" min="1" max="100000">
+        <div class="ac-field full">
+          <label>السرعة المخصّصة (Mbps) — لكل اتجاه</label>
+          <input class="ac-input" type="number" name="speed_mbps" min="1" max="100000"
+                 placeholder="مثال: 850 ⇒ 850↓ / 850↑ ميجابت">
+          <div class="hint">
+            القيمة تُطبَّق على التنزيل والرفع بالتساوي. تُتجاهَل إن اخترت بروفايل سرعة.
+          </div>
         </div>
         <div class="ac-field">
           <label>كوتة شهرية (GB، اختياري)</label>

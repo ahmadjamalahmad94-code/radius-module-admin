@@ -135,6 +135,12 @@ def create_ppp():
             )
     # ===========================================================================
 
+    # «السرعة المتماثلة»: قيمة واحدة ⇒ تنزيل = رفع (سياسة المالك). الواجهة
+    # الجديدة ترسل ``speed_mbps``؛ نُعطيها الأولوية على القيمتين المنفصلتين كي
+    # لا تتسرَّب قيمة غير متماثلة بالخطأ.
+    _sym_speed = (request.form.get("speed_mbps") or "").strip()
+    _down_raw = _sym_speed or request.form.get("download_mbps")
+    _up_raw = _sym_speed or request.form.get("upload_mbps")
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -143,8 +149,8 @@ def create_ppp():
             profile=request.form.get("profile") or "",
             max_connections=_safe_int(request.form.get("max_connections")) or 1,
             speed_profile_id=speed_profile_id,
-            download_mbps=request.form.get("download_mbps") or None,
-            upload_mbps=request.form.get("upload_mbps") or None,
+            download_mbps=_down_raw or None,
+            upload_mbps=_up_raw or None,
             monthly_quota_gb=request.form.get("monthly_quota_gb") or None,
             throttle_down_mbps=request.form.get("throttle_down_mbps") or None,
             throttle_up_mbps=request.form.get("throttle_up_mbps") or None,

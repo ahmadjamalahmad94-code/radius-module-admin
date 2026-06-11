@@ -12,8 +12,13 @@
 ) }}
 
 {% call hub.section("بيانات الباقة", icon="shield-halved") %}
-  <form method="post">
+  <form method="post" data-sym-form>
     {{ csrf_input() }}
+    <div class="hub-flash hub-flash--info" style="margin-bottom:14px">
+      <i class="fa-solid fa-circle-info"></i>
+      السرعة <strong>لكل اتجاه على حدة</strong>: اختيار «850» يعني
+      <span class="mono ltr">850↓ + 850↑ ميجابت</span> متزامنين — ليست مجموعًا.
+    </div>
 
     {% call hub.fieldset("التعريف", icon="tag") %}
       <div class="hub-form-grid">
@@ -34,14 +39,29 @@
     <div style="height:14px"></div>
 
     {% call hub.fieldset("السرعة والحدود", icon="gauge-high") %}
+      {% set _sym = (vpn_plan.download_mbps and vpn_plan.upload_mbps and vpn_plan.download_mbps == vpn_plan.upload_mbps) %}
       <div class="hub-form-grid">
-        <div class="hub-field">
-          <label>سرعة التحميل بالميجابت/ثانية <span class="req">*</span></label>
-          <input class="hub-input" name="download_mbps" type="number" min="1" value="{{ vpn_plan.download_mbps or '' }}" required>
+        <div class="hub-field full" data-sym-row>
+          <label>السرعة (Mbps) — لكل اتجاه <span class="req">*</span></label>
+          <input class="hub-input" name="speed_mbps" type="number" min="1"
+                 value="{{ vpn_plan.download_mbps if _sym else '' }}"
+                 data-sym-input {% if _sym or not vpn_plan.download_mbps %}required{% endif %}>
+          <div class="hub-field-hint">
+            تُطبَّق على التنزيل والرفع بالتساوي — 850 ⇒ <span class="mono ltr">850↓ / 850↑ ميجابت</span>.
+            <a href="#" data-sym-advanced-toggle>سرعة غير متماثلة (متقدّم)</a>
+          </div>
         </div>
-        <div class="hub-field">
-          <label>سرعة الرفع بالميجابت/ثانية <span class="req">*</span></label>
-          <input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ vpn_plan.upload_mbps or '' }}" required>
+        <div class="hub-field" data-sym-advanced {% if _sym %}hidden{% endif %}>
+          <label>سرعة التحميل بالميجابت/ثانية {% if not _sym %}<span class="req">*</span>{% endif %}</label>
+          <input class="hub-input" name="download_mbps" type="number" min="1"
+                 value="{{ vpn_plan.download_mbps or '' }}" data-sym-down
+                 {% if not _sym and vpn_plan.download_mbps %}required{% endif %}>
+        </div>
+        <div class="hub-field" data-sym-advanced {% if _sym %}hidden{% endif %}>
+          <label>سرعة الرفع بالميجابت/ثانية {% if not _sym %}<span class="req">*</span>{% endif %}</label>
+          <input class="hub-input" name="upload_mbps" type="number" min="1"
+                 value="{{ vpn_plan.upload_mbps or '' }}" data-sym-up
+                 {% if not _sym and vpn_plan.upload_mbps %}required{% endif %}>
         </div>
         <div class="hub-field">
           <label>عدد مستخدمي الشبكة الخاصة <span class="req">*</span></label>
