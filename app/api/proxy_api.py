@@ -143,10 +143,23 @@ def routing_table():
     * **Fleet registry** (``fleet_chr_nodes``) — produced by the onboarding
       wizard. Status vocabulary ``provisioning | up | degraded | down | disabled``.
       A node is published as soon as it is ``enabled = TRUE`` AND
-      ``drain = FALSE`` AND ``status NOT IN ('disabled', 'down')`` —
-      i.e. ``provisioning``, ``up``, and ``degraded`` are all routable
-      (a fresh CHR must be reachable before its first telemetry, otherwise
-      first-light traffic has nowhere to go).
+      ``drain = FALSE`` AND ``status != 'disabled'`` — i.e. ``provisioning``,
+      ``up``, ``degraded`` AND ``down`` are all published.
+      RATIONALE — **publication tracks DATA-plane + admin intent, NOT
+      control-plane health.** ``status='down'`` means the panel's
+      wg-mgmt ping/api-ssl probe failed; it does NOT mean the CHR
+      can't carry RADIUS (the wg-data path is independent and routinely
+      works long before / well after the control plane is reachable).
+      Excluding ``down`` here causes the catch-22 we hit on the live
+      deployment: chr-vpn-1's data plane was fully connected, but the
+      panel couldn't ping wg-mgmt (not deployed yet), so the node was
+      ``down`` → routing-table dropped it → proxy had nothing to
+      allowlist → RADIUS over wg-data was rejected. NEW-placement
+      ranking is the right place for health to matter; the brain's
+      :func:`fleet.brain.placement.rank` already excludes ``down`` from
+      eligibility (Phase-5 contract), so a ``down`` node stays in the
+      allowlist but receives no NEW logins — once it recovers it can
+      take traffic again without a routing-table refresh fight.
     * **Legacy CHR-console table** (``chr_nodes``, ``app.models.ChrNode``) —
       pre-fleet table some operators still rely on. Kept as a secondary
       source, filtered to ``status="active"`` for backward compatibility.
@@ -198,11 +211,16 @@ def routing_table():
     fleet_chr_nodes_q = []
     try:
         from fleet.registry.models_chr import FleetChrNode  # noqa: WPS433
+        # DATA-plane intent: enabled + not draining + not admin-disabled.
+        # Control-plane health ('down' / 'degraded') is intentionally NOT a
+        # publication gate — see the docstring above for the live-deploy
+        # catch-22 this avoids. The brain still filters 'down' from NEW
+        # placements in fleet.brain.placement.rank().
         fleet_chr_nodes_q = (
             FleetChrNode.query
             .filter(FleetChrNode.enabled.is_(True))
             .filter(FleetChrNode.drain.is_(False))
-            .filter(FleetChrNode.status.notin_(("disabled", "down")))
+            .filter(FleetChrNode.status != "disabled")
             .order_by(FleetChrNode.name.asc())
             .all()
         )
