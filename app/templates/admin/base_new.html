@@ -528,12 +528,19 @@
 {# Design-sweep building blocks — globally available on every admin page so
    any template can use hub.tab_bar / data-confirm / showToast() without
    adding its own DOM scaffolding. The CSS is in admin_design_sweep.css. #}
+{# NOTE: button IDs are namespaced (…-overlay-ok / …-overlay-cancel) so they
+   do NOT collide with the SEPARATE confirm modal in _partials/_confirm_modal.html
+   (id=hub-confirm, used by hub.js for data-confirm-form). Before namespacing,
+   both modals shipped id="hub-confirm-ok"/"hub-confirm-cancel"; admin_design_sweep.js
+   opened THIS overlay but getElementById('hub-confirm-ok') returned the OTHER
+   modal's button (first in DOM), so this visible modal's buttons had no
+   listeners and «تأكيد» did nothing. #}
 <div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
   <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
     <div class="hub-confirm-message" id="hub-confirm-message">—</div>
     <div class="hub-confirm-actions">
-      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-cancel">إلغاء</button>
-      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-ok">تأكيد</button>
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-overlay-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-overlay-ok">تأكيد</button>
     </div>
   </div>
 </div>
