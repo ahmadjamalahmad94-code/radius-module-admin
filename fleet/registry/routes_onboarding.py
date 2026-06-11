@@ -429,6 +429,13 @@ def view_script(job_id: int):
     node_name = (job.form_input or {}).get("name") or f"chr-job-{job.id}"
     filename = f"{_safe_filename(node_name)}.rsc"
 
+    # The script rendered cleanly + passed the bindings gate → every
+    # prerequisite is in place now. Drop any stale «بانتظار إعداد …» error
+    # stamped on a PRIOR failed attempt (e.g. before the panel WG key was
+    # set) so the pending-onboardings card stops contradicting the «جاهز»
+    # banner. No-op when there's no error.
+    service._clear_job_error(job)
+
     # Audit — record the VIEW (not the body). The audit row's `summary`
     # is operator-facing; the body never appears anywhere except the
     # JSON response we're about to return.

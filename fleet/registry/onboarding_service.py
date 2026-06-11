@@ -485,6 +485,18 @@ class OnboardingService:
         db.session.add(job)
         db.session.commit()
 
+    def _clear_job_error(self, job: OnboardingJob) -> None:
+        """Drop a stale ``last_error`` once a step SUCCEEDS. Without this, the
+        «بانتظار إعداد …» message from an earlier failed attempt (e.g. before
+        the panel WG key was configured) keeps showing on the pending-
+        onboardings card even after the script generates fine — a confusing
+        contradiction with the «جاهز 7/7» banner. No-op when there's no error
+        stamped; does NOT commit (the caller's own commit persists it)."""
+        data = dict(job.form_input or {})
+        if data.pop("last_error", None) is not None:
+            job.form_input = data
+            db.session.add(job)
+
     # ── step 1: keys_generated ───────────────────────────────────────────────
     def generate_keys(self, job: OnboardingJob) -> OnboardingJob:
         """Make the wg-mgmt + wg-data keypairs, vault the private keys, and create
@@ -569,6 +581,10 @@ class OnboardingService:
                 if bindings.get("API_PORT"):
                     node_row.routeros_api_port = int(bindings["API_PORT"])
         job.generated_script_ref = "sha256:" + hashlib.sha256(script.encode("utf-8")).hexdigest()
+        # A successful render means every prerequisite is now in place —
+        # clear any stale «بانتظار إعداد …» error from an earlier attempt so
+        # the pending card stops contradicting the «جاهز» banner.
+        self._clear_job_error(job)
         job.advance("script_generated")
         db.session.commit()
         return job, script

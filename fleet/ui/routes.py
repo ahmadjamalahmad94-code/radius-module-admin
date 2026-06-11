@@ -176,18 +176,26 @@ def _onboarding_job_view(job) -> dict:
     """Plain-dict view of an OnboardingJob for the dashboard template."""
     form = job.form_input or {}
     status = job.status
+    has_script = bool(job.chr_id) and status in _STATUSES_WITH_SCRIPT
+    # Suppress a stale «بانتظار إعداد …» error once the script has actually
+    # generated: a successful render proves every prerequisite (panel WG key,
+    # endpoints, secret) is in place, so the old waiting-message would only
+    # contradict the «جاهز» banner. Real, non-waiting errors still show.
+    last_error = form.get("last_error")
+    if last_error and has_script and "بانتظار" in last_error:
+        last_error = None
     return {
         "id": job.id,
         "status": status,
         "status_label": _ONBOARDING_STATUS_AR.get(status, status),
         "status_meaning": _ONBOARDING_STATUS_MEANING_AR.get(status, ""),
         "next_step": _ONBOARDING_NEXT_STEP_AR.get(status, ""),
-        "has_script": bool(job.chr_id) and status in _STATUSES_WITH_SCRIPT,
+        "has_script": has_script,
         "chr_id": job.chr_id,
         "provider": form.get("provider") or "—",
         "name": form.get("name") or f"#{job.id}",
         "public_ip": form.get("public_ip") or "—",
-        "last_error": form.get("last_error"),
+        "last_error": last_error,
         "created_at": job.created_at.isoformat() + "Z" if getattr(job, "created_at", None) else None,
     }
 
@@ -496,6 +504,7 @@ def fleet_infra_reveal_panel_privkey():
     side ever leaves the vault. Re-clicking simply reveals it again — the
     audit row records every reveal so an unexpected one is traceable."""
     from fleet.registry import infra_settings as svc
+    from fleet.health.routeros_creds import fleet_default_view as _fleet_default_view
     try:
         privkey = svc.get_panel_wg_private_key_decrypted()
     except svc.InfraSettingsError as exc:
@@ -522,6 +531,9 @@ def fleet_infra_reveal_panel_privkey():
         panel_pubkey_is_set=svc.panel_pubkey_is_set(),
         panel_privkey_on_server=svc.panel_privkey_is_on_server(),
         revealed_panel_privkey=privkey,
+        # The metrics-credentials card is part of this page (live-metrics
+        # feature); pass its view so the reveal re-render isn't missing it.
+        metrics_creds=_fleet_default_view(),
     )
 
 
