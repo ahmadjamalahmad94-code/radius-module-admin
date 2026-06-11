@@ -1076,6 +1076,35 @@ def _install_template_helpers(app: Flask) -> None:
 
     app.jinja_env.globals["url_for"] = _safe_url_for
 
+    # ── Static asset cache-busting ────────────────────────────────────────
+    # Append ?v=<file-mtime> to every static URL so a deploy that changes a
+    # CSS/JS file automatically invalidates the browser (and any CDN) cache.
+    # Without this, fixes to admin_design_sweep.js / *.css kept showing the
+    # OLD behaviour after a deploy until the operator did a manual hard
+    # refresh — the source of repeated "I fixed it but it's still broken"
+    # confusion (e.g. the confirm-modal fixes). mtime changes on every git
+    # checkout/deploy, so the param self-updates with zero template edits.
+    _static_version_cache: dict[str, int] = {}
+
+    @app.url_defaults
+    def _add_static_version(endpoint, values):
+        if endpoint != "static" or not values.get("filename"):
+            return
+        filename = values["filename"]
+        ver = _static_version_cache.get(filename)
+        if ver is None:
+            try:
+                static_root = app.static_folder or ""
+                ver = int(os.stat(os.path.join(static_root, filename)).st_mtime)
+            except OSError:
+                ver = 0
+            # Cache only in non-debug so dev edits always re-stat; prod is
+            # stable per process (a deploy restarts the process anyway).
+            if not app.debug:
+                _static_version_cache[filename] = ver
+        if ver:
+            values.setdefault("v", ver)
+
     @app.template_filter("request_type_label")
     def request_type_label_filter(value):
         from .services.customer_control import service_request_type_label
