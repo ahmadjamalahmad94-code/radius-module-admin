@@ -17,7 +17,7 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import Customer, CustomerVpnTunnel, License, WireguardPeer, utcnow
-from . import chr_settings, vpn_tunnels, wireguard_peers
+from . import fleet_node_router, vpn_tunnels, wireguard_peers
 
 
 # ───────────────────────── protocol descriptors ─────────────────────────
@@ -122,25 +122,30 @@ def _wg_counts() -> dict[str, int]:
 
 
 def protocol_overview() -> list[dict]:
-    """يعيد بطاقة جاهزة لكل بروتوكول (وصف + حالة + عدد + المنفذ المُكوَّن)."""
+    """يعيد بطاقة جاهزة لكل بروتوكول (وصف + حالة + عدد + المنفذ المُكوَّن).
+
+    Zero-central: port overrides come from the fleet settings (Setting
+    rows under ``fleet.port.<svc>``), and «configured» means «the fleet
+    has at least one eligible node». The legacy chr_settings singleton
+    is gone.
+    """
     ppp = _ppp_counts()
     wg = _wg_counts()
-    chr_state = chr_settings.get_state()
-    fields = chr_state.get("fields", {})
+    fleet_nodes = fleet_node_router.available_nodes()
+    chr_configured = bool(fleet_nodes)
+    # Resolve a single fleet endpoint (host + per-service ports) using the
+    # brain's pick — every protocol card shares the same port mapping.
+    sample_node = fleet_node_router.auto_pick_best_node()
+    if sample_node is not None:
+        ep = fleet_node_router.endpoint_for(sample_node)
+        fleet_ports = ep.ports
+    else:
+        fleet_ports = dict(fleet_node_router.HARD_DEFAULT_PORTS)
 
     def port_for(key: str, default: int) -> int:
-        raw = fields.get("port_" + key, {}).get("value") if key != "wireguard" else None
-        if raw and str(raw).isdigit():
-            return int(raw)
-        if key == "wireguard":
-            return int(
-                current_app.config.get("CHR_WIREGUARD_LISTEN_PORT")
-                or wireguard_peers.DEFAULT_LISTEN_PORT
-            )
-        return default
+        return int(fleet_ports.get(key) or default)
 
     cards: list[dict] = []
-    chr_configured = chr_state.get("configured", False)
     for key in PROTOCOL_ORDER:
         desc = PROTOCOLS[key]
         if key == "wireguard":
@@ -148,14 +153,7 @@ def protocol_overview() -> list[dict]:
         else:
             counts = ppp.get(key, {"total": 0, "active": 0})
 
-        # حالة الخدمة على CHR: متاحة إن CHR مكوَّن وله شهادة (SSTP/IKEv2)؛
-        # PPTP يعمل دون شهادة؛ WG يعتمد على إعدادات WG.
-        if not chr_configured:
-            availability = "unconfigured"
-        elif key == "sstp" and not chr_state["fields"].get("ipsec_certificate", {}).get("present", False):
-            availability = "ready"  # SSTP cert independent — assume admin set it on CHR
-        else:
-            availability = "ready"
+        availability = "ready" if chr_configured else "unconfigured"
 
         cards.append({
             "key": desc.key,
@@ -182,7 +180,7 @@ def stats() -> dict:
         "total": total,
         "active": active,
         "protocols_enabled": sum(1 for k in PROTOCOL_ORDER if PROTOCOLS[k] is not None),
-        "chr_configured": chr_settings.get_state().get("configured", False),
+        "chr_configured": bool(fleet_node_router.available_nodes()),
     }
 
 

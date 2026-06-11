@@ -74,14 +74,42 @@
   {% endif %}
 {% endmacro %}
 
+{# ── Per-node picker — pick a fleet CHR to operate on. The GET
+   handler passes ``node_id`` through to the overview, and every
+   mutation form includes the same id as a hidden field so the
+   console is FULLY per-node. ── #}
+{% if fleet_nodes %}
+{% call hub.section("على أي عقدة؟", icon="diagram-project") %}
+  <form method="get" action="{{ url_for('admin_chr.console') }}"
+        style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <label style="font-weight:700">اختر عقدة الأسطول:</label>
+    <select name="node_id" class="hub-input" style="min-width:280px"
+            onchange="this.form.submit()">
+      <option value="">— تلقائي (موازن الأسطول الداخلي) —</option>
+      {% for n in fleet_nodes %}
+        <option value="{{ n.id }}"{% if n.id == selected_node_id %} selected{% endif %}>
+          {{ n.name }} — {{ n.public_ip or '—' }} ({{ n.status }}{% if n.drain %} · drain{% endif %})
+        </option>
+      {% endfor %}
+    </select>
+    <noscript><button class="hub-btn hub-btn--secondary" type="submit">عرض</button></noscript>
+    {% if selected_node_name %}
+    <span class="chrc-badge chrc-badge--on">
+      <i class="fa-solid fa-circle-check"></i> تعمل على «{{ selected_node_name }}»
+    </span>
+    {% endif %}
+  </form>
+{% endcall %}
+{% endif %}
+
 {% if not data.ok %}
   {% call hub.section("حالة الاتصال", icon="triangle-exclamation") %}
     <div class="chrc-unavail" style="background:var(--tile-red-bg);border-color:var(--hb-red);color:var(--tile-red-fg)">
       <i class="fa-solid fa-plug-circle-xmark"></i>
-      <b>CHR غير مضبوط.</b> {{ data.message or "أكمل إعداد الاتصال أولًا." }}
+      <b>تعذّر تحضير العقدة.</b> {{ data.message or "أكمل إعداد الاتصال أولًا." }}
       <div style="margin-top: var(--cc-sp-6)">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr">
-          <i class="fa-solid fa-gear"></i> إعدادات CHR
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('fleet_ui.fleet_dashboard') }}">
+          <i class="fa-solid fa-diagram-project"></i> لوحة الأسطول
         </a>
       </div>
     </div>
@@ -90,11 +118,11 @@
   {% call hub.section("حالة الاتصال", icon="triangle-exclamation") %}
     <div class="chrc-unavail" style="background:var(--tile-red-bg);border-color:var(--hb-red);color:var(--tile-red-fg)">
       <i class="fa-solid fa-plug-circle-xmark"></i>
-      <b>تعذّر الوصول إلى CHR.</b>
-      {{ data.system.error or "تحقّق من بيانات الاتصال في الإعدادات وأن REST مفعّل." }}
+      <b>تعذّر الوصول إلى عقدة «{{ data.node_name or '—' }}».</b>
+      {{ data.system.error or "تحقّق من بيانات الاعتماد على العقدة في إعدادات بنية الأسطول وأن REST مفعّل." }}
       <div style="margin-top: var(--cc-sp-6)">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr">
-          <i class="fa-solid fa-gear"></i> إعدادات CHR
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('fleet_ui.fleet_dashboard') }}">
+          <i class="fa-solid fa-diagram-project"></i> لوحة الأسطول
         </a>
       </div>
     </div>
@@ -134,9 +162,10 @@
         <p class="hub-field-hint" style="margin: 0 0 var(--cc-sp-6)">إجراءات غير قابلة للتراجع — تتطلّب تأكيدًا.</p>
         <form method="post" action="{{ url_for('admin_chr.reboot') }}">
           {{ csrf_input() }}
+          {% if selected_node_id %}<input type="hidden" name="node_id" value="{{ selected_node_id }}">{% endif %}
           <input type="hidden" name="confirm" value="yes">
           <button class="hub-btn chrc-danger" type="submit"
-                  data-confirm="إعادة تشغيل CHR الآن؟ سينقطع كل الاتصالات مؤقتًا.">
+                  data-confirm="إعادة تشغيل عقدة «{{ selected_node_name or 'CHR' }}» الآن؟ سينقطع كل الاتصالات مؤقتًا.">
             <i class="fa-solid fa-power-off"></i> إعادة تشغيل CHR
           </button>
         </form>
@@ -166,6 +195,7 @@
                     <div class="chrc-actions">
                       <form method="post" action="{{ url_for('admin_chr.ppp_toggle') }}">
                         {{ csrf_input() }}
+                        {% if selected_node_id %}<input type="hidden" name="node_id" value="{{ selected_node_id }}">{% endif %}
                         <input type="hidden" name="secret_id" value="{{ sid }}">
                         <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
                         <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
@@ -173,6 +203,7 @@
                       </form>
                       <form method="post" action="{{ url_for('admin_chr.ppp_remove') }}">
                         {{ csrf_input() }}
+                        {% if selected_node_id %}<input type="hidden" name="node_id" value="{{ selected_node_id }}">{% endif %}
                         <input type="hidden" name="secret_id" value="{{ sid }}">
                         <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
                         <input type="hidden" name="confirm" value="yes">
@@ -237,6 +268,7 @@
                     <div class="chrc-actions">
                       <form method="post" action="{{ url_for('admin_chr.ipsec_toggle') }}">
                         {{ csrf_input() }}
+                        {% if selected_node_id %}<input type="hidden" name="node_id" value="{{ selected_node_id }}">{% endif %}
                         <input type="hidden" name="user_id" value="{{ uid }}">
                         <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
                         <input type="hidden" name="action" value="{{ 'enable' if disabled else 'disable' }}">
@@ -244,6 +276,7 @@
                       </form>
                       <form method="post" action="{{ url_for('admin_chr.ipsec_remove') }}">
                         {{ csrf_input() }}
+                        {% if selected_node_id %}<input type="hidden" name="node_id" value="{{ selected_node_id }}">{% endif %}
                         <input type="hidden" name="user_id" value="{{ uid }}">
                         <input type="hidden" name="name" value="{{ it.get('name') or '' }}">
                         <input type="hidden" name="confirm" value="yes">

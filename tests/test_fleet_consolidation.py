@@ -39,11 +39,21 @@ def test_chrnode_class_is_no_longer_exposed_from_app_models():
     assert not hasattr(_models, "ChrNodeMetric"), "ChrNodeMetric should be deleted in step 6"
 
 
-def test_proxy_realm_route_dropped_legacy_allowlist_attribute():
+def test_proxy_realm_route_dropped_legacy_allowlist_attribute(app):
+    """The legacy ``allowed_chr_node_ids`` property + setter were removed
+    in step 6; only the fleet allow-list survives.
+
+    Takes the ``app`` fixture so the SQLAlchemy mapper is fully
+    initialised — instantiating an ORM class directly without app
+    context raises ``InvalidRequestError`` because the cross-package
+    FleetChrNode relationship hasn't resolved yet.
+    """
+    # Force the fleet model class into the registry so the
+    # CustomerVpnTunnel → FleetChrNode relationship can resolve when
+    # ProxyRealmRoute (which lives next to those models) is instantiated.
+    from fleet.registry.models_chr import FleetChrNode  # noqa: F401
     from app.models import ProxyRealmRoute
     r = ProxyRealmRoute()
-    # The legacy `allowed_chr_node_ids` property + setter were removed; only
-    # the fleet allow-list survives.
     assert not hasattr(r, "allowed_chr_node_ids"), \
         "legacy allow-list property should be gone after step 6"
     assert hasattr(r, "allowed_fleet_chr_node_ids"), \
@@ -106,11 +116,17 @@ def test_sidebar_still_groups_items_under_fleet_and_hides_legacy_link(client):
         "legacy chr-nodes link must not reappear"
 
 
-def test_settings_chr_keeps_single_chr_label(client):
+def test_settings_chr_tab_was_removed_in_zero_central(client):
+    """The settings#chr singleton tab was retired entirely by the
+    zero-central work that landed after step 6. Per-node RouterOS
+    credentials live on fleet_chr_nodes rows; the tab has nothing left
+    to show, so it's gone from the page chrome and from the URL space."""
     _login_admin(client)
     body = client.get("/admin/settings").get_data(as_text=True)
-    assert "نمط الـCHR الواحد" in body, \
-        "settings#chr relabel from step 4 must survive step 6"
+    assert "نمط الـCHR الواحد" not in body, \
+        "settings#chr tab text should be gone after zero-central"
+    assert 'data-tab="chr"' not in body, \
+        "settings#chr tab button should be gone after zero-central"
 
 
 # ─────────────────────────────────────────────────────────────────────────

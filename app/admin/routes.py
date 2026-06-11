@@ -1374,7 +1374,7 @@ def customer_vpn_tunnel_status(customer_id: int, tunnel_id: int):
 
 
 def _render_customer_vpn_tunnels(customer: Customer):
-    from ..services import chr_settings as chr_svc
+    from ..services import fleet_node_router
     from ..services import speed_profiles as sp
     from ..services import vpn_tunnels as vt
 
@@ -1382,14 +1382,17 @@ def _render_customer_vpn_tunnels(customer: Customer):
     _type_count = {}
     for t in tunnels:
         _type_count[getattr(t, "tunnel_type", "unknown")] = _type_count.get(getattr(t, "tunnel_type", "unknown"), 0) + 1
+    # Zero-central: «CHR is configured?» is now «does the fleet have any
+    # eligible node?» — same semantics for the page chrome.
+    fleet_nodes = fleet_node_router.available_nodes()
     return render_template(
         "admin/infra/vpn_tunnels_new.html",
         customer=customer,
         tunnels=tunnels,
         type_count=_type_count,
         type_key=vt.TUNNEL_TYPE_LABELS if hasattr(vt, "TUNNEL_TYPE_LABELS") else {},
-        chr_enabled=chr_svc.enabled(),
-        chr_configured=(chr_svc.get_state().get("configured") if chr_svc.enabled() else False),
+        chr_enabled=bool(fleet_nodes),
+        chr_configured=bool(fleet_nodes),
         allowance=vt.effective_connection_allowance(customer),
         active_count=vt.count_active_tunnels(customer),
         manual_types=sorted(vt.MANUAL_TYPES),
@@ -1398,17 +1401,18 @@ def _render_customer_vpn_tunnels(customer: Customer):
     )
 
 
-# ── CHR speed profiles (central, mapped to /ppp/profile rate-limit) ─────────
+# ── CHR speed profiles (fleet-wide; pushed to every node via fan-out) ───────
 @bp.get("/chr/speed-profiles")
 @login_required
 def chr_speed_profiles():
     from ..services import speed_profiles as sp
-    from ..services import chr_settings as chr_svc
+    from ..services import fleet_node_router
+    fleet_nodes = fleet_node_router.available_nodes()
     return render_template(
         "admin/chr_speed_profiles.html",
         profiles=sp.list_profiles(),
         rate_limit_string=sp.rate_limit_string,
-        chr_enabled=chr_svc.enabled(),
+        chr_enabled=bool(fleet_nodes),
     )
 
 
@@ -1470,24 +1474,53 @@ def chr_speed_profile_delete(profile_id: int):
 @bp.post("/chr/speed-profiles/<int:profile_id>/sync")
 @login_required
 def chr_speed_profile_sync(profile_id: int):
-    """يهيّئ /ppp/profile المقابل على CHR بالـrate-limit (للتحقق اليدوي)."""
+    """Zero-central: fan-out the profile to every eligible fleet CHR.
+
+    The service does the per-node loop and returns an aggregate; the route
+    surfaces a single Arabic toast that explains how many nodes accepted
+    the profile, how many were skipped (no credentials), how many errored,
+    and (if any errored) the first node-level message so the operator can
+    investigate without leaving the page.
+    """
     from ..services import speed_profiles as sp
-    from ..services import chr_settings as chr_svc
-    from ..services.routeros_client import RouterOSError
     profile = db.get_or_404(ChrSpeedProfile, profile_id)
     try:
-        sp.ensure_on_chr(profile)
-    except chr_svc.ChrSettingsError as exc:
+        result = sp.ensure_on_chr(profile)
+    except sp.SpeedProfileError as exc:
         flash(str(exc), "error")
         return redirect(url_for("admin.chr_speed_profiles"))
-    except RouterOSError as exc:
-        flash("تعذّرت المزامنة مع CHR: " + exc.message, "error")
-        return redirect(url_for("admin.chr_speed_profiles"))
+
     audit("chr_speed_profile_synced", "chr_speed_profile", str(profile.id),
-          f"مزامنة بروفايل سرعة {profile.name} مع CHR", {"chr_profile": profile.effective_chr_profile_name})
+          f"مزامنة بروفايل سرعة {profile.name} على {result['ok']}/{result['total']} عقدة",
+          {
+              "chr_profile": profile.effective_chr_profile_name,
+              "total": result["total"], "ok": result["ok"],
+              "skipped": result["skipped"], "errors": result["errors"],
+          })
     db.session.commit()
-    flash(f"تمت تهيئة «{profile.effective_chr_profile_name}» على CHR بسرعة "
-          f"{profile.download_mbps}↓/{profile.upload_mbps}↑ Mbps.", "success")
+
+    if result["total"] == 0:
+        flash("لا توجد عقدة فعّالة في الأسطول لاستقبال البروفايل. أضف عقدة من «معالج إضافة CHR».", "warning")
+    elif result["errors"] == 0 and result["skipped"] == 0:
+        flash(
+            f"تم دفع «{profile.effective_chr_profile_name}» إلى {result['ok']} عقدة "
+            f"({profile.download_mbps}↓/{profile.upload_mbps}↑ Mbps).",
+            "success",
+        )
+    else:
+        # Surface the first error message so the operator has a starting point.
+        first_err = next(
+            (p for p in result["per_node"] if not p["ok"]), None
+        )
+        hint = (
+            f" — أول خطأ على «{first_err['node_name']}»: {first_err['message']}"
+            if first_err else ""
+        )
+        flash(
+            f"دُفع البروفايل إلى {result['ok']}/{result['total']} عقدة "
+            f"(تخطٍّ: {result['skipped']}، أخطاء: {result['errors']}){hint}",
+            "warning" if result["ok"] else "error",
+        )
     return redirect(url_for("admin.chr_speed_profiles"))
 
 
@@ -2376,7 +2409,6 @@ def audit_logs():
 def settings_page():
     from ..services.whatsapp import cloud_settings as wac
     from ..services.whatsapp import embedded_settings as wae
-    from ..services import chr_settings as chr_svc
     from ..services import customer_vault_crypto as vc
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
@@ -2388,8 +2420,11 @@ def settings_page():
         wac_enabled=wac.enabled(),
         wac_state=wac.get_state() if wac.enabled() else None,
         wae_state=wae.get_state(),
-        chr_enabled=chr_svc.enabled(),
-        chr_state=chr_svc.get_state() if chr_svc.enabled() else None,
+        # CHR-settings section was retired in step 7 (zero-central);
+        # the template still renders the tab when these flags are true,
+        # so wire them off-permanently so the tab disappears.
+        chr_enabled=False,
+        chr_state=None,
         proxy_route_count=ProxyRealmRoute.query.filter_by(status="active").count(),
         vault_key_state=vc.vault_key_state(),
     )
@@ -2991,122 +3026,13 @@ def whatsapp_embedded_reveal():
     return jsonify({"ok": True, "value": value})
 
 
-# ── MikroTik CHR connection settings (owner-managed, encrypted) ────────────
-def _chr_redirect():
-    return redirect(url_for("admin.settings_page") + "#chr")
-
-
-def _chr_guard():
-    """Return None if enabled; else a redirect (feature flag off)."""
-    from ..services import chr_settings as chr_svc
-    if not chr_svc.enabled():
-        flash("تزويد CHR غير مُفعّل.", "error")
-        return _chr_redirect()
-    return None
-
-
-@bp.post("/settings/chr")
-@login_required
-def chr_settings_save():
-    from ..services import chr_settings as chr_svc
-    blocked = _chr_guard()
-    if blocked:
-        return blocked
-    # تغيير اتصال مقفل يتطلّب: مسؤول عام + تأكيد صريح في النموذج. غير المسؤول العام
-    # لا يستطيع تجاوز القفل مهما أرسل من حقول.
-    admin = current_admin()
-    is_super = bool(getattr(admin, "is_super_admin", False))
-    confirmed = (request.form.get("confirm_locked_change") or "").strip().lower() in {"1", "yes", "on", "true"}
-    allow_locked_change = is_super and confirmed
-    try:
-        chr_svc.validate_and_save(request.form, actor_audit=audit, allow_locked_change=allow_locked_change)
-    except chr_svc.ChrSettingsError as exc:
-        db.session.rollback()
-        flash(str(exc), "error")
-        return _chr_redirect()
-    db.session.commit()
-    flash("تم حفظ بيانات اتصال CHR بنجاح.", "success")
-    return _chr_redirect()
-
-
-@bp.post("/settings/chr/lock")
-@super_admin_required
-def chr_settings_lock():
-    """يقفل اتصال CHR صراحةً (مسؤول عام فقط، مُدقَّق)."""
-    from ..services import chr_settings as chr_svc
-    blocked = _chr_guard()
-    if blocked:
-        return blocked
-    admin = current_admin()
-    try:
-        chr_svc.lock(actor_audit=audit, actor_label=(admin.username if admin else ""))
-    except chr_svc.ChrSettingsError as exc:
-        db.session.rollback()
-        flash(str(exc), "error")
-        return _chr_redirect()
-    db.session.commit()
-    flash("تم قفل اتصال CHR. لن يُداس إلا بتأكيد صريح.", "success")
-    return _chr_redirect()
-
-
-@bp.post("/settings/chr/unlock")
-@super_admin_required
-def chr_settings_unlock():
-    """يفكّ قفل اتصال CHR صراحةً (مسؤول عام فقط، مُدقَّق)."""
-    from ..services import chr_settings as chr_svc
-    blocked = _chr_guard()
-    if blocked:
-        return blocked
-    admin = current_admin()
-    try:
-        chr_svc.unlock(actor_audit=audit, actor_label=(admin.username if admin else ""))
-    except chr_svc.ChrSettingsError as exc:
-        db.session.rollback()
-        flash(str(exc), "error")
-        return _chr_redirect()
-    db.session.commit()
-    flash("تم فكّ قفل اتصال CHR — أصبح قابلًا للتعديل.", "success")
-    return _chr_redirect()
-
-
-@bp.post("/settings/chr/test")
-@login_required
-def chr_settings_test():
-    from ..services import chr_settings as chr_svc
-    blocked = _chr_guard()
-    if blocked:
-        return blocked
-    try:
-        result = chr_svc.test_connection(actor_audit=audit)
-    except chr_svc.ChrSettingsError as exc:
-        db.session.rollback()
-        flash(str(exc), "error")
-        return _chr_redirect()
-    db.session.commit()
-    if result.get("ok"):
-        flash(
-            f"نجح الاتصال بـ CHR ✅ — {result.get('identity') or '—'} (RouterOS {result.get('version') or '—'}).",
-            "success",
-        )
-    else:
-        flash("فشل الاتصال بـ CHR: " + (result.get("message") or "تحقّق من البيانات."), "error")
-    return _chr_redirect()
-
-
-@bp.post("/settings/chr/reveal")
-@super_admin_required
-def chr_settings_reveal():
-    """Temporarily reveal the stored CHR password (super-admin only, audited)."""
-    from ..services import chr_settings as chr_svc
-    if not chr_svc.enabled():
-        return jsonify({"ok": False, "message": "القسم غير مُفعّل."}), 403
-    try:
-        value = chr_svc.reveal(actor_audit=audit)
-    except chr_svc.ChrSettingsError as exc:
-        db.session.rollback()
-        return jsonify({"ok": False, "message": str(exc)}), 400
-    db.session.commit()
-    return jsonify({"ok": True, "value": value})
+# ── MikroTik CHR singleton retired (zero-central / step 7 of CONSOLIDATION.md):
+# the entire ``/settings/chr*`` route family + the ``chr_settings`` service
+# are gone. Per-node RouterOS credentials live on ``fleet_chr_nodes`` rows
+# (``routeros_api_user`` / ``routeros_api_password_enc``) and the fleet
+# brain picks the right node at provision time. Fleet-wide constants
+# (IPsec cert/pool, public host, port overrides) live as ``fleet.*``
+# Setting rows that the fleet-infrastructure page manages.
 
 
 # ── Customer Vault encryption key (owner-managed, encrypted at rest) ───────

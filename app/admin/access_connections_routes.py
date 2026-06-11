@@ -13,7 +13,7 @@ from ..auth.routes import audit, login_required
 from ..extensions import db
 from ..models import Customer, CustomerVpnTunnel, License, WireguardPeer
 from ..services import access_connections as ac
-from ..services import chr_settings as chr_svc
+from ..services import fleet_node_router
 from ..services import speed_profiles as sp
 from ..services import vpn_tunnels as vt
 from ..services import wireguard_peers as wg
@@ -28,9 +28,16 @@ bp = Blueprint("admin_access", __name__, url_prefix="/admin/access-connections")
 @bp.get("")
 @login_required
 def index():
-    """صفحة الهبوط: 4 بطاقات بروتوكول + جدول الاتصالات + KPIs."""
+    """صفحة الهبوط: 4 بطاقات بروتوكول + جدول الاتصالات + KPIs.
+
+    Zero-central: the operator picks a fleet node in each provisioning
+    modal («على أي عقدة؟»). The dropdown defaults to the brain's best
+    pick — the internal load balancer — so the common case is one click.
+    """
     protocol_filter = (request.args.get("protocol") or "").strip().lower()
     connections = ac.list_connections(protocol=protocol_filter)
+    fleet_nodes = fleet_node_router.available_nodes()
+    default_node = fleet_node_router.auto_pick_best_node()
     return render_template(
         "admin/access_connections/index.html",
         protocols=ac.protocol_overview(),
@@ -39,8 +46,13 @@ def index():
         connections=connections,
         stats=ac.stats(),
         protocol_filter=protocol_filter,
-        chr_enabled=chr_svc.enabled(),
-        chr_configured=chr_svc.get_state().get("configured", False),
+        # Replaces the legacy chr_settings.enabled() / get_state() — the new
+        # readiness check is "does the fleet have any eligible node?".
+        chr_enabled=bool(fleet_nodes),
+        chr_configured=bool(fleet_nodes),
+        fleet_nodes=fleet_nodes,
+        default_fleet_node_id=(default_node.id if default_node else None),
+        default_fleet_node_name=(default_node.name if default_node else ""),
         customers=ac.customer_options(),
         speed_profiles=sp.list_profiles(active_only=True),
         ppp_types=sorted(vt.MANUAL_TYPES - {"sstp"}) + ["sstp"],
@@ -84,6 +96,9 @@ def create_ppp():
         else find_best_customer_license(customer)
     )
     speed_profile_id = _safe_int(request.form.get("speed_profile_id"))
+    # Operator's fleet-node pick — empty/missing = let the brain pick the
+    # best-eligible node (the internal load balancer).
+    fleet_chr_node_id = _safe_int(request.form.get("fleet_chr_node_id"))
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -100,6 +115,7 @@ def create_ppp():
             source="admin_manual",
             created_by_admin_id=session.get("admin_id"),
             notes=request.form.get("notes") or "",
+            fleet_chr_node_id=fleet_chr_node_id,
         )
     except vt.VpnTunnelError as exc:
         db.session.rollback()
@@ -166,6 +182,7 @@ def create_wireguard():
     )
     use_preshared = bool(request.form.get("use_preshared"))
     keepalive = _safe_int(request.form.get("keepalive_seconds")) or wg.DEFAULT_KEEPALIVE_SECONDS
+    fleet_chr_node_id = _safe_int(request.form.get("fleet_chr_node_id"))
     try:
         peer = wg.provision_peer(
             customer,
@@ -178,6 +195,7 @@ def create_wireguard():
             keepalive_seconds=keepalive,
             created_by_admin_id=session.get("admin_id"),
             notes=request.form.get("notes") or "",
+            fleet_chr_node_id=fleet_chr_node_id,
         )
     except wg.WireguardPeerError as exc:
         db.session.rollback()

@@ -146,22 +146,12 @@ def fleet_dashboard():
     }
     best_rank = ranking[0] if ranking and ranking[0].eligible else None
 
-    # Cross-reference: is the singleton CHR (settings#chr) ALSO listed in the
-    # fleet? If yes the owner is maintaining the same physical CHR's
-    # credentials in two places — surface a banner pointing at the
-    # consolidation runbook. We import lazily so the dashboard keeps loading
-    # even if the chr_settings module/table isn't initialised on a fresh DB.
+    # The settings#chr singleton cross-reference banner is gone — the
+    # singleton itself was retired in the zero-central work; there's no
+    # longer "another place" the same CHR could be configured. The
+    # template still reads ``singleton_chr_match`` (it just renders
+    # nothing) so we keep the variable but always set None.
     singleton_match = None
-    try:
-        from app.services import chr_settings as _chr_svc
-        singleton_host = (_chr_svc.resolved() or {}).get("host", "").strip()
-        if singleton_host:
-            for n in nodes:
-                if (n.public_ip or "").strip() == singleton_host:
-                    singleton_match = {"host": singleton_host, "node_name": n.name}
-                    break
-    except Exception:
-        singleton_match = None
 
     return render_template(
         "admin/fleet/dashboard.html",

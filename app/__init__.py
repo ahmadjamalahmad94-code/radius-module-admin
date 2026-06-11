@@ -638,6 +638,17 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "allowed_fleet_chr_node_ids_json": "TEXT NOT NULL DEFAULT '[]'",
         })
 
+    # Zero-central: each customer tunnel + WG peer carries the fleet node it
+    # was provisioned on. Backfill is handled below — column add first.
+    if "customer_vpn_tunnels" in tables:
+        _add_columns_if_missing("customer_vpn_tunnels", {
+            "fleet_chr_node_id": "INTEGER",
+        })
+    if "customer_wireguard_peers" in tables:
+        _add_columns_if_missing("customer_wireguard_peers", {
+            "fleet_chr_node_id": "INTEGER",
+        })
+
     # ════════════════════════════════════════════════════════════════════
     # Step 6 of docs/CONSOLIDATION.md — DESTRUCTIVE removal of the legacy
     # ``chr_nodes`` registry. Owner decision: the whole legacy system is
@@ -711,6 +722,36 @@ def ensure_schema_compatibility(app: Flask) -> None:
                 db.session.commit()
             except Exception:
                 db.session.rollback()
+
+    # ── Zero-central backfill: stamp the fleet node onto pre-zero-central
+    # tunnel + WG-peer rows by matching the legacy ``chr_host`` column
+    # against ``fleet_chr_nodes.public_ip``. Idempotent: a row that already
+    # has fleet_chr_node_id stays untouched. Best-effort: failures collapse
+    # to "leave the row alone" (the provisioning service will pick a node
+    # at the next ``provision_*`` call).
+    tables_now = set(inspect(db.engine).get_table_names())
+    if {"customer_vpn_tunnels", "fleet_chr_nodes"}.issubset(tables_now):
+        try:
+            db.session.execute(text(
+                "UPDATE customer_vpn_tunnels "
+                "SET fleet_chr_node_id = (SELECT id FROM fleet_chr_nodes "
+                "                          WHERE public_ip = customer_vpn_tunnels.chr_host) "
+                "WHERE fleet_chr_node_id IS NULL AND chr_host <> ''"
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    if {"customer_wireguard_peers", "fleet_chr_nodes"}.issubset(tables_now):
+        try:
+            db.session.execute(text(
+                "UPDATE customer_wireguard_peers "
+                "SET fleet_chr_node_id = (SELECT id FROM fleet_chr_nodes "
+                "                          WHERE public_ip = customer_wireguard_peers.chr_host) "
+                "WHERE fleet_chr_node_id IS NULL AND chr_host <> ''"
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
     # Instance Activation Tokens — single-use Admin Bridge bootstrap tokens.
     # The table itself is created fresh by db.create_all() on new DBs.

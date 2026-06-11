@@ -636,6 +636,14 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
     chr_secret_id = db.Column(db.String(40), default="", nullable=False)
     chr_host = db.Column(db.String(255), default="", nullable=False)
     remote_address = db.Column(db.String(64), default="", nullable=False)
+    # Which fleet CHR node this tunnel was provisioned on. Set by the
+    # provisioning service when ``provision_tunnel`` resolves a node
+    # (explicit picker → operator's choice; otherwise → brain auto-pick).
+    # Nullable for legacy rows that predate zero-central; the startup
+    # schema heal backfills by ``chr_host`` IP match where possible.
+    fleet_chr_node_id = db.Column(
+        db.Integer, db.ForeignKey("fleet_chr_nodes.id"), nullable=True, index=True,
+    )
     # pending | delivered — at-least-once delivery of the clear password over the bridge.
     delivery_status = db.Column(db.String(20), default="pending", nullable=False, index=True)
     delivered_at = db.Column(db.DateTime, nullable=True)
@@ -647,6 +655,11 @@ class CustomerVpnTunnel(TimestampMixin, db.Model):
     customer = db.relationship("Customer")
     license = db.relationship("License")
     speed_profile = db.relationship("ChrSpeedProfile", back_populates="tunnels")
+    # ``fleet_chr_node`` is a lazy join into the fleet registry; same FK
+    # pattern ``ServiceAllocation`` uses post-step-6.
+    fleet_chr_node = db.relationship(
+        "FleetChrNode", foreign_keys=[fleet_chr_node_id], lazy="joined",
+    )
 
 
 class WireguardPeer(TimestampMixin, db.Model):
@@ -702,6 +715,11 @@ class WireguardPeer(TimestampMixin, db.Model):
     # RouterOS .id of the peer row on /interface/wireguard/peers.
     chr_peer_id = db.Column(db.String(40), default="", nullable=False)
     chr_host = db.Column(db.String(255), default="", nullable=False)
+    # Which fleet CHR node this peer was provisioned on (see the parallel
+    # field on ``CustomerVpnTunnel`` for the rationale).
+    fleet_chr_node_id = db.Column(
+        db.Integer, db.ForeignKey("fleet_chr_nodes.id"), nullable=True, index=True,
+    )
     # pending | delivered (peer config handed to operator/customer once).
     delivery_status = db.Column(db.String(20), default="pending", nullable=False, index=True)
     delivered_at = db.Column(db.DateTime, nullable=True)
@@ -711,6 +729,9 @@ class WireguardPeer(TimestampMixin, db.Model):
 
     customer = db.relationship("Customer")
     license = db.relationship("License")
+    fleet_chr_node = db.relationship(
+        "FleetChrNode", foreign_keys=[fleet_chr_node_id], lazy="joined",
+    )
 
 
 class CustomerBackupArtifact(TimestampMixin, db.Model):

@@ -286,6 +286,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, "wg") }}
         {{ _license_field("wg") }}
+        {{ _node_field("wg", fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>اسم القرين</label>
           <input class="ac-input" name="label" placeholder="مثال: موبايل أحمد" maxlength="60">
@@ -360,6 +361,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, ttype) }}
         {{ _license_field(ttype) }}
+        {{ _node_field(ttype, fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>بروفايل السرعة</label>
           <select class="ac-select" name="speed_profile_id">
@@ -425,6 +427,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, "ipsec") }}
         {{ _license_field("ipsec") }}
+        {{ _node_field("ipsec", fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>عدد الاتصالات المتزامنة</label>
           <input class="ac-input" type="number" name="max_connections" min="1" value="1">
@@ -467,6 +470,34 @@
   <select class="ac-select ac-license-select" name="license_id" data-scope="{{ scope }}">
     <option value="">— تلقائي (أفضل ترخيص نشط) —</option>
   </select>
+</div>
+{% endmacro %}
+
+{# ─── Zero-central node picker — «على أي عقدة؟»
+   Defaults to the brain's best pick (the internal load-balancer). The
+   operator can override and target any of the fleet's CHRs, or leave
+   the «تلقائي» option selected for the brain to choose at provision
+   time. Renders an empty disabled state when the fleet is empty so
+   the operator knows the action is blocked until they add a CHR. ── #}
+{% macro _node_field(scope, fleet_nodes, default_id, default_name) %}
+<div class="ac-field">
+  <label>على أي عقدة؟ <span style="font-weight:400;color:#64748b">— موازن الأسطول الداخلي يرشّح الأفضل تلقائيًا</span></label>
+  {% if fleet_nodes %}
+  <select class="ac-select" name="fleet_chr_node_id" data-scope="{{ scope }}">
+    <option value="">
+      تلقائي{% if default_name %} — افتراضيًا «{{ default_name }}»{% endif %}
+    </option>
+    {% for n in fleet_nodes %}
+      <option value="{{ n.id }}"{% if n.id == default_id %} selected{% endif %}>
+        {{ n.name }} — {{ n.public_ip or '—' }} ({{ n.status }}{% if n.drain %} · drain{% endif %})
+      </option>
+    {% endfor %}
+  </select>
+  {% else %}
+  <select class="ac-select" name="fleet_chr_node_id" disabled>
+    <option>لا توجد عقد في الأسطول — أضف عقدة من «معالج إضافة CHR»</option>
+  </select>
+  {% endif %}
 </div>
 {% endmacro %}
 

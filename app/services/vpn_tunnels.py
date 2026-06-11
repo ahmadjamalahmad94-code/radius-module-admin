@@ -26,9 +26,10 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import ChrSpeedProfile, Customer, CustomerVpnTunnel, License, utcnow
-from . import chr_settings
+from . import fleet_node_router
 from . import speed_profiles
 from .customer_vault_crypto import decrypt_secret, encrypt_secret, mask_secret
+from .fleet_node_router import FleetNodeUnavailable
 from .routeros_client import RouterOSError
 from .vpn_entitlements import get_customer_vpn_entitlement
 
@@ -175,6 +176,7 @@ def provision_tunnel(
     created_by_admin_id: int | None = None,
     notes: str = "",
     enforce_allowance: bool = True,
+    fleet_chr_node_id: int | None = None,
 ) -> CustomerVpnTunnel:
     """يولّد بيانات اعتماد فريدة، يحترم حدّ العضو، ينشئ الحساب على CHR (لأنواع
     PPP)، يحفظ السجل ويعيده. يرفع :class:`VpnTunnelError` عند أي فشل.
@@ -214,14 +216,23 @@ def provision_tunnel(
     record_only = False
     comment = f"hoberadius c{customer.id} {customer.company_name}"[:255]
 
-    if ttype in PPP_SERVICES:
-        if not chr_settings.enabled():
-            raise VpnTunnelError("chr_disabled", "تزويد CHR غير مُفعّل في إعدادات اللوحة.")
-        chr_host = chr_settings.resolved().get("host", "")
+    # Resolve the fleet node we'll provision on — operator pick wins, else
+    # the brain's best-eligible node (the internal load balancer). The same
+    # node is reused for both PPP and IPsec branches so a tunnel's lifecycle
+    # always points at one place.
+    selected_node = None
+    if ttype in PPP_SERVICES or ttype in IPSEC_TYPES:
         try:
-            client = chr_settings.build_client()
-        except chr_settings.ChrSettingsError as exc:
-            raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+            selected_node = fleet_node_router.resolve_node(fleet_chr_node_id)
+        except FleetNodeUnavailable as exc:
+            raise VpnTunnelError("no_fleet_node", exc.message) from exc
+
+    if ttype in PPP_SERVICES:
+        try:
+            client = fleet_node_router.build_client_for(selected_node)
+        except FleetNodeUnavailable as exc:
+            raise VpnTunnelError("chr_not_configured", exc.message) from exc
+        chr_host = (selected_node.public_ip or selected_node.wg_mgmt_ip or "").strip()
         # هيّئ العنونة والبروفايل على CHR (idempotent) قبل إنشاء الحساب. حرج: بدون
         # local/remote-address يصادق العميل لكن لا يأخذ IPv4. نضمن pool مشترك واحد ثم
         # نضبط البروفايل (حتى الافتراضي) بالعناوين + rate-limit إن وُجد — لكل الأنواع.
@@ -271,12 +282,12 @@ def provision_tunnel(
         chr_secret_id = str(created.get(".id") or created.get("id") or "")
         chr_provisioned = True
     elif ttype in IPSEC_TYPES:
-        if chr_settings.enabled() and current_app.config.get("CHR_IPSEC_AUTO_PROVISION", True):
-            chr_host = chr_settings.resolved().get("host", "")
+        if current_app.config.get("CHR_IPSEC_AUTO_PROVISION", True):
             try:
-                client = chr_settings.build_client()
-            except chr_settings.ChrSettingsError as exc:
-                raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+                client = fleet_node_router.build_client_for(selected_node)
+            except FleetNodeUnavailable as exc:
+                raise VpnTunnelError("chr_not_configured", exc.message) from exc
+            chr_host = (selected_node.public_ip or selected_node.wg_mgmt_ip or "").strip()
             try:
                 chr_secret_id = _provision_ipsec_user(client, username, password, comment)
             except RouterOSError as exc:
@@ -317,6 +328,7 @@ def provision_tunnel(
         chr_provisioned=chr_provisioned,
         chr_secret_id=chr_secret_id,
         chr_host=chr_host,
+        fleet_chr_node_id=(selected_node.id if selected_node else None),
         delivery_status="pending",
         requested_by_user_id=requested_by_user_id,
         created_by_admin_id=created_by_admin_id,
@@ -353,9 +365,11 @@ def _ensure_ipsec_infra(client) -> None:
     cfg = current_app.config
     if not cfg.get("CHR_IPSEC_MANAGE_INFRA", True):
         return
-    # الشهادة ومجمّع العناوين يضبطهما المالك من الواجهة (DB→بيئة)؛ نفضّلهما على config
-    # المباشر. اسم الشهادة قد يحتوي مسافات فيُستعمل حرفيًا كما خُزِّن.
-    overrides = chr_settings.ipsec_overrides()
+    # IPsec cert + address pool are FLEET-WIDE constants the owner sets once
+    # in «إعدادات بنية الأسطول» (Setting rows under ``fleet.ipsec.*``).
+    # They're not per-node because the cert/pool are an IKEv2 config policy
+    # not a node-specific credential.
+    overrides = fleet_node_router.ipsec_overrides()
     address_pool = overrides["address_pool"] or (cfg.get("CHR_IPSEC_ADDRESS_POOL") or "").strip()
     certificate = overrides["certificate"] or (cfg.get("CHR_IPSEC_CERTIFICATE") or "").strip()
     mode_config, peer = _ipsec_infra_names()
@@ -390,16 +404,29 @@ def _provision_ipsec_user(client, username: str, password: str, comment: str) ->
 
 
 def revoke_tunnel(tunnel: CustomerVpnTunnel) -> None:
-    """يحذف الحساب من CHR (إن وُجد) ويعلّم السجل ملغيًا. لا يُنفّذ commit."""
+    """يحذف الحساب من CHR (إن وُجد) ويعلّم السجل ملغيًا. لا يُنفّذ commit.
+
+    Targets THE node this tunnel was provisioned on (``tunnel.fleet_chr_node``),
+    not the legacy singleton. Rows that predate zero-central and have no
+    fleet node id stamped get a brain auto-pick as a best-effort fallback.
+    """
     if tunnel.chr_provisioned and tunnel.chr_secret_id:
+        node = tunnel.fleet_chr_node
+        if node is None:
+            node = fleet_node_router.auto_pick_best_node()
+        if node is None:
+            raise VpnTunnelError(
+                "no_fleet_node",
+                "لا توجد عقدة في الأسطول لإلغاء النفق منها.",
+            )
         try:
-            client = chr_settings.build_client()
+            client = fleet_node_router.build_client_for(node)
             if tunnel.tunnel_type in PPP_SERVICES:
                 client.remove_ppp_secret(tunnel.chr_secret_id)
             elif tunnel.tunnel_type in IPSEC_TYPES:
                 client.remove_ipsec_user(tunnel.chr_secret_id)
-        except chr_settings.ChrSettingsError as exc:
-            raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+        except FleetNodeUnavailable as exc:
+            raise VpnTunnelError("chr_not_configured", exc.message) from exc
         except RouterOSError as exc:
             raise VpnTunnelError("chr_remove_failed", "تعذّر حذف الحساب من CHR: " + exc.message) from exc
     tunnel.status = "revoked"
@@ -466,8 +493,21 @@ def acknowledge_delivery(customer: Customer, usernames: list[str]) -> int:
 
 def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = False) -> dict:
     """تمثيل JSON لنفق. كلمة المرور الصريحة تُدرَج فقط حين ``include_password`` وعند
-    الحاجة (تسليم لم يُؤكَّد بعد)."""
-    endpoint = chr_settings.public_endpoint()
+    الحاجة (تسليم لم يُؤكَّد بعد).
+
+    Endpoint info (public_host + service port) is derived from the fleet node
+    this tunnel lives on — zero-central, every tunnel knows its own node.
+    """
+    # Fall back to the legacy ``chr_host`` (the raw IP we stamped) when the
+    # tunnel pre-dates zero-central and didn't get backfilled.
+    node = tunnel.fleet_chr_node
+    if node is not None:
+        endpoint = fleet_node_router.endpoint_for(node)
+        public_host = endpoint.public_host
+        service_port = endpoint.ports.get(tunnel.tunnel_type)
+    else:
+        public_host = (tunnel.chr_host or "").strip()
+        service_port = fleet_node_router.HARD_DEFAULT_PORTS.get(tunnel.tunnel_type)
     data = {
         "username": tunnel.username,
         "tunnel_type": tunnel.tunnel_type,
@@ -479,15 +519,16 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         "download_mbps": tunnel.download_mbps,
         "upload_mbps": tunnel.upload_mbps,
         # العنوان العام والمنفذ اللذان يتصل بهما عميلُ العميل لهذه الخدمة. نتعمّد عدم
-        # تسريب مضيف REST الإداري (``tunnel.chr_host``) عبر الجسر: لوحة العميل لا
-        # تملك ولا تحتاج نقطة إدارة CHR — فقط العنوان العام للاتصال. للتوافق نُبقي
-        # مفتاح ``chr_host`` لكن نملؤه بالعنوان العام نفسه (لا المضيف الإداري).
-        "chr_host": endpoint["public_host"],
-        "chr_public_host": endpoint["public_host"],
-        "service_port": endpoint["ports"].get(tunnel.tunnel_type),
+        # تسريب مضيف REST الإداري (``wg_mgmt_ip``) عبر الجسر — لوحة العميل لا
+        # تحتاج نقطة إدارة. ``chr_host`` يبقى للتوافق ويحمل العنوان العام نفسه.
+        "chr_host": public_host,
+        "chr_public_host": public_host,
+        "service_port": service_port,
         "chr_provisioned": bool(tunnel.chr_provisioned),
         "delivery_status": tunnel.delivery_status,
         "created_at": _iso_z(tunnel.created_at),
+        # Surface the node name so the operator UI can show «على chr-best».
+        "chr_node_name": (node.name if node else ""),
     }
     if include_password and tunnel.delivery_status != "delivered" and tunnel.status != "revoked":
         data["password"] = get_tunnel_password(tunnel)
