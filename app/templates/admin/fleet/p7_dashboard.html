@@ -29,94 +29,181 @@
 
 {% block head_extra %}
 <style>
-  .p7-hero-card{
-    background: var(--cc-hero-grad);
-    border-radius: var(--cc-r-hero);
-    box-shadow:    var(--cc-sh-hero);
-    color:#fff;
-    padding: var(--cc-sp-9) var(--cc-sp-11);
-    display:flex; align-items:center; gap: var(--cc-sp-9);
-    margin-block-end: var(--cc-gap-section);
+  /* ════════════════════════════════════════════════════════════════════
+     Live-apply & mobility — full redesign, shares the fleet dashboard's
+     clean .fd-* design language (local --fdx-* tokens, .la-* components).
+     ════════════════════════════════════════════════════════════════════ */
+  :root{
+    --fdx-bg:#f6f8fb; --fdx-card:#fff; --fdx-line:#e8edf3; --fdx-line2:#eef2f7;
+    --fdx-ink:#0f172a; --fdx-ink2:#475569; --fdx-mut:#94a3b8;
+    --fdx-brand:#4f46e5; --fdx-brand-ink:#3730a3; --fdx-brand-soft:#eef2ff;
+    --fdx-r-pill:999px;
+    --fdx-sh:0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.18);
   }
-  .p7-state-orb{
-    width:72px; height:72px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    font-size:30px; flex-shrink:0;
-    background: rgba(255,255,255,.18);
-    border:1px solid rgba(255,255,255,.30);
-  }
-  .p7-state-orb.is-on{ background:#16a34a; border-color:#22c55e; }
-  .p7-state-orb.is-off{ background:#475569; border-color:#94a3b8; }
-  .p7-state-title{ font-size:24px; font-weight:900; margin-block-end:6px; }
-  .p7-state-sub{ font-size:13.5px; opacity:.9; line-height:1.7; max-width:60ch; }
-  .p7-state-actions{ margin-inline-start:auto; display:flex; gap:10px; flex-wrap:wrap; }
 
-  .p7-pill{ display:inline-flex; align-items:center; gap:6px;
-            padding:3px 11px; border-radius:999px;
-            font-size:11.5px; font-weight:800; }
-  .p7-pill--on{ background:#dcfce7; color:#15803d; }
-  .p7-pill--off{ background:#f1f5f9; color:#475569; }
-  .p7-pill--crit{ background:#fef2f2; color:#b91c1c; }
-  .p7-pill--warn{ background:#fef3c7; color:#92400e; }
-  .p7-pill--info{ background:#eff6ff; color:#1d4ed8; }
+  /* ── hero ─────────────────────────────────────────────────────────── */
+  .la-hero{position:relative;overflow:hidden;border-radius:22px;color:#fff;
+    padding:26px 30px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+    margin-block-end:18px;
+    background:radial-gradient(120% 160% at 100% 0%, #6366f1 0%, #4338ca 55%, #312e81 100%);
+    box-shadow:0 26px 52px -28px rgba(49,46,129,.75);}
+  .la-hero.is-on{background:radial-gradient(120% 160% at 100% 0%, #16a34a 0%, #15803d 52%, #14532d 100%);
+    box-shadow:0 26px 52px -28px rgba(20,83,45,.7);}
+  .la-hero::after{content:"";position:absolute;inset-inline-end:-50px;inset-block-start:-60px;
+    width:230px;height:230px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none;}
+  .la-orb{width:74px;height:74px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
+    justify-content:center;font-size:30px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);}
+  .la-hero.is-on .la-orb{animation:la-pulse 2.4s ease-in-out infinite;}
+  .la-hero-body{flex:1 1 320px;}
+  .la-hero-eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;
+    background:rgba(255,255,255,.18);padding:4px 12px;border-radius:var(--fdx-r-pill);margin-block-end:9px;}
+  .la-hero-title{font-size:25px;font-weight:900;line-height:1.1;letter-spacing:-.3px;}
+  .la-hero-title b{color:#fff;}
+  .la-hero-sub{font-size:13px;color:rgba(255,255,255,.85);margin-top:9px;max-width:72ch;line-height:1.75;}
+  .la-hero-note{display:block;margin-top:8px;font-size:12px;color:rgba(255,255,255,.7);line-height:1.7;}
+  .la-hero-actions{margin-inline-start:auto;display:flex;gap:10px;flex-wrap:wrap;}
 
-  .p7-flag-switch{ display:inline-flex; align-items:center; gap:6px; }
+  .la-btn{height:44px;padding-inline:22px;border-radius:13px;font-weight:800;font-size:14px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:9px;border:1px solid transparent;white-space:nowrap;
+    transition:transform .14s,background .14s,box-shadow .14s;}
+  .la-btn--go{background:#fff;color:#15803d;box-shadow:0 10px 22px -10px rgba(0,0,0,.4);}
+  .la-btn--go:hover{transform:translateY(-1px);background:#f0fdf4;}
+  .la-btn--stop{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.34);}
+  .la-btn--stop:hover{background:rgba(255,255,255,.26);}
 
-  .p7-toast{
-    position:fixed; inset-block-end:24px; inset-inline-start:50%;
-    transform:translateX(-50%) translateY(20px);
-    background:#0f172a; color:#fff;
-    padding:12px 22px; border-radius:14px;
-    font-size:13.5px; font-weight:800;
-    box-shadow:0 24px 60px rgba(15,23,42,.35);
-    opacity:0; transition:opacity .25s, transform .25s;
-    z-index:9000;
-  }
-  .p7-toast.is-visible{ opacity:1; transform:translateX(-50%) translateY(0); }
-  .p7-toast--success{ background:#047857; }
-  .p7-toast--warning{ background:#b45309; }
-  .p7-toast--error{ background:#b91c1c; }
+  /* ── KPI strip ────────────────────────────────────────────────────── */
+  .la-kpis{display:grid;gap:14px;grid-template-columns:repeat(4,1fr);margin-block-end:18px;}
+  .la-kpi{position:relative;overflow:hidden;background:var(--fdx-card);border:1px solid var(--fdx-line);
+    border-radius:16px;padding:17px 19px;display:flex;gap:14px;align-items:center;box-shadow:var(--fdx-sh);
+    transition:transform .14s,box-shadow .14s;--accent:var(--fdx-brand);}
+  .la-kpi::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:4px;background:var(--accent);}
+  .la-kpi:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(15,23,42,.05),0 14px 30px -18px rgba(15,23,42,.28);}
+  .la-kpi:hover .la-kpi-icon{transform:scale(1.1) rotate(-4deg);}
+  .la-kpi-icon{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:flex;align-items:center;
+    justify-content:center;font-size:19px;background:var(--fdx-brand-soft);color:var(--fdx-brand);transition:transform .18s;}
+  .la-kpi-num{font-size:23px;font-weight:900;color:var(--fdx-ink);line-height:1;}
+  .la-kpi-label{font-size:12px;color:var(--fdx-ink2);margin-top:5px;font-weight:700;}
+  .la-kpi-sub{font-size:10.5px;color:var(--fdx-mut);margin-top:4px;}
+  .la-kpi--on{--accent:#22c55e;} .la-kpi--on .la-kpi-icon{background:#e7f8ef;color:#15803d;}
+  .la-kpi--off{--accent:#94a3b8;} .la-kpi--off .la-kpi-icon{background:#eef1f6;color:#475569;}
+  .la-kpi--info{--accent:#0ea5e9;} .la-kpi--info .la-kpi-icon{background:#e0f2fe;color:#0369a1;}
+  .la-kpi--amber{--accent:#f59e0b;} .la-kpi--amber .la-kpi-icon{background:#fff4e0;color:#b45309;}
+  .la-kpi--purple{--accent:#8b5cf6;} .la-kpi--purple .la-kpi-icon{background:#f1ecfe;color:#7c3aed;}
 
-  .p7-empty-cell{ color:#94a3b8; font-style:italic; }
-  .p7-row-actions{ display:flex; gap:6px; }
-  .p7-mono{ font-family: ui-monospace, Menlo, Consolas, monospace; }
-  .p7-table-wrap{ overflow-x:auto; }
-  .p7-table-wrap table{ width:100%; }
+  /* ── section cards ────────────────────────────────────────────────── */
+  .la-card{background:var(--fdx-card);border:1px solid var(--fdx-line);border-radius:18px;
+    padding:20px 22px;box-shadow:var(--fdx-sh);margin-block-end:18px;}
+  .la-card-head{display:flex;gap:10px;align-items:center;margin-block-end:16px;flex-wrap:wrap;}
+  .la-card-title{font-weight:900;font-size:16px;color:var(--fdx-ink);display:flex;align-items:center;gap:9px;letter-spacing:-.2px;}
+  .la-card-title i{color:var(--fdx-brand);}
+  .la-card-spacer{flex:1;}
+  .la-count{background:var(--fdx-brand-soft);color:var(--fdx-brand-ink);font-weight:800;font-size:12px;
+    padding:3px 11px;border-radius:var(--fdx-r-pill);}
+
+  /* ── tables ───────────────────────────────────────────────────────── */
+  .la-tbl-wrap{overflow-x:auto;border:1px solid var(--fdx-line);border-radius:14px;}
+  .la-tbl{width:100%;border-collapse:separate;border-spacing:0;min-width:680px;}
+  .la-tbl thead th{position:sticky;top:0;background:#f8fafc;border-block-end:1px solid var(--fdx-line);
+    padding:12px 15px;font-size:11.5px;font-weight:800;color:#64748b;text-align:start;white-space:nowrap;}
+  .la-tbl tbody td{padding:13px 15px;border-block-end:1px solid var(--fdx-line2);font-size:12.5px;
+    color:var(--fdx-ink);vertical-align:middle;}
+  .la-tbl tbody tr:last-child td{border-block-end:none;}
+  .la-tbl tbody tr{transition:background .12s;}
+  .la-tbl tbody tr:hover{background:#fafbff;}
+  .la-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  .la-tbl .small{font-size:11.5px;color:var(--fdx-ink2);}
+
+  /* ── pills ────────────────────────────────────────────────────────── */
+  .la-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:var(--fdx-r-pill);
+    font-size:11px;font-weight:800;white-space:nowrap;}
+  .la-pill--on{background:#e7f8ef;color:#15803d;} .la-pill--off{background:#eef1f6;color:#475569;}
+  .la-pill--crit{background:#fdecec;color:#b91c1c;} .la-pill--warn{background:#fff4e0;color:#b45309;}
+  .la-pill--info{background:#eff6ff;color:#1d4ed8;}
+
+  /* ── empty state ──────────────────────────────────────────────────── */
+  .la-empty{text-align:center;padding:42px 24px;color:var(--fdx-ink2);
+    border:1.5px dashed var(--fdx-line);border-radius:14px;background:#fbfcfe;}
+  .la-empty-ic{width:60px;height:60px;border-radius:18px;margin:0 auto 14px;display:flex;align-items:center;
+    justify-content:center;font-size:24px;background:var(--fdx-brand-soft);color:var(--fdx-brand);}
+  .la-empty-title{font-size:14px;font-weight:800;color:var(--fdx-ink);}
+  .la-empty-sub{font-size:12.5px;color:var(--fdx-mut);margin-top:6px;line-height:1.6;}
+
+  /* ── note + form ──────────────────────────────────────────────────── */
+  .la-note{display:flex;gap:10px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;
+    color:#92400e;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.7;margin-block-end:16px;}
+  .la-note i{margin-top:2px;color:#d97706;}
+  .la-rowbtn{height:32px;padding-inline:12px;border-radius:9px;font-weight:800;font-size:12px;cursor:pointer;
+    background:#fff;border:1px solid var(--fdx-line);color:var(--fdx-ink2);display:inline-flex;align-items:center;gap:6px;
+    transition:background .14s,border-color .14s,color .14s;}
+  .la-rowbtn:hover{background:#f8fafc;border-color:#cbd5e1;color:var(--fdx-ink);}
+  .la-rowbtn--lock{color:#b45309;border-color:#fde68a;} .la-rowbtn--lock:hover{background:#fffbeb;}
+  .la-rowbtn--go{color:#15803d;border-color:#bbf7d0;} .la-rowbtn--go:hover{background:#ecfdf5;}
+  .la-seed{margin-block-start:16px;border-top:1px dashed var(--fdx-line);padding-block-start:16px;}
+  .la-seed summary{cursor:pointer;font-weight:800;color:var(--fdx-brand-ink);font-size:13px;list-style:none;
+    display:inline-flex;align-items:center;gap:8px;}
+  .la-seed summary::-webkit-details-marker{display:none;}
+  .la-seed-grid{margin-block-start:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;align-items:end;}
+  .la-seed-grid label{font-size:12px;font-weight:700;color:var(--fdx-ink2);display:flex;flex-direction:column;gap:6px;}
+  .la-input{height:40px;padding-inline:13px;border-radius:11px;border:1px solid var(--fdx-line);background:#fff;
+    font-size:13px;color:var(--fdx-ink);outline:none;transition:border-color .14s,box-shadow .14s;}
+  .la-input:focus{border-color:var(--fdx-brand);box-shadow:0 0 0 3px rgba(79,70,229,.12);}
+  .la-check{flex-direction:row!important;align-items:center;}
+
+  /* ── toast ────────────────────────────────────────────────────────── */
+  .p7-toast{position:fixed;inset-block-end:24px;inset-inline-start:50%;transform:translateX(-50%) translateY(20px);
+    background:#0f172a;color:#fff;padding:12px 22px;border-radius:14px;font-size:13.5px;font-weight:800;
+    box-shadow:0 24px 60px rgba(15,23,42,.35);opacity:0;transition:opacity .25s,transform .25s;z-index:9000;}
+  .p7-toast.is-visible{opacity:1;transform:translateX(-50%) translateY(0);}
+  .p7-toast--success{background:#047857;} .p7-toast--warning{background:#b45309;} .p7-toast--error{background:#b91c1c;}
+
+  /* ── animations ───────────────────────────────────────────────────── */
+  @keyframes la-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+  @keyframes la-pop{0%{opacity:0;transform:scale(.5);}60%{transform:scale(1.12);}100%{opacity:1;transform:scale(1);}}
+  @keyframes la-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.35);}50%{box-shadow:0 0 0 12px rgba(255,255,255,0);}}
+  .la-kpi{animation:la-rise .5s both;}
+  .la-kpis .la-kpi:nth-child(1){animation-delay:.04s;} .la-kpis .la-kpi:nth-child(2){animation-delay:.10s;}
+  .la-kpis .la-kpi:nth-child(3){animation-delay:.16s;} .la-kpis .la-kpi:nth-child(4){animation-delay:.22s;}
+  .la-kpi-icon{animation:la-pop .5s both .12s;}
+  .la-card{animation:la-rise .55s both .28s;}
+  @media (prefers-reduced-motion:reduce){.la-kpi,.la-kpi-icon,.la-card,.la-orb{animation:none!important;}}
+
+  @media (max-width:1000px){.la-kpis{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.la-kpis{grid-template-columns:1fr;}.la-hero{padding:22px;}}
 </style>
 {% endblock %}
 
 {% block content %}
 
-{# ── HERO: live-apply state ─────────────────────────────────────────── #}
-<div class="p7-hero-card">
-  <div class="p7-state-orb {{ 'is-on' if live_apply.enabled else 'is-off' }}">
+{# ── HERO: live-apply master switch ─────────────────────────────────── #}
+<div class="la-hero {{ 'is-on' if live_apply.enabled else '' }}">
+  <div class="la-orb">
     <i class="fa-solid {{ 'fa-bolt' if live_apply.enabled else 'fa-pause' }}"></i>
   </div>
-  <div>
-    <div class="p7-state-title">
-      التطبيق الحي للأسطول:
-      {{ 'فعّال' if live_apply.enabled else 'معطّل' }}
+  <div class="la-hero-body">
+    <span class="la-hero-eyebrow">
+      <i class="fa-solid fa-tower-broadcast"></i> مفتاح تنفيذ الأسطول
+    </span>
+    <div class="la-hero-title">
+      التطبيق الحي: <b>{{ 'فعّال' if live_apply.enabled else 'معطّل' }}</b>
     </div>
-    <div class="p7-state-sub">
-      عندما يكون فعّالًا، يقوم وكيل radius-proxy بتنفيذ قرارات الفلوت
-      (نقل، فصل، إنهاء جلسة مكررة) فعليًا على عقد CHR. عندما يكون معطّلًا،
-      تبقى قرارات الفلوت استشارية ولا تُنفَّذ — وضع آمن للاختبار والمراقبة.
-      <br>
-      <small style="opacity:.75">
-        <strong>ملاحظة:</strong> هذا الإعداد لا يؤثّر على الفشل القسري (Forced
-        Failover) عند سقوط عقدة فعلًا — الفلوت ينقل المستخدمين تلقائيًا في تلك
-        الحالة بغضّ النظر عن «قابل للنقل».
+    <div class="la-hero-sub">
+      عندما يكون فعّالًا، يُنفّذ وكيل <span class="la-mono">radius-proxy</span> قرارات الفلوت
+      (نقل، فصل، إنهاء جلسة مكررة) فعليًا على عقد CHR. عندما يكون معطّلًا تبقى القرارات
+      استشارية ولا تُنفَّذ — وضع آمن للاختبار والمراقبة.
+      <small class="la-hero-note">
+        <strong>ملاحظة:</strong> هذا المفتاح لا يؤثّر على الفشل القسري (Forced Failover) عند
+        سقوط عقدة فعلًا — يُنقل المستخدمون تلقائيًا حينها بغضّ النظر عن «قابل للنقل».
       </small>
     </div>
   </div>
-  <div class="p7-state-actions">
+  <div class="la-hero-actions">
     <form id="p7-form-toggle-live-apply" method="post"
           action="{{ url_for('fleet_p7.toggle_live_apply') }}" style="display:inline">
       {{ csrf_input() }}
       <input type="hidden" name="desired" value="{{ 'off' if live_apply.enabled else 'on' }}">
       {% if live_apply.enabled %}
-      <button type="button" class="hub-btn hub-btn--ghost"
-              style="background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.32)"
+      <button type="button" class="la-btn la-btn--stop"
               data-confirm-form="p7-form-toggle-live-apply"
               data-confirm-title="إيقاف التطبيق الحي"
               data-confirm-msg="سيتوقّف وكيل radius-proxy عن تنفيذ قرارات الفلوت. هل أنت متأكد؟"
@@ -125,8 +212,7 @@
         <i class="fa-solid fa-pause"></i> إيقاف التطبيق الحي
       </button>
       {% else %}
-      <button type="button" class="hub-btn hub-btn--primary"
-              style="background:#16a34a;border-color:#15803d"
+      <button type="button" class="la-btn la-btn--go"
               data-confirm-form="p7-form-toggle-live-apply"
               data-confirm-title="تفعيل التطبيق الحي"
               data-confirm-msg="سيبدأ وكيل radius-proxy في تنفيذ قرارات الفلوت فعليًا على عقد CHR. تأكّد من جاهزية الأسطول."
@@ -139,30 +225,52 @@
   </div>
 </div>
 
-{# ── KPIs ──────────────────────────────────────────────────────────── #}
-<div class="hub-grid hub-grid--kpis" style="margin-block-end:var(--cc-gap-section)">
-  {{ hub.kpi("حالة التطبيق",
-             ('فعّال' if live_apply.enabled else 'معطّل'),
-             icon=('bolt' if live_apply.enabled else 'pause'),
-             variant=('brand' if live_apply.enabled else 'grey'),
-             sub="مفتاح يتحكم به المسؤول من اللوحة فقط") }}
-  {{ hub.kpi("مستخدمون في الفلوت", user_count|string,
-             icon="users", variant="info",
-             sub=("منهم " ~ movable_count|string ~ " قابل للنقل")) }}
-  {{ hub.kpi("أحداث التطبيق الأخيرة", (event_rows|length)|string,
-             icon="bolt-lightning", variant="amber",
-             sub="آخر 20 حدث") }}
-  {{ hub.kpi("قرارات الفلوت", (decisions_rows|length)|string,
-             icon="brain", variant="purple",
-             sub="آخر 10 قرارات") }}
+{# ── KPI strip ──────────────────────────────────────────────────────── #}
+<div class="la-kpis">
+  <div class="la-kpi {{ 'la-kpi--on' if live_apply.enabled else 'la-kpi--off' }}">
+    <div class="la-kpi-icon"><i class="fa-solid {{ 'fa-bolt' if live_apply.enabled else 'fa-pause' }}"></i></div>
+    <div>
+      <div class="la-kpi-num">{{ 'فعّال' if live_apply.enabled else 'معطّل' }}</div>
+      <div class="la-kpi-label">حالة التطبيق</div>
+      <div class="la-kpi-sub">يتحكّم به المسؤول من اللوحة فقط</div>
+    </div>
+  </div>
+  <div class="la-kpi la-kpi--info">
+    <div class="la-kpi-icon"><i class="fa-solid fa-users"></i></div>
+    <div>
+      <div class="la-kpi-num">{{ user_count }}</div>
+      <div class="la-kpi-label">مستخدمون في الفلوت</div>
+      <div class="la-kpi-sub">منهم {{ movable_count }} قابل للنقل</div>
+    </div>
+  </div>
+  <div class="la-kpi la-kpi--amber">
+    <div class="la-kpi-icon"><i class="fa-solid fa-bolt-lightning"></i></div>
+    <div>
+      <div class="la-kpi-num">{{ event_rows|length }}</div>
+      <div class="la-kpi-label">أحداث التطبيق الأخيرة</div>
+      <div class="la-kpi-sub">آخر 20 حدث</div>
+    </div>
+  </div>
+  <div class="la-kpi la-kpi--purple">
+    <div class="la-kpi-icon"><i class="fa-solid fa-brain"></i></div>
+    <div>
+      <div class="la-kpi-num">{{ decisions_rows|length }}</div>
+      <div class="la-kpi-label">قرارات الفلوت</div>
+      <div class="la-kpi-sub">آخر 10 قرارات</div>
+    </div>
+  </div>
 </div>
 
-{# ── Recent enforcement actions ────────────────────────────────────── #}
-{% call hub.section("أحداث التطبيق الأخيرة", icon="bolt-lightning",
-                   meta=(event_rows|length|string) ~ " حدث") %}
+{# ── Recent enforcement actions ─────────────────────────────────────── #}
+<div class="la-card">
+  <div class="la-card-head">
+    <div class="la-card-title"><i class="fa-solid fa-bolt-lightning"></i> أحداث التطبيق الأخيرة</div>
+    <div class="la-card-spacer"></div>
+    <span class="la-count">{{ event_rows|length }} حدث</span>
+  </div>
   {% if event_rows %}
-  <div class="p7-table-wrap">
-    <table class="hub-table">
+  <div class="la-tbl-wrap">
+    <table class="la-tbl">
       <thead><tr>
         <th>الوقت</th><th>{{ _('النوع') }}</th><th>المستخدم</th>
         <th>من</th><th>إلى</th><th>الإجراء</th><th>النتيجة</th><th>السبب</th>
@@ -170,40 +278,38 @@
       <tbody>
         {% for ev in event_rows %}
         <tr>
-          <td class="p7-mono small">{{ ev.ts.strftime('%Y-%m-%d %H:%M:%S') if ev.ts else '—' }}</td>
-          <td>
-            <span class="p7-pill p7-pill--{{ ev.severity }}">
-              {{ kind_labels.get(ev.kind, ev.kind) }}
-            </span>
-          </td>
-          <td class="p7-mono">{{ ev.user }}</td>
-          <td>{{ ev.previous_node or '<span class="p7-empty-cell">—</span>'|safe }}</td>
+          <td class="la-mono small">{{ ev.ts.strftime('%Y-%m-%d %H:%M:%S') if ev.ts else '—' }}</td>
+          <td><span class="la-pill la-pill--{{ ev.severity }}">{{ kind_labels.get(ev.kind, ev.kind) }}</span></td>
+          <td class="la-mono">{{ ev.user }}</td>
+          <td class="small">{{ ev.previous_node or '—' }}</td>
           <td><strong>{{ ev.node_name }}</strong></td>
           <td>{{ action_labels.get(ev.action, ev.action) }}</td>
-          <td>
-            <span class="p7-pill p7-pill--{{ 'on' if ev.result == 'applied' else 'crit' }}">
-              {{ 'مُطبَّق' if ev.result == 'applied' else 'فشل' }}
-            </span>
-          </td>
-          <td><small>{{ ev.reason }}</small></td>
+          <td><span class="la-pill la-pill--{{ 'on' if ev.result == 'applied' else 'crit' }}">{{ 'مُطبَّق' if ev.result == 'applied' else 'فشل' }}</span></td>
+          <td><small class="small">{{ ev.reason }}</small></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-    {{ hub.empty("لا توجد أحداث تطبيق مسجّلة بعد.",
-                 sub="سيظهر هنا كل قرار ينفّذه الوكيل (نقل / فصل / إنهاء جلسة).",
-                 icon="bolt-lightning") }}
+  <div class="la-empty">
+    <div class="la-empty-ic" style="background:#fff4e0;color:#b45309"><i class="fa-solid fa-bolt-lightning"></i></div>
+    <div class="la-empty-title">لا توجد أحداث تطبيق مسجّلة بعد.</div>
+    <div class="la-empty-sub">سيظهر هنا كل قرار ينفّذه الوكيل (نقل / فصل / إنهاء جلسة) بمجرّد أوّل عملية.</div>
+  </div>
   {% endif %}
-{% endcall %}
+</div>
 
-{# ── Recent placement decisions ────────────────────────────────────── #}
+{# ── Recent placement decisions (only when present) ─────────────────── #}
 {% if decisions_rows %}
-{% call hub.section("قرارات الفلوت الأخيرة", icon="brain",
-                   meta=(decisions_rows|length|string) ~ " قرار") %}
-  <div class="p7-table-wrap">
-    <table class="hub-table">
+<div class="la-card">
+  <div class="la-card-head">
+    <div class="la-card-title"><i class="fa-solid fa-brain"></i> قرارات الفلوت الأخيرة</div>
+    <div class="la-card-spacer"></div>
+    <span class="la-count">{{ decisions_rows|length }} قرار</span>
+  </div>
+  <div class="la-tbl-wrap">
+    <table class="la-tbl">
       <thead><tr>
         <th>الوقت</th><th>المستخدم</th><th>{{ _('النوع') }}</th>
         <th>من</th><th>إلى</th><th>{{ _('الحالة') }}</th>
@@ -211,39 +317,40 @@
       <tbody>
         {% for d in decisions_rows %}
         <tr>
-          <td class="p7-mono small">{{ d.decided_at.strftime('%Y-%m-%d %H:%M:%S') if d.decided_at else '—' }}</td>
-          <td class="p7-mono">{{ d.username }}</td>
+          <td class="la-mono small">{{ d.decided_at.strftime('%Y-%m-%d %H:%M:%S') if d.decided_at else '—' }}</td>
+          <td class="la-mono">{{ d.username }}</td>
           <td>{{ decision_kind_labels.get(d.kind, d.kind) }}</td>
           <td>{{ d['from'] }}</td>
           <td><strong>{{ d['to'] }}</strong></td>
-          <td>
-            <span class="p7-pill p7-pill--{{
-              'on' if d.outcome == 'applied' else
-              ('crit' if d.outcome == 'failed' else 'info')
-            }}">{{ outcome_labels.get(d.outcome, d.outcome) }}</span>
-          </td>
+          <td><span class="la-pill la-pill--{{ 'on' if d.outcome == 'applied' else ('crit' if d.outcome == 'failed' else 'info') }}">{{ outcome_labels.get(d.outcome, d.outcome) }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-{% endcall %}
+</div>
 {% endif %}
 
-{# ── Per-user movable table ────────────────────────────────────────── #}
-{% call hub.section("قابلية النقل لكل مستخدم", icon="people-arrows",
-                   meta=(users|length|string) ~ " مستخدم") %}
-  <div class="hub-note" style="margin-block-end:14px">
-    <i class="fa-solid fa-info-circle"></i>
-    «قابل للنقل» يحدّد ما إذا كان الفلوت يستطيع نقل المستخدم تحت قواعد
-    إعادة التوازن (CPU / تكلفة). <strong>خلال الأعطال الحقيقية</strong>
-    (سقوط عقدة كاملة) يتم نقل جميع المستخدمين تلقائيًا بغضّ النظر عن هذا
-    الإعداد — لا حاجة لتفعيله لتلقي حماية الفشل القسري.
+{# ── Per-user movable table ─────────────────────────────────────────── #}
+<div class="la-card">
+  <div class="la-card-head">
+    <div class="la-card-title"><i class="fa-solid fa-people-arrows"></i> قابلية النقل لكل مستخدم</div>
+    <div class="la-card-spacer"></div>
+    <span class="la-count">{{ users|length }} مستخدم</span>
+  </div>
+
+  <div class="la-note">
+    <i class="fa-solid fa-circle-info"></i>
+    <div>
+      «قابل للنقل» يحدّد ما إذا كان الفلوت يستطيع نقل المستخدم تحت قواعد إعادة التوازن
+      (CPU / تكلفة). <strong>خلال الأعطال الحقيقية</strong> (سقوط عقدة كاملة) يُنقل جميع
+      المستخدمين تلقائيًا بغضّ النظر عن هذا الإعداد — لا حاجة لتفعيله لتلقّي حماية الفشل القسري.
+    </div>
   </div>
 
   {% if users %}
-  <div class="p7-table-wrap">
-    <table class="hub-table">
+  <div class="la-tbl-wrap">
+    <table class="la-tbl">
       <thead><tr>
         <th>المستخدم</th><th>النطاق</th><th>{{ _('العميل') }}</th>
         <th>IP المثبّت</th><th>قابل للنقل</th><th>إجراءات</th>
@@ -251,22 +358,16 @@
       <tbody>
         {% for u in users %}
         <tr>
-          <td class="p7-mono"><strong>{{ u.username }}</strong></td>
+          <td class="la-mono"><strong>{{ u.username }}</strong></td>
           <td>{{ u.realm or '—' }}</td>
           <td>{{ u.customer_id }}</td>
-          <td class="p7-mono small">{{ u.fixed_ip or '—' }}</td>
+          <td class="la-mono small">{{ u.fixed_ip or '—' }}</td>
+          <td><span class="la-pill la-pill--{{ 'on' if u.movable else 'off' }}">{{ 'نعم' if u.movable else 'لا' }}</span></td>
           <td>
-            <span class="p7-pill p7-pill--{{ 'on' if u.movable else 'off' }}">
-              {{ 'نعم' if u.movable else 'لا' }}
-            </span>
-          </td>
-          <td class="p7-row-actions">
-            <form method="post"
-                  action="{{ url_for('fleet_p7.toggle_movable', user_id=u.id) }}"
-                  style="display:inline">
+            <form method="post" action="{{ url_for('fleet_p7.toggle_movable', user_id=u.id) }}" style="display:inline">
               {{ csrf_input() }}
               <input type="hidden" name="desired" value="{{ 'off' if u.movable else 'on' }}">
-              <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit"
+              <button class="la-rowbtn {{ 'la-rowbtn--lock' if u.movable else 'la-rowbtn--go' }}" type="submit"
                       title="{{ 'منع النقل' if u.movable else 'السماح بالنقل' }}">
                 <i class="fa-solid {{ 'fa-lock' if u.movable else 'fa-arrows-up-down-left-right' }}"></i>
                 {{ 'منع النقل' if u.movable else 'تمكين النقل' }}
@@ -279,39 +380,28 @@
     </table>
   </div>
   {% else %}
-    {{ hub.empty("لا يوجد مستخدمون في فهرس الفلوت بعد.",
-                 sub="ستتم إضافة المستخدمين تلقائيًا مع أوّل جلسة Acct-Start.",
-                 icon="users") }}
+  <div class="la-empty">
+    <div class="la-empty-ic" style="background:#e0f2fe;color:#0369a1"><i class="fa-solid fa-users"></i></div>
+    <div class="la-empty-title">لا يوجد مستخدمون في فهرس الفلوت بعد.</div>
+    <div class="la-empty-sub">ستتم إضافة المستخدمين تلقائيًا مع أوّل جلسة Acct-Start — أو أضِف واحدًا يدويًا للتهيئة.</div>
+  </div>
   {% endif %}
 
-  {# ── Manual seed form (for the test screenshot + initial setup) ── #}
-  <details style="margin-block-start:16px">
-    <summary style="cursor:pointer;font-weight:800;color:#5b21b6">
-      <i class="fa-solid fa-plus-circle"></i> إضافة مستخدم يدويًا (للتهيئة)
-    </summary>
-    <form method="post" action="{{ url_for('fleet_p7.seed_user') }}"
-          style="margin-block-start:14px;display:grid;
-                 grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
-                 gap:10px;align-items:end">
+  {# Manual seed form (initial setup / test) #}
+  <details class="la-seed">
+    <summary><i class="fa-solid fa-plus-circle"></i> إضافة مستخدم يدويًا (للتهيئة)</summary>
+    <form method="post" action="{{ url_for('fleet_p7.seed_user') }}" class="la-seed-grid">
       {{ csrf_input() }}
-      <label>المستخدم (user@realm)
-        <input class="hub-input" name="username" required>
-      </label>
-      <label>النطاق
-        <input class="hub-input" name="realm" required>
-      </label>
-      <label>معرّف العميل
-        <input class="hub-input" name="customer_id" type="number" min="1" required>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" name="movable" value="on"> قابل للنقل
-      </label>
-      <button class="hub-btn hub-btn--primary" type="submit">
+      <label>المستخدم (user@realm)<input class="la-input" name="username" required></label>
+      <label>النطاق<input class="la-input" name="realm" required></label>
+      <label>معرّف العميل<input class="la-input" name="customer_id" type="number" min="1" required></label>
+      <label class="la-check"><input type="checkbox" name="movable" value="on"> قابل للنقل</label>
+      <button class="la-btn la-btn--go" style="height:40px;color:#fff;background:var(--fdx-brand)" type="submit">
         <i class="fa-solid fa-floppy-disk"></i> {{ _('حفظ') }}
       </button>
     </form>
   </details>
-{% endcall %}
+</div>
 
 {# Floating toast for flash messages — design-system replacement for alert(). #}
 <div class="p7-toast" id="p7Toast" role="status" aria-live="polite"></div>
@@ -319,19 +409,13 @@
 (function () {
   'use strict';
   var toast = document.getElementById('p7Toast');
-  // Read Flask flashes off the rendered DOM so the toast appears even when
-  // a redirect carried them — the base template's _flash.html already
-  // renders them in .hub-flash blocks; we mirror the latest into the toast
-  // and auto-hide.
   var flashes = document.querySelectorAll('.hub-flash');
   if (flashes.length && toast) {
     var last = flashes[flashes.length - 1];
     var variant = (last.className.match(/hub-flash--(\w+)/) || [,'info'])[1];
     toast.className = 'p7-toast p7-toast--' + variant + ' is-visible';
     toast.textContent = last.textContent.trim();
-    setTimeout(function () {
-      toast.classList.remove('is-visible');
-    }, 2800);
+    setTimeout(function () { toast.classList.remove('is-visible'); }, 2800);
   }
 })();
 </script>
