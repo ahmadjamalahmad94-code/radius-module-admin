@@ -357,6 +357,79 @@
   .pj-btn.is-busy .fd-pj-icon{display:none;}
   .pj-btn.is-busy .fa-spinner{display:inline-block;}
 
+  /* ══ OVERVIEW tab — colourful KPIs + health bar + capacity panel ══════ */
+  .fd-kpis{grid-template-columns:repeat(4,1fr);}
+  .fd-kpi{position:relative;overflow:hidden;--accent:var(--fdx-brand);}
+  .fd-kpi::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:4px;background:var(--accent);}
+  .fd-kpi-icon{transition:transform .18s;}
+  .fd-kpi:hover .fd-kpi-icon{transform:scale(1.1) rotate(-4deg);}
+  .fd-kpi--total{--accent:var(--fdx-brand);}
+  .fd-kpi--up{--accent:#22c55e;}
+  .fd-kpi--deg{--accent:#f59e0b;}
+  .fd-kpi--down{--accent:#ef4444;}
+  .fd-kpi--unk{--accent:#a78bfa;}
+  .fd-kpi--elig{--accent:#0ea5e9;}
+  .fd-kpi--off{--accent:#94a3b8;}
+  .fd-kpi--pend{--accent:#6366f1;}
+  .fd-kpi-icon--elig{background:#e0f2fe;color:#0369a1;}
+  .fd-kpi-icon--pend{background:#eef2ff;color:#4338ca;}
+  .fd-kpi-trend{font-size:10.5px;font-weight:700;color:var(--fdx-mut);margin-top:5px;}
+
+  .ov-grid{display:grid;gap:16px;grid-template-columns:1.35fr 1fr;margin-block-start:16px;}
+  .ov-sub{font-size:12px;color:var(--fdx-ink2);line-height:1.6;margin:0 0 16px;}
+  .ov-healthbar{display:flex;height:20px;border-radius:999px;overflow:hidden;background:#eef2f7;
+    transform-origin:right;animation:fd-grow .7s .15s both cubic-bezier(.2,.85,.25,1);box-shadow:inset 0 0 0 1px rgba(15,23,42,.04);}
+  .ov-seg{height:100%;transition:flex-grow .4s;}
+  .ov-seg--up{background:linear-gradient(90deg,#16a34a,#22c55e);}
+  .ov-seg--deg{background:linear-gradient(90deg,#d97706,#f59e0b);}
+  .ov-seg--down{background:linear-gradient(90deg,#dc2626,#ef4444);}
+  .ov-seg--unk{background:linear-gradient(90deg,#7c3aed,#a78bfa);}
+  .ov-legend{display:flex;flex-wrap:wrap;gap:8px;margin-block-start:16px;}
+  .ov-leg{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--fdx-ink2);
+    background:#f8fafc;border:1px solid var(--fdx-line2);border-radius:var(--fdx-r-pill);padding:5px 12px;}
+  .ov-leg-dot{width:10px;height:10px;border-radius:4px;}
+  .ov-leg b{font-weight:900;color:var(--fdx-ink);font-variant-numeric:tabular-nums;}
+
+  .ov-util{display:flex;align-items:flex-end;gap:9px;}
+  .ov-util-num{font-size:42px;font-weight:900;line-height:.85;color:var(--fdx-ink);font-variant-numeric:tabular-nums;}
+  .ov-util-pct{font-size:18px;font-weight:800;color:var(--fdx-mut);margin-bottom:4px;}
+  .ov-util-cap{font-size:12px;color:var(--fdx-ink2);font-weight:700;margin-bottom:6px;margin-inline-start:auto;}
+  .ov-bar{margin-block-start:12px;height:10px;border-radius:999px;background:#eef2f7;overflow:hidden;}
+  .ov-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4f46e5,#22c55e);
+    transform-origin:right;animation:fd-grow .8s .25s both cubic-bezier(.2,.85,.25,1);}
+  .ov-stats{display:flex;flex-direction:column;gap:11px;margin-block-start:18px;}
+  .ov-stat{display:flex;align-items:center;gap:11px;font-size:13px;}
+  .ov-stat-ic{width:32px;height:32px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    background:var(--fdx-brand-soft);color:var(--fdx-brand);font-size:13px;}
+  .ov-stat-label{color:var(--fdx-ink2);flex:1;}
+  .ov-stat b{font-weight:900;color:var(--fdx-ink);font-variant-numeric:tabular-nums;}
+  .ov-best{margin-block-start:16px;background:#e7f8ef;border:1px solid #bbf7d0;border-radius:14px;padding:12px 14px;
+    display:flex;align-items:center;gap:11px;}
+  .ov-best-ic{width:34px;height:34px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    background:#15803d;color:#fff;font-size:14px;}
+  .ov-best-name{font-weight:900;font-size:13.5px;color:#14532d;}
+  .ov-best-meta{font-size:11.5px;color:#15803d;margin-top:2px;}
+
+  /* entrance + grow animations */
+  @keyframes fd-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+  @keyframes fd-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+  @keyframes fd-pop{0%{opacity:0;transform:scale(.5);}60%{transform:scale(1.12);}100%{opacity:1;transform:scale(1);}}
+  .hub-tab-panel[data-tab-panel="overview"] .fd-kpi{animation:fd-rise .5s both;}
+  .fd-kpis .fd-kpi:nth-child(1){animation-delay:.03s;}
+  .fd-kpis .fd-kpi:nth-child(2){animation-delay:.07s;}
+  .fd-kpis .fd-kpi:nth-child(3){animation-delay:.11s;}
+  .fd-kpis .fd-kpi:nth-child(4){animation-delay:.15s;}
+  .fd-kpis .fd-kpi:nth-child(5){animation-delay:.19s;}
+  .fd-kpis .fd-kpi:nth-child(6){animation-delay:.23s;}
+  .fd-kpis .fd-kpi:nth-child(7){animation-delay:.27s;}
+  .fd-kpis .fd-kpi:nth-child(8){animation-delay:.31s;}
+  .hub-tab-panel[data-tab-panel="overview"] .fd-kpi-icon{animation:fd-pop .5s both .1s;}
+  .hub-tab-panel[data-tab-panel="overview"] .ov-card{animation:fd-rise .55s both .34s;}
+  @media (prefers-reduced-motion:reduce){
+    .fd-kpi,.fd-kpi-icon,.ov-card,.ov-healthbar,.ov-bar>span{animation:none!important;}
+  }
+
+  @media (max-width:1100px){ .fd-kpis{grid-template-columns:repeat(2,1fr);} .ov-grid{grid-template-columns:1fr;} }
   @media (max-width:900px){
     .rk-row{grid-template-columns:auto 1fr;}
     .rk-score{grid-column:1 / -1;text-align:start;}
@@ -408,41 +481,115 @@
 
 {% call hub.tab_panel('overview') %}
 
+{# ── KPI strip — ordered total → health(up/deg/down/unknown) → eligible →
+     disabled/prov → pending. 8 cards = a clean 4×2 grid, colour-accented and
+     animated in. Health IDs preserved for the live-poll JS. ── #}
 <div class="fd-kpis">
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--total">
     <div class="fd-kpi-icon"><i class="fa-solid fa-network-wired"></i></div>
     <div><div class="fd-kpi-num">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
   </div>
-  {# Phase-4: health-dimension KPIs (متصل/مفصول/غير معروف/متدهور) #}
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--up">
     <div class="fd-kpi-icon fd-kpi-icon--up"><i class="fa-solid fa-circle-check"></i></div>
     <div><div class="fd-kpi-num" id="kpi-health-up">{{ by_health.get('up', 0) }}</div><div class="fd-kpi-label">متّصلة</div></div>
   </div>
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--deg">
     <div class="fd-kpi-icon fd-kpi-icon--deg"><i class="fa-solid fa-triangle-exclamation"></i></div>
     <div><div class="fd-kpi-num" id="kpi-health-deg">{{ by_health.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
   </div>
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--down">
     <div class="fd-kpi-icon fd-kpi-icon--down"><i class="fa-solid fa-circle-xmark"></i></div>
     <div><div class="fd-kpi-num" id="kpi-health-down">{{ by_health.get('down', 0) }}</div><div class="fd-kpi-label">مفصولة</div></div>
   </div>
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--unk">
     <div class="fd-kpi-icon fd-kpi-icon--unk"><i class="fa-solid fa-circle-question"></i></div>
     <div><div class="fd-kpi-num" id="kpi-health-unk">{{ by_health.get('unknown', 0) }}</div><div class="fd-kpi-label">غير معروفة</div></div>
   </div>
-  <div class="fd-kpi">
+  <div class="fd-kpi fd-kpi--elig">
+    <div class="fd-kpi-icon fd-kpi-icon--elig"><i class="fa-solid fa-bolt"></i></div>
+    <div><div class="fd-kpi-num">{{ overview_stats.eligible }}</div><div class="fd-kpi-label">مؤهّلة للجلسات</div></div>
+  </div>
+  <div class="fd-kpi fd-kpi--off">
     <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
     <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
   </div>
-  {# fix/fleet-onboarding-visibility: new KPI surfaces in-flight onboardings.
-     Without it, a draft/failed job was invisible — owner sees nothing for his click. #}
-  <div class="fd-kpi">
-    <div class="fd-kpi-icon" style="background:#eef2ff;color:#4338ca"><i class="fa-solid fa-spinner"></i></div>
-    <div>
-      <div class="fd-kpi-num">{{ pending_jobs_count }}</div>
-      <div class="fd-kpi-label">إضافات قيد التنفيذ</div>
+  <div class="fd-kpi fd-kpi--pend">
+    <div class="fd-kpi-icon fd-kpi-icon--pend"><i class="fa-solid fa-spinner"></i></div>
+    <div><div class="fd-kpi-num">{{ pending_jobs_count }}</div><div class="fd-kpi-label">إضافات قيد التنفيذ</div></div>
+  </div>
+</div>
+
+{# ── richer panels filling the space below the strip ── #}
+<div class="ov-grid">
+
+  {# health distribution bar + legend #}
+  <div class="fd-card ov-card">
+    <div class="fd-card-head" style="margin-block-end:10px">
+      <div class="fd-card-title"><i class="fa-solid fa-heart-pulse"></i> توزيع صحّة الأسطول</div>
+      <div class="fd-card-spacer"></div>
+      <span class="fb-source" style="background:#e7f8ef;color:#15803d" title="نسبة العقد المتّصلة الآن">
+        <i class="fa-solid fa-wifi"></i> {{ overview_stats.online_pct }}% متّصلة
+      </span>
+    </div>
+    <p class="ov-sub">نظرة بصرية على حالة كل عقد الأسطول — يتحدّث الشريط مع كل دورة فحص.</p>
+    {% set _u = by_health.get('up', 0) %}{% set _d = by_health.get('degraded', 0) %}
+    {% set _x = by_health.get('down', 0) %}{% set _k = by_health.get('unknown', 0) %}
+    {% if (_u + _d + _x + _k) > 0 %}
+      <div class="ov-healthbar" role="img" aria-label="توزيع الصحّة">
+        {% if _u %}<span class="ov-seg ov-seg--up"   style="flex:{{ _u }}" title="متّصلة: {{ _u }}"></span>{% endif %}
+        {% if _d %}<span class="ov-seg ov-seg--deg"  style="flex:{{ _d }}" title="متدهورة: {{ _d }}"></span>{% endif %}
+        {% if _x %}<span class="ov-seg ov-seg--down" style="flex:{{ _x }}" title="مفصولة: {{ _x }}"></span>{% endif %}
+        {% if _k %}<span class="ov-seg ov-seg--unk"  style="flex:{{ _k }}" title="غير معروفة: {{ _k }}"></span>{% endif %}
+      </div>
+    {% else %}
+      <div class="ov-healthbar"><span class="ov-seg" style="flex:1;background:#e2e8f0"></span></div>
+    {% endif %}
+    <div class="ov-legend">
+      <span class="ov-leg"><span class="ov-leg-dot" style="background:#22c55e"></span> متّصلة <b>{{ _u }}</b></span>
+      <span class="ov-leg"><span class="ov-leg-dot" style="background:#f59e0b"></span> متدهورة <b>{{ _d }}</b></span>
+      <span class="ov-leg"><span class="ov-leg-dot" style="background:#ef4444"></span> مفصولة <b>{{ _x }}</b></span>
+      <span class="ov-leg"><span class="ov-leg-dot" style="background:#a78bfa"></span> غير معروفة <b>{{ _k }}</b></span>
     </div>
   </div>
+
+  {# capacity + sessions + best node #}
+  <div class="fd-card ov-card">
+    <div class="fd-card-head" style="margin-block-end:10px">
+      <div class="fd-card-title"><i class="fa-solid fa-gauge-high"></i> السعة والجلسات</div>
+    </div>
+    <div class="ov-util">
+      <span class="ov-util-num">{{ overview_stats.sessions }}</span>
+      <span class="ov-util-pct">/ {{ overview_stats.capacity }}</span>
+      <span class="ov-util-cap">{{ overview_stats.util_pct }}% من السعة</span>
+    </div>
+    <div class="ov-bar"><span style="width:{{ overview_stats.util_pct if overview_stats.util_pct <= 100 else 100 }}%"></span></div>
+
+    <div class="ov-stats">
+      <div class="ov-stat">
+        <span class="ov-stat-ic"><i class="fa-solid fa-users"></i></span>
+        <span class="ov-stat-label">الجلسات النشطة عبر الأسطول</span>
+        <b>{{ overview_stats.sessions }}</b>
+      </div>
+      <div class="ov-stat">
+        <span class="ov-stat-ic" style="background:#e0f2fe;color:#0369a1"><i class="fa-solid fa-bolt"></i></span>
+        <span class="ov-stat-label">عقد مؤهّلة لاستقبال جلسات جديدة</span>
+        <b>{{ overview_stats.eligible }} / {{ total_nodes }}</b>
+      </div>
+    </div>
+
+    {% if best_rank %}
+      <div class="ov-best">
+        <span class="ov-best-ic"><i class="fa-solid fa-crown"></i></span>
+        <div style="flex:1;min-width:0">
+          <div class="ov-best-name">العقدة الأفضل حالياً: {{ best_rank.name }}</div>
+          <div class="ov-best-meta">
+            <span class="mono" dir="ltr">{{ best_rank.public_ip }}</span> · {{ best_rank.score_pct }}/100 نقطة
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
 </div>
 {% endcall %}{# /overview #}
 

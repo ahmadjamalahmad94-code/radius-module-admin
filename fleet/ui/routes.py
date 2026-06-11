@@ -124,6 +124,28 @@ def fleet_dashboard():
         if not (j.chr_id and j.chr_id in live_node_ids)
     ]
 
+    # ── Overview aggregates (read-only, derived from the same node_views) ──
+    # Power the redesigned overview tab: a health-distribution bar + a
+    # capacity/sessions panel that fill the space the bare KPI strip left
+    # empty. Pure presentation roll-ups — no new queries, no model changes.
+    ov_sessions = 0
+    ov_capacity = 0
+    for v in node_views:
+        s = v.metric.active_sessions
+        if s is None:
+            s = v.node.active_sessions or 0
+        ov_sessions += int(s or 0)
+        ov_capacity += int(v.node.max_sessions or 0)
+    ov_views = len(node_views)
+    overview_stats = {
+        "sessions": ov_sessions,
+        "capacity": ov_capacity,
+        "util_pct": round(ov_sessions * 100 / ov_capacity) if ov_capacity else 0,
+        "eligible": eligible_count,
+        "online_pct": round(by_health.get("up", 0) * 100 / ov_views) if ov_views else 0,
+    }
+    best_rank = ranking[0] if ranking and ranking[0].eligible else None
+
     return render_template(
         "admin/fleet/dashboard.html",
         nodes=nodes,                  # kept for backwards-compat refs
@@ -139,6 +161,8 @@ def fleet_dashboard():
         total_providers=len(providers),
         pending_jobs=pending_job_views,
         pending_jobs_count=len(pending_job_views),
+        overview_stats=overview_stats,
+        best_rank=best_rank,
     )
 
 
