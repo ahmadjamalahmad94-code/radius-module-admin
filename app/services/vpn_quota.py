@@ -173,19 +173,20 @@ def _bounce(client, username: str) -> None:
 def run_once(now: datetime | None = None) -> dict:
     """يزامن كوتة كل الأنفاق الفعّالة المُنشأة على CHR التي لها كوتة شهرية.
 
-    يُستدعى من مؤقّت systemd (مثل whatsapp-drain) كل بضع دقائق — اللوحة بلا عامل
-    مقيم. يبني عميل CHR مرّة واحدة، يمرّ على الأنفاق، يحفظ، ويعيد ملخّصًا. لا يرفع:
-    خطأ نفقٍ لا يكسر البقية."""
+    Zero-central: each tunnel now lives on a specific fleet CHR node
+    (``tunnel.fleet_chr_node``). The worker builds ONE client per distinct
+    node it sees in the active-tunnel set (cached for the run) so it
+    doesn't reconnect for every row. A node whose credentials fail
+    contributes its tunnels to the ``errors`` count and the run continues
+    — one bad node never breaks the rest of the fleet's quota loop.
+    """
     from ..extensions import db
     from ..models import CustomerVpnTunnel
-    from . import chr_settings
+    from . import fleet_node_router
+    from .fleet_node_router import FleetNodeUnavailable
 
     summary = {"checked": 0, "throttled": 0, "restored": 0, "errors": 0}
     now = now or datetime.now(timezone.utc)
-    try:
-        client = chr_settings.build_client()
-    except Exception as exc:  # noqa: BLE001 — CHR غير مهيّأ ⇒ لا شيء نفعله
-        return {**summary, "fatal": f"CHR client unavailable: {exc}"}
 
     tunnels = (
         CustomerVpnTunnel.query
@@ -195,8 +196,33 @@ def run_once(now: datetime | None = None) -> dict:
         .filter(CustomerVpnTunnel.monthly_quota_gb > 0)
         .all()
     )
+    if not tunnels:
+        return summary
+
+    # Build clients lazily, one per node — `None` means "couldn't build a
+    # client for this node, skip its tunnels".
+    client_cache: dict[int, object] = {}
+
+    def _client_for(tunnel):
+        node = tunnel.fleet_chr_node
+        if node is None:
+            # Legacy tunnel without a stamped node — try the brain pick once.
+            node = fleet_node_router.auto_pick_best_node()
+        if node is None:
+            return None
+        if node.id not in client_cache:
+            try:
+                client_cache[node.id] = fleet_node_router.build_client_for(node)
+            except FleetNodeUnavailable:
+                client_cache[node.id] = None
+        return client_cache[node.id]
+
     for tunnel in tunnels:
         summary["checked"] += 1
+        client = _client_for(tunnel)
+        if client is None:
+            summary["errors"] += 1
+            continue
         res = sync_tunnel(tunnel, client, now=now)
         if not res.get("ok"):
             summary["errors"] += 1

@@ -22,7 +22,8 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import Customer, License, WireguardPeer, utcnow
-from . import chr_settings
+from . import fleet_node_router
+from .fleet_node_router import FleetNodeUnavailable
 from .customer_vault_crypto import decrypt_secret, encrypt_secret
 from .routeros_client import RouterOSError
 
@@ -180,11 +181,25 @@ def server_public_key_cached() -> str:
     return _setting_value(SERVER_PUBKEY_SETTING)
 
 
-def server_endpoint() -> dict:
-    """العنوان والمنفذ العام لخدمة WireGuard كما يتصل بها العميل."""
-    endpoint = chr_settings.public_endpoint()
-    port = int(current_app.config.get("CHR_WIREGUARD_LISTEN_PORT") or DEFAULT_LISTEN_PORT)
-    return {"public_host": endpoint["public_host"], "port": port}
+def server_endpoint(node=None) -> dict:
+    """العنوان والمنفذ العام لخدمة WireGuard كما يتصل بها العميل.
+
+    Derives the host:port for THIS peer's fleet node — node-aware so a
+    customer on chr-vpn-3 doesn't get chr-vpn-1's WAN address in their
+    config. ``node`` is required for new peers; legacy callers (no
+    fleet node yet) get the brain's best pick as a soft fallback.
+    """
+    if node is None:
+        node = fleet_node_router.auto_pick_best_node()
+    if node is None:
+        # No fleet at all — degrade to the unknown-host marker; the
+        # caller (peer config builder) decides whether to surface this.
+        return {"public_host": "", "port": int(current_app.config.get("CHR_WIREGUARD_LISTEN_PORT") or DEFAULT_LISTEN_PORT)}
+    endpoint = fleet_node_router.endpoint_for(node)
+    # Fleet endpoint already includes a wireguard port; prefer that, fall
+    # back to the env override when the operator hasn't seeded a fleet port.
+    port = int(endpoint.ports.get("wireguard") or current_app.config.get("CHR_WIREGUARD_LISTEN_PORT") or DEFAULT_LISTEN_PORT)
+    return {"public_host": endpoint.public_host, "port": port}
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -242,6 +257,7 @@ def provision_peer(
     keepalive_seconds: int | None = None,
     created_by_admin_id: int | None = None,
     notes: str = "",
+    fleet_chr_node_id: int | None = None,
 ) -> WireguardPeer:
     """يحجز عنوانًا، ينشئ القرين على CHR، ويعيد السجل (دون commit).
 
@@ -251,14 +267,17 @@ def provision_peer(
         العام لـ CHR. هذا هو السلوك الافتراضي لأن أغلب المالكين لا يملكون
         مولّدًا جاهزًا وسيرتاحون لكون اللوحة تجهّز التكوين كاملاً.
 
+    Zero-central placement: when the operator passes ``fleet_chr_node_id``
+    we provision on that exact node; otherwise we ask the fleet brain for
+    the best-eligible up/enabled/non-drain node — the internal load balancer.
+
     يرفع :class:`WireguardPeerError` على أي فشل ولا يكتب شيئًا للقاعدة عند فشل CHR.
     """
-    if not chr_settings.enabled():
-        raise WireguardPeerError("chr_disabled", "تزويد CHR غير مُفعّل في إعدادات اللوحة.")
     try:
-        client = chr_settings.build_client()
-    except chr_settings.ChrSettingsError as exc:
-        raise WireguardPeerError("chr_not_configured", str(exc)) from exc
+        node = fleet_node_router.resolve_node(fleet_chr_node_id)
+        client = fleet_node_router.build_client_for(node)
+    except FleetNodeUnavailable as exc:
+        raise WireguardPeerError("chr_not_configured", exc.message) from exc
 
     pub = (public_key or "").strip()
     priv = ""
@@ -303,7 +322,7 @@ def provision_peer(
         ) from exc
 
     peer_id = str(created.get(".id") or created.get("id") or "")
-    endpoint = server_endpoint()
+    endpoint = server_endpoint(node)
     name = _unique_peer_name(customer, label)
     peer = WireguardPeer(
         customer_id=customer.id,
@@ -322,7 +341,8 @@ def provision_peer(
         source="admin_manual",
         chr_provisioned=True,
         chr_peer_id=peer_id,
-        chr_host=chr_settings.resolved().get("host", ""),
+        chr_host=(node.public_ip or node.wg_mgmt_ip or "").strip(),
+        fleet_chr_node_id=node.id,
         delivery_status="pending",
         created_by_admin_id=created_by_admin_id,
         notes=(notes or "").strip()[:2000],
@@ -335,13 +355,25 @@ def provision_peer(
 
 
 def revoke_peer(peer: WireguardPeer) -> None:
-    """يحذف القرين من CHR ويعلّم السجل ملغيًا. لا يُنفّذ commit."""
+    """يحذف القرين من CHR ويعلّم السجل ملغيًا. لا يُنفّذ commit.
+
+    Targets the peer's home fleet node (the one ``provision_peer`` placed
+    it on). Legacy peers with no fleet node id stamped fall back to the
+    brain's pick — best-effort, but the operator should expect a manual
+    cleanup if the legacy node has been removed.
+    """
     if peer.chr_provisioned and peer.chr_peer_id:
+        node = peer.fleet_chr_node or fleet_node_router.auto_pick_best_node()
+        if node is None:
+            raise WireguardPeerError(
+                "no_fleet_node",
+                "لا توجد عقدة في الأسطول لإلغاء القرين منها.",
+            )
         try:
-            client = chr_settings.build_client()
+            client = fleet_node_router.build_client_for(node)
             client.remove_wireguard_peer(peer.chr_peer_id)
-        except chr_settings.ChrSettingsError as exc:
-            raise WireguardPeerError("chr_not_configured", str(exc)) from exc
+        except FleetNodeUnavailable as exc:
+            raise WireguardPeerError("chr_not_configured", exc.message) from exc
         except RouterOSError as exc:
             raise WireguardPeerError(
                 "chr_remove_failed",

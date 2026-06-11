@@ -143,19 +143,31 @@ def delete_profile(profile: ChrSpeedProfile) -> None:
 
 # ───────────────────────── CHR application ─────────────────────────
 
-def ensure_on_chr(profile: ChrSpeedProfile):
-    """يهيّئ ``/ppp/profile`` المقابل على CHR بسرعته **والعنونة** (idempotent). يرفع
-    للمستدعي عند فشل CHR/الإعداد. للاستخدام من واجهة «اختبار/مزامنة البروفايل».
+def ensure_on_chr(profile: ChrSpeedProfile) -> dict:
+    """Fan-out: idempotently install ``/ppp/profile`` for ``profile`` on every
+    eligible fleet CHR (enabled + not drain + not disabled). The unified
+    profile name lets every node carry the same rate-limit policy so any
+    tunnel placed by the brain finds its profile already in place.
+
+    Returns ``{"total", "ok", "skipped", "errors", "per_node": [...]}`` so the
+    «اختبار/مزامنة» button in the admin UI can show one card per node.
+    A single-node failure is reported in the result — it never breaks the
+    rest of the fan-out. The pre-zero-central behaviour (raise on any
+    failure) was a chr_settings-singleton assumption that doesn't fit a
+    multi-node deployment.
 
     pool **مشترك واحد** لكل البروفايلات (لا pool لكل سرعة) — البروفايلات تختلف فقط
-    بالـrate-limit. بدون local/remote-address لا يأخذ العميل IPv4."""
+    بالـrate-limit. بدون local/remote-address لا يأخذ العميل IPv4.
+    """
     from flask import current_app
-    from . import chr_settings
+    from . import fleet_node_router
+    from .fleet_node_router import FleetNodeUnavailable
     from .reserved_subnets import (
         ReservedSubnetError,
         assert_address_not_reserved,
         assert_pool_range_not_reserved,
     )
+    from .routeros_client import RouterOSError
     cfg = current_app.config
     pool_name = (cfg.get("CHR_PPP_ADDRESS_POOL") or "ppp-vpn-pool").strip() or "ppp-vpn-pool"
     local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.10.0.1").strip() or "10.10.0.1"
@@ -164,20 +176,55 @@ def ensure_on_chr(profile: ChrSpeedProfile):
     # The PPP gateway address + the client pool MUST NOT overlap the wg-mgmt
     # / wg-data /24s. Otherwise the CHR routes RADIUS toward a PPP client
     # instead of the wg-data peer (the chr-vpn-1 collision of 2026-06).
+    # Validate ONCE up-front — same config is pushed to every node so a
+    # reserved-subnet collision applies fleet-wide.
     try:
         assert_address_not_reserved(local_addr, field_label="CHR_PPP_LOCAL_ADDRESS")
         assert_pool_range_not_reserved(pool_ranges, field_label="CHR_PPP_POOL_RANGES")
     except ReservedSubnetError as exc:
         raise SpeedProfileError(str(exc)) from exc
-    client = chr_settings.build_client()
-    client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
-    client.ensure_ppp_profile(
-        name=profile.effective_chr_profile_name,
-        rate_limit=rate_limit_string(profile.download_mbps, profile.upload_mbps),
-        local_address=local_addr,
-        remote_address=pool_name,
-        use_encryption=use_enc,
-    )
+
+    nodes = fleet_node_router.available_nodes()
+    result = {
+        "total": len(nodes),
+        "ok": 0,
+        "skipped": 0,
+        "errors": 0,
+        "per_node": [],
+    }
+    if not nodes:
+        # No fleet at all — nothing to sync to. Caller sees ok=0/total=0 and
+        # surfaces the «أضف عقدة CHR أولًا» message.
+        return result
+
+    for node in nodes:
+        per = {"node_id": node.id, "node_name": node.name, "ok": False, "message": ""}
+        try:
+            client = fleet_node_router.build_client_for(node)
+        except FleetNodeUnavailable as exc:
+            per["message"] = exc.message
+            result["skipped"] += 1
+            result["per_node"].append(per)
+            continue
+        try:
+            client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
+            client.ensure_ppp_profile(
+                name=profile.effective_chr_profile_name,
+                rate_limit=rate_limit_string(profile.download_mbps, profile.upload_mbps),
+                local_address=local_addr,
+                remote_address=pool_name,
+                use_encryption=use_enc,
+            )
+        except RouterOSError as exc:
+            per["message"] = exc.message or "RouterOS error"
+            result["errors"] += 1
+            result["per_node"].append(per)
+            continue
+        per["ok"] = True
+        per["message"] = "تم الدفع للعقدة."
+        result["ok"] += 1
+        result["per_node"].append(per)
+    return result
 
 
 def serialize(profile: ChrSpeedProfile) -> dict:

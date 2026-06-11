@@ -286,6 +286,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, "wg") }}
         {{ _license_field("wg") }}
+        {{ _node_field("wg", fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>اسم القرين</label>
           <input class="ac-input" name="label" placeholder="مثال: موبايل أحمد" maxlength="60">
@@ -340,16 +341,46 @@
         <i class="fa-solid fa-{{ 'lock' if is_sstp else 'plug' }}"></i>
       </span>
       <div>
-        <div class="ac-modal-title">إضافة اتصال {{ ttype|upper }}</div>
-        <div class="ac-modal-sub">{{ 'TLS فوق TCP/443 — مناسب للجدران الصارمة' if is_sstp else 'كلاسيكي خفيف الإعداد — للاختبار/الشبكات الموثوقة' }}</div>
+        <div class="ac-modal-title">
+          {% if is_sstp %}إنشاء رابط RADIUS عبر SSTP{% else %}إضافة اتصال {{ ttype|upper }}{% endif %}
+        </div>
+        <div class="ac-modal-sub">
+          {% if is_sstp %}
+            ربط راديوس العميل ⇄ ميكروتيك المشترك — حركة RADIUS (auth/acct/CoA) تمرّ عبر النفق
+          {% else %}
+            كلاسيكي خفيف الإعداد — للاختبار/الشبكات الموثوقة
+          {% endif %}
+        </div>
       </div>
       <button type="button" class="ac-modal-close" data-ac-close-modal aria-label="إغلاق">×</button>
     </div>
     <div class="ac-modal-body">
       {% if is_sstp %}
+      {# Explainer pinned by the owner's architectural intent — without it
+         operators reach for SSTP as a "generic VPN" and miss the RADIUS-
+         transport role that drives the whole flow. #}
       <div class="ac-callout">
         <i class="fa-solid fa-circle-info"></i>
-        يُستخدم اسم المستخدم وكلمة المرور المولَّدان تلقائيًا لإنشاء <code>/ppp/secret</code> على CHR.
+        <div>
+          هذا الرابط يُعدّ <b>قناة نقل RADIUS</b>: ميكروتيك المشترك يتّصل عبر SSTP بعقدة
+          الأسطول المختارة، ثم يرسل حِزَم <code>auth</code> و<code>accounting</code>
+          و<code>CoA</code> إلى وكيل RADIUS، الذي يوجّهها إلى نسخة RADIUS الخاصة بهذا
+          العميل (<code>radius_auth_ip</code>) عبر قناة wg-data الإدارية.
+        </div>
+      </div>
+      {# RADIUS-link readiness preview — JS hits /api/radius-link-preview
+         whenever the customer or fleet node changes. The placeholder
+         shows on first open; when the operator picks a customer it
+         turns into «الـRealm: X ← RADIUS: Y» with the readiness state. #}
+      <div class="ac-callout"
+           data-ac-radius-preview
+           data-ac-preview-url="{{ url_for('admin_access.api_radius_link_preview') }}"
+           style="background:#eef2ff;border-color:#c7d2fe;color:#3730a3">
+        <i class="fa-solid fa-route"></i>
+        <div>
+          <b>سلسلة RADIUS:</b>
+          <span data-ac-preview-body>اختر عميلًا وعقدة لمعاينة سلسلة RADIUS الكاملة.</span>
+        </div>
       </div>
       {% else %}
       <div class="ac-callout warn">
@@ -360,6 +391,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, ttype) }}
         {{ _license_field(ttype) }}
+        {{ _node_field(ttype, fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>بروفايل السرعة</label>
           <select class="ac-select" name="speed_profile_id">
@@ -425,6 +457,7 @@
       <div class="ac-fields">
         {{ _customer_field(customers, "ipsec") }}
         {{ _license_field("ipsec") }}
+        {{ _node_field("ipsec", fleet_nodes, default_fleet_node_id, default_fleet_node_name) }}
         <div class="ac-field">
           <label>عدد الاتصالات المتزامنة</label>
           <input class="ac-input" type="number" name="max_connections" min="1" value="1">
@@ -467,6 +500,34 @@
   <select class="ac-select ac-license-select" name="license_id" data-scope="{{ scope }}">
     <option value="">— تلقائي (أفضل ترخيص نشط) —</option>
   </select>
+</div>
+{% endmacro %}
+
+{# ─── Zero-central node picker — «على أي عقدة؟»
+   Defaults to the brain's best pick (the internal load-balancer). The
+   operator can override and target any of the fleet's CHRs, or leave
+   the «تلقائي» option selected for the brain to choose at provision
+   time. Renders an empty disabled state when the fleet is empty so
+   the operator knows the action is blocked until they add a CHR. ── #}
+{% macro _node_field(scope, fleet_nodes, default_id, default_name) %}
+<div class="ac-field">
+  <label>على أي عقدة؟ <span style="font-weight:400;color:#64748b">— موازن الأسطول الداخلي يرشّح الأفضل تلقائيًا</span></label>
+  {% if fleet_nodes %}
+  <select class="ac-select" name="fleet_chr_node_id" data-scope="{{ scope }}">
+    <option value="">
+      تلقائي{% if default_name %} — افتراضيًا «{{ default_name }}»{% endif %}
+    </option>
+    {% for n in fleet_nodes %}
+      <option value="{{ n.id }}"{% if n.id == default_id %} selected{% endif %}>
+        {{ n.name }} — {{ n.public_ip or '—' }} ({{ n.status }}{% if n.drain %} · drain{% endif %})
+      </option>
+    {% endfor %}
+  </select>
+  {% else %}
+  <select class="ac-select" name="fleet_chr_node_id" disabled>
+    <option>لا توجد عقد في الأسطول — أضف عقدة من «معالج إضافة CHR»</option>
+  </select>
+  {% endif %}
 </div>
 {% endmacro %}
 
@@ -535,6 +596,72 @@
           });
         }).catch(function(){});
     });
+  });
+
+  // ── RADIUS-link preview (SSTP modal only).
+  // The SSTP tunnel is the RADIUS transport. Whenever the operator
+  // changes the customer or the fleet node, we re-audit the whole chain
+  // (customer → radius instance → proxy realm route → fleet allowlist)
+  // and render a clear «الـRealm: X ← RADIUS: Y» line — green when the
+  // chain is complete, amber when something's missing so the operator
+  // can fix it BEFORE creating the tunnel.
+  document.querySelectorAll('[data-ac-radius-preview]').forEach(function(box){
+    var url = box.getAttribute('data-ac-preview-url');
+    var body = box.querySelector('[data-ac-preview-body]');
+    if (!url || !body) return;
+
+    // Find the form this preview lives inside — that's the SSTP form
+    // (we only render the preview block inside is_sstp branch).
+    var form = box.closest('form');
+    if (!form) return;
+    var custSel = form.querySelector('select[name="customer_id"]');
+    var nodeSel = form.querySelector('select[name="fleet_chr_node_id"]');
+    if (!custSel) return;
+
+    function escHtml(s) { var d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
+
+    function paint(data) {
+      var ok = !!(data && data.ok);
+      // Re-tint the callout box to telegraph the chain status.
+      if (ok) {
+        box.style.background = '#dcfce7';
+        box.style.borderColor = '#86efac';
+        box.style.color = '#166534';
+      } else {
+        box.style.background = '#fef3c7';
+        box.style.borderColor = '#fcd34d';
+        box.style.color = '#92400e';
+      }
+      var parts = [];
+      if (data && data.realm) {
+        parts.push('<b>الـRealm:</b> <code>' + escHtml(data.realm) + '</code>');
+      }
+      if (data && data.radius_target) {
+        parts.push('<b>RADIUS الهدف:</b> <code dir="ltr">' + escHtml(data.radius_target) + '</code>');
+      }
+      var line = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '';
+      var msg = (data && data.message) ? escHtml(data.message) : '';
+      body.innerHTML = (line ? '<div style="margin-bottom:4px">' + line + '</div>' : '') + msg;
+    }
+
+    function refresh() {
+      if (!custSel.value) {
+        box.style.background = '#eef2ff';
+        box.style.borderColor = '#c7d2fe';
+        box.style.color = '#3730a3';
+        body.textContent = 'اختر عميلًا وعقدة لمعاينة سلسلة RADIUS الكاملة.';
+        return;
+      }
+      var qs = 'customer_id=' + encodeURIComponent(custSel.value);
+      if (nodeSel && nodeSel.value) qs += '&fleet_chr_node_id=' + encodeURIComponent(nodeSel.value);
+      fetch(url + '?' + qs)
+        .then(function(r){ return r.json(); })
+        .then(paint)
+        .catch(function(){ body.textContent = 'تعذّر فحص السلسلة.'; });
+    }
+
+    custSel.addEventListener('change', refresh);
+    if (nodeSel) nodeSel.addEventListener('change', refresh);
   });
 })();
 </script>

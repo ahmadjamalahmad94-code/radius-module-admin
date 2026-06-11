@@ -13,7 +13,7 @@ from ..auth.routes import audit, login_required
 from ..extensions import db
 from ..models import Customer, CustomerVpnTunnel, License, WireguardPeer
 from ..services import access_connections as ac
-from ..services import chr_settings as chr_svc
+from ..services import fleet_node_router
 from ..services import speed_profiles as sp
 from ..services import vpn_tunnels as vt
 from ..services import wireguard_peers as wg
@@ -28,9 +28,16 @@ bp = Blueprint("admin_access", __name__, url_prefix="/admin/access-connections")
 @bp.get("")
 @login_required
 def index():
-    """صفحة الهبوط: 4 بطاقات بروتوكول + جدول الاتصالات + KPIs."""
+    """صفحة الهبوط: 4 بطاقات بروتوكول + جدول الاتصالات + KPIs.
+
+    Zero-central: the operator picks a fleet node in each provisioning
+    modal («على أي عقدة؟»). The dropdown defaults to the brain's best
+    pick — the internal load balancer — so the common case is one click.
+    """
     protocol_filter = (request.args.get("protocol") or "").strip().lower()
     connections = ac.list_connections(protocol=protocol_filter)
+    fleet_nodes = fleet_node_router.available_nodes()
+    default_node = fleet_node_router.auto_pick_best_node()
     return render_template(
         "admin/access_connections/index.html",
         protocols=ac.protocol_overview(),
@@ -39,8 +46,13 @@ def index():
         connections=connections,
         stats=ac.stats(),
         protocol_filter=protocol_filter,
-        chr_enabled=chr_svc.enabled(),
-        chr_configured=chr_svc.get_state().get("configured", False),
+        # Replaces the legacy chr_settings.enabled() / get_state() — the new
+        # readiness check is "does the fleet have any eligible node?".
+        chr_enabled=bool(fleet_nodes),
+        chr_configured=bool(fleet_nodes),
+        fleet_nodes=fleet_nodes,
+        default_fleet_node_id=(default_node.id if default_node else None),
+        default_fleet_node_name=(default_node.name if default_node else ""),
         customers=ac.customer_options(),
         speed_profiles=sp.list_profiles(active_only=True),
         ppp_types=sorted(vt.MANUAL_TYPES - {"sstp"}) + ["sstp"],
@@ -59,6 +71,23 @@ def api_customer_licenses(customer_id: int):
     """تراخيص العميل ⇒ JSON لاستهلاكها من المودال (تحديث القائمة بعد اختيار العميل)."""
     db.get_or_404(Customer, customer_id)
     return jsonify({"licenses": ac.license_options(customer_id)})
+
+
+@bp.get("/api/radius-link-preview")
+@login_required
+def api_radius_link_preview():
+    """RADIUS-transport chain audit for the SSTP modal.
+
+    Owner's architectural intent: the SSTP tunnel created here links the
+    subscriber's MikroTik to the customer's RADIUS — auth + accounting +
+    CoA all travel on it. The modal calls this endpoint whenever the
+    operator changes the customer or fleet node so it can preview the
+    realm + RADIUS target + whether the chain is complete BEFORE the
+    create-and-provision happens.
+    """
+    customer_id = _safe_int(request.args.get("customer_id"))
+    fleet_chr_node_id = _safe_int(request.args.get("fleet_chr_node_id"))
+    return jsonify(ac.radius_link_preview(customer_id, fleet_chr_node_id))
 
 
 # ───────────────────────── create: PPP / IPsec ─────────────────────────
@@ -84,6 +113,28 @@ def create_ppp():
         else find_best_customer_license(customer)
     )
     speed_profile_id = _safe_int(request.form.get("speed_profile_id"))
+    # Operator's fleet-node pick — empty/missing = let the brain pick the
+    # best-eligible node (the internal load balancer).
+    fleet_chr_node_id = _safe_int(request.form.get("fleet_chr_node_id"))
+
+    # ── Architectural intent guard for SSTP =====================================
+    # SSTP in this flow is the RADIUS-transport link between the panel's
+    # RADIUS and the subscriber's MikroTik. If the customer has no
+    # CustomerRadiusInstance / no active ProxyRealmRoute / picked node
+    # not in the realm's allow-list, the tunnel will still create on the
+    # CHR but the RADIUS path won't reach the customer's RADIUS. We
+    # surface the chain status as an Arabic flash; we do NOT block the
+    # create (the operator may be staging things in a specific order).
+    if tunnel_type == "sstp":
+        preview = ac.radius_link_preview(customer.id, fleet_chr_node_id)
+        if not preview.get("ok"):
+            flash(
+                "تنبيه — رابط SSTP يحمل حركة RADIUS بين راديوس العميل وميكروتيك المشترك: "
+                + (preview.get("message") or "السلسلة غير مكتملة."),
+                "warning",
+            )
+    # ===========================================================================
+
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -100,6 +151,7 @@ def create_ppp():
             source="admin_manual",
             created_by_admin_id=session.get("admin_id"),
             notes=request.form.get("notes") or "",
+            fleet_chr_node_id=fleet_chr_node_id,
         )
     except vt.VpnTunnelError as exc:
         db.session.rollback()
@@ -110,14 +162,25 @@ def create_ppp():
         "customer_vpn_tunnel",
         str(tunnel.id),
         f"إنشاء اتصال {tunnel.tunnel_type} للعميل {customer.company_name} من «اتصالات الوصول»",
-        {"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username},
+        {"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username,
+         "fleet_chr_node_id": tunnel.fleet_chr_node_id},
     )
     db.session.commit()
-    flash(
-        f"تم إنشاء اتصال {vt.TUNNEL_TYPE_LABELS.get(tunnel.tunnel_type, tunnel.tunnel_type)} "
-        f"({tunnel.username}) — سيُسلَّم للعميل عبر الجسر.",
-        "success",
-    )
+    # The SSTP success toast names the RADIUS-transport role explicitly so
+    # the operator remembers what they just created. Other PPP tunnel
+    # types stick with the generic «اتصال» wording.
+    if tunnel.tunnel_type == "sstp":
+        flash(
+            f"تم إنشاء رابط RADIUS عبر SSTP ({tunnel.username}) على عقدة الأسطول — "
+            "سيتسلّم العميل بياناته عبر الجسر ثم يُدخلها في إعدادات SSTP-Client على ميكروتيك المشترك.",
+            "success",
+        )
+    else:
+        flash(
+            f"تم إنشاء اتصال {vt.TUNNEL_TYPE_LABELS.get(tunnel.tunnel_type, tunnel.tunnel_type)} "
+            f"({tunnel.username}) — سيُسلَّم للعميل عبر الجسر.",
+            "success",
+        )
     return redirect(url_for("admin_access.index"))
 
 
@@ -166,6 +229,7 @@ def create_wireguard():
     )
     use_preshared = bool(request.form.get("use_preshared"))
     keepalive = _safe_int(request.form.get("keepalive_seconds")) or wg.DEFAULT_KEEPALIVE_SECONDS
+    fleet_chr_node_id = _safe_int(request.form.get("fleet_chr_node_id"))
     try:
         peer = wg.provision_peer(
             customer,
@@ -178,6 +242,7 @@ def create_wireguard():
             keepalive_seconds=keepalive,
             created_by_admin_id=session.get("admin_id"),
             notes=request.form.get("notes") or "",
+            fleet_chr_node_id=fleet_chr_node_id,
         )
     except wg.WireguardPeerError as exc:
         db.session.rollback()

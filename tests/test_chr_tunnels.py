@@ -1,495 +1,192 @@
-"""اختبارات تزويد أنفاق CHR المركزية: إعدادات CHR، خدمة التزويد، وجسر الأنفاق.
+"""Zero-central tunnel provisioning — VPN tunnels target a FleetChrNode.
 
-كل استدعاءات الشبكة لـ RouterOS مُستبدَلة (monkeypatch) فلا نتصل بأي CHR حقيقي،
-تمامًا كما تفعل اختبارات whatsapp مع المزوّد.
+The pre-zero-central tests in this file pinned the singleton
+``chr_settings`` lifecycle (validate_and_save / lock / unlock / reveal /
+test_connection). All of that is gone now: there's no singleton, and
+every tunnel is provisioned on a specific fleet node either chosen by
+the operator or auto-picked by the fleet brain.
+
+What this suite pins:
+  * provision_tunnel() picks the brain's best-eligible node when no
+    explicit choice is given;
+  * provision_tunnel() uses the operator's explicit choice when given;
+  * the resulting CustomerVpnTunnel stamps the fleet_chr_node_id FK;
+  * no node available → a clean Arabic error (no_fleet_node) bubbles up;
+  * serialize_tunnel() returns the picked node's public_host + service
+    port (not a global singleton).
 """
 from __future__ import annotations
-
-import time
-from datetime import datetime, timedelta
 
 import pytest
 
 from app.extensions import db
-from app.license_signing import sign_license_payload
-from app.models import (
-    Customer,
-    CustomerVpnEntitlement,
-    CustomerVpnTunnel,
-    License,
-    Plan,
-    Setting,
-    utcnow,
-)
-from app.services import chr_settings, vpn_tunnels
-from app.services.routeros_client import RouterOSClient, RouterOSError
+from app.models import Customer, License, Plan, utcnow
+from app.services import vpn_tunnels as vt
+from fleet.registry.models_chr import FleetChrNode, FleetProvider
 
 
-# ───────────────────────── fixtures / helpers ─────────────────────────
-
-@pytest.fixture()
-def customer(app):
-    plan = Plan.query.filter_by(slug="pro").first()
-    cust = Customer(company_name="Test ISP", status="active")
-    db.session.add(cust)
-    db.session.flush()
-    lic = License(
-        customer_id=cust.id,
-        plan_id=plan.id,
-        license_key="HBR-TUNNEL-TEST-0001",
+# ─────────────────────────────────────────────────────────────────────────
+# Test helpers
+# ─────────────────────────────────────────────────────────────────────────
+def _customer():
+    c = Customer(
+        company_name="ACME", contact_name="O", email="o@acme",
         status="active",
-        starts_at=utcnow(),
-        expires_at=utcnow() + timedelta(days=30),
-        max_fingerprints=3,
     )
-    db.session.add(lic)
-    # صلاحية VPN تسمح بثلاثة مستخدمين (= ثلاثة أنفاق).
-    db.session.add(CustomerVpnEntitlement(
-        customer_id=cust.id, enabled=True, status="active",
-        download_mbps=50, upload_mbps=50, max_vpn_users=3, max_locations=1,
-    ))
-    db.session.commit()
-    return cust
+    db.session.add(c); db.session.commit()
+    return c
 
 
-def _configure_chr():
-    """يحفظ بيانات CHR صالحة في الإعدادات (كلمة المرور تُشفَّر)."""
-    chr_settings.validate_and_save(
-        {
-            "host": "vpn-test.hoberadius.com",
-            "port": "443",
-            "username": "admin",
-            "password": "s3cret-chr-pass",
-            "use_tls": "1",
-            "verify_tls": "",
-        },
-        actor_audit=lambda *a, **k: None,
+def _provider():
+    p = FleetProvider(name="prov-test", cost_model="open", price_per_tb=0)
+    db.session.add(p); db.session.flush()
+    return p
+
+
+def _fleet_node(prov, *, name="chr-1", public_ip="1.2.3.4", wg="10.99.0.11",
+                status="up", enabled=True, drain=False, sessions=0):
+    n = FleetChrNode(
+        provider_id=prov.id, name=name, public_ip=public_ip,
+        wg_mgmt_ip=wg, wg_mgmt_pubkey="pubkey",
+        routeros_api_port=8443, routeros_api_user="hobe-panel",
+        routeros_api_password_enc="",
+        coa_port=3799, max_sessions=1000, link_speed_mbps=1000,
+        status=status, enabled=enabled, drain=drain,
+        active_sessions=sessions,
     )
-    db.session.commit()
+    db.session.add(n); db.session.commit()
+    return n
 
 
-class _FakeClient:
-    """عميل RouterOS وهمي يسجّل ما أُنشئ/حُذف بدل لمس الشبكة.
-
-    يحاكي idempotency لـ IPsec: ``ip/ipsec/user`` يُخزَّن باسمه، و``ensure_*``
-    تُنشئ البنية المشتركة مرّة واحدة وتُحصي الاستدعاءات للتحقق.
-    """
-
-    created: list[dict] = []
-    removed: list[str] = []
-    raise_on_create = False
-    # IPsec state
-    ipsec_users: dict[str, dict] = {}
-    ipsec_removed: list[str] = []
-    ipsec_disabled: list[tuple] = []
-    infra_calls: dict[str, int] = {}
-    # PPP profiles ensured (name, rate_limit) for speed-control assertions.
-    profiles_ensured: list[tuple] = []
-
-    def __init__(self, *a, **k):
-        pass
-
-    def test_connection(self):
-        return {"identity": "CHR-Test", "version": "7.15", "board_name": "CHR", "uptime": "1d"}
-
-    def ensure_ip_pool(self, *, name, ranges="", **_kw):
-        return {".id": "*pool", "name": name, "ranges": ranges}
-
-    def ensure_ppp_profile(self, *, name, rate_limit="", **_kw):
-        _FakeClient.profiles_ensured.append((name, rate_limit))
-        return {".id": "*p", "name": name, "rate-limit": rate_limit}
-
-    def create_ppp_secret(self, **kwargs):
-        if _FakeClient.raise_on_create:
-            raise RouterOSError("request_invalid", "اسم مستخدم مكرر على CHR.")
-        _FakeClient.created.append(kwargs)
-        return {".id": f"*{len(_FakeClient.created)}", **kwargs}
-
-    def remove_ppp_secret(self, secret_id):
-        _FakeClient.removed.append(secret_id)
-
-    def set_ppp_secret_disabled(self, secret_id, disabled):
-        pass
-
-    # ── IPsec ──
-    def _bump(self, key):
-        _FakeClient.infra_calls[key] = _FakeClient.infra_calls.get(key, 0) + 1
-
-    def ensure_ipsec_mode_config(self, **kwargs):
-        self._bump("mode_config")
-        return {".id": "*mc", **kwargs}
-
-    def ensure_ipsec_peer(self, **kwargs):
-        self._bump("peer")
-        return {".id": "*peer", **kwargs}
-
-    def ensure_ipsec_identity(self, **kwargs):
-        self._bump("identity")
-        return {".id": "*id", **kwargs}
-
-    def find_ipsec_user(self, name):
-        return _FakeClient.ipsec_users.get(name)
-
-    def create_ipsec_user(self, *, name, password, comment=""):
-        if _FakeClient.raise_on_create:
-            raise RouterOSError("request_invalid", "تعذّر إنشاء مستخدم IPsec.")
-        rec = {".id": f"*u{len(_FakeClient.ipsec_users) + 1}", "name": name, "comment": comment}
-        _FakeClient.ipsec_users[name] = rec
-        return rec
-
-    def remove_ipsec_user(self, user_id):
-        _FakeClient.ipsec_removed.append(user_id)
-
-    def set_ipsec_user_disabled(self, user_id, disabled):
-        _FakeClient.ipsec_disabled.append((user_id, disabled))
+def _license(customer):
+    from datetime import timedelta
+    plan = Plan.query.first()
+    if not plan:
+        plan = Plan(name="basic", slug="basic")
+        db.session.add(plan); db.session.flush()
+    now = utcnow()
+    lic = License(
+        customer_id=customer.id, plan_id=plan.id,
+        license_key=f"LIC-{customer.id}", status="active",
+        starts_at=now, expires_at=now + timedelta(days=30),
+        grace_until=now + timedelta(days=37),
+    )
+    db.session.add(lic); db.session.commit()
+    return lic
 
 
-@pytest.fixture()
-def fake_chr(app, monkeypatch):
-    _FakeClient.created = []
-    _FakeClient.removed = []
-    _FakeClient.raise_on_create = False
-    _FakeClient.ipsec_users = {}
-    _FakeClient.ipsec_removed = []
-    _FakeClient.ipsec_disabled = []
-    _FakeClient.infra_calls = {}
-    _FakeClient.profiles_ensured = []
-    monkeypatch.setattr(chr_settings, "build_client", lambda: _FakeClient())
-    return _FakeClient
+class _StubClient:
+    last_host: str = ""
+
+    def __init__(self, **kw):
+        type(self).last_host = kw.get("host", "")
+
+    def ensure_ip_pool(self, **kw): return {}
+    def ensure_ppp_profile(self, **kw): return {}
+    def create_ppp_secret(self, **kw): return {".id": "*A1"}
+    def remove_ppp_secret(self, _id): return None
+    def ensure_ipsec_mode_config(self, **kw): return {}
+    def ensure_ipsec_peer(self, **kw): return {}
+    def ensure_ipsec_identity(self, **kw): return {}
+    def find_ipsec_user(self, name): return None
+    def create_ipsec_user(self, **kw): return {".id": "*B1"}
+    def remove_ipsec_user(self, _id): return None
 
 
-# ───────────────────────── chr_settings ─────────────────────────
+@pytest.fixture(autouse=True)
+def _stub_node_client(monkeypatch):
+    from app.services import fleet_node_router
+    _StubClient.last_host = ""
 
-def test_chr_settings_password_encrypted_and_masked(app):
-    _configure_chr()
-    # القيمة المخزّنة ليست النص الصريح.
-    raw = db.session.get(Setting, "chr.password").value
-    assert raw and raw != "s3cret-chr-pass"
-    state = chr_settings.get_state()
-    assert state["configured"] is True
-    assert state["fields"]["password"]["present"] is True
-    assert "s3cret-chr-pass" not in state["fields"]["password"]["masked"]
-    # القيمة الفعّالة تُفكّ صحيحة.
-    assert chr_settings.resolved()["password"] == "s3cret-chr-pass"
+    def _build(node):
+        return _StubClient(host=(node.public_ip or node.wg_mgmt_ip))
+    monkeypatch.setattr(fleet_node_router, "build_client_for", _build)
 
 
-def test_chr_settings_blank_password_keeps_existing(app):
-    _configure_chr()
-    chr_settings.validate_and_save(
-        {"host": "new-host", "port": "8729", "username": "admin2", "password": "", "use_tls": "1"},
-        actor_audit=lambda *a, **k: None,
+# ─────────────────────────────────────────────────────────────────────────
+# Brain auto-pick chooses the best-eligible node
+# ─────────────────────────────────────────────────────────────────────────
+def test_provision_picks_brain_best_node_when_no_explicit_choice(app):
+    cust = _customer()
+    lic = _license(cust)
+    prov = _provider()
+    busy = _fleet_node(prov, name="chr-busy", public_ip="10.0.0.1",
+                       wg="10.99.0.1", sessions=900)
+    best = _fleet_node(prov, name="chr-best", public_ip="10.0.0.2",
+                       wg="10.99.0.2", sessions=10)
+
+    tunnel = vt.provision_tunnel(
+        cust, lic, tunnel_type="sstp", max_connections=1,
+        source="admin_manual", enforce_allowance=False,
     )
     db.session.commit()
-    assert chr_settings.resolved()["password"] == "s3cret-chr-pass"
-    assert chr_settings.resolved()["host"] == "new-host"
+
+    assert tunnel.fleet_chr_node_id == best.id, (
+        f"expected best=chr-best (id={best.id}) but tunnel stamped {tunnel.fleet_chr_node_id}"
+    )
+    assert _StubClient.last_host == best.public_ip
 
 
-def test_chr_settings_requires_host(app):
-    with pytest.raises(chr_settings.ChrSettingsError):
-        chr_settings.validate_and_save(
-            {"host": "", "username": "admin", "password": "x"},
-            actor_audit=lambda *a, **k: None,
+def test_provision_honours_explicit_fleet_chr_node_id(app):
+    cust = _customer()
+    lic = _license(cust)
+    prov = _provider()
+    a = _fleet_node(prov, name="chr-a", public_ip="10.0.0.1", wg="10.99.0.1")
+    b = _fleet_node(prov, name="chr-b", public_ip="10.0.0.2", wg="10.99.0.2")
+    tunnel = vt.provision_tunnel(
+        cust, lic, tunnel_type="sstp", max_connections=1,
+        source="admin_manual", enforce_allowance=False,
+        fleet_chr_node_id=b.id,
+    )
+    db.session.commit()
+    assert tunnel.fleet_chr_node_id == b.id
+    assert _StubClient.last_host == b.public_ip
+
+
+def test_provision_fails_cleanly_when_no_fleet_node(app):
+    cust = _customer()
+    lic = _license(cust)
+    with pytest.raises(vt.VpnTunnelError) as ei:
+        vt.provision_tunnel(
+            cust, lic, tunnel_type="sstp", max_connections=1,
+            source="admin_manual", enforce_allowance=False,
         )
+    assert ei.value.code == "no_fleet_node"
+    assert "الأسطول" in str(ei.value)
 
 
-def test_chr_test_connection_ok(app, fake_chr):
-    _configure_chr()
-    result = chr_settings.test_connection(actor_audit=lambda *a, **k: None)
-    assert result["ok"] is True
-    assert result["identity"] == "CHR-Test"
-
-
-# ───────────────────────── provisioning service ─────────────────────────
-
-def test_provision_sstp_creates_on_chr_and_encrypts_password(app, customer, fake_chr):
-    _configure_chr()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp", source="bridge_request")
-    db.session.commit()
-    assert tunnel.chr_provisioned is True
-    assert tunnel.chr_secret_id
-    assert tunnel.status == "active"
-    assert len(fake_chr.created) == 1
-    assert fake_chr.created[0]["service"] == "sstp"
-    # كلمة المرور مخزّنة مشفّرة، وتُفكّ صحيحة.
-    assert tunnel.password_encrypted and "password" not in tunnel.password_encrypted.lower()[:4]
-    assert len(vpn_tunnels.get_tunnel_password(tunnel)) >= 16
-
-
-def test_provision_respects_connection_allowance(app, customer, fake_chr):
-    _configure_chr()
-    lic = customer.licenses.first()
-    for _ in range(3):  # الحدّ = 3 (max_vpn_users)
-        vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    db.session.commit()
-    with pytest.raises(vpn_tunnels.VpnTunnelError) as exc:
-        vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    assert exc.value.code == "limit_reached"
-
-
-def test_provision_chr_failure_persists_nothing(app, customer, fake_chr):
-    _configure_chr()
-    fake_chr.raise_on_create = True
-    lic = customer.licenses.first()
-    with pytest.raises(vpn_tunnels.VpnTunnelError) as exc:
-        vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    assert exc.value.code == "chr_create_failed"
-    db.session.rollback()
-    assert CustomerVpnTunnel.query.filter_by(customer_id=customer.id).count() == 0
-
-
-def test_ipsec_provisions_user_on_chr(app, customer, fake_chr):
-    """IPsec يُؤتمت الآن: يُنشأ /ip/ipsec/user وتُهيَّأ البنية المشتركة."""
-    _configure_chr()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec", source="admin_manual")
-    db.session.commit()
-    assert tunnel.chr_provisioned is True
-    assert tunnel.chr_secret_id  # معرّف /ip/ipsec/user
-    assert tunnel.status == "active"
-    assert len(fake_chr.ipsec_users) == 1
-    # لم يُنشأ /ppp/secret لنوع IPsec.
-    assert len(fake_chr.created) == 0
-    # البنية المشتركة هُيّئت.
-    assert fake_chr.infra_calls.get("mode_config") == 1
-    assert fake_chr.infra_calls.get("peer") == 1
-    assert fake_chr.infra_calls.get("identity") == 1
-
-
-def test_ipsec_provisioning_idempotent(app, fake_chr):
-    """إعادة التزويد لنفس المستخدم (بعد فقد الرد) لا تُكرّره — يُعاد المعرّف نفسه."""
-    _configure_chr()
-    client = fake_chr()
-    id1 = vpn_tunnels._provision_ipsec_user(client, "c1-fixeduser", "pw-1", "comment")
-    id2 = vpn_tunnels._provision_ipsec_user(client, "c1-fixeduser", "pw-1", "comment")
-    assert id1 and id1 == id2
-    assert len(fake_chr.ipsec_users) == 1
-
-
-def test_ipsec_record_only_when_automation_disabled(app, customer, fake_chr):
-    """عند تعطيل CHR_IPSEC_AUTO_PROVISION يعود السلوك إلى «سجل فقط»."""
-    _configure_chr()
-    app.config["CHR_IPSEC_AUTO_PROVISION"] = False
-    try:
-        lic = customer.licenses.first()
-        tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec", source="admin_manual")
-        db.session.commit()
-        assert tunnel.chr_provisioned is False
-        assert tunnel.status == "active"
-        assert len(fake_chr.ipsec_users) == 0
-        assert "IPsec" in tunnel.notes or "سجل" in tunnel.notes
-    finally:
-        app.config["CHR_IPSEC_AUTO_PROVISION"] = True
-
-
-def test_ipsec_revoke_removes_user_from_chr(app, customer, fake_chr):
-    _configure_chr()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="ipsec")
-    db.session.commit()
-    secret_id = tunnel.chr_secret_id
-    vpn_tunnels.revoke_tunnel(tunnel)
-    db.session.commit()
-    assert tunnel.status == "revoked"
-    assert secret_id in fake_chr.ipsec_removed
-
-
-def test_revoke_removes_from_chr(app, customer, fake_chr):
-    _configure_chr()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    db.session.commit()
-    vpn_tunnels.revoke_tunnel(tunnel)
-    db.session.commit()
-    assert tunnel.status == "revoked"
-    assert tunnel.chr_secret_id in fake_chr.removed
-
-
-def test_serialize_hides_password_after_delivery(app, customer, fake_chr):
-    _configure_chr()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    db.session.commit()
-    assert "password" in vpn_tunnels.serialize_tunnel(tunnel, include_password=True)
-    vpn_tunnels.acknowledge_delivery(customer, [tunnel.username])
-    db.session.commit()
-    assert "password" not in vpn_tunnels.serialize_tunnel(tunnel, include_password=True)
-
-
-def test_serialize_includes_public_endpoint_and_service_port(app, customer, fake_chr):
-    """رد الجسر يحمل العنوان العام والمنفذ لكل خدمة (يتصل بهما عميلُ العميل)."""
-    # عنوان عام مخصّص ومنفذ SSTP مخصّص.
-    chr_settings.validate_and_save(
-        {
-            "host": "mgmt.hoberadius.com", "port": "8729", "username": "admin",
-            "password": "s3cret-chr-pass", "use_tls": "1", "verify_tls": "",
-            "public_host": "vpn.hoberadius.com", "port_sstp": "4443",
-        },
-        actor_audit=lambda *a, **k: None,
+def test_disabled_node_is_skipped_by_brain(app):
+    cust = _customer()
+    lic = _license(cust)
+    prov = _provider()
+    _fleet_node(prov, name="chr-disabled", public_ip="10.0.0.1",
+                wg="10.99.0.1", enabled=False)
+    good = _fleet_node(prov, name="chr-good", public_ip="10.0.0.2",
+                       wg="10.99.0.2")
+    tunnel = vt.provision_tunnel(
+        cust, lic, tunnel_type="sstp", max_connections=1,
+        source="admin_manual", enforce_allowance=False,
     )
     db.session.commit()
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
+    assert tunnel.fleet_chr_node_id == good.id
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Serialisation reflects the per-node endpoint
+# ─────────────────────────────────────────────────────────────────────────
+def test_serialize_uses_node_public_ip(app):
+    cust = _customer()
+    lic = _license(cust)
+    prov = _provider()
+    node = _fleet_node(prov, name="chr-srv", public_ip="203.0.113.99",
+                       wg="10.99.0.99")
+    tunnel = vt.provision_tunnel(
+        cust, lic, tunnel_type="sstp", max_connections=1,
+        source="admin_manual", enforce_allowance=False,
+    )
     db.session.commit()
-    data = vpn_tunnels.serialize_tunnel(tunnel, include_password=True)
-    assert data["chr_public_host"] == "vpn.hoberadius.com"
-    assert data["service_port"] == 4443
-
-
-def test_public_endpoint_falls_back_to_admin_host_and_defaults(app):
-    """بلا عنوان عام/منافذ مخصّصة: نستخدم المضيف الإداري والمنافذ الافتراضية."""
-    _configure_chr()  # host=vpn-test.hoberadius.com، بلا public_host/منافذ خدمات
-    ep = chr_settings.public_endpoint()
-    assert ep["public_host"] == "vpn-test.hoberadius.com"
-    assert ep["ports"]["sstp"] == chr_settings.SERVICE_PORT_DEFAULTS["sstp"]
-    assert ep["ports"]["ipsec"] == chr_settings.SERVICE_PORT_DEFAULTS["ipsec"]
-
-
-# ───────────────────────── bridge endpoints ─────────────────────────
-
-def _signed_body(app, customer, **extra):
-    lic = customer.licenses.first()
-    body = {
-        "license_key": lic.license_key,
-        "server_fingerprint": "fp-test-1",
-        "nonce": f"n-{time.time()}-{extra.get('_n','')}",
-        "timestamp": int(time.time()),
-        **{k: v for k, v in extra.items() if not k.startswith("_")},
-    }
-    secret = app.config["LICENSE_CHECK_HMAC_SECRET"] or "test-secret"
-    app.config["LICENSE_CHECK_HMAC_SECRET"] = secret
-    body["signature"] = sign_license_payload(body, secret)
-    return body
-
-
-def test_bridge_request_provisions_and_returns_password(app, client, customer, fake_chr):
-    _configure_chr()
-    app.config["LICENSE_CHECK_SIGNATURE_REQUIRED"] = True
-    app.config["LICENSE_CHECK_ALLOW_UNSIGNED"] = False
-    # أول بصمة تُسجّل تلقائيًا (max_fingerprints=3) فالترخيص يبقى نشطًا.
-    body = _signed_body(app, customer, _n="req")
-    resp = client.post(
-        "/api/integration/hoberadius/vpn/tunnels/request",
-        json=body,
-        headers={"X-Forwarded-Proto": "https"},
-        environ_overrides={"wsgi.url_scheme": "https"},
-    )
-    assert resp.status_code == 201, resp.get_json()
-    data = resp.get_json()
-    assert data["ok"] is True
-    assert data["tunnel"]["password"]
-    assert data["tunnel"]["tunnel_type"] == "sstp"
-
-
-def test_bridge_list_then_ack_hides_password(app, client, customer, fake_chr):
-    _configure_chr()
-    app.config["LICENSE_CHECK_SIGNATURE_REQUIRED"] = True
-    app.config["LICENSE_CHECK_ALLOW_UNSIGNED"] = False
-    lic = customer.licenses.first()
-    tunnel = vpn_tunnels.provision_tunnel(customer, lic, tunnel_type="sstp")
-    db.session.commit()
-    username = tunnel.username
-
-    body = _signed_body(app, customer, _n="list")
-    resp = client.post(
-        "/api/integration/hoberadius/vpn/tunnels",
-        json=body,
-        environ_overrides={"wsgi.url_scheme": "https"},
-    )
-    data = resp.get_json()
-    assert data["ok"] is True
-    assert any(t.get("password") for t in data["tunnels"])
-
-    ack = _signed_body(app, customer, usernames=[username], _n="ack")
-    resp2 = client.post(
-        "/api/integration/hoberadius/vpn/tunnels/ack",
-        json=ack,
-        environ_overrides={"wsgi.url_scheme": "https"},
-    )
-    assert resp2.get_json()["acknowledged"] == 1
-
-    body2 = _signed_body(app, customer, _n="list2")
-    resp3 = client.post(
-        "/api/integration/hoberadius/vpn/tunnels",
-        json=body2,
-        environ_overrides={"wsgi.url_scheme": "https"},
-    )
-    assert all("password" not in t for t in resp3.get_json()["tunnels"])
-
-
-def test_bridge_request_unsigned_rejected(app, client, customer, fake_chr):
-    _configure_chr()
-    app.config["LICENSE_CHECK_SIGNATURE_REQUIRED"] = True
-    app.config["LICENSE_CHECK_ALLOW_UNSIGNED"] = False
-    lic = customer.licenses.first()
-    resp = client.post(
-        "/api/integration/hoberadius/vpn/tunnels/request",
-        json={"license_key": lic.license_key, "server_fingerprint": "fp"},
-        environ_overrides={"wsgi.url_scheme": "https"},
-    )
-    assert resp.status_code == 401
-
-
-def test_bridge_request_requires_https(app, client, customer, fake_chr):
-    _configure_chr()
-    resp = client.post(
-        "/api/integration/hoberadius/vpn/tunnels/request",
-        json={"license_key": "x", "server_fingerprint": "y"},
-    )
-    assert resp.status_code == 426
-
-
-# ───────────────────────── admin UI render ─────────────────────────
-
-def _login(client):
-    return client.post("/login", data={"username": "admin", "password": "admin12345"})
-
-
-def test_settings_page_shows_chr_section(app, client):
-    _login(client)
-    resp = client.get("/admin/settings")
-    assert resp.status_code == 200
-    # The CHR connection section lives in the live settings page (general_new.html)
-    # as the «MikroTik CHR» tab — it was previously orphaned in the unused
-    # settings.html. Assert the tab + its save form are present.
-    assert "MikroTik CHR".encode() in resp.data
-    assert b'id="tab-chr"' in resp.data
-    assert b'action="/admin/settings/chr"' in resp.data
-
-
-def test_customer_tunnels_page_renders(app, client, customer):
-    _login(client)
-    resp = client.get(f"/admin/customers/{customer.id}/vpn-tunnels")
-    assert resp.status_code == 200
-    assert "أنفاق VPN المركزية".encode() in resp.data
-
-
-def test_admin_manual_create_tunnel(app, client, customer, fake_chr):
-    _configure_chr()
-    _login(client)
-    with client.session_transaction() as sess:
-        token = sess.get("_csrf_token", "")
-    resp = client.post(
-        f"/admin/customers/{customer.id}/vpn-tunnels",
-        data={"tunnel_type": "pptp", "profile": "default", "max_connections": "1", "_csrf_token": token},
-        follow_redirects=True,
-    )
-    assert resp.status_code == 200
-    assert CustomerVpnTunnel.query.filter_by(customer_id=customer.id, tunnel_type="pptp").count() == 1
-
-
-# ───────────────────────── routeros client (offline) ─────────────────────────
-
-def test_routeros_client_not_configured_raises():
-    client = RouterOSClient(host="", username="a", password="b")
-    with pytest.raises(RouterOSError) as exc:
-        client._request("GET", "system/resource")
-    assert exc.value.code == "not_configured"
-
-
-def test_routeros_password_never_in_error():
-    client = RouterOSClient(host="", username="admin", password="TOPSECRET")
-    try:
-        client._request("GET", "system/resource")
-    except RouterOSError as exc:
-        assert "TOPSECRET" not in str(exc)
+    data = vt.serialize_tunnel(tunnel, include_password=False)
+    assert data["chr_host"] == "203.0.113.99"
+    assert data["chr_public_host"] == "203.0.113.99"
+    assert data["service_port"] == 443
+    assert data["chr_node_name"] == "chr-srv"
