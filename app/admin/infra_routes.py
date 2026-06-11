@@ -205,6 +205,15 @@ def chr_node_detail(node_id: int):
         .order_by(ServiceAllocation.status, ServiceAllocation.created_at.desc())
         .all()
     )
+    # Live-health derivation — the detail page was reading telemetry into the
+    # metrics LOG but the header still showed the raw lifecycle field
+    # (``status='pending'``) even while fresh CPU/RAM/session samples were
+    # arriving, which read as "connected here, not there". Surface the latest
+    # sample + a single ``is_live`` flag (fresh telemetry) so the UI can show
+    # an accurate live state alongside the (separate) registration lifecycle.
+    stale = _is_stale(node)
+    latest_metric = recent_metrics[0] if recent_metrics else None
+    is_live = bool(latest_metric) and not stale
     return render_template(
         "admin/infra/chr_detail_new.html",
         node=node,
@@ -212,9 +221,12 @@ def chr_node_detail(node_id: int):
         available_mbps=max(0, node.max_reserved_mbps - reserved),
         capacity_badge=_capacity_badge(reserved, node.max_reserved_mbps),
         recent_metrics=recent_metrics,
+        latest_metric=latest_metric,
+        is_live=is_live,
+        active_alloc_count=sum(1 for a in allocations if a.status == "active"),
         allocations=allocations,
         service_choices=SERVICE_TYPE_CHOICES,
-        stale=_is_stale(node),
+        stale=stale,
     )
 
 

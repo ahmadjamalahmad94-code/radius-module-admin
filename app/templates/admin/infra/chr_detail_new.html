@@ -2,806 +2,495 @@
 {% block title %}{{ node.name }} — تفاصيل العقدة{% endblock %}
 {% block page_title %}{{ node.name }}{% endblock %}
 
+{% block head_extra %}
+<style>
+  /* ════════════════════════════════════════════════════════════════════
+     CHR node detail — full redesign in the fleet .fd-* design language.
+     Local --ndx-* tokens, .nd-* components. Live telemetry is surfaced up
+     top (was previously buried in the log table); registration lifecycle
+     and live health are shown as two distinct things.
+     ════════════════════════════════════════════════════════════════════ */
+  :root{
+    --ndx-card:#fff; --ndx-line:#e8edf3; --ndx-line2:#eef2f7;
+    --ndx-ink:#0f172a; --ndx-ink2:#475569; --ndx-mut:#94a3b8;
+    --ndx-brand:#4f46e5; --ndx-brand-ink:#3730a3; --ndx-brand-soft:#eef2ff;
+    --ndx-r-pill:999px;
+    --ndx-sh:0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.18);
+  }
+
+  /* ── hero ─────────────────────────────────────────────────────────── */
+  .nd-hero{position:relative;overflow:hidden;border-radius:22px;color:#fff;padding:24px 28px;
+    display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-block-end:18px;
+    background:radial-gradient(120% 160% at 100% 0%, #6366f1 0%, #4338ca 55%, #312e81 100%);
+    box-shadow:0 26px 52px -28px rgba(49,46,129,.7);}
+  .nd-hero.is-live{background:radial-gradient(120% 160% at 100% 0%, #16a34a 0%, #15803d 52%, #14532d 100%);
+    box-shadow:0 26px 52px -28px rgba(20,83,45,.65);}
+  .nd-hero::after{content:"";position:absolute;inset-inline-end:-50px;inset-block-start:-60px;width:230px;height:230px;
+    border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none;}
+  .nd-orb{width:66px;height:66px;border-radius:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:26px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);}
+  .nd-hero.is-live .nd-orb{animation:nd-pulse 2.4s ease-in-out infinite;}
+  .nd-hero-body{flex:1 1 320px;min-width:0;}
+  .nd-hero-name{font-size:24px;font-weight:900;letter-spacing:-.3px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .nd-hero-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px;font-size:12.5px;color:rgba(255,255,255,.85);}
+  .nd-hero-meta .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .nd-hero-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.5);}
+  .nd-livechip{display:inline-flex;align-items:center;gap:7px;padding:5px 13px;border-radius:var(--ndx-r-pill);
+    font-size:12px;font-weight:800;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);}
+  .nd-livechip i{font-size:8px;}
+  .nd-hero-actions{margin-inline-start:auto;display:flex;gap:9px;flex-wrap:wrap;}
+  .nd-hbtn{height:40px;padding-inline:16px;border-radius:12px;font-weight:800;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.32);
+    background:rgba(255,255,255,.15);color:#fff;transition:background .14s;text-decoration:none;}
+  .nd-hbtn:hover{background:rgba(255,255,255,.26);}
+  .nd-hbtn--solid{background:#fff;color:var(--ndx-brand-ink);border-color:#fff;}
+  .nd-hero.is-live .nd-hbtn--solid{color:#15803d;}
+  .nd-hbtn--solid:hover{background:#f3f4ff;}
+
+  /* ── KPI strip (live telemetry) ───────────────────────────────────── */
+  .nd-kpis{display:grid;gap:14px;grid-template-columns:repeat(5,1fr);margin-block-end:18px;}
+  .nd-kpi{position:relative;overflow:hidden;background:var(--ndx-card);border:1px solid var(--ndx-line);
+    border-radius:16px;padding:16px 18px;box-shadow:var(--ndx-sh);transition:transform .14s,box-shadow .14s;--accent:var(--ndx-brand);}
+  .nd-kpi::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:4px;background:var(--accent);}
+  .nd-kpi:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(15,23,42,.05),0 14px 30px -18px rgba(15,23,42,.28);}
+  .nd-kpi-top{display:flex;align-items:center;gap:10px;}
+  .nd-kpi-ic{width:38px;height:38px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:16px;background:var(--ndx-brand-soft);color:var(--ndx-brand);transition:transform .18s;}
+  .nd-kpi:hover .nd-kpi-ic{transform:scale(1.1) rotate(-4deg);}
+  .nd-kpi-num{font-size:22px;font-weight:900;color:var(--ndx-ink);line-height:1;font-variant-numeric:tabular-nums;}
+  .nd-kpi-num small{font-size:12px;font-weight:800;color:var(--ndx-mut);}
+  .nd-kpi-lbl{font-size:11.5px;color:var(--ndx-ink2);margin-top:6px;font-weight:700;}
+  .nd-kpi-sub{font-size:10.5px;color:var(--ndx-mut);margin-top:3px;}
+  .nd-kpi--cpu{--accent:#0ea5e9;} .nd-kpi--cpu .nd-kpi-ic{background:#e0f2fe;color:#0369a1;}
+  .nd-kpi--ram{--accent:#8b5cf6;} .nd-kpi--ram .nd-kpi-ic{background:#f1ecfe;color:#7c3aed;}
+  .nd-kpi--sess{--accent:#6366f1;} .nd-kpi--sess .nd-kpi-ic{background:#eef2ff;color:#4338ca;}
+  .nd-kpi--bw{--accent:#0d9488;} .nd-kpi--bw .nd-kpi-ic{background:#ccfbf1;color:#0f766e;}
+  .nd-kpi--seen{--accent:#22c55e;} .nd-kpi--seen .nd-kpi-ic{background:#e7f8ef;color:#15803d;}
+  .nd-kpi--seen.is-stale{--accent:#f59e0b;} .nd-kpi--seen.is-stale .nd-kpi-ic{background:#fff4e0;color:#b45309;}
+  .nd-kpi-na{color:#b6c0cf;font-weight:800;}
+
+  /* ── capacity panel ───────────────────────────────────────────────── */
+  .nd-cap{background:var(--ndx-card);border:1px solid var(--ndx-line);border-radius:18px;padding:18px 22px;
+    box-shadow:var(--ndx-sh);margin-block-end:18px;}
+  .nd-cap-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-block-end:14px;}
+  .nd-cap-title{font-weight:900;font-size:15px;color:var(--ndx-ink);display:flex;align-items:center;gap:8px;}
+  .nd-cap-title i{color:var(--ndx-brand);}
+  .nd-cap-stats{margin-inline-start:auto;display:flex;gap:18px;flex-wrap:wrap;}
+  .nd-cap-stat{text-align:center;}
+  .nd-cap-stat b{display:block;font-size:18px;font-weight:900;color:var(--ndx-ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .nd-cap-stat span{font-size:10.5px;color:var(--ndx-mut);font-weight:700;}
+  .nd-cap-stat--res b{color:var(--ndx-brand);} .nd-cap-stat--av b{color:#15803d;}
+  .nd-bar{height:12px;border-radius:999px;background:#eef2f7;overflow:hidden;}
+  .nd-bar>span{display:block;height:100%;border-radius:inherit;transform-origin:right;
+    animation:nd-grow .8s .2s both cubic-bezier(.2,.85,.25,1);}
+  .nd-bar--green>span{background:linear-gradient(90deg,#16a34a,#22c55e);}
+  .nd-bar--amber>span{background:linear-gradient(90deg,#d97706,#f59e0b);}
+  .nd-bar--red>span{background:linear-gradient(90deg,#dc2626,#ef4444);}
+  .nd-cap-foot{margin-top:8px;font-size:12px;color:var(--ndx-ink2);}
+  .nd-cap-foot b{color:var(--ndx-ink);}
+
+  /* ── tabs ─────────────────────────────────────────────────────────── */
+  .nd-tabs{display:flex;gap:6px;border-block-end:2px solid var(--ndx-line);margin-block-end:18px;overflow-x:auto;}
+  .nd-tab{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;font-size:13px;font-weight:800;
+    color:var(--ndx-mut);background:transparent;border:none;border-block-end:2px solid transparent;cursor:pointer;
+    margin-block-end:-2px;white-space:nowrap;transition:color .14s;}
+  .nd-tab:hover{color:var(--ndx-ink);}
+  .nd-tab.is-active{color:var(--ndx-brand);border-block-end-color:var(--ndx-brand);}
+  .nd-tab-badge{background:#eef2f7;color:var(--ndx-ink2);border-radius:var(--ndx-r-pill);font-size:11px;font-weight:800;
+    padding:1px 9px;min-width:20px;text-align:center;}
+  .nd-tab.is-active .nd-tab-badge{background:var(--ndx-brand-soft);color:var(--ndx-brand);}
+  .nd-panel{display:none;} .nd-panel.is-active{display:block;}
+
+  /* ── card ─────────────────────────────────────────────────────────── */
+  .nd-card{background:var(--ndx-card);border:1px solid var(--ndx-line);border-radius:18px;box-shadow:var(--ndx-sh);overflow:hidden;}
+  .nd-card-head{display:flex;align-items:center;gap:10px;padding:16px 22px;border-block-end:1px solid var(--ndx-line);flex-wrap:wrap;}
+  .nd-card-title{font-weight:900;font-size:15px;color:var(--ndx-ink);display:flex;align-items:center;gap:9px;}
+  .nd-card-title i{color:var(--ndx-brand);}
+  .nd-card-sub{font-size:12px;color:var(--ndx-mut);}
+  .nd-card-actions{margin-inline-start:auto;display:flex;gap:8px;}
+
+  /* ── KV grid ──────────────────────────────────────────────────────── */
+  .nd-kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;padding:8px 22px 16px;}
+  .nd-kv{display:flex;flex-direction:column;gap:4px;padding:13px 0;border-block-end:1px solid var(--ndx-line2);}
+  .nd-kv--full{grid-column:1 / -1;}
+  .nd-kv-k{font-size:10.5px;font-weight:800;color:var(--ndx-mut);letter-spacing:.04em;text-transform:uppercase;}
+  .nd-kv-v{font-size:13.5px;color:var(--ndx-ink);}
+  .nd-kv-v.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+  /* ── pills / chips ────────────────────────────────────────────────── */
+  .nd-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:var(--ndx-r-pill);font-size:11.5px;font-weight:800;}
+  .nd-pill--green{background:#e7f8ef;color:#15803d;} .nd-pill--amber{background:#fff4e0;color:#b45309;}
+  .nd-pill--red{background:#fdecec;color:#b91c1c;} .nd-pill--grey{background:#eef1f6;color:#475569;}
+  .nd-pill--brand{background:var(--ndx-brand-soft);color:var(--ndx-brand-ink);}
+  .nd-hb{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;animation:nd-pulse 2s ease-in-out infinite;}
+  .nd-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .nd-chip{background:var(--ndx-brand-soft);color:var(--ndx-brand-ink);border-radius:8px;font-size:11px;font-weight:800;
+    padding:2px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+  /* ── tables ───────────────────────────────────────────────────────── */
+  .nd-tbl-wrap{overflow-x:auto;}
+  .nd-tbl{width:100%;border-collapse:separate;border-spacing:0;min-width:560px;}
+  .nd-tbl thead th{background:#f8fafc;border-block-end:1px solid var(--ndx-line);padding:12px 16px;font-size:11.5px;
+    font-weight:800;color:#64748b;text-align:start;white-space:nowrap;}
+  .nd-tbl tbody td{padding:13px 16px;border-block-end:1px solid var(--ndx-line2);font-size:12.5px;color:var(--ndx-ink);}
+  .nd-tbl tbody tr:last-child td{border-block-end:none;}
+  .nd-tbl tbody tr:hover{background:#fafbff;}
+  .nd-tbl .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  .nd-num-strong{font-weight:800;font-variant-numeric:tabular-nums;}
+
+  /* ── empty ────────────────────────────────────────────────────────── */
+  .nd-empty{text-align:center;padding:44px 24px;color:var(--ndx-ink2);}
+  .nd-empty-ic{width:58px;height:58px;border-radius:17px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;
+    font-size:23px;background:var(--ndx-brand-soft);color:var(--ndx-brand);}
+  .nd-empty-t{font-size:14px;font-weight:800;color:var(--ndx-ink);}
+  .nd-empty-s{font-size:12.5px;color:var(--ndx-mut);margin-top:6px;}
+
+  /* ── edit form ────────────────────────────────────────────────────── */
+  .nd-hidden{display:none !important;}
+  .nd-form{padding:18px 22px;border-block-start:1px solid var(--ndx-line);}
+  .nd-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;}
+  .nd-field{display:flex;flex-direction:column;gap:6px;} .nd-field--full{grid-column:1 / -1;}
+  .nd-label{font-size:12px;font-weight:700;color:var(--ndx-ink2);}
+  .nd-label small{color:var(--ndx-mut);font-weight:400;}
+  .nd-input{height:40px;padding-inline:13px;border-radius:11px;border:1px solid var(--ndx-line);background:#fff;
+    font-size:13px;color:var(--ndx-ink);outline:none;width:100%;box-sizing:border-box;transition:border-color .14s,box-shadow .14s;}
+  .nd-input:focus{border-color:var(--ndx-brand);box-shadow:0 0 0 3px rgba(79,70,229,.12);}
+  .nd-input.ltr,.nd-input.mono{direction:ltr;text-align:start;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  textarea.nd-input{height:auto;padding-block:9px;resize:vertical;}
+  select.nd-input{cursor:pointer;}
+  .nd-hint{font-size:10.5px;color:var(--ndx-mut);margin:0;line-height:1.5;}
+  .nd-checkgroup{display:flex;flex-wrap:wrap;gap:12px;padding:11px 13px;background:#f8fafc;border:1px solid var(--ndx-line);border-radius:11px;}
+  .nd-check{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12.5px;color:var(--ndx-ink);font-family:ui-monospace,monospace;}
+  .nd-check input{accent-color:var(--ndx-brand);width:15px;height:15px;}
+  .nd-form-foot{display:flex;gap:10px;margin-block-start:16px;padding-block-start:14px;border-block-start:1px solid var(--ndx-line);}
+  .nd-btn{height:40px;padding-inline:18px;border-radius:11px;font-weight:800;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ndx-line);background:#fff;color:var(--ndx-ink2);transition:background .14s;text-decoration:none;}
+  .nd-btn:hover{background:#f8fafc;}
+  .nd-btn--primary{background:var(--ndx-brand);color:#fff;border-color:var(--ndx-brand);}
+  .nd-btn--primary:hover{background:#4338ca;}
+
+  /* ── animations ───────────────────────────────────────────────────── */
+  @keyframes nd-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+  @keyframes nd-pop{0%{opacity:0;transform:scale(.5);}60%{transform:scale(1.12);}100%{opacity:1;transform:scale(1);}}
+  @keyframes nd-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+  @keyframes nd-pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4);}50%{box-shadow:0 0 0 8px rgba(34,197,94,0);}}
+  .nd-kpi{animation:nd-rise .5s both;}
+  .nd-kpis .nd-kpi:nth-child(1){animation-delay:.04s;} .nd-kpis .nd-kpi:nth-child(2){animation-delay:.09s;}
+  .nd-kpis .nd-kpi:nth-child(3){animation-delay:.14s;} .nd-kpis .nd-kpi:nth-child(4){animation-delay:.19s;}
+  .nd-kpis .nd-kpi:nth-child(5){animation-delay:.24s;}
+  .nd-kpi-ic{animation:nd-pop .5s both .12s;}
+  @media (prefers-reduced-motion:reduce){.nd-kpi,.nd-kpi-ic,.nd-bar>span,.nd-orb{animation:none!important;}}
+
+  @media (max-width:1100px){.nd-kpis{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:640px){.nd-kpis{grid-template-columns:1fr;}.nd-kv-grid,.nd-form-grid{grid-template-columns:1fr;}.nd-hero{padding:20px;}}
+</style>
+{% endblock %}
+
 {% block content %}
 
-{# ══════════════════════════════════════════════════════════════════
-   شريط KPI العلوي
-   ══════════════════════════════════════════════════════════════════ #}
+{# helper: latest sample shortcut #}
+{% set lm = latest_metric %}
+
+{# ── HERO ─────────────────────────────────────────────────────────────── #}
+<div class="nd-hero {{ 'is-live' if is_live else '' }}">
+  <div class="nd-orb"><i class="fa-solid {{ 'fa-tower-broadcast' if is_live else 'fa-server' }}"></i></div>
+  <div class="nd-hero-body">
+    <div class="nd-hero-name">{{ node.name }}</div>
+    <div class="nd-hero-meta">
+      {% if is_live %}
+        <span class="nd-livechip"><i class="fa-solid fa-circle"></i> نشطة — تستقبل قياسات حيّة</span>
+      {% elif node.last_seen_at or lm %}
+        <span class="nd-livechip"><i class="fa-solid fa-circle" style="color:#fbbf24"></i> متأخّرة — لا قياسات حديثة</span>
+      {% else %}
+        <span class="nd-livechip"><i class="fa-solid fa-circle" style="color:#cbd5e1"></i> بانتظار أول قياس</span>
+      {% endif %}
+      <span class="nd-hero-dot"></span>
+      <span class="mono" dir="ltr">{{ node.public_ip or '—' }}</span>
+      {% if node.location %}<span class="nd-hero-dot"></span><span>{{ node.location }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="nd-hero-actions">
+    <form method="post" action="{{ url_for('admin_infra.chr_node_poll', node_id=node.id) }}" style="display:inline">
+      {{ csrf_input() }}
+      <button class="nd-hbtn nd-hbtn--solid" type="submit"><i class="fa-solid fa-satellite-dish"></i> استطلاع الآن</button>
+    </form>
+    <button class="nd-hbtn" type="button" onclick="ndToggleEdit()"><i class="fa-solid fa-pen"></i> تعديل</button>
+  </div>
+</div>
+
+{# ── LIVE TELEMETRY KPI STRIP (previously buried in the log tab) ───────── #}
+<div class="nd-kpis">
+  <div class="nd-kpi nd-kpi--cpu">
+    <div class="nd-kpi-top">
+      <div class="nd-kpi-ic"><i class="fa-solid fa-microchip"></i></div>
+      <div>
+        <div class="nd-kpi-num">{% if lm and lm.cpu_percent is not none %}{{ '%.0f'|format(lm.cpu_percent) }}<small>%</small>{% else %}<span class="nd-kpi-na">—</span>{% endif %}</div>
+        <div class="nd-kpi-lbl">المعالج</div>
+      </div>
+    </div>
+  </div>
+  <div class="nd-kpi nd-kpi--ram">
+    <div class="nd-kpi-top">
+      <div class="nd-kpi-ic"><i class="fa-solid fa-memory"></i></div>
+      <div>
+        <div class="nd-kpi-num">{% if lm and lm.memory_percent is not none %}{{ '%.1f'|format(lm.memory_percent) }}<small>%</small>{% else %}<span class="nd-kpi-na">—</span>{% endif %}</div>
+        <div class="nd-kpi-lbl">الذاكرة</div>
+      </div>
+    </div>
+  </div>
+  <div class="nd-kpi nd-kpi--sess">
+    <div class="nd-kpi-top">
+      <div class="nd-kpi-ic"><i class="fa-solid fa-users"></i></div>
+      <div>
+        <div class="nd-kpi-num">{% if lm %}{{ lm.active_sessions }}{% else %}<span class="nd-kpi-na">—</span>{% endif %}</div>
+        <div class="nd-kpi-lbl">الجلسات النشطة</div>
+      </div>
+    </div>
+  </div>
+  <div class="nd-kpi nd-kpi--bw">
+    <div class="nd-kpi-top">
+      <div class="nd-kpi-ic"><i class="fa-solid fa-arrows-up-down"></i></div>
+      <div>
+        <div class="nd-kpi-num" style="font-size:15px">
+          {% if lm %}↓{{ '%.1f'|format(lm.current_rx_mbps) }} <small>·</small> ↑{{ '%.1f'|format(lm.current_tx_mbps) }}{% else %}<span class="nd-kpi-na">—</span>{% endif %}
+        </div>
+        <div class="nd-kpi-lbl">النطاق (Mbps)</div>
+      </div>
+    </div>
+  </div>
+  <div class="nd-kpi nd-kpi--seen{{ ' is-stale' if stale and (lm or node.last_seen_at) else '' }}">
+    <div class="nd-kpi-top">
+      <div class="nd-kpi-ic"><i class="fa-solid fa-satellite-dish"></i></div>
+      <div>
+        {% set seen = (lm.measured_at if lm else node.last_seen_at) %}
+        <div class="nd-kpi-num" style="font-size:16px">{% if seen %}{{ seen.strftime('%H:%M') }}{% else %}<span class="nd-kpi-na">—</span>{% endif %}</div>
+        <div class="nd-kpi-lbl">آخر ظهور</div>
+        {% if seen %}<div class="nd-kpi-sub">{{ seen.strftime('%Y-%m-%d') }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── CAPACITY ─────────────────────────────────────────────────────────── #}
 {% set pct = (reserved_mbps / node.max_reserved_mbps * 100)|round(1) if node.max_reserved_mbps else 0 %}
-
-<div class="cd-kpi-strip">
-
-  <div class="cd-kpi">
-    <div class="cd-kpi__icon cd-kpi__icon--purple">
-      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
-    </div>
-    <div>
-      <div class="cd-kpi__val">{{ node.capacity_mbps }}<small>Mbps</small></div>
-      <div class="cd-kpi__lbl">السعة الكلية</div>
-    </div>
-  </div>
-
-  <div class="cd-kpi">
-    <div class="cd-kpi__icon{% if pct >= 85 %} cd-kpi__icon--red{% elif pct >= 70 %} cd-kpi__icon--amber{% else %} cd-kpi__icon--green{% endif %}">
-      <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
-    </div>
-    <div>
-      <div class="cd-kpi__val{% if pct >= 85 %} cd-kpi__val--red{% elif pct >= 70 %} cd-kpi__val--amber{% endif %}">
-        {{ reserved_mbps }}<small>Mbps</small>
-      </div>
-      <div class="cd-kpi__lbl">المحجوز ({{ pct|int }}%)</div>
+{% set lvl = 'red' if pct >= 85 else ('amber' if pct >= 70 else 'green') %}
+<div class="nd-cap">
+  <div class="nd-cap-head">
+    <div class="nd-cap-title"><i class="fa-solid fa-gauge-high"></i> السعة المحجوزة</div>
+    <div class="nd-cap-stats">
+      <div class="nd-cap-stat"><b>{{ node.capacity_mbps }}</b><span>السعة الكلية</span></div>
+      <div class="nd-cap-stat nd-cap-stat--res"><b>{{ reserved_mbps }}</b><span>المحجوز</span></div>
+      <div class="nd-cap-stat nd-cap-stat--av"><b>{{ available_mbps }}</b><span>المتاح</span></div>
+      <div class="nd-cap-stat"><b>{{ active_alloc_count }}</b><span>تخصيصات نشطة</span></div>
     </div>
   </div>
-
-  <div class="cd-kpi">
-    <div class="cd-kpi__icon cd-kpi__icon--green">
-      <i class="fa-solid fa-bolt" aria-hidden="true"></i>
-    </div>
-    <div>
-      <div class="cd-kpi__val">{{ available_mbps }}<small>Mbps</small></div>
-      <div class="cd-kpi__lbl">المتاح</div>
-    </div>
-  </div>
-
-  <div class="cd-kpi">
-    <div class="cd-kpi__icon cd-kpi__icon--blue">
-      <i class="fa-solid fa-users" aria-hidden="true"></i>
-    </div>
-    <div>
-      <div class="cd-kpi__val">{{ allocations|selectattr('status','eq','active')|list|length }}</div>
-      <div class="cd-kpi__lbl">تخصيصات نشطة</div>
-    </div>
-  </div>
-
-  <div class="cd-kpi">
-    <div class="cd-kpi__icon{% if stale is defined and stale %} cd-kpi__icon--red{% else %} cd-kpi__icon--green{% endif %}">
-      <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i>
-    </div>
-    <div>
-      <div class="cd-kpi__val" style="font-size:var(--cc-fs-body-l)">
-        {% if node.last_seen_at %}
-          {{ node.last_seen_at.strftime('%H:%M') }}
-          <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">
-            {{ node.last_seen_at.strftime('%Y-%m-%d') }}
-          </span>
-        {% else %}—{% endif %}
-      </div>
-      <div class="cd-kpi__lbl">آخر ظهور</div>
-    </div>
-  </div>
-
-</div>{# /cd-kpi-strip #}
-
-{# شريط السعة المرئي #}
-<div class="cd-usage-banner">
-  <div class="cd-usage-banner__label">
-    استخدام السعة المحجوزة:
-    <strong>{{ pct }}%</strong>
-    <span style="color:var(--cc-text-mute)">({{ reserved_mbps }} / {{ node.max_reserved_mbps }} Mbps)</span>
-  </div>
-  <div class="cd-usage-banner__bar">
-    <div class="cd-usage-banner__fill cd-usage-banner__fill--{% if pct >= 85 %}red{% elif pct >= 70 %}amber{% else %}green{% endif %}"
-         style="width:{{ [pct,100]|min }}%"
-         role="progressbar"
-         aria-valuenow="{{ pct|int }}" aria-valuemin="0" aria-valuemax="100">
-    </div>
+  <div class="nd-bar nd-bar--{{ lvl }}"><span style="width:{{ [pct,100]|min }}%"></span></div>
+  <div class="nd-cap-foot">
+    <b>{{ pct }}%</b> من السعة المحجوزة مُستخدَمة — <span class="mono" dir="ltr">{{ reserved_mbps }} / {{ node.max_reserved_mbps }} Mbps</span>
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════
-   Tabs
-   ══════════════════════════════════════════════════════════════════ #}
-<div class="cd-tabs-bar" role="tablist" aria-label="أقسام تفاصيل العقدة">
-  <button class="cd-tab is-active" role="tab" id="tab-info"
-          aria-selected="true" aria-controls="panel-info"
-          onclick="cdTab('info')">
-    <i class="fa-solid fa-info-circle" aria-hidden="true"></i>
-    المعلومات
-  </button>
-  <button class="cd-tab" role="tab" id="tab-tunnels"
-          aria-selected="false" aria-controls="panel-tunnels"
-          onclick="cdTab('tunnels')">
-    <i class="fa-solid fa-route" aria-hidden="true"></i>
-    التخصيصات
-    <span class="cd-tab__badge">{{ allocations|length }}</span>
-  </button>
-  <button class="cd-tab" role="tab" id="tab-log"
-          aria-selected="false" aria-controls="panel-log"
-          onclick="cdTab('log')">
-    <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
-    السجل
-    <span class="cd-tab__badge">{{ recent_metrics|length if recent_metrics else 0 }}</span>
-  </button>
+{# ── TABS ─────────────────────────────────────────────────────────────── #}
+<div class="nd-tabs" role="tablist">
+  <button class="nd-tab is-active" role="tab" id="ndtab-info" onclick="ndTab('info')"><i class="fa-solid fa-circle-info"></i> المعلومات</button>
+  <button class="nd-tab" role="tab" id="ndtab-allocs" onclick="ndTab('allocs')"><i class="fa-solid fa-route"></i> التخصيصات <span class="nd-tab-badge">{{ allocations|length }}</span></button>
+  <button class="nd-tab" role="tab" id="ndtab-log" onclick="ndTab('log')"><i class="fa-solid fa-chart-line"></i> السجل <span class="nd-tab-badge">{{ recent_metrics|length if recent_metrics else 0 }}</span></button>
 </div>
 
-{# ════════════════════════════
-   Tab 1 — المعلومات
-   ════════════════════════════ #}
-<div class="cd-panel is-active" id="panel-info" role="tabpanel" aria-labelledby="tab-info">
-  <div class="cd-card">
-
-    <div class="cd-card__head">
-      <span class="cd-card__title">
-        <i class="fa-solid fa-server" aria-hidden="true"></i>
-        بيانات العقدة
-      </span>
-      <div class="cd-card__actions">
-        <form method="post"
-              action="{{ url_for('admin_infra.chr_node_poll', node_id=node.id) }}"
-              style="display:inline">
-          {{ csrf_input() }}
-          <button class="infra-btn infra-btn--ghost cd-btn-sm" type="submit">
-            <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i>
-            استطلاع الآن
-          </button>
-        </form>
-        <button class="infra-btn infra-btn--ghost cd-btn-sm" type="button"
-                onclick="cdToggleEdit()">
-          <i class="fa-solid fa-pen" aria-hidden="true"></i>
-          تعديل
-        </button>
-      </div>
+{# ── Tab: info ────────────────────────────────────────────────────────── #}
+<div class="nd-panel is-active" id="ndpanel-info" role="tabpanel">
+  <div class="nd-card">
+    <div class="nd-card-head">
+      <div class="nd-card-title"><i class="fa-solid fa-server"></i> بيانات العقدة</div>
     </div>
 
-    {# جدول المعلومات #}
-    <div class="cd-kv-grid" id="cd-info-view">
-      <div class="cd-kv"><span class="cd-kv__k">الـ IP العام</span>
-        <span class="cd-kv__v infra-mono ltr">{{ node.public_ip }}</span></div>
-      <div class="cd-kv"><span class="cd-kv__k">IP الإدارة (WG)</span>
-        <span class="cd-kv__v infra-mono ltr">{{ node.management_ip or '—' }}</span></div>
-      <div class="cd-kv"><span class="cd-kv__k">الدومين</span>
-        <span class="cd-kv__v infra-mono ltr">{{ node.domain or '—' }}</span></div>
-      <div class="cd-kv"><span class="cd-kv__k">الموقع</span>
-        <span class="cd-kv__v">{{ node.location or '—' }}</span></div>
-      <div class="cd-kv"><span class="cd-kv__k">RouterOS</span>
-        <span class="cd-kv__v infra-mono ltr">
-          {{ node.routeros_host or '—' }}
-          {% if node.routeros_host %}:{{ node.routeros_port }} ({{ node.routeros_user }}){% endif %}
-        </span></div>
-      <div class="cd-kv"><span class="cd-kv__k">الحالة</span>
-        <span class="cd-kv__v">
-          {% if node.status == 'active' %}
-            <span class="infra-pill infra-pill--green">
-              <span class="infra-heartbeat" aria-hidden="true"></span>نشط
-            </span>
-          {% elif node.status == 'maintenance' %}
-            <span class="infra-pill infra-pill--amber">صيانة</span>
-          {% elif node.status == 'decommissioned' %}
-            <span class="infra-pill infra-pill--red">مُوقف</span>
-          {% else %}
-            <span class="infra-pill infra-pill--grey">{{ node.status }}</span>
-          {% endif %}
-        </span></div>
-      <div class="cd-kv cd-kv--full"><span class="cd-kv__k">الخدمات المتاحة</span>
-        <span class="cd-kv__v">
-          <div class="infra-chips">
-            {% for s in node.enabled_services %}
-              <span class="infra-chip">{{ s }}</span>
-            {% else %}
-              <span class="infra-muted">لا توجد خدمات محددة</span>
-            {% endfor %}
+    <div class="nd-kv-grid" id="nd-info-view">
+      <div class="nd-kv"><span class="nd-kv-k">الـ IP العام</span><span class="nd-kv-v mono" dir="ltr">{{ node.public_ip or '—' }}</span></div>
+      <div class="nd-kv"><span class="nd-kv-k">IP الإدارة (WG)</span><span class="nd-kv-v mono" dir="ltr">{{ node.management_ip or '—' }}</span></div>
+      <div class="nd-kv"><span class="nd-kv-k">الدومين</span><span class="nd-kv-v mono" dir="ltr">{{ node.domain or '—' }}</span></div>
+      <div class="nd-kv"><span class="nd-kv-k">الموقع</span><span class="nd-kv-v">{{ node.location or '—' }}</span></div>
+      <div class="nd-kv"><span class="nd-kv-k">RouterOS</span><span class="nd-kv-v mono" dir="ltr">{{ node.routeros_host or '—' }}{% if node.routeros_host %}:{{ node.routeros_port }} ({{ node.routeros_user }}){% endif %}</span></div>
+      <div class="nd-kv">
+        <span class="nd-kv-k">الصحّة الحيّة</span>
+        <span class="nd-kv-v">
+          {% if is_live %}<span class="nd-pill nd-pill--green"><span class="nd-hb"></span> نشطة (قياسات حيّة)</span>
+          {% elif lm or node.last_seen_at %}<span class="nd-pill nd-pill--amber">متأخّرة</span>
+          {% else %}<span class="nd-pill nd-pill--grey">بانتظار أول قياس</span>{% endif %}
+        </span>
+      </div>
+      <div class="nd-kv">
+        <span class="nd-kv-k">حالة التسجيل</span>
+        <span class="nd-kv-v">
+          {% if node.status == 'active' %}<span class="nd-pill nd-pill--green">نشط</span>
+          {% elif node.status == 'maintenance' %}<span class="nd-pill nd-pill--amber">صيانة</span>
+          {% elif node.status == 'decommissioned' %}<span class="nd-pill nd-pill--red">مُوقف</span>
+          {% elif node.status == 'pending' %}<span class="nd-pill nd-pill--brand">قيد التهيئة</span>
+          {% else %}<span class="nd-pill nd-pill--grey">{{ node.status }}</span>{% endif %}
+        </span>
+      </div>
+      <div class="nd-kv cd-kv--full nd-kv--full"><span class="nd-kv-k">الخدمات المتاحة</span>
+        <span class="nd-kv-v">
+          <div class="nd-chips">
+            {% for s in node.enabled_services %}<span class="nd-chip">{{ s }}</span>
+            {% else %}<span style="color:var(--ndx-mut)">لا توجد خدمات محددة</span>{% endfor %}
           </div>
         </span></div>
       {% if node.notes %}
-      <div class="cd-kv cd-kv--full"><span class="cd-kv__k">ملاحظات</span>
-        <span class="cd-kv__v">{{ node.notes }}</span></div>
+      <div class="nd-kv nd-kv--full"><span class="nd-kv-k">ملاحظات</span><span class="nd-kv-v">{{ node.notes }}</span></div>
       {% endif %}
     </div>
 
-    {# نموذج التعديل (مخفي افتراضياً) #}
-    <form id="cd-edit-form" class="cd-edit-form cd-hidden"
-          method="post"
+    {# edit form — hidden by default; field names preserved for chr_node_edit #}
+    <form id="nd-edit-form" class="nd-form nd-hidden" method="post"
           action="{{ url_for('admin_infra.chr_node_edit', node_id=node.id) }}">
       {{ csrf_input() }}
-      <div class="infra-form-grid">
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-pub-ip">IP العام</label>
-          <input class="infra-input infra-mono ltr" id="e-pub-ip" name="public_ip"
-                 value="{{ node.public_ip }}" aria-describedby="e-hint-pub-ip">
-          <p class="infra-hint" id="e-hint-pub-ip">عنوان IPv4 العام للعقدة</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-mgmt-ip">IP الإدارة</label>
-          <input class="infra-input infra-mono ltr" id="e-mgmt-ip" name="management_ip"
-                 value="{{ node.management_ip }}" aria-describedby="e-hint-mgmt">
-          <p class="infra-hint" id="e-hint-mgmt">شبكة WireGuard الداخلية للإدارة</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-domain">الدومين</label>
-          <input class="infra-input ltr" id="e-domain" name="domain"
-                 value="{{ node.domain }}" aria-describedby="e-hint-domain">
-          <p class="infra-hint" id="e-hint-domain">اختياري — يُستخدم بدلاً من IP</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-location">الموقع</label>
-          <input class="infra-input" id="e-location" name="location"
-                 value="{{ node.location }}" aria-describedby="e-hint-loc">
-          <p class="infra-hint" id="e-hint-loc">مثال: Frankfurt, DE</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-cap">السعة (Mbps)</label>
-          <input class="infra-input" id="e-cap" name="capacity_mbps"
-                 type="number" value="{{ node.capacity_mbps }}"
-                 aria-describedby="e-hint-cap">
-          <p class="infra-hint" id="e-hint-cap">الحد الأقصى الحقيقي للسرعة</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-maxres">أقصى محجوز (Mbps)</label>
-          <input class="infra-input" id="e-maxres" name="max_reserved_mbps"
-                 type="number" value="{{ node.max_reserved_mbps }}"
-                 aria-describedby="e-hint-maxres">
-          <p class="infra-hint" id="e-hint-maxres">85% من السعة = الحد الآمن الموصى به</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-maxsess">أقصى جلسات</label>
-          <input class="infra-input" id="e-maxsess" name="max_active_sessions"
-                 type="number" value="{{ node.max_active_sessions or '' }}"
-                 placeholder="بدون حد" aria-describedby="e-hint-sess">
-          <p class="infra-hint" id="e-hint-sess">اتركه فارغاً للسماح بعدد غير محدود</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-maxcust">أقصى عملاء</label>
-          <input class="infra-input" id="e-maxcust" name="max_customers"
-                 type="number" value="{{ node.max_customers or '' }}"
-                 placeholder="بدون حد" aria-describedby="e-hint-cust">
-          <p class="infra-hint" id="e-hint-cust">اتركه فارغاً لعدم تحديد حد للعملاء</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-ros-host">RouterOS Host</label>
-          <input class="infra-input infra-mono ltr" id="e-ros-host" name="routeros_host"
-                 value="{{ node.routeros_host }}" aria-describedby="e-hint-ros-host">
-          <p class="infra-hint" id="e-hint-ros-host">IP للوصول إلى REST API</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-ros-user">RouterOS User</label>
-          <input class="infra-input infra-mono ltr" id="e-ros-user" name="routeros_user"
-                 value="{{ node.routeros_user }}" aria-describedby="e-hint-ros-user">
-          <p class="infra-hint" id="e-hint-ros-user">اسم مستخدم REST API</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-ros-port">RouterOS Port</label>
-          <input class="infra-input" id="e-ros-port" name="routeros_port"
-                 type="number" value="{{ node.routeros_port }}"
-                 aria-describedby="e-hint-ros-port">
-          <p class="infra-hint" id="e-hint-ros-port">المنفذ الافتراضي هو 443</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-ros-pass">
-            RouterOS Password
-            <small style="color:var(--cc-text-mute);font-weight:400"> (فارغ = بدون تغيير)</small>
-          </label>
-          <input class="infra-input infra-mono ltr" id="e-ros-pass" name="routeros_password"
-                 type="password" autocomplete="new-password"
-                 placeholder="{{ '••••••••' if node.routeros_password_enc else 'لم تُضبط بعد' }}"
-                 aria-describedby="e-hint-ros-pass">
-          <p class="infra-hint" id="e-hint-ros-pass">اتركها فارغة للإبقاء على كلمة المرور الحالية</p>
-        </div>
-
-        <div class="infra-field">
-          <label class="infra-label" for="e-status">الحالة</label>
-          <select class="infra-input" id="e-status" name="status"
-                  aria-describedby="e-hint-status">
+      <div class="nd-form-grid">
+        <div class="nd-field"><label class="nd-label" for="e-pub-ip">IP العام</label>
+          <input class="nd-input mono" id="e-pub-ip" name="public_ip" value="{{ node.public_ip }}">
+          <p class="nd-hint">عنوان IPv4 العام للعقدة</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-mgmt-ip">IP الإدارة</label>
+          <input class="nd-input mono" id="e-mgmt-ip" name="management_ip" value="{{ node.management_ip }}">
+          <p class="nd-hint">شبكة WireGuard الداخلية للإدارة</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-domain">الدومين</label>
+          <input class="nd-input ltr" id="e-domain" name="domain" value="{{ node.domain }}">
+          <p class="nd-hint">اختياري — يُستخدم بدلاً من IP</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-location">الموقع</label>
+          <input class="nd-input" id="e-location" name="location" value="{{ node.location }}">
+          <p class="nd-hint">مثال: Frankfurt, DE</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-cap">السعة (Mbps)</label>
+          <input class="nd-input" id="e-cap" name="capacity_mbps" type="number" value="{{ node.capacity_mbps }}">
+          <p class="nd-hint">الحد الأقصى الحقيقي للسرعة</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-maxres">أقصى محجوز (Mbps)</label>
+          <input class="nd-input" id="e-maxres" name="max_reserved_mbps" type="number" value="{{ node.max_reserved_mbps }}">
+          <p class="nd-hint">85% من السعة = الحد الآمن الموصى به</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-maxsess">أقصى جلسات</label>
+          <input class="nd-input" id="e-maxsess" name="max_active_sessions" type="number" value="{{ node.max_active_sessions or '' }}" placeholder="بدون حد">
+          <p class="nd-hint">اتركه فارغاً للسماح بعدد غير محدود</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-maxcust">أقصى عملاء</label>
+          <input class="nd-input" id="e-maxcust" name="max_customers" type="number" value="{{ node.max_customers or '' }}" placeholder="بدون حد">
+          <p class="nd-hint">اتركه فارغاً لعدم تحديد حد للعملاء</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-ros-host">RouterOS Host</label>
+          <input class="nd-input mono" id="e-ros-host" name="routeros_host" value="{{ node.routeros_host }}">
+          <p class="nd-hint">IP للوصول إلى REST API</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-ros-user">RouterOS User</label>
+          <input class="nd-input mono" id="e-ros-user" name="routeros_user" value="{{ node.routeros_user }}">
+          <p class="nd-hint">اسم مستخدم REST API</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-ros-port">RouterOS Port</label>
+          <input class="nd-input" id="e-ros-port" name="routeros_port" type="number" value="{{ node.routeros_port }}">
+          <p class="nd-hint">المنفذ الافتراضي هو 443</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-ros-pass">RouterOS Password <small>(فارغ = بدون تغيير)</small></label>
+          <input class="nd-input mono" id="e-ros-pass" name="routeros_password" type="password" autocomplete="new-password"
+                 placeholder="{{ '••••••••' if node.routeros_password_enc else 'لم تُضبط بعد' }}">
+          <p class="nd-hint">اتركها فارغة للإبقاء على كلمة المرور الحالية</p></div>
+        <div class="nd-field"><label class="nd-label" for="e-status">حالة التسجيل</label>
+          <select class="nd-input" id="e-status" name="status">
             {% for st in ['pending','active','maintenance','decommissioned'] %}
-            <option value="{{ st }}" {% if node.status == st %}selected{% endif %}>{{ st }}</option>
-            {% endfor %}
+            <option value="{{ st }}" {% if node.status == st %}selected{% endif %}>{{ st }}</option>{% endfor %}
           </select>
-          <p class="infra-hint" id="e-hint-status">pending = لم يبدأ، active = يعمل، decommissioned = مُوقف نهائياً</p>
-        </div>
-
-        <div class="infra-field infra-field--full">
-          <label class="infra-label">الخدمات المتاحة</label>
-          <div class="infra-checkgroup" aria-describedby="e-hint-svcs">
+          <p class="nd-hint">pending = قيد التهيئة، active = يعمل، decommissioned = مُوقف نهائياً</p></div>
+        <div class="nd-field nd-field--full"><label class="nd-label">الخدمات المتاحة</label>
+          <div class="nd-checkgroup">
             {% for svc in service_choices %}
-            <label class="infra-check">
-              <input type="checkbox" name="enabled_services" value="{{ svc }}"
-                {% if svc in node.enabled_services %}checked{% endif %}>
-              <span class="infra-mono">{{ svc }}</span>
-            </label>
+            <label class="nd-check"><input type="checkbox" name="enabled_services" value="{{ svc }}" {% if svc in node.enabled_services %}checked{% endif %}> {{ svc }}</label>
             {% endfor %}
           </div>
-          <p class="infra-hint" id="e-hint-svcs">البروتوكولات التي يدعمها هذا الخادم</p>
-        </div>
-
-        <div class="infra-field infra-field--full">
-          <label class="infra-label" for="e-notes">ملاحظات</label>
-          <textarea class="infra-input" id="e-notes" name="notes" rows="2"
-                    aria-describedby="e-hint-notes">{{ node.notes }}</textarea>
-          <p class="infra-hint" id="e-hint-notes">للاستخدام الداخلي — لا تظهر للعملاء</p>
-        </div>
-
-      </div>{# /infra-form-grid #}
-      <div class="cd-edit-form__foot">
-        <button class="infra-btn infra-btn--primary" type="submit">
-          <i class="fa-solid fa-save" aria-hidden="true"></i>
-          حفظ التغييرات
-        </button>
-        <button class="infra-btn infra-btn--ghost" type="button" onclick="cdToggleEdit()">
-          إلغاء
-        </button>
+          <p class="nd-hint">البروتوكولات التي يدعمها هذا الخادم</p></div>
+        <div class="nd-field nd-field--full"><label class="nd-label" for="e-notes">ملاحظات</label>
+          <textarea class="nd-input" id="e-notes" name="notes" rows="2">{{ node.notes }}</textarea>
+          <p class="nd-hint">للاستخدام الداخلي — لا تظهر للعملاء</p></div>
+      </div>
+      <div class="nd-form-foot">
+        <button class="nd-btn nd-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ التغييرات</button>
+        <button class="nd-btn" type="button" onclick="ndToggleEdit()">إلغاء</button>
       </div>
     </form>
+  </div>
+</div>
 
-  </div>{# /cd-card #}
-</div>{# /panel-info #}
-
-{# ════════════════════════════
-   Tab 2 — التخصيصات
-   ════════════════════════════ #}
-<div class="cd-panel" id="panel-tunnels" role="tabpanel" aria-labelledby="tab-tunnels">
-  <div class="cd-card">
-    <div class="cd-card__head">
-      <span class="cd-card__title">
-        <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-        التخصيصات على هذه العقدة
-      </span>
-    </div>
-
+{# ── Tab: allocations ─────────────────────────────────────────────────── #}
+<div class="nd-panel" id="ndpanel-allocs" role="tabpanel">
+  <div class="nd-card">
+    <div class="nd-card-head"><div class="nd-card-title"><i class="fa-solid fa-list-check"></i> التخصيصات على هذه العقدة</div></div>
     {% if not allocations %}
-      <div class="infra-empty" style="padding:var(--cc-sp-12) var(--cc-sp-11)">
-        <i class="fa-solid fa-inbox fa-2x" aria-hidden="true"></i>
-        <p>لا توجد تخصيصات على هذه العقدة حتى الآن.</p>
+      <div class="nd-empty">
+        <div class="nd-empty-ic"><i class="fa-solid fa-inbox"></i></div>
+        <div class="nd-empty-t">لا توجد تخصيصات على هذه العقدة بعد.</div>
+        <div class="nd-empty-s">ستظهر هنا كل خدمة عميل مرتبطة بهذه العقدة.</div>
       </div>
     {% else %}
-    <div class="infra-table-wrap">
-      <table class="infra-table">
-        <thead>
-          <tr>
-            <th>العميل</th>
-            <th>نوع الخدمة</th>
-            <th>السرعة</th>
-            <th>الحسابات</th>
-            <th>تاريخ الانتهاء</th>
-            <th>الحالة</th>
-          </tr>
-        </thead>
-        <tbody>
-        {% for a in allocations %}
-          <tr class="infra-table__row">
-            <td><strong>{{ a.customer.company_name }}</strong></td>
-            <td><span class="infra-chip">{{ a.service_type }}</span></td>
-            <td><span class="infra-mono">{{ a.speed_limit_mbps }} Mbps</span></td>
-            <td>{{ a.max_accounts }}</td>
-            <td style="font-size:var(--cc-fs-small)">
-              {{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}
-            </td>
-            <td>
-              {% if a.status == 'active' %}
-                <span class="infra-pill infra-pill--green">نشط</span>
-              {% elif a.status == 'suspended' %}
-                <span class="infra-pill infra-pill--amber">موقوف</span>
-              {% elif a.status == 'expired' %}
-                <span class="infra-pill infra-pill--red">منتهي</span>
-              {% else %}
-                <span class="infra-pill infra-pill--grey">{{ a.status }}</span>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <div class="nd-tbl-wrap"><table class="nd-tbl">
+      <thead><tr><th>العميل</th><th>نوع الخدمة</th><th>السرعة</th><th>الحسابات</th><th>تاريخ الانتهاء</th><th>الحالة</th></tr></thead>
+      <tbody>
+      {% for a in allocations %}
+        <tr>
+          <td><strong>{{ a.customer.company_name }}</strong></td>
+          <td><span class="nd-chip">{{ a.service_type }}</span></td>
+          <td class="mono">{{ a.speed_limit_mbps }} Mbps</td>
+          <td>{{ a.max_accounts }}</td>
+          <td>{{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}</td>
+          <td>
+            {% if a.status == 'active' %}<span class="nd-pill nd-pill--green">نشط</span>
+            {% elif a.status == 'suspended' %}<span class="nd-pill nd-pill--amber">موقوف</span>
+            {% elif a.status == 'expired' %}<span class="nd-pill nd-pill--red">منتهي</span>
+            {% else %}<span class="nd-pill nd-pill--grey">{{ a.status }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
     {% endif %}
   </div>
 </div>
 
-{# ════════════════════════════
-   Tab 3 — السجل
-   ════════════════════════════ #}
-<div class="cd-panel" id="panel-log" role="tabpanel" aria-labelledby="tab-log">
-  <div class="cd-card">
-    <div class="cd-card__head">
-      <span class="cd-card__title">
-        <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
-        مقاييس حديثة
-      </span>
-      <span class="cd-card__sub">آخر {{ recent_metrics|length if recent_metrics else 0 }} قراءة</span>
+{# ── Tab: metrics log ─────────────────────────────────────────────────── #}
+<div class="nd-panel" id="ndpanel-log" role="tabpanel">
+  <div class="nd-card">
+    <div class="nd-card-head">
+      <div class="nd-card-title"><i class="fa-solid fa-chart-line"></i> مقاييس حديثة</div>
+      <div class="nd-card-sub">آخر {{ recent_metrics|length if recent_metrics else 0 }} قراءة</div>
     </div>
-
     {% if not recent_metrics %}
-      <div class="infra-empty" style="padding:var(--cc-sp-12) var(--cc-sp-11)">
-        <i class="fa-solid fa-chart-simple fa-2x" aria-hidden="true"></i>
-        <p>لا توجد مقاييس مسجّلة بعد. ابدأ باستطلاع العقدة.</p>
+      <div class="nd-empty">
+        <div class="nd-empty-ic"><i class="fa-solid fa-chart-simple"></i></div>
+        <div class="nd-empty-t">لا توجد مقاييس مسجّلة بعد.</div>
+        <div class="nd-empty-s">اضغط «استطلاع الآن» لجلب أوّل قراءة من العقدة.</div>
       </div>
     {% else %}
-    <div class="infra-table-wrap">
-      <table class="infra-table" style="font-size:var(--cc-fs-small)">
-        <thead>
-          <tr>
-            <th>الوقت</th>
-            <th>RX Mbps</th>
-            <th>TX Mbps</th>
-            <th>الجلسات</th>
-            <th>CPU %</th>
-            <th>RAM %</th>
-          </tr>
-        </thead>
-        <tbody>
-        {% for m in recent_metrics %}
-          <tr class="infra-table__row">
-            <td class="infra-mono">{{ m.measured_at.strftime('%m-%d %H:%M') }}</td>
-            <td>{{ m.current_rx_mbps }}</td>
-            <td>{{ m.current_tx_mbps }}</td>
-            <td>{{ m.active_sessions }}</td>
-            <td>{{ m.cpu_percent or '—' }}</td>
-            <td>{{ m.memory_percent or '—' }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <div class="nd-tbl-wrap"><table class="nd-tbl">
+      <thead><tr><th>الوقت</th><th>المعالج %</th><th>الذاكرة %</th><th>الجلسات</th><th>RX Mbps</th><th>TX Mbps</th></tr></thead>
+      <tbody>
+      {% for m in recent_metrics %}
+        <tr{% if loop.first %} style="background:#f6f8ff"{% endif %}>
+          <td class="mono">{{ m.measured_at.strftime('%m-%d %H:%M') }}{% if loop.first %} <span class="nd-pill nd-pill--brand" style="font-size:9px;padding:1px 7px">الأحدث</span>{% endif %}</td>
+          <td class="nd-num-strong">{{ '%.0f'|format(m.cpu_percent) if m.cpu_percent is not none else '—' }}</td>
+          <td class="nd-num-strong">{{ '%.1f'|format(m.memory_percent) if m.memory_percent is not none else '—' }}</td>
+          <td class="nd-num-strong">{{ m.active_sessions }}</td>
+          <td class="mono">{{ '%.2f'|format(m.current_rx_mbps) }}</td>
+          <td class="mono">{{ '%.2f'|format(m.current_tx_mbps) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
     {% endif %}
   </div>
 </div>
 
-{# ══════════════════════════════════════════════════════════════════
-   Styles + Script
-   ══════════════════════════════════════════════════════════════════ #}
 {% block scripts %}
-<style>
-:root {
-  /* ── Local viewport vars (hero overlay + code block) ── */
-  --vr-white:         #ffffff;
-  --vr-hero-sub:      rgba(255,255,255,.78);
-  --vr-hero-lbl:      rgba(255,255,255,.75);
-  --vr-hero-stat:     rgba(255,255,255,.13);
-  --vr-hero-ghost:    rgba(255,255,255,.14);
-  --vr-hero-ghost-hov:rgba(255,255,255,.22);
-  --vr-hero-border:   rgba(255,255,255,.30);
-  --vr-hero-green:    #6EF8A8;
-  --vr-hero-amber:    #FFD97D;
-  --vr-hero-red:      #FF8FA3;
-  --vr-hero-grey:     rgba(255,255,255,.65);
-  --vr-code-bg:       #1E1E2E;
-  --vr-code-text:     #CDD6F4;
-  --vr-toast-bg:      #1F2937;
-}
-/* ── KPI strip ───────────────────────────────────────── */
-.cd-kpi-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--cc-gap-inline);
-  margin-bottom: var(--cc-gap-section);
-}
-.cd-kpi {
-  flex: 1;
-  min-width: 140px;
-  background: var(--cc-card-bg);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-r-card);
-  box-shadow: var(--cc-sh-card);
-  padding: var(--cc-sp-9) var(--cc-sp-10);
-  display: flex;
-  align-items: center;
-  gap: var(--cc-sp-8);
-}
-.cd-kpi__icon {
-  width: 40px; height: 40px;
-  border-radius: var(--cc-r-tile);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-.cd-kpi__icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
-.cd-kpi__icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg); }
-.cd-kpi__icon--amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg); }
-.cd-kpi__icon--red    { background: var(--tile-red-bg);    color: var(--tile-red-fg); }
-.cd-kpi__icon--blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
-.cd-kpi__val {
-  font-size: var(--cc-fs-h1);
-  font-weight: var(--cc-fw-bold);
-  color: var(--cc-text);
-  line-height: var(--cc-lh-tight);
-}
-.cd-kpi__val small { font-size: var(--cc-fs-small); color: var(--cc-text-mute); margin-right: 2px; }
-.cd-kpi__val--red   { color: var(--hb-red); }
-.cd-kpi__val--amber { color: var(--hb-amber); }
-.cd-kpi__lbl { font-size: var(--cc-fs-small); color: var(--cc-text-mute); margin-top: var(--cc-sp-2); }
-
-/* ── Usage banner ────────────────────────────────────── */
-.cd-usage-banner {
-  background: var(--cc-card-bg);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-r-card);
-  padding: var(--cc-sp-8) var(--cc-sp-11);
-  margin-bottom: var(--cc-gap-section);
-  box-shadow: var(--cc-sh-card);
-}
-.cd-usage-banner__label {
-  font-size: var(--cc-fs-body-s);
-  color: var(--cc-text-soft);
-  margin-bottom: var(--cc-sp-5);
-  display: flex;
-  gap: var(--cc-sp-5);
-  align-items: baseline;
-}
-.cd-usage-banner__bar {
-  height: 10px;
-  border-radius: var(--cc-r-pill);
-  background: var(--cc-border-2);
-  overflow: hidden;
-}
-.cd-usage-banner__fill {
-  height: 100%;
-  border-radius: var(--cc-r-pill);
-  transition: width var(--cc-anim-med) var(--cc-ease-out);
-}
-.cd-usage-banner__fill--green { background: var(--hb-green); }
-.cd-usage-banner__fill--amber { background: var(--hb-amber); }
-.cd-usage-banner__fill--red   { background: var(--hb-red); }
-
-/* ── Tabs bar ────────────────────────────────────────── */
-.cd-tabs-bar {
-  display: flex;
-  gap: var(--cc-sp-4);
-  border-bottom: 2px solid var(--cc-border);
-  margin-bottom: var(--cc-gap-section);
-  overflow-x: auto;
-  padding-bottom: 0;
-}
-.cd-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cc-sp-4);
-  padding: var(--cc-sp-6) var(--cc-sp-9);
-  font-family: var(--cc-font);
-  font-size: var(--cc-fs-body-s);
-  font-weight: var(--cc-fw-medium);
-  color: var(--cc-text-mute);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  margin-bottom: -2px;
-  transition: var(--cc-tr-fast);
-  white-space: nowrap;
-}
-.cd-tab:hover { color: var(--cc-text); }
-.cd-tab.is-active {
-  color: var(--cc-brand);
-  border-bottom-color: var(--cc-brand);
-  font-weight: var(--cc-fw-bold);
-}
-.cd-tab__badge {
-  background: var(--hb-bg);
-  color: var(--cc-text-soft);
-  border-radius: var(--cc-r-pill);
-  font-size: var(--cc-fs-tiny);
-  padding: 0 var(--cc-sp-4);
-  min-width: 20px;
-  text-align: center;
-}
-.cd-tab.is-active .cd-tab__badge {
-  background: var(--cc-brand-soft);
-  color: var(--cc-brand);
-}
-
-/* ── Panels ──────────────────────────────────────────── */
-.cd-panel { display: none; }
-.cd-panel.is-active { display: block; }
-
-/* ── Card ────────────────────────────────────────────── */
-.cd-card {
-  background: var(--cc-card-bg);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-r-card);
-  box-shadow: var(--cc-sh-card);
-  overflow: hidden;
-  margin-bottom: var(--cc-gap-section);
-}
-.cd-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--cc-sp-8) var(--cc-sp-11);
-  border-bottom: 1px solid var(--cc-border);
-  flex-wrap: wrap;
-  gap: var(--cc-sp-6);
-}
-.cd-card__title {
-  font-size: var(--cc-fs-h3);
-  font-weight: var(--cc-fw-bold);
-  color: var(--cc-text);
-  display: flex;
-  align-items: center;
-  gap: var(--cc-sp-5);
-}
-.cd-card__sub {
-  font-size: var(--cc-fs-small);
-  color: var(--cc-text-mute);
-}
-.cd-card__actions { display: flex; gap: var(--cc-sp-5); }
-
-/* ── KV Grid ─────────────────────────────────────────── */
-.cd-kv-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: var(--cc-sp-8) var(--cc-sp-11);
-  gap: 0;
-}
-.cd-kv {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cc-sp-2);
-  padding: var(--cc-sp-7) 0;
-  border-bottom: 1px solid var(--cc-border);
-}
-.cd-kv--full { grid-column: 1 / -1; }
-.cd-kv__k {
-  font-size: var(--cc-fs-tiny);
-  font-weight: var(--cc-fw-bold);
-  color: var(--cc-text-mute);
-  text-transform: uppercase;
-  letter-spacing: .03em;
-}
-.cd-kv__v {
-  font-size: var(--cc-fs-body);
-  color: var(--cc-text);
-}
-
-/* ── Edit form ───────────────────────────────────────── */
-.cd-edit-form {
-  border-top: 1px solid var(--cc-border);
-  padding: var(--cc-sp-11);
-}
-.cd-edit-form__foot {
-  display: flex;
-  gap: var(--cc-sp-6);
-  margin-top: var(--cc-sp-10);
-  padding-top: var(--cc-sp-9);
-  border-top: 1px solid var(--cc-border);
-}
-.cd-hidden { display: none !important; }
-
-/* ── Small button in card head ───────────────────────── */
-.cd-btn-sm {
-  height: 32px !important;
-  font-size: var(--cc-fs-small) !important;
-  padding: 0 var(--cc-sp-7) !important;
-  background: var(--hb-bg) !important;
-  color: var(--cc-text-soft) !important;
-  border: 1px solid var(--cc-border-2) !important;
-}
-.cd-btn-sm:hover { background: var(--hb-bg-hover) !important; color: var(--cc-text) !important; }
-
-/* ── Shared pill/heartbeat/chips from chr_nodes ──────── */
-.infra-pill {
-  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
-  padding: var(--cc-sp-1) var(--cc-sp-5);
-  border-radius: var(--cc-r-pill);
-  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
-}
-.infra-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg); }
-.infra-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg); }
-.infra-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg); }
-.infra-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg); }
-.infra-heartbeat {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--hb-green); display: inline-block;
-  animation: infra-pulse 2s ease-in-out infinite;
-}
-@keyframes infra-pulse {
-  0%,100% { opacity:1; transform:scale(1); }
-  50%      { opacity:.45; transform:scale(.7); }
-}
-.infra-chips { display:flex; flex-wrap:wrap; gap:var(--cc-sp-2); }
-.infra-chip {
-  background: var(--hb-purple-softer); color: var(--cc-brand);
-  border-radius: var(--cc-r-sm);
-  font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
-  padding: 1px var(--cc-sp-4);
-  font-family: var(--cc-font-mono);
-}
-.infra-mono  { font-family: var(--cc-font-mono); }
-.infra-muted { color: var(--cc-text-mute); }
-.infra-empty {
-  display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:var(--cc-sp-8);
-  color:var(--cc-text-mute); text-align:center;
-}
-.infra-empty p { margin:0; font-size:var(--cc-fs-body-l); }
-.infra-table-wrap { overflow-x:auto; }
-.infra-table { width:100%; border-collapse:collapse; font-family:var(--cc-font); font-size:var(--cc-fs-body); }
-.infra-table thead th {
-  background: var(--cc-table-head-bg); color: var(--cc-text-soft);
-  font-size: var(--cc-fs-small); font-weight: var(--cc-fw-bold);
-  padding: var(--cc-sp-6) var(--cc-sp-8); text-align:right;
-  border-bottom: 1px solid var(--cc-border-2);
-}
-.infra-table tbody td {
-  padding: var(--cc-sp-6) var(--cc-sp-8);
-  border-bottom: 1px solid var(--cc-border);
-  vertical-align: middle;
-}
-.infra-table__row:last-child td { border-bottom:none; }
-.infra-table__row:hover td { background: var(--cc-table-row-hover); }
-.infra-btn {
-  display:inline-flex; align-items:center; gap:var(--cc-sp-4);
-  padding:0 var(--cc-sp-9); height:var(--cc-btn-h);
-  border-radius:var(--cc-btn-radius); font-family:var(--cc-font);
-  font-size:var(--cc-fs-body); font-weight:var(--cc-fw-medium);
-  cursor:pointer; border:none; transition:var(--cc-tr-fast);
-  text-decoration:none; white-space:nowrap;
-}
-.infra-btn--primary { background:var(--cc-btn-primary-bg); color:var(--vr-white); }
-.infra-btn--primary:hover { background:var(--cc-btn-primary-hover); }
-.infra-btn--ghost {
-  background:var(--hb-bg); color:var(--cc-text-soft);
-  border:1px solid var(--cc-border-2);
-}
-.infra-btn--ghost:hover { background:var(--hb-bg-hover); color:var(--cc-text); }
-.infra-form-grid {
-  display:grid; grid-template-columns:1fr 1fr;
-  gap:var(--cc-sp-8) var(--cc-gap-inline);
-}
-.infra-field { display:flex; flex-direction:column; gap:var(--cc-sp-3); }
-.infra-field--full { grid-column:1/-1; }
-.infra-label { font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-medium); color:var(--cc-text); }
-.infra-input {
-  height:var(--cc-input-h); padding:0 var(--cc-sp-7);
-  border-radius:var(--cc-input-radius); border:1px solid var(--cc-input-border);
-  background:var(--cc-input-bg); font-family:var(--cc-font);
-  font-size:var(--cc-fs-body); color:var(--cc-text);
-  transition:var(--cc-tr-fast); width:100%; box-sizing:border-box; direction:rtl;
-}
-.infra-input:focus { outline:none; border-color:var(--cc-brand); background:var(--cc-input-bg-focus); box-shadow:var(--cc-input-ring); }
-.infra-input.ltr, .infra-input.infra-mono { direction:ltr; text-align:left; }
-textarea.infra-input { height:auto; padding:var(--cc-sp-6) var(--cc-sp-7); resize:vertical; }
-select.infra-input { cursor:pointer; }
-.infra-hint { font-size:var(--cc-fs-tiny); color:var(--cc-text-mute); margin:0; line-height:var(--cc-lh-default); }
-.infra-checkgroup {
-  display:flex; flex-wrap:wrap; gap:var(--cc-sp-6);
-  padding:var(--cc-sp-6) var(--cc-sp-7);
-  background:var(--cc-input-bg); border:1px solid var(--cc-input-border);
-  border-radius:var(--cc-input-radius);
-}
-.infra-check { display:flex; align-items:center; gap:var(--cc-sp-4); cursor:pointer; font-size:var(--cc-fs-body-s); color:var(--cc-text); }
-.infra-check input[type=checkbox] { accent-color:var(--cc-brand); width:14px; height:14px; }
-@media (max-width:640px) {
-  .cd-kv-grid, .infra-form-grid { grid-template-columns:1fr; }
-  .cd-kpi-strip { flex-direction:column; }
-}
-</style>
-
 <script>
 (function(){
   'use strict';
-
-  /* ── Tab switching ── */
-  window.cdTab = function(name) {
-    document.querySelectorAll('.cd-tab').forEach(function(t) {
-      var active = t.id === 'tab-' + name;
-      t.classList.toggle('is-active', active);
-      t.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    document.querySelectorAll('.cd-panel').forEach(function(p) {
-      p.classList.toggle('is-active', p.id === 'panel-' + name);
-    });
+  window.ndTab = function(name){
+    document.querySelectorAll('.nd-tab').forEach(function(t){ t.classList.toggle('is-active', t.id === 'ndtab-' + name); });
+    document.querySelectorAll('.nd-panel').forEach(function(p){ p.classList.toggle('is-active', p.id === 'ndpanel-' + name); });
   };
-
-  /* ── Edit form toggle ── */
-  window.cdToggleEdit = function() {
-    var form = document.getElementById('cd-edit-form');
-    var view = document.getElementById('cd-info-view');
-    if (!form || !view) return;
-    var editing = !form.classList.contains('cd-hidden');
-    form.classList.toggle('cd-hidden', editing);
-    view.classList.toggle('cd-hidden', !editing);
-    if (!editing) {
-      var first = form.querySelector('input, select, textarea');
-      if (first) first.focus();
-    }
+  window.ndToggleEdit = function(){
+    var form = document.getElementById('nd-edit-form');
+    var view = document.getElementById('nd-info-view');
+    if(!form || !view) return;
+    var editing = !form.classList.contains('nd-hidden');
+    form.classList.toggle('nd-hidden', editing);
+    view.classList.toggle('nd-hidden', !editing);
+    if(!editing){ var f = form.querySelector('input, select, textarea'); if(f) f.focus(); }
   };
 }());
 </script>
