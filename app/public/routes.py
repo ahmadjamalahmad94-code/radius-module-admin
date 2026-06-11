@@ -21,6 +21,7 @@ from ..services.customer_control import (
     service_label,
     service_limit_fields,
     service_limit_summary,
+    service_spec_fields,
     service_tier_for_entitlement,
     visible_service_request_messages,
     validate_unique_customer_contact,
@@ -446,6 +447,7 @@ def customer_portal_dashboard():
         service_catalog=service_catalog_items(),
         service_limit_summary=service_limit_summary,
         service_limit_fields=service_limit_fields,
+        service_spec_fields=service_spec_fields,
         licenses=customer.licenses.order_by(License.created_at.desc()).all(),
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
@@ -577,7 +579,12 @@ def customer_portal_service_request(service_key: str):
     desired_limits: dict[str, int] = {}
     spec_summary_parts: list[str] = []
     try:
-        for field_key, field_label, _hint in service_limit_fields(service_key):
+        # SMART per-type schema (service_spec_fields): entitlement limit
+        # fields enriched with bounds + request-only extras (e.g. the VPN
+        # per-direction speeds). Values are clamped server-side to the
+        # field's min/max so a tampered form can't request absurd specs.
+        for field in service_spec_fields(service_key):
+            field_key = field["key"]
             raw = (request.form.get(f"spec_{field_key}") or "").strip()
             if not raw:
                 continue
@@ -587,8 +594,16 @@ def customer_portal_service_request(service_key: str):
                 continue
             if value < 0:
                 continue
+            f_min = field.get("min")
+            f_max = field.get("max")
+            if f_min is not None:
+                value = max(int(f_min), value)
+            if f_max is not None:
+                value = min(int(f_max), value)
             desired_limits[field_key] = value
-            spec_summary_parts.append(f"{field_label}: {value}")
+            unit = str(field.get("unit") or "").strip()
+            shown = f"{value} {unit}".strip()
+            spec_summary_parts.append(f"{field['label']}: {shown}")
         notes = (request.form.get("notes") or "").strip()
         if spec_summary_parts:
             preamble = "المواصفات المطلوبة — " + "، ".join(spec_summary_parts)
