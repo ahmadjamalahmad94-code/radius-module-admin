@@ -456,31 +456,34 @@ def wg_peers():
     wg-data IP can't be derived is omitted (the panel surfaces that as a FAILED
     sync stage, not a silent gap).
 
-    Response shape (additive, frozen alongside routing-table)::
+    Response shape — the proxy reconciler reads ``data["peers"]`` and expects a
+    TOP-LEVEL list, so ``peers`` is the canonical contract field. Each peer is
+    exactly ``{name, public_key, allowed_ips:[...], endpoint}``. ``endpoint`` is
+    always ``null``: the proxy is the wg-data LISTENER (CHRs dial IN), so it
+    needs no per-peer endpoint. ``allowed_ips`` is authoritative. The remaining
+    top-level fields (``ok``, ``generated_at``, ``panel_wg_pubkey``,
+    ``interface``, ``listen_port``, ``peer_count``) are additive metadata a
+    ``data["peers"]`` parser ignores::
 
         {
           "ok": true,
           "generated_at": "2026-06-11T12:00:00Z",
-          "panel_wg_pubkey": "PANEL_MGMT_PUBKEY=",   // info: control-plane key
+          "panel_wg_pubkey": "PANEL_MGMT_PUBKEY=",
           "interface": "wg-data",
           "listen_port": 51821,
           "peer_count": 1,
-          "wg_data_peers": [
+          "peers": [
             {
               "name": "chr-vpn-1",
               "public_key": "CHR_WG_DATA_PUBKEY=",
               "allowed_ips": ["10.98.0.11/32"],
-              "wg_data_ip": "10.98.0.11",
-              "endpoint_hint": "203.0.113.45",       // CHR public IP (info only)
-              "status": "up", "enabled": true, "drain": false
+              "endpoint": null
             }
           ]
         }
 
-    The proxy SHOULD treat ``wg_data_peers`` as the COMPLETE desired set for its
-    ``wg-data`` interface (add missing, remove peers not listed). ``allowed_ips``
-    is authoritative; ``endpoint_hint`` is informational (the proxy is the
-    wg-data listener — CHRs dial IN — so it needs no endpoint per peer).
+    The proxy SHOULD treat ``peers`` as the COMPLETE desired set for its
+    ``wg-data`` interface (add missing, remove peers not listed).
     """
     denied = _auth_required()
     if denied:
@@ -488,13 +491,13 @@ def wg_peers():
 
     try:
         from fleet.sync.peers import desired_proxy_peers
-        peers = desired_proxy_peers()
+        desired = desired_proxy_peers()
     except Exception as exc:  # noqa: BLE001 — defensive: branch w/o fleet/sync
         current_app.logger.warning(
             "wg_peers: desired_proxy_peers failed (%s); returning empty set",
             exc.__class__.__name__,
         )
-        peers = []
+        desired = []
 
     panel_pubkey = ""
     try:
@@ -503,23 +506,23 @@ def wg_peers():
     except Exception:  # noqa: BLE001
         panel_pubkey = ""
 
-    wg_data_peers = [
+    # Top-level `peers` list, exactly the shape the proxy reconciler parses:
+    # name + public_key + allowed_ips + endpoint(null). The CHR public IP /
+    # wg-data IP / status flags are intentionally NOT here — the proxy keys off
+    # allowed_ips, and an unexpected extra field once tripped a strict parser.
+    peers_out = [
         {
             "name": p.name,
             "public_key": p.public_key,
             "allowed_ips": list(p.allowed_ips),
-            "wg_data_ip": p.address,
-            "endpoint_hint": p.endpoint_hint,
-            "status": p.status,
-            "enabled": p.enabled,
-            "drain": p.drain,
+            "endpoint": None,
         }
-        for p in peers
+        for p in desired
     ]
 
     try:
         from app.services.proxy_api_debug import dlog
-        dlog("wg-peers", peer_count=len(wg_data_peers))
+        dlog("wg-peers", peer_count=len(peers_out))
     except Exception:  # noqa: BLE001
         pass
 
@@ -529,8 +532,8 @@ def wg_peers():
         "panel_wg_pubkey": panel_pubkey,
         "interface": "wg-data",
         "listen_port": 51821,
-        "peer_count": len(wg_data_peers),
-        "wg_data_peers": wg_data_peers,
+        "peer_count": len(peers_out),
+        "peers": peers_out,
     })
 
 

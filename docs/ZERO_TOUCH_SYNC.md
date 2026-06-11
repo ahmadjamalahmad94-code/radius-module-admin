@@ -77,6 +77,10 @@ Auth: the same `X-Proxy-Token` HMAC as the rest of `/api/proxy/*`. The
 `routing-table` contract is unchanged (still carries `wg_data_ip` +
 `allowed_chr_ips`); this is an additive, sibling endpoint.
 
+The proxy reconciler reads `data["peers"]` and expects a **top-level list**, so
+`peers` is the canonical contract field; each peer is exactly
+`{name, public_key, allowed_ips, endpoint}` with `endpoint` always `null`.
+
 ```json
 {
   "ok": true,
@@ -85,23 +89,21 @@ Auth: the same `X-Proxy-Token` HMAC as the rest of `/api/proxy/*`. The
   "interface": "wg-data",
   "listen_port": 51821,
   "peer_count": 1,
-  "wg_data_peers": [
+  "peers": [
     {
       "name": "chr-vpn-1",
       "public_key": "CHR_WG_DATA_PUBKEY=",
       "allowed_ips": ["10.98.0.11/32"],
-      "wg_data_ip": "10.98.0.11",
-      "endpoint_hint": "203.0.113.45",
-      "status": "up", "enabled": true, "drain": false
+      "endpoint": null
     }
   ]
 }
 ```
 
-Proxy obligations: treat `wg_data_peers` as the **complete desired set** for its
+Proxy obligations: treat `peers` as the **complete desired set** for its
 `wg-data` interface (add missing, remove peers not listed). `allowed_ips` is
-authoritative; `endpoint_hint` is informational (the proxy is the wg-data
-listener — CHRs dial in — so no per-peer endpoint is needed).
+authoritative; `endpoint` is `null` because the proxy is the wg-data listener —
+CHRs dial in, so no per-peer endpoint is needed.
 
 ## The live staged progress UI
 
