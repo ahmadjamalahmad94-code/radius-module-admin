@@ -148,6 +148,47 @@ def _derive_realm(customer: Customer, suggested: str = "") -> str:
     return (slug or f"c{customer.id}")[:80]
 
 
+def _host_of_url(url: str) -> str:
+    """Extract a bare host (no scheme, no path, no port) from a URL.
+
+    Used to fall back to ``Customer.runtime_url`` (the on-record RADIUS panel
+    URL, e.g. ``http://187.77.70.18/``) when the radius-module heartbeat
+    omits ``radius_auth_ip``. Returns ``""`` for unusable input so a missing
+    URL never produces a junk auth_ip like ``http`` or ``/``.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(raw if "://" in raw else f"//{raw}", scheme="")
+        host = (parsed.hostname or "").strip()
+    except Exception:  # noqa: BLE001 — defensive
+        host = ""
+    if host:
+        return host[:64]
+    # urlparse couldn't, but the value may still be a bare host or host:port.
+    bare = raw.split("/", 1)[0].split(":", 1)[0].strip()
+    return bare[:64]
+
+
+def _resolve_auth_ip(customer: Customer, suggested: str = "") -> str:
+    """Pick the RADIUS auth IP: explicit body > host of customer.runtime_url.
+
+    Owner constraint: the radius-module client doesn't always send
+    ``radius_auth_ip`` yet (a sibling agent is updating the client). The
+    panel already has the customer's RADIUS-panel URL on record (the same
+    URL the operator typed when creating the customer), so we mine the
+    host out of it as a usable default. The instance and route therefore
+    always land with a non-empty target — never the half-built shell the
+    owner flagged.
+    """
+    explicit = (suggested or "").strip()[:64]
+    if explicit:
+        return explicit
+    return _host_of_url(getattr(customer, "runtime_url", "") or "")
+
+
 def _ports(suggested_auth: Any, suggested_acct: Any) -> tuple[int, int]:
     def _as_port(value, fallback):
         try:
@@ -237,7 +278,12 @@ def provision_on_link(
     )
     realm_value = _derive_realm(customer, suggested=realm)
     auth_port, acct_port = _ports(radius_auth_port, radius_acct_port)
-    auth_ip = (radius_auth_ip or "").strip()[:64]
+    # Fallback chain: explicit body > host of Customer.runtime_url. The
+    # latter handles the case where the radius-module client (a sibling
+    # build) hasn't started sending radius_auth_ip yet — the panel knows
+    # the customer's RADIUS panel URL on record, so the instance + route
+    # never land with an empty target.
+    auth_ip = _resolve_auth_ip(customer, radius_auth_ip)
     mgmt_ip = (mgmt_wg_ip or "").strip()[:64]
 
     if instance is None:

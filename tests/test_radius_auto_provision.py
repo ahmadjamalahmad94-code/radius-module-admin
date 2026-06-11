@@ -375,7 +375,110 @@ def test_auto_provisioned_route_appears_in_routing_table(app, client):
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# 7. Sanity — legacy endpoints stay gone
+# 7. runtime_url fallback — client doesn't send radius_auth_ip yet
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_heartbeat_falls_back_to_customer_runtime_url_when_auth_ip_omitted(app, client):
+    """Owner concern (verbatim): "The radius-module client may not send
+    radius_auth_ip yet". When the body omits it, the panel must mine the
+    host out of Customer.runtime_url so the instance + route still land
+    with a usable target."""
+    lic = _mk_license(company="Runtime URL Co")
+    customer_id = lic.customer_id
+    license_key = lic.license_key
+
+    # The owner's live-deploy shape: runtime_url stored as 'http://187.77.70.18/'.
+    with app.app_context():
+        cust = Customer.query.get(customer_id)
+        cust.runtime_url = "http://187.77.70.18/"
+        db.session.commit()
+
+    res = client.post(HEARTBEAT_URL, json={
+        "license_key": license_key,
+        # NO radius_auth_ip — and NO realm (slug fallback exercised in tandem).
+    }).get_json()
+    prov = res["provision"]
+    assert prov["status"] == "provisioned"
+    assert prov["radius_auth_ip"] == "187.77.70.18"
+    assert prov["radius_target"] == "187.77.70.18:1812"
+    assert prov["realm"]  # slug derived — never empty
+
+    # Route in the proxy table carries the fallback target.
+    rt = client.get(ROUTING_TABLE_URL, headers={"X-Proxy-Token": _proxy_token()}).get_json()
+    assert rt["ok"] is True
+    realm_row = next((r for r in rt["routes"] if r["realm"] == prov["realm"]), None)
+    assert realm_row is not None
+    assert realm_row["target_ip"] == "187.77.70.18"
+
+
+def test_heartbeat_runtime_url_handles_host_port_and_bare_host(app, client):
+    """Three live shapes the operator may have stored:
+
+      * full URL with trailing slash  — ``http://187.77.70.18/``
+      * URL with explicit port        — ``https://radius.example.test:8443/admin``
+      * bare host                     — ``10.20.30.40``
+
+    All must reduce to just the host so the instance gets a clean auth_ip.
+    """
+    cases = [
+        ("http://187.77.70.18/", "187.77.70.18"),
+        ("https://radius.example.test:8443/admin", "radius.example.test"),
+        ("10.20.30.40", "10.20.30.40"),
+    ]
+    for runtime_url, expected_host in cases:
+        lic = _mk_license(company=f"URL-{expected_host}")
+        customer_id = lic.customer_id
+        with app.app_context():
+            cust = Customer.query.get(customer_id)
+            cust.runtime_url = runtime_url
+            db.session.commit()
+        res = client.post(HEARTBEAT_URL, json={"license_key": lic.license_key}).get_json()
+        assert res["provision"]["radius_auth_ip"] == expected_host, (
+            f"runtime_url {runtime_url!r} → {res['provision']['radius_auth_ip']!r}, expected {expected_host!r}"
+        )
+
+
+def test_explicit_body_auth_ip_beats_runtime_url_fallback(app, client):
+    """When the client DOES send radius_auth_ip, that value wins. The
+    fallback is a safety net, not an override."""
+    lic = _mk_license(company="Explicit Wins")
+    customer_id = lic.customer_id
+    with app.app_context():
+        cust = Customer.query.get(customer_id)
+        cust.runtime_url = "http://fallback-host.test/"
+        db.session.commit()
+    res = client.post(HEARTBEAT_URL, json={
+        "license_key": lic.license_key,
+        "radius_auth_ip": "203.0.113.99",  # explicit body value
+    }).get_json()
+    assert res["provision"]["radius_auth_ip"] == "203.0.113.99"
+
+
+def test_no_auth_ip_and_no_runtime_url_still_creates_instance(app, client):
+    """Degenerate but documented: when the body omits radius_auth_ip AND
+    the customer has no runtime_url on record, the instance is still
+    created (so the operator can fix it via the manual form). The route
+    lands with an empty target_ip — that's correct: it surfaces "no
+    address" rather than masquerading as a working route."""
+    lic = _mk_license(company="No URL Co")
+    customer_id = lic.customer_id
+    with app.app_context():
+        cust = Customer.query.get(customer_id)
+        cust.runtime_url = ""
+        db.session.commit()
+    res = client.post(HEARTBEAT_URL, json={"license_key": lic.license_key}).get_json()
+    prov = res["provision"]
+    assert prov["status"] == "provisioned"
+    assert prov["radius_auth_ip"] == ""
+    assert prov["radius_target"] == ""
+    with app.app_context():
+        inst = CustomerRadiusInstance.query.filter_by(customer_id=customer_id).one()
+        assert inst.realm  # slug fallback — never empty
+        assert inst.radius_auth_port == 1812  # defaults still apply
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 8. Sanity — legacy endpoints stay gone
 # ═════════════════════════════════════════════════════════════════════════
 
 def test_legacy_activate_endpoint_is_404(app, client):
