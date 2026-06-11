@@ -51,6 +51,20 @@
   .cst-current.paid{ background:#ede9fe; color:#5b21b6; }
   .cst-current.free_unlimited{ background:#dcfce7; color:#166534; }
   .cst-current.free_limited{ background:#cffafe; color:#155e75; }
+  .cst-flag{ display:inline-flex; align-items:center; gap:5px; margin-inline-start:7px;
+    padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:800; vertical-align:middle; }
+  .cst-flag--hidden{ background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+  .cst-flag--susp{ background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+  .cst-ctl{ display:flex; flex-direction:column; gap:8px; min-width:190px; }
+  .cst-ctl-check{ display:inline-flex; align-items:center; gap:8px; padding:8px 11px;
+    border:1px solid #e2e8f0; border-radius:11px; background:#fff; cursor:pointer;
+    font-size:12px; font-weight:700; color:#475569; transition:all .15s ease; }
+  .cst-ctl-check input{ accent-color:#64748b; }
+  .cst-ctl-check--hide:has(input:checked){ background:#f1f5f9; border-color:#94a3b8;
+    box-shadow:0 0 0 3px rgba(100,116,139,.14); color:#334155; }
+  .cst-ctl-check--susp input{ accent-color:#dc2626; }
+  .cst-ctl-check--susp:has(input:checked){ background:#fee2e2; border-color:#dc2626;
+    box-shadow:0 0 0 3px rgba(220,38,38,.14); color:#991b1b; }
   .cst-empty{ text-align:center; padding:36px 14px; color:#64748b; font-size:13px; }
   .cst-submit{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:8px; }
   @media (max-width:760px){
@@ -98,6 +112,7 @@
           <th>الحالي</th>
           <th>التعرفة لهذا المشترك</th>
           <th>حدود (للمجانية المحدودة)</th>
+          <th>التحكم (إخفاء / إيقاف)</th>
         </tr>
       </thead>
       <tbody>
@@ -107,7 +122,11 @@
         {% set tier = row.tier %}
         <tr>
           <td>
-            <div class="cst-svc-name">{{ item.name_ar or item.name or item.service_key }}</div>
+            <div class="cst-svc-name">
+              {{ item.name_ar or item.name or item.service_key }}
+              {% if row.hidden %}<span class="cst-flag cst-flag--hidden"><i class="fa-solid fa-eye-slash"></i> مخفية</span>{% endif %}
+              {% if row.suspended %}<span class="cst-flag cst-flag--susp"><i class="fa-solid fa-ban"></i> موقوفة</span>{% endif %}
+            </div>
             {% if item.description %}
               <div class="cst-svc-desc">{{ item.description }}</div>
             {% endif %}
@@ -151,6 +170,19 @@
               {% else %}
                 <span class="cst-limits-empty">لا يوجد حدّ كميّ لهذه الخدمة — اختر «مدفوعة» أو «مجانية مطلقة».</span>
               {% endif %}
+            </div>
+          </td>
+          <td>
+            {# orthogonal per-customer states: hide (view) ≠ suspend (function) #}
+            <div class="cst-ctl">
+              <label class="cst-ctl-check cst-ctl-check--hide" title="إزالة الخدمة كليًا من بوابة هذا العميل — حتى لو كانت أساسية/مجانية. لا توقف عملها.">
+                <input type="checkbox" name="hidden_{{ item.service_key }}" {% if row.hidden %}checked{% endif %}>
+                <span><i class="fa-solid fa-eye-slash"></i> مخفية من البوابة</span>
+              </label>
+              <label class="cst-ctl-check cst-ctl-check--susp" title="إيقاف فعلي للخدمة لهذا العميل — تتوقف عن العمل حتى تستأنفها. مستقل عن الإخفاء.">
+                <input type="checkbox" name="suspended_{{ item.service_key }}" {% if row.suspended %}checked{% endif %}>
+                <span><i class="fa-solid fa-ban"></i> موقوفة (إيقاف فعلي)</span>
+              </label>
             </div>
           </td>
         </tr>

@@ -65,11 +65,13 @@ from ..services.customer_control import (
     normalize_contact_phone,
     radius_admins_for_customer,
     service_catalog_items,
+    service_is_hidden,
     service_label,
     service_limit_fields,
     service_limit_summary,
     service_tier_for_entitlement,
     set_catalog_policy,
+    set_service_hidden,
     set_service_tier_on_entitlement,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
@@ -4127,6 +4129,11 @@ def customer_service_tiers(customer_id: int):
             "tier": service_tier_for_entitlement(ent),
             "limit_fields": service_limit_fields(item.service_key),
             "limits": (ent.limits if ent else {}) or {},
+            # Orthogonal per-customer states (hide ≠ suspend by design):
+            # hidden = removed from THIS customer's portal view only;
+            # suspended = functionally stopped until the owner resumes it.
+            "hidden": service_is_hidden(ent),
+            "suspended": bool(ent and ent.status == "suspended"),
         })
     return render_template(
         "admin/customer_service_tiers.html",
@@ -4152,6 +4159,9 @@ def customer_service_tiers_save(customer_id: int):
             tier = clean_service_tier(raw_tier)
             entitlement = get_or_create_service_entitlement(customer, key)
             previous = service_tier_for_entitlement(entitlement)
+            # Snapshot BEFORE the free-tier auto-activate below mutates status
+            # — the suspend toggle compares against the user's real prior state.
+            was_suspended = entitlement.status == "suspended"
             set_service_tier_on_entitlement(entitlement, tier)
             # When the row is "free_limited" we save the limit-cap inputs onto
             # the entitlement's limits dict (reusing the existing per-service
@@ -4182,6 +4192,31 @@ def customer_service_tiers_save(customer_id: int):
                 entitlement.enabled = True
                 if entitlement.status != "active":
                     entitlement.status = "active"
+
+            # ── «مخفي» — per-customer VIEW hide (orthogonal to the tier) ──
+            # Hiding removes the service from THIS customer's portal entirely
+            # (even a free/basic one) without touching its function.
+            want_hidden = request.form.get(f"hidden_{key}") == "on"
+            if service_is_hidden(entitlement) != want_hidden:
+                set_service_hidden(entitlement, want_hidden)
+                changed += 1
+
+            # ── «موقوفة» — explicit functional SUSPEND (beats everything) ──
+            # Applied AFTER the free-tier auto-activate above so a suspended
+            # service stays suspended even when its tier is free; resuming
+            # restores active (free tiers re-enable via the contract override,
+            # paid stays gated until activation completes).
+            want_suspended = request.form.get(f"suspended_{key}") == "on"
+            if want_suspended:
+                entitlement.status = "suspended"
+                entitlement.enabled = False
+                if not was_suspended:
+                    changed += 1
+            elif was_suspended:
+                entitlement.status = "active"
+                entitlement.enabled = tier in ("free_unlimited", "free_limited")
+                changed += 1
+
             entitlement.updated_by_admin_id = session.get("admin_id")
             if previous != tier:
                 changed += 1

@@ -624,6 +624,36 @@ def service_tier_is_free(tier: str | None) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Per-customer HIDDEN flag (orthogonal to the tier).
+#
+# «مخفي» removes the service ENTIRELY from that customer's portal — even a
+# free/basic service — to declutter a beginner's view. It is a VIEW state:
+# hiding never suspends a working service (the runtime contract still
+# carries it, flagged ``hidden: true`` so the radius client can mirror the
+# hide in ITS UI). SUSPENDED (entitlement.status) is the functional stop —
+# independent and explicitly controlled. Stored as config["hidden"] so the
+# underlying tier survives un-hide.
+# ─────────────────────────────────────────────────────────────────────────
+
+def service_is_hidden(entitlement: CustomerServiceEntitlement | None) -> bool:
+    if entitlement is None:
+        return False
+    try:
+        return bool((entitlement.config or {}).get("hidden"))
+    except Exception:  # pragma: no cover — defensive against broken JSON
+        return False
+
+
+def set_service_hidden(entitlement: CustomerServiceEntitlement, hidden: bool) -> None:
+    config = dict(entitlement.config or {})
+    if hidden:
+        config["hidden"] = True
+    else:
+        config.pop("hidden", None)
+    entitlement.config = config
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Catalog-level default policy (feat/services-catalog-policy).
 #
 # The owner sets a GLOBAL default tier per service on the dedicated
@@ -740,6 +770,89 @@ SERVICE_LIMIT_FIELDS = {
     "distributors": [("max_total", "أقصى عدد موزعين", "عدد الموزعين المسموح إدارتهم.")],
     "multi_tenant": [("max_total", "أقصى عدد مستأجرين", "عدد الشركات أو المستأجرين داخل النسخة.")],
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SMART per-type spec metadata (feat/services-catalog-policy).
+#
+# Enriches each service's spec fields with sensible defaults / bounds /
+# steps / units so the portal's «طلب تفعيل» and «ترقية» modals render
+# genuinely per-type intelligent forms (only relevant fields, sane ranges).
+# The radius-module client mirrors the same flow via the bridge — contract
+# in docs/SERVICE_SPEC_REQUEST_CONTRACT.md.
+# ─────────────────────────────────────────────────────────────────────────
+
+SERVICE_SPEC_META: dict[str, dict[str, dict[str, Any]]] = {
+    "subscribers": {"max_total": {"min": 10, "max": 100000, "step": 10, "default": 100, "unit": "مشترك"}},
+    "backups": {"max_count": {"min": 1, "max": 365, "step": 1, "default": 30, "unit": "نسخة"}},
+    "cards": {
+        "generate_per_batch": {"min": 10, "max": 10000, "step": 10, "default": 100, "unit": "كرت/دفعة"},
+        "monthly_generated": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "كرت/شهر"},
+    },
+    "nas": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 3, "unit": "جهاز"}},
+    "routers": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 3, "unit": "راوتر"}},
+    "profiles": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 10, "unit": "باقة"}},
+    "print_templates": {"max_active": {"min": 1, "max": 100, "step": 1, "default": 5, "unit": "قالب"}},
+    "admins": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 3, "unit": "مدير"}},
+    "card_marketplace": {"max_sellers": {"min": 1, "max": 1000, "step": 1, "default": 5, "unit": "بائع"}},
+    "card_users": {"max_total": {"min": 10, "max": 100000, "step": 10, "default": 100, "unit": "مستخدم"}},
+    "cards_recharge": {"monthly_generated": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "بطاقة/شهر"}},
+    "ip_pools": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "نطاق"}},
+    "finance_center": {"max_wallets": {"min": 1, "max": 100, "step": 1, "default": 3, "unit": "محفظة"}},
+    "whatsapp_gateway": {
+        "max_messages_monthly": {"min": 100, "max": 100000, "step": 100, "default": 500, "unit": "رسالة/شهر"},
+        "max_messages_daily": {"min": 10, "max": 10000, "step": 10, "default": 100, "unit": "رسالة/يوم"},
+        "max_templates": {"min": 1, "max": 200, "step": 1, "default": 20, "unit": "قالب"},
+    },
+    "distributors": {"max_total": {"min": 1, "max": 1000, "step": 1, "default": 5, "unit": "موزع"}},
+    "multi_tenant": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "مستأجر"}},
+}
+
+# Request-only spec fields for service types whose specs are NOT entitlement
+# limit fields — e.g. bandwidth-flavoured services request per-direction
+# speed + quota. They travel in ``desired_limits`` like everything else;
+# enforcement stays with the service's own provisioning (VPN contract).
+SERVICE_REQUEST_EXTRA_FIELDS: dict[str, list[dict[str, Any]]] = {
+    "ip_change_vpn": [
+        {"key": "download_mbps", "label": "سرعة التحميل المطلوبة", "hint": "Mbps باتجاه التنزيل (لكل اتجاه سرعة مستقلة).",
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↓"},
+        {"key": "upload_mbps", "label": "سرعة الرفع المطلوبة", "hint": "Mbps باتجاه الرفع.",
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↑"},
+        {"key": "max_vpn_users", "label": "عدد مستخدمي VPN", "hint": "عدد المستخدمين المتزامنين على الخدمة.",
+         "min": 1, "max": 1000, "step": 1, "default": 5, "unit": "مستخدم"},
+        {"key": "quota_gb", "label": "حصة البيانات الشهرية", "hint": "اتركها فارغة لطلب حصة غير محدودة.",
+         "min": 1, "max": 100000, "step": 10, "default": None, "unit": "GB/شهر"},
+    ],
+}
+
+
+def service_spec_fields(service_key: str) -> list[dict[str, Any]]:
+    """The SMART spec-form schema for one service type.
+
+    Returns ``[{key,label,hint,min,max,step,default,unit}, …]`` — the
+    union of the service's entitlement limit fields (enriched with
+    ``SERVICE_SPEC_META`` bounds/defaults) and its request-only extras.
+    This is what the portal modals render and what the request endpoint
+    parses; the radius client mirrors the same schema via the bridge.
+    """
+    key = str(service_key or "")
+    meta_map = SERVICE_SPEC_META.get(key, {})
+    out: list[dict[str, Any]] = []
+    for field_key, field_label, field_hint in SERVICE_LIMIT_FIELDS.get(key, []):
+        meta = meta_map.get(field_key, {})
+        out.append({
+            "key": field_key,
+            "label": field_label,
+            "hint": field_hint,
+            "min": int(meta.get("min", 0)),
+            "max": meta.get("max"),
+            "step": int(meta.get("step", 1)),
+            "default": meta.get("default"),
+            "unit": str(meta.get("unit", "")),
+        })
+    out.extend(dict(extra) for extra in SERVICE_REQUEST_EXTRA_FIELDS.get(key, []))
+    return out
+
 
 ROLE_LABELS = {
     "owner": "مالك الحساب",
@@ -1463,8 +1576,10 @@ def _serialize_service(
     # OR catalog default), the service is available regardless of the
     # entitlement.enabled flag — the owner's tier choice is the source of
     # truth. (Paid tier keeps the old gating: the customer must request
-    # activation + pay.)
-    if service_tier_is_free(tier) and license_active:
+    # activation + pay.) An explicit SUSPENSION always beats the free tier:
+    # suspended is the functional stop and only the owner lifts it — a free
+    # tier must never silently resurrect a suspended service.
+    if service_tier_is_free(tier) and license_active and status != "suspended":
         if not (expires_at and expires_at < utcnow()):
             enabled = True
             status = "active"
@@ -1484,6 +1599,10 @@ def _serialize_service(
         # free_limited is upgradable by design («قابلة للتطوير») — the portal
         # shows a ترقية CTA; paid-disabled keeps the طلب تفعيل CTA.
         "upgradable": tier == SERVICE_TIER_FREE_LIMITED,
+        # VIEW-only flag: the portal omits hidden services entirely; the
+        # radius client mirrors the hide in its own UI. Functionality is
+        # untouched — hidden ≠ suspended (orthogonal states by design).
+        "hidden": service_is_hidden(entitlement),
     }
     if plan_code:
         payload["plan_code"] = plan_code
