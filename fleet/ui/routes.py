@@ -146,6 +146,23 @@ def fleet_dashboard():
     }
     best_rank = ranking[0] if ranking and ranking[0].eligible else None
 
+    # Cross-reference: is the singleton CHR (settings#chr) ALSO listed in the
+    # fleet? If yes the owner is maintaining the same physical CHR's
+    # credentials in two places — surface a banner pointing at the
+    # consolidation runbook. We import lazily so the dashboard keeps loading
+    # even if the chr_settings module/table isn't initialised on a fresh DB.
+    singleton_match = None
+    try:
+        from app.services import chr_settings as _chr_svc
+        singleton_host = (_chr_svc.resolved() or {}).get("host", "").strip()
+        if singleton_host:
+            for n in nodes:
+                if (n.public_ip or "").strip() == singleton_host:
+                    singleton_match = {"host": singleton_host, "node_name": n.name}
+                    break
+    except Exception:
+        singleton_match = None
+
     return render_template(
         "admin/fleet/dashboard.html",
         nodes=nodes,                  # kept for backwards-compat refs
@@ -163,6 +180,7 @@ def fleet_dashboard():
         pending_jobs_count=len(pending_job_views),
         overview_stats=overview_stats,
         best_rank=best_rank,
+        singleton_chr_match=singleton_match,
     )
 
 

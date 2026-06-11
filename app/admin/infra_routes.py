@@ -150,41 +150,18 @@ def chr_nodes_list():
 @bp.post("/chr-nodes/create")
 @super_admin_required
 def chr_node_create():
-    name = _str(request.form.get("name"), 80)
-    if not name:
-        flash("اسم العقدة مطلوب.", "error")
-        return redirect(url_for("admin_infra.chr_nodes_list"))
-    if ChrNode.query.filter_by(name=name).first():
-        flash(f"اسم العقدة «{name}» مستخدم مسبقًا.", "error")
-        return redirect(url_for("admin_infra.chr_nodes_list"))
+    """Retired — node creation moved to the fleet onboarding wizard.
 
-    enabled_svcs = request.form.getlist("enabled_services")
-    node = ChrNode(
-        name=name,
-        public_ip=_str(request.form.get("public_ip"), 64),
-        management_ip=_str(request.form.get("management_ip"), 64),
-        domain=_str(request.form.get("domain")),
-        location=_str(request.form.get("location"), 100),
-        capacity_mbps=_int(request.form.get("capacity_mbps"), 1000),
-        max_reserved_mbps=_int(request.form.get("max_reserved_mbps"), 850),
-        max_active_sessions=_int(request.form.get("max_active_sessions")),
-        max_customers=_int(request.form.get("max_customers")),
-        routeros_host=_str(request.form.get("routeros_host")),
-        routeros_user=_str(request.form.get("routeros_user"), 80),
-        routeros_port=_int(request.form.get("routeros_port"), 443),
-        notes=_str(request.form.get("notes"), 1000),
-        status="pending",
+    The handler is preserved (kept registered) so any tab the operator still
+    has open POSTs to a friendly redirect instead of a 404. The legacy table
+    is read-only from now on; step 5 (legacy→fleet migration) is the right
+    way to bring existing nodes into the fleet, and step 6 drops the table.
+    """
+    flash(
+        "إنشاء عقدة CHR من هذه الصفحة أُلغي. أضف العقد الجديدة من «معالج إضافة CHR».",
+        "warning",
     )
-    raw_password = request.form.get("routeros_password", "").strip()
-    if raw_password:
-        node.routeros_password_enc = _encrypt_node_password(raw_password)
-    node.enabled_services = [s for s in enabled_svcs if s in SERVICE_TYPE_CHOICES]
-    db.session.add(node)
-    db.session.flush()
-    audit("chr_node_create", "chr_node", node.id, f"إنشاء عقدة CHR: {name}", {})
-    db.session.commit()
-    flash(f"تم إنشاء عقدة CHR «{name}».", "success")
-    return redirect(url_for("admin_infra.chr_node_detail", node_id=node.id))
+    return redirect(url_for("fleet_ui.onboarding_wizard"))
 
 
 @bp.get("/chr-nodes/<int:node_id>")
@@ -233,64 +210,43 @@ def chr_node_detail(node_id: int):
 @bp.post("/chr-nodes/<int:node_id>/edit")
 @super_admin_required
 def chr_node_edit(node_id: int):
-    node = ChrNode.query.get_or_404(node_id)
-    enabled_svcs = request.form.getlist("enabled_services")
-    node.public_ip = _str(request.form.get("public_ip"), 64)
-    node.management_ip = _str(request.form.get("management_ip"), 64)
-    node.domain = _str(request.form.get("domain"))
-    node.location = _str(request.form.get("location"), 100)
-    node.capacity_mbps = _int(request.form.get("capacity_mbps"), node.capacity_mbps)
-    node.max_reserved_mbps = _int(request.form.get("max_reserved_mbps"), node.max_reserved_mbps)
-    node.max_active_sessions = _int(request.form.get("max_active_sessions"))
-    node.max_customers = _int(request.form.get("max_customers"))
-    node.routeros_host = _str(request.form.get("routeros_host"))
-    node.routeros_user = _str(request.form.get("routeros_user"), 80)
-    node.routeros_port = _int(request.form.get("routeros_port"), node.routeros_port)
-    node.status = _str(request.form.get("status"), 20) or node.status
-    node.notes = _str(request.form.get("notes"), 1000)
-    node.enabled_services = [s for s in enabled_svcs if s in SERVICE_TYPE_CHOICES]
-    # كلمة المرور تُحدَّث فقط إذا أُرسلت — الإرسال الفارغ يُبقي القيمة المحفوظة
-    raw_password = request.form.get("routeros_password", "").strip()
-    if raw_password:
-        node.routeros_password_enc = _encrypt_node_password(raw_password)
-    audit("chr_node_edit", "chr_node", node.id, f"تعديل عقدة CHR: {node.name}", {})
-    db.session.commit()
-    flash("تم حفظ التعديلات.", "success")
-    return redirect(url_for("admin_infra.chr_node_detail", node_id=node_id))
+    """Retired — edit lifecycle moved to the fleet registry API.
+
+    See ``chr_node_create`` docstring for the rationale. Operators editing
+    a still-shown legacy row should run the migration (step 5) to move the
+    node into the fleet, where it can be edited normally.
+    """
+    # Make sure the id resolves so we 404 on garbage IDs rather than silently
+    # redirecting. This keeps audit/intrusion logs meaningful.
+    ChrNode.query.get_or_404(node_id)
+    flash(
+        "تعديل عقد CHR من هذه الصفحة أُلغي. شغّل الترحيل إلى الأسطول ثم عدّلها من «لوحة الأسطول».",
+        "warning",
+    )
+    return redirect(url_for("fleet_ui.fleet_dashboard"))
 
 
 @bp.post("/chr-nodes/<int:node_id>/poll")
 @super_admin_required
 def chr_node_poll(node_id: int):
-    """تشغيل يدوي لجمع مقاييس عقدة CHR واحدة فورًا."""
-    from ..services.chr_metrics import _collect_one
-
-    node = ChrNode.query.get_or_404(node_id)
-    try:
-        metric = _collect_one(node)
-        if metric:
-            db.session.add(metric)
-            db.session.commit()
-            flash("تم جمع المقاييس بنجاح.", "success")
-        else:
-            flash("تعذّر الاتصال بالعقدة — تحقق من بيانات RouterOS.", "error")
-    except Exception as exc:
-        db.session.rollback()
-        flash(f"خطأ أثناء جمع المقاييس: {exc}", "error")
-    return redirect(url_for("admin_infra.chr_node_detail", node_id=node_id))
+    """Retired — the fleet metrics-poller writes telemetry every cycle."""
+    ChrNode.query.get_or_404(node_id)
+    flash(
+        "الاستطلاع اليدوي لم يعد ضروريًا — جامع مقاييس الأسطول يعمل في الخلفية.",
+        "info",
+    )
+    return redirect(url_for("fleet_ui.fleet_dashboard"))
 
 
 @bp.post("/chr-nodes/poll-all")
 @super_admin_required
 def chr_nodes_poll_all():
-    """تشغيل يدوي لجمع مقاييس كل العقد النشطة."""
-    summary = _collect_all_nodes()
+    """Retired — fleet metrics-poller covers this in the background."""
     flash(
-        f"جمع المقاييس: {summary['ok']} ناجح / "
-        f"{summary['skipped']} متجاهل / {summary['errors']} خطأ.",
-        "success" if not summary["errors"] else "warning",
+        "الاستطلاع اليدوي لم يعد ضروريًا — جامع مقاييس الأسطول يعمل في الخلفية.",
+        "info",
     )
-    return redirect(url_for("admin_infra.chr_nodes_list"))
+    return redirect(url_for("fleet_ui.fleet_dashboard"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -691,35 +647,96 @@ def _health_cls(pct: float) -> str:
 @bp.get("/system-health")
 @login_required
 def system_health():
+    """Render «صحة الخدمات» — host CPU/RAM/Disk + DB/Proxy/WhatsApp + fleet poller.
+
+    The template (`admin/logs/health_new.html`) consumes EVERYTHING through a
+    single nested ``health`` dict — ``health.resources.cpu_pct``,
+    ``health.server.uptime``, ``health.database.response_ms`` etc. The view
+    must therefore build that nested shape; passing the same values as flat
+    kwargs (the previous behavior) gets silently shadowed by the template's
+    ``{% set %}`` rebinding, which is why this page used to render 0% / «—»
+    everywhere even on a healthy host.
+    """
     import os
     import time as _time
     now = _utcnow()
 
+    # ── Host resources via psutil (fall back to /proc + statvfs when missing) ──
     cpu_pct: float = 0.0
     mem_pct: float = 0.0
     disk_pct: float = 0.0
+    cpu_cores = "—"
+    load_avg = "—"
+    mem_used_mb = "—"
+    mem_total_mb = "—"
+    disk_used_gb = "—"
+    disk_total_gb = "—"
+    disk_free_gb = "—"
+    disk_path = "/"
     try:
         import psutil
         cpu_pct = psutil.cpu_percent(interval=0.1)
+        try:
+            cpu_cores = psutil.cpu_count(logical=True) or "—"
+        except Exception:
+            pass
+        try:
+            la = psutil.getloadavg()
+            load_avg = f"{la[0]:.2f} / {la[1]:.2f} / {la[2]:.2f}"
+        except Exception:
+            pass
         vm = psutil.virtual_memory()
         mem_pct = vm.percent
-        du = psutil.disk_usage("/")
+        mem_used_mb = round((vm.total - vm.available) / (1024 * 1024))
+        mem_total_mb = round(vm.total / (1024 * 1024))
+        # On Windows the root is the system drive ("C:\\"); psutil accepts it.
+        probe_path = os.path.abspath(os.sep)
+        du = psutil.disk_usage(probe_path)
         disk_pct = du.percent
+        disk_used_gb = round(du.used / (1024 ** 3), 1)
+        disk_total_gb = round(du.total / (1024 ** 3), 1)
+        disk_free_gb = round(du.free / (1024 ** 3), 1)
+        disk_path = probe_path
     except Exception:
+        # psutil missing — fall through to the stdlib-only probes so the page
+        # still shows something useful on hosts where psutil isn't installed.
+        try:
+            la = os.getloadavg()
+            load_avg = f"{la[0]:.2f} / {la[1]:.2f} / {la[2]:.2f}"
+            # Approximate CPU% from 1-min load avg / core count when psutil
+            # isn't available. Not perfect but better than a hard 0.
+            try:
+                cores = os.cpu_count() or 1
+                cpu_cores = cores
+                cpu_pct = min(100.0, round(la[0] / cores * 100.0, 1))
+            except Exception:
+                pass
+        except (AttributeError, OSError):
+            pass
         try:
             with open("/proc/meminfo") as fh:
                 lines = {k.strip(): v.strip() for k, v in (ln.split(":", 1) for ln in fh if ":" in ln)}
-            total = int(lines.get("MemTotal", "1 kB").split()[0]) or 1
-            avail = int(lines.get("MemAvailable", "1 kB").split()[0])
-            mem_pct = round((1 - avail / total) * 100, 1)
+            total_kb = int(lines.get("MemTotal", "1 kB").split()[0]) or 1
+            avail_kb = int(lines.get("MemAvailable", "1 kB").split()[0])
+            mem_pct = round((1 - avail_kb / total_kb) * 100, 1)
+            mem_total_mb = round(total_kb / 1024)
+            mem_used_mb = round((total_kb - avail_kb) / 1024)
         except Exception:
             pass
         try:
-            st = os.statvfs("/")
-            disk_pct = round((1 - st.f_bavail / (st.f_blocks or 1)) * 100, 1)
+            # shutil.disk_usage is stdlib + cross-platform (Linux + Windows).
+            import shutil
+            probe_path = os.path.abspath(os.sep)
+            usage = shutil.disk_usage(probe_path)
+            disk_pct = round(usage.used / usage.total * 100, 1) if usage.total else 0.0
+            disk_total_gb = round(usage.total / (1024 ** 3), 1)
+            disk_free_gb = round(usage.free / (1024 ** 3), 1)
+            disk_used_gb = round(usage.used / (1024 ** 3), 1)
+            disk_path = probe_path
         except Exception:
             pass
 
+    # ── DB ping ──
     db_ok = False
     db_ms = 0.0
     try:
@@ -731,6 +748,7 @@ def system_health():
     except Exception:
         pass
 
+    # ── WhatsApp accounts (best-effort) ──
     try:
         from ..models import WhatsAppAccount
         wa_total = WhatsAppAccount.query.count()
@@ -739,37 +757,181 @@ def system_health():
         wa_total = 0
         wa_conn = 0
 
+    # ── Fleet metrics-poller liveness — last write to fleet_chr_metrics.
+    # We treat a write within the last 5 minutes as "healthy" (matches the
+    # poller's 60s default cadence with generous slack). Missing tables on
+    # fresh installs degrade silently to "unknown".
+    poller_last_at = None
+    poller_status = "unknown"
+    poller_age_s: int | str = "—"
+    try:
+        from fleet.health.models_health import FleetChrMetric
+        poller_last_at = (
+            db.session.query(db.func.max(FleetChrMetric.ts)).scalar()
+        )
+        if poller_last_at is not None:
+            poller_age_s = max(0, int((now - poller_last_at).total_seconds()))
+            poller_status = "ok" if poller_age_s <= 300 else ("warn" if poller_age_s <= 900 else "error")
+    except Exception:
+        pass
+
+    # ── Recent errors — adapt AuditLog rows to the template's `err.*` keys. ──
     from ..models import AuditLog
-    recent_errors = (
+    audit_rows = (
         AuditLog.query
         .filter(AuditLog.action.ilike("%error%") | AuditLog.action.ilike("%fail%"))
         .order_by(AuditLog.created_at.desc())
         .limit(10)
         .all()
     )
+    recent_errors = [
+        {
+            "message": (row.summary or row.action or "—"),
+            "occurred_at": row.created_at,
+            "service": (row.entity_type or ""),
+            "code": (row.action or ""),
+        }
+        for row in audit_rows
+    ]
 
     proxy_routes_active = ProxyRealmRoute.query.filter_by(status="active").count()
+    # Pre-compute server-side health classes so the template's *_cls kwargs
+    # stay populated (the template reads them via {% set %}-defaults too,
+    # but having them here keeps the toggle deterministic across all renders).
+    server_status = "ok"
+    db_status = "ok" if db_ok else "error"
+    px_status = "ok" if proxy_routes_active >= 0 else "warn"
+    wa_status = "ok" if wa_conn > 0 else "warn"
+
+    health = {
+        "status": "ok",
+        "resources": {
+            "cpu_pct": round(cpu_pct, 1),
+            "mem_pct": round(mem_pct, 1),
+            "disk_pct": round(disk_pct, 1),
+            "cpu_cores": cpu_cores,
+            "load_avg": load_avg,
+            "mem_used_mb": mem_used_mb,
+            "mem_total_mb": mem_total_mb,
+            "disk_used_gb": disk_used_gb,
+            "disk_total_gb": disk_total_gb,
+            "disk_free_gb": disk_free_gb,
+            "disk_path": disk_path,
+        },
+        "server": {
+            "status": server_status,
+            "uptime": "—",
+            "requests_per_min": "—",
+            "version": current_app.config.get("APP_VERSION", "—"),
+            "workers": "—",
+            # Fleet metrics-poller liveness, surfaced inside the server card.
+            "poller_status": poller_status,
+            "poller_last_at": poller_last_at,
+            "poller_age_s": poller_age_s,
+        },
+        "database": {
+            "status": db_status,
+            "response_ms": db_ms,
+            "connections": "—",
+            "size_mb": "—",
+            "queries_per_min": "—",
+            "ok": db_ok,
+        },
+        "proxy": {
+            "status": px_status,
+            "active_routes": proxy_routes_active,
+            "auth_reqs_min": "—",
+            "acct_reqs_min": "—",
+            "reject_rate_pct": "—",
+        },
+        "whatsapp": {
+            "status": wa_status,
+            "msgs_today": "—",
+            "delivered_pct": "—",
+            "failed_today": "—",
+            "phone_display": f"{wa_conn}/{wa_total} متصل",
+        },
+    }
 
     return render_template(
         "admin/logs/health_new.html",
         now=now,
-        cpu_pct=round(cpu_pct, 1),
-        mem_pct=round(mem_pct, 1),
-        disk_pct=round(disk_pct, 1),
+        # Top-level *_cls kwargs are preserved for backward-compat — newer
+        # template revisions read them from `health.<block>.status` via {% set %}
+        # but the legacy chrome still references them in a few places.
         cpu_cls=_health_cls(cpu_pct),
         mem_cls=_health_cls(mem_pct),
         disk_cls=_health_cls(disk_pct),
-        sv_cls="ok",
-        db_cls="ok" if db_ok else "error",
-        px_cls="ok" if proxy_routes_active >= 0 else "warn",
-        wa_cls="ok" if wa_conn > 0 else "warn",
-        health={"status": "ok"},
-        sv={"uptime": "—", "requests_per_min": "—", "version": "—", "workers": "—"},
-        db={"response_ms": db_ms, "connections": "—", "size_mb": "—", "queries_per_min": "—", "ok": db_ok},
-        proxy={"active_routes": proxy_routes_active, "auth_reqs_min": "—", "acct_reqs_min": "—", "reject_rate_pct": "—"},
-        wa={"msgs_today": "—", "delivered_pct": "—", "failed_today": "—", "phone_display": f"{wa_conn}/{wa_total} متصل"},
+        sv_cls=server_status,
+        db_cls=db_status,
+        px_cls=px_status,
+        wa_cls=wa_status,
+        health=health,
+        # Pre-rendered keys the template still expects flat (charts / errors).
         pts_arr=[],
         mpts=[],
         recent_errors=recent_errors,
         err=None,
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Legacy → Fleet consolidation (step 5 of docs/CONSOLIDATION.md)
+#
+# UI-runnable, idempotent migration. The page lets the owner preview the move
+# (dry-run) and then execute it — no terminal, no SQL. All endpoints are
+# super_admin only; results are audited.
+# ════════════════════════════════════════════════════════════════════════════
+@bp.get("/consolidation")
+@super_admin_required
+def consolidation_page():
+    """Preview + run the legacy chr_nodes → fleet_chr_nodes migration."""
+    from ..services.fleet_consolidation import (
+        fleet_tables_available,
+        legacy_chr_node_id_column_present,
+        plan_migration,
+    )
+    legacy_count = ChrNode.query.count()
+    if not fleet_tables_available():
+        plan = None
+        error = "fleet_schema_not_ready"
+    elif not legacy_chr_node_id_column_present():
+        plan = None
+        error = "schema_heal_pending"
+    else:
+        plan = plan_migration()
+        error = plan.error
+    return render_template(
+        "admin/infra/consolidation.html",
+        legacy_count=legacy_count,
+        plan=plan,
+        error=error,
+    )
+
+
+@bp.post("/consolidation/run")
+@super_admin_required
+def consolidation_run():
+    """Execute the migration for real. Idempotent — safe to click twice."""
+    from ..services.fleet_consolidation import run_migration, to_jsonable
+    result = run_migration(dry_run=False)
+    payload = to_jsonable(result)
+    audit(
+        "fleet_consolidation_run",
+        "chr_node",
+        0,
+        f"ترحيل {result.imported} عقدة CHR قديمة إلى الأسطول "
+        f"(تم سابقًا: {result.skipped_existing}، متعذّر: {result.skipped_invalid}، "
+        f"تخصيصات أُعيد توجيهها: {result.allocations_rewritten}).",
+        payload,
+    )
+    db.session.commit()
+    if result.error:
+        flash(f"تعذّر إكمال الترحيل: {result.error}", "error")
+    else:
+        flash(
+            f"تم الترحيل: استيراد {result.imported}، تم سابقًا {result.skipped_existing}، "
+            f"تخطٍّ {result.skipped_invalid}، تخصيصات أُعيد توجيهها {result.allocations_rewritten}.",
+            "success" if result.imported or result.allocations_rewritten else "info",
+        )
+    return redirect(url_for("admin_infra.consolidation_page"))

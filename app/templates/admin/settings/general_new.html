@@ -391,7 +391,7 @@
   </button>
   <button class="cc-tab-btn" role="tab" data-tab="chr"
           aria-controls="tab-chr" id="tab-btn-chr">
-    <i class="fa-solid fa-network-wired" aria-hidden="true"></i> MikroTik CHR
+    <i class="fa-solid fa-network-wired" aria-hidden="true"></i> MikroTik CHR — نمط الـCHR الواحد
   </button>
 </div>
 
@@ -892,10 +892,18 @@
 <div class="sg-card">
   <div class="sg-card-head">
     <span class="sg-card-head-icon" aria-hidden="true"><i class="fa-solid fa-network-wired"></i></span>
-    <span class="sg-card-head-title">MikroTik CHR — تزويد الأنفاق المركزي</span>
-    <span class="sg-card-head-sub">بيانات اتصال CHR المركزي (RouterOS REST API) لإنشاء حسابات SSTP/PPTP/L2TP/IPsec</span>
+    <span class="sg-card-head-title">MikroTik CHR — نمط الـCHR الواحد</span>
+    <span class="sg-card-head-sub">بيانات اتصال CHR <b>واحد مركزي</b> (RouterOS REST API) — للنشر بـCHR وحيد. للنشر متعدد العقد استخدم «أسطول CHR».</span>
   </div>
   <div class="sg-card-body">
+    <div class="chr-banner chr-banner--mut" style="margin:0 0 14px">
+      <i class="fa-solid fa-circle-info"></i>
+      هذا القسم يُدير <b>CHR مركزي واحد</b> يستخدمه «تحكّم RouterOS» و«اتصالات الوصول».
+      عند تشغيل أكثر من CHR — استخدم
+      <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" style="color:#5b21b6;font-weight:800;text-decoration:underline">
+        «أسطول CHR»</a>
+      الذي يدير كل عقدة ببياناتها المنفصلة، ومقاييس حية، وتوازن أحمال، ودخول/إخراج.
+    </div>
 
   {% if not chr_enabled or not chr_state %}
     <div class="chr-banner chr-banner--mut">

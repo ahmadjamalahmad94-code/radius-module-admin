@@ -160,6 +160,14 @@ class FleetChrNode(TimestampMixin, db.Model):
     last_seen_at = db.Column(db.DateTime)                            # last control-plane contact
     last_ping_ok_at = db.Column(db.DateTime)                         # last successful ICMP
 
+    # Anchors the idempotent legacy→fleet migration. NULL for native fleet
+    # rows (created via the onboarding wizard); set ONLY on rows that were
+    # imported from the legacy ``chr_nodes`` table by
+    # ``app.services.fleet_consolidation.run_migration``. Stays for the
+    # lifetime of the consolidation; step 6 of docs/CONSOLIDATION.md drops
+    # this column at the same time as the legacy tables.
+    legacy_chr_node_id = db.Column(db.Integer, nullable=True, index=True)
+
     provider = db.relationship(lambda: FleetProvider, back_populates="nodes")
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid

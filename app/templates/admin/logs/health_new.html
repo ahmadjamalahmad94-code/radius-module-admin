@@ -290,6 +290,21 @@
         <div class="hl-svc-m-label">عمال نشطون</div>
       </div>
     </div>
+    {# ── Fleet metrics-poller liveness — the bg worker that writes
+       fleet_chr_metrics every cycle. Surfaced here so the owner has one
+       single page that proves the fleet pipeline is alive. ── #}
+    {% set _poller = sv.get('poller_status', 'unknown') %}
+    {% set _poller_age = sv.get('poller_age_s', '—') %}
+    <div class="hl-pulse-row" role="status" aria-label="حالة جامع مقاييس الأسطول" style="margin-top:8px">
+      <div class="hl-pulse {{ _poller }}" aria-hidden="true"></div>
+      <span class="hl-pulse-label {{ _poller }}">
+        جامع مقاييس الأسطول —
+        {% if _poller == 'ok' %}يعمل بانتظام (آخر تحديث منذ {{ _poller_age }} ث)
+        {% elif _poller == 'warn' %}تأخّر (منذ {{ _poller_age }} ث)
+        {% elif _poller == 'error' %}متوقف (منذ {{ _poller_age }} ث)
+        {% else %}لا توجد قراءات بعد{% endif %}
+      </span>
+    </div>
   </div>
 
   {# ── قاعدة البيانات ── #}

@@ -169,9 +169,11 @@
       </div>
       {% endif %}
 
-      {# ── ④ خدمات VPN ─────────────────────────────────────────────── #}
+      {# ── ④ خدمات VPN (slim: customer-facing only) ─────────────────
+         Speed profiles + the central CHR live under «أسطول CHR» now —
+         see the consolidation plan in docs/CONSOLIDATION.md. #}
       {% if 'vpn' not in hidden_sections %}
-      {% set _g4 = ep.startswith('admin.vpn_service') or ep.startswith('admin.chr_speed_profile') or ep.startswith('admin.customer_vpn') or ep.startswith('admin_access.') %}
+      {% set _g4 = ep.startswith('admin.vpn_service') or ep.startswith('admin.customer_vpn') or ep.startswith('admin_access.') %}
       <div class="adm-group {% if _g4 %}is-active is-open{% endif %}" data-group="vpn">
         <button class="adm-group-head"
                 type="button"
@@ -195,17 +197,15 @@
             {{ _('باقات الخدمة') }}
           </a>
           {% endif %}
-          <a href="{{ url_for('admin.chr_speed_profiles') }}"
-             class="adm-link {% if ep.startswith('admin.chr_speed_profile') %}is-active{% endif %}">
-            {{ _('بروفايلات السرعة') }}
-          </a>
         </div>
       </div>
       {% endif %}
 
-      {# ── ⑤ البنية التحتية ─────────────────────────────────────────── #}
+      {# ── ⑤ البنية التحتية (host self-monitor only) ──────────────────
+         Legacy «عقد CHR» is no longer listed — added by mistake earlier
+         in parallel to the fleet. The fleet group below is canonical. #}
       {% if 'infra' not in hidden_sections %}
-      {% set _g5 = ep.startswith('admin_infra.') or ep.startswith('admin_chr.') %}
+      {% set _g5 = ep == 'admin_infra.system_health' %}
       <div class="adm-group {% if _g5 %}is-active is-open{% endif %}" data-group="infra">
         <button class="adm-group-head"
                 type="button"
@@ -222,38 +222,26 @@
              class="adm-link {% if ep == 'admin_infra.system_health' %}is-active{% endif %}">
             {{ _('صحة الخدمات') }}
           </a>
-          <a href="{{ url_for('admin_infra.chr_nodes_list') }}"
-             class="adm-link {% if ep.startswith('admin_infra.chr_node') %}is-active{% endif %}">
-            {{ _('عقد CHR') }}
-          </a>
-          <a href="{{ url_for('admin_infra.radius_instances_list') }}"
-             class="adm-link {% if ep.startswith('admin_infra.radius_instance') %}is-active{% endif %}">
-            {{ _('نسخ RADIUS') }}
-          </a>
-          <a href="{{ url_for('admin_infra.service_allocations_list') }}"
-             class="adm-link {% if ep in ['admin_infra.service_allocations_list','admin_infra.customer_service_allocations','admin_infra.allocation_snapshots'] %}is-active{% endif %}">
-            {{ _('تخصيصات الخدمة') }}
-          </a>
-          <a href="{{ url_for('admin_infra.proxy_routes_list') }}"
-             class="adm-link {% if ep.startswith('admin_infra.proxy_route') %}is-active{% endif %}">
-            {{ _('وكيل RADIUS') }}
-          </a>
-          {% if is_super_admin is defined and is_super_admin %}
-          <a href="{{ url_for('admin_chr.console') }}"
-             class="adm-link {% if ep.startswith('admin_chr.') %}is-active{% endif %}">
-            {{ _('تحكم RouterOS') }}
-            <span class="adm-badge adm-badge--lock" aria-label="للمسؤول العام فقط">
-              <i class="fa-solid fa-lock" aria-hidden="true"></i>
-            </span>
-          </a>
-          {% endif %}
         </div>
       </div>
       {% endif %}
 
-      {# ── ⑤b أسطول CHR ─────────────────────────────────────────────── #}
+      {# ── ⑤b أسطول CHR — the ONE canonical place to manage MikroTik
+         CHR nodes and everything that bolts onto them (RADIUS instances,
+         service allocations, RADIUS proxy routing, central RouterOS console,
+         PPP speed profiles). See docs/CONSOLIDATION.md. ── #}
       {% if 'fleet' not in hidden_sections %}
-      {% set _g5b = ep.startswith('fleet_ui.') or ep.startswith('fleet_registry_api.') or ep.startswith('fleet_p7.') or ep.startswith('fleet_p8.') %}
+      {% set _g5b = (ep.startswith('fleet_ui.')
+                    or ep.startswith('fleet_registry_api.')
+                    or ep.startswith('fleet_p7.')
+                    or ep.startswith('fleet_p8.')
+                    or ep.startswith('admin_chr.')
+                    or ep.startswith('admin.chr_speed_profile')
+                    or ep.startswith('admin_infra.radius_instance')
+                    or ep in ['admin_infra.service_allocations_list',
+                              'admin_infra.customer_service_allocations',
+                              'admin_infra.allocation_snapshots']
+                    or ep.startswith('admin_infra.proxy_route')) %}
       <div class="adm-group {% if _g5b %}is-active is-open{% endif %}" data-group="fleet">
         <button class="adm-group-head"
                 type="button"
@@ -273,6 +261,31 @@
           <a href="{{ url_for('fleet_ui.onboarding_wizard') }}"
              class="adm-link {% if ep == 'fleet_ui.onboarding_wizard' %}is-active{% endif %}">
             {{ _('معالج إضافة CHR') }}
+          </a>
+          {% if is_super_admin is defined and is_super_admin %}
+          <a href="{{ url_for('admin_chr.console') }}"
+             class="adm-link {% if ep.startswith('admin_chr.') %}is-active{% endif %}">
+            {{ _('تحكم RouterOS') }}
+            <span class="adm-badge adm-badge--lock" aria-label="للمسؤول العام فقط">
+              <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            </span>
+          </a>
+          {% endif %}
+          <a href="{{ url_for('admin.chr_speed_profiles') }}"
+             class="adm-link {% if ep.startswith('admin.chr_speed_profile') %}is-active{% endif %}">
+            {{ _('بروفايلات السرعة') }}
+          </a>
+          <a href="{{ url_for('admin_infra.radius_instances_list') }}"
+             class="adm-link {% if ep.startswith('admin_infra.radius_instance') %}is-active{% endif %}">
+            {{ _('نسخ RADIUS') }}
+          </a>
+          <a href="{{ url_for('admin_infra.service_allocations_list') }}"
+             class="adm-link {% if ep in ['admin_infra.service_allocations_list','admin_infra.customer_service_allocations','admin_infra.allocation_snapshots'] %}is-active{% endif %}">
+            {{ _('تخصيصات الخدمة') }}
+          </a>
+          <a href="{{ url_for('admin_infra.proxy_routes_list') }}"
+             class="adm-link {% if ep.startswith('admin_infra.proxy_route') %}is-active{% endif %}">
+            {{ _('وكيل RADIUS') }}
           </a>
           <a href="{{ url_for('fleet_ui.dns_frontdoor') }}"
              class="adm-link {% if ep == 'fleet_ui.dns_frontdoor' %}is-active{% endif %}">
