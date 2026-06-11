@@ -56,16 +56,28 @@ def test_publishes_eligible_peers_with_exact_shape(proxy_app, client):
     assert body["listen_port"] == 51821
     assert body["panel_wg_pubkey"] == _pk("panel")
     assert body["peer_count"] == 1
-    peer = body["wg_data_peers"][0]
+    # The proxy reconciler reads data["peers"] and expects a TOP-LEVEL list.
+    assert "peers" in body, "response must carry a top-level 'peers' field"
+    assert isinstance(body["peers"], list), "'peers' must be a JSON list"
+    assert "wg_data_peers" not in body, "the legacy key must be gone (single source)"
+    peer = body["peers"][0]
     assert peer["name"] == "chr-1"
     assert peer["allowed_ips"] == ["10.98.0.11/32"]
-    assert peer["wg_data_ip"] == "10.98.0.11"
     assert peer["public_key"] == _pk("d11")
-    # exact key set (frozen contract)
-    assert set(peer.keys()) == {
-        "name", "public_key", "allowed_ips", "wg_data_ip",
-        "endpoint_hint", "status", "enabled", "drain",
-    }
+    assert peer["endpoint"] is None  # proxy is the listener — CHRs dial in
+    # exact key set the proxy parses (frozen contract)
+    assert set(peer.keys()) == {"name", "public_key", "allowed_ips", "endpoint"}
+
+
+def test_empty_fleet_returns_empty_peers_list(proxy_app, client):
+    """No nodes → peers is an empty LIST, never missing/null (so the proxy's
+    `data["peers"]` is always iterable — this is the bug that logged
+    'peers not a list')."""
+    r = client.get(URL, headers={"X-Proxy-Token": _token()})
+    body = r.get_json()
+    assert body["peers"] == []
+    assert isinstance(body["peers"], list)
+    assert body["peer_count"] == 0
 
 
 def test_node_without_data_pubkey_omitted(proxy_app, client):
@@ -73,7 +85,9 @@ def test_node_without_data_pubkey_omitted(proxy_app, client):
     make_node(prov, "no-data", octet=11, data_pub="")
     db.session.commit()
     r = client.get(URL, headers={"X-Proxy-Token": _token()})
-    assert r.get_json()["peer_count"] == 0
+    body = r.get_json()
+    assert body["peer_count"] == 0
+    assert body["peers"] == []
 
 
 def test_backfill_populates_wg_data_pubkey_from_job(app):
