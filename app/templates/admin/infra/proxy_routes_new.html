@@ -154,7 +154,7 @@
             {% endif %}
           </td>
 
-          {# إجراء — تغيير الحالة #}
+          {# إجراء — تغيير الحالة + تعديل + حذف #}
           <td>
             <div style="display:flex;gap:var(--cc-sp-3);flex-wrap:wrap">
               {% for st, lbl in [('active','تفعيل'),('suspended','إيقاف'),('draft','مسودة')] %}
@@ -168,6 +168,33 @@
               </form>
               {% endif %}
               {% endfor %}
+
+              {# تعديل #}
+              <a class="pr-btn pr-btn--xs"
+                 href="{{ url_for('admin_infra.proxy_route_edit', route_id=r.id) }}"
+                 title="تعديل مسار @{{ r.realm }}">
+                <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+                تعديل
+              </a>
+
+              {# حذف — يستخدم الـ confirm modal المشترك (hub.js) #}
+              <form method="post"
+                    action="{{ url_for('admin_infra.proxy_route_delete', route_id=r.id) }}"
+                    id="pr-del-form-{{ r.id }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button type="button"
+                        class="pr-btn pr-btn--xs"
+                        style="background:var(--cc-danger);color:#fff;border-color:var(--cc-danger)"
+                        data-confirm-form="pr-del-form-{{ r.id }}"
+                        data-confirm-title="حذف مسار Realm"
+                        data-confirm-msg="هل تريد حذف مسار @{{ r.realm }}؟ سيتوقف الوكيل عن توجيه طلبات هذا الـ realm بعد التحديث القادم لجدول التوجيه."
+                        data-confirm-ok="حذف"
+                        data-confirm-variant="danger">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                  حذف
+                </button>
+              </form>
             </div>
           </td>
 
