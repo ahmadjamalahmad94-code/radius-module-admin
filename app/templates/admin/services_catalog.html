@@ -1,0 +1,172 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+
+{% block title %}الخدمات — السياسة الافتراضية{% endblock %}
+{% block page_title %}الخدمات{% endblock %}
+{% block page_subtitle %} — السياسة الافتراضية لكتالوج الخدمات (تسري على كل عميل بلا تخصيص خاص){% endblock %}
+
+{% block head_extra %}
+<style>
+  /* نفس لغة صفحة تعرفة العميل (.cst-*) — اتساق بصري متعمَّد. */
+  .cst-intro{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px;
+    padding:14px 16px; display:flex; gap:12px; font-size:13px; line-height:1.75; color:#475569; }
+  .cst-intro i{ color:#7c3aed; font-size:18px; margin-top:2px; }
+  .cst-intro b{ color:#0f172a; }
+  .cst-form{ display:flex; flex-direction:column; gap:14px; }
+  .cst-actions-top{ display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+  .cst-table-wrap{ overflow-x:auto; border:1px solid #e2e8f0; border-radius:14px; background:#fff;
+    box-shadow:0 1px 3px rgba(15,23,42,.06); }
+  .cst-table{ width:100%; border-collapse:collapse; font-size:13px; }
+  .cst-table thead th{ background:#f1f5f9; color:#475569; font-weight:800; text-align:start;
+    padding:11px 13px; border-bottom:1px solid #cbd5e1; white-space:nowrap; }
+  .cst-table tbody td{ padding:13px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+  .cst-table tbody tr:last-child td{ border-bottom:0; }
+  .cst-svc-name{ font-weight:800; color:#0f172a; font-size:13.5px; }
+  .cst-svc-desc{ font-size:11.5px; color:#64748b; margin-top:4px; line-height:1.65; max-width:50ch; }
+  .cst-tier-radios{ display:flex; flex-wrap:wrap; gap:8px; }
+  .cst-tier-radio{ display:inline-flex; align-items:center; gap:7px; padding:8px 12px;
+    border:1px solid #e2e8f0; border-radius:11px; background:#fff; cursor:pointer;
+    font-size:12.5px; font-weight:700; color:#475569; transition:all .15s ease; }
+  .cst-tier-radio:hover{ border-color:#c4b5fd; background:#f5f3ff; }
+  .cst-tier-radio input{ accent-color:#7c3aed; }
+  .cst-tier-radio:has(input:checked){ background:#f5f3ff; border-color:#7c3aed;
+    box-shadow:0 0 0 3px rgba(124,58,237,.12); }
+  .cst-tier-radio.is-free-unl:has(input:checked){ background:#dcfce7; border-color:#16a34a;
+    box-shadow:0 0 0 3px rgba(22,163,74,.14); }
+  .cst-tier-radio.is-free-lim:has(input:checked){ background:#cffafe; border-color:#0891b2;
+    box-shadow:0 0 0 3px rgba(8,145,178,.14); }
+  .cst-limits{ display:flex; flex-direction:column; gap:8px; min-width:230px; }
+  .cst-limits-empty{ font-size:11.5px; color:#94a3b8; font-style:italic; }
+  .cst-limit-field label{ display:block; font-size:11.5px; font-weight:700; color:#475569;
+    margin-bottom:3px; }
+  .cst-limit-field input{ width:130px; padding:7px 10px; border:1px solid #cbd5e1;
+    border-radius:9px; font:inherit; font-size:13px; }
+  .cst-limit-field input:focus{ outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.18); }
+  .cst-limit-field .hint{ font-size:10.5px; color:#94a3b8; margin-top:3px; line-height:1.5; }
+  .cst-current{ display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
+    border-radius:999px; font-size:11px; font-weight:800; }
+  .cst-current.paid{ background:#ede9fe; color:#5b21b6; }
+  .cst-current.free_unlimited{ background:#dcfce7; color:#166534; }
+  .cst-current.free_limited{ background:#cffafe; color:#155e75; }
+  .cst-submit{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:8px; }
+  .scp-note{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:12px;
+    padding:11px 14px; font-size:12.5px; line-height:1.7; }
+  @media (max-width:760px){
+    .cst-table thead{ display:none; }
+    .cst-table tbody tr{ display:grid; gap:8px; padding:12px; border-bottom:8px solid #f1f5f9; }
+    .cst-table tbody td{ padding:0; border:0; }
+    .cst-limits{ min-width:0; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+   "الخدمات — السياسة الافتراضية",
+   subtitle="حدّد لكل خدمة في الكتالوج سياستها العامة: أساسية مفتوحة بلا حدود، مفتوحة بكميات أساسية قابلة للتطوير، أو مدفوعة غير مفعّلة حتى الشراء. تسري على كل العملاء تلقائيًا.",
+   icon="layer-group") }}
+
+{% call hub.section("السياسة الافتراضية لكل خدمة", icon="tags") %}
+
+<div class="cst-intro">
+  <i class="fa-solid fa-circle-info"></i>
+  <div>
+    هذه السياسة هي <b>الافتراضي العام للكتالوج</b> — تنطبق على كل عميل لم تخصّص له تعرفة خاصة.
+    <b>«مجانية مطلقة»</b>: خدمة أساسية مفتوحة للجميع بلا أي حدود.
+    <b>«مجانية محدودة»</b>: مفتوحة للجميع حتى الكمية الأساسية التي تحدّدها هنا، ويظهر للعميل زر «ترقية» لرفعها.
+    <b>«مدفوعة»</b>: غير مفعّلة إطلاقًا حتى يطلب العميل تفعيلها ويدفع.
+  </div>
+</div>
+
+<div class="scp-note">
+  <i class="fa-solid fa-arrow-right-arrow-left"></i>
+  تخصيص مشترك بعينه (صفحة <b>«تعرفة خدمات العميل»</b> داخل ملف كل عميل) يبقى
+  <b>أقوى من هذه السياسة</b> — أي عميل له تعرفة خاصة لا يتأثر بما تحفظه هنا.
+</div>
+
+<form method="post" action="{{ url_for('admin.services_catalog_policy_save') }}" class="cst-form">
+  {{ csrf_input() }}
+
+  <div class="cst-actions-top">
+    <button type="submit" class="hub-btn hub-btn--primary hub-btn--sm">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ السياسة
+    </button>
+  </div>
+
+  <div class="cst-table-wrap">
+    <table class="cst-table">
+      <thead>
+        <tr>
+          <th>الخدمة</th>
+          <th>السياسة الحالية</th>
+          <th>السياسة الافتراضية</th>
+          <th>الكميات الأساسية (للمجانية المحدودة)</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        {% set item = row.item %}
+        {% set tier = row.tier %}
+        <tr>
+          <td>
+            <div class="cst-svc-name">{{ item.name_ar or item.name or item.service_key }}</div>
+            {% if item.short_description %}
+              <div class="cst-svc-desc">{{ item.short_description }}</div>
+            {% endif %}
+          </td>
+          <td>
+            <span class="cst-current {{ tier }}">
+              {% if tier == 'free_unlimited' %}مجانية مطلقة
+              {% elif tier == 'free_limited' %}مجانية محدودة
+              {% else %}مدفوعة{% endif %}
+            </span>
+          </td>
+          <td>
+            <div class="cst-tier-radios" role="radiogroup" aria-label="سياسة {{ item.name_ar or item.service_key }}">
+              <label class="cst-tier-radio is-free-unl">
+                <input type="radio" name="tier_{{ item.service_key }}" value="free_unlimited" {% if tier == 'free_unlimited' %}checked{% endif %}>
+                <span>مجانية مطلقة</span>
+              </label>
+              {% if row.limit_fields %}
+              <label class="cst-tier-radio is-free-lim">
+                <input type="radio" name="tier_{{ item.service_key }}" value="free_limited" {% if tier == 'free_limited' %}checked{% endif %}>
+                <span>مجانية محدودة</span>
+              </label>
+              {% endif %}
+              <label class="cst-tier-radio is-paid">
+                <input type="radio" name="tier_{{ item.service_key }}" value="paid" {% if tier == 'paid' %}checked{% endif %}>
+                <span>مدفوعة غير مفعّلة</span>
+              </label>
+            </div>
+          </td>
+          <td>
+            <div class="cst-limits">
+              {% if row.limit_fields %}
+                {% for field_key, field_label, field_hint in row.limit_fields %}
+                  <div class="cst-limit-field">
+                    <label>{{ field_label }}</label>
+                    <input type="number" min="0" name="limit_{{ item.service_key }}_{{ field_key }}"
+                           value="{{ row.limits.get(field_key, '') }}" placeholder="—">
+                    <div class="hint">{{ field_hint }}</div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <span class="cst-limits-empty">لا حقول كمية معرّفة لهذه الخدمة — اختر «مجانية مطلقة» أو «مدفوعة».</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cst-submit">
+    <button type="submit" class="hub-btn hub-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ السياسة
+    </button>
+  </div>
+</form>
+
+{% endcall %}
+{% endblock %}

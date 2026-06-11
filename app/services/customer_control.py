@@ -623,6 +623,98 @@ def service_tier_is_free(tier: str | None) -> bool:
     return clean_service_tier(tier) in (SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Catalog-level default policy (feat/services-catalog-policy).
+#
+# The owner sets a GLOBAL default tier per service on the dedicated
+# «الخدمات» page: مجاني مطلق / مجاني محدود (+ basic quantities) / مدفوع غير
+# مفعّل. Stored inside ``ServiceCatalogItem.metadata_json`` (the existing
+# property-backed dict) — zero schema migration, fully idempotent. The
+# per-subscriber tier on ``CustomerServiceEntitlement.config["tier"]`` (the
+# /admin/customers/<id>/service-tiers page) is an OVERRIDE that always wins
+# when explicitly set; the catalog default fills the gap for everyone else.
+# ─────────────────────────────────────────────────────────────────────────
+
+_CATALOG_TIER_KEY = "default_tier"
+_CATALOG_LIMITS_KEY = "default_limits"
+
+
+def catalog_default_tier(item: "ServiceCatalogItem | None") -> str:
+    """The owner's catalog-level default tier for a service (paid when unset)."""
+    if item is None:
+        return SERVICE_TIER_DEFAULT
+    try:
+        return clean_service_tier(item.catalog_metadata.get(_CATALOG_TIER_KEY))
+    except Exception:  # pragma: no cover — defensive against broken JSON
+        return SERVICE_TIER_DEFAULT
+
+
+def catalog_default_limits(item: "ServiceCatalogItem | None") -> dict[str, Any]:
+    """Basic quantities for a catalog free-limited default ({} otherwise)."""
+    if item is None:
+        return {}
+    try:
+        raw = item.catalog_metadata.get(_CATALOG_LIMITS_KEY) or {}
+    except Exception:  # pragma: no cover
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): int(v)
+        for k, v in raw.items()
+        if _is_non_negative_int(v)
+    }
+
+
+def set_catalog_policy(item: "ServiceCatalogItem", tier: str, limits: dict[str, Any] | None = None) -> None:
+    """Persist the owner's catalog default policy onto the catalog item.
+
+    ``limits`` only meaningful for free_limited; stored verbatim (validated
+    ints) so the «ترقية» baseline is explicit. Paid default clears both keys
+    (paid is the implicit default — keeps metadata clean)."""
+    cleaned = clean_service_tier(tier)
+    data = item.catalog_metadata
+    if cleaned == SERVICE_TIER_DEFAULT:
+        data.pop(_CATALOG_TIER_KEY, None)
+        data.pop(_CATALOG_LIMITS_KEY, None)
+    else:
+        data[_CATALOG_TIER_KEY] = cleaned
+        if cleaned == SERVICE_TIER_FREE_LIMITED:
+            data[_CATALOG_LIMITS_KEY] = {
+                str(k): int(v)
+                for k, v in (limits or {}).items()
+                if _is_non_negative_int(v)
+            }
+        else:
+            data.pop(_CATALOG_LIMITS_KEY, None)
+    item.catalog_metadata = data
+
+
+def entitlement_has_explicit_tier(entitlement: CustomerServiceEntitlement | None) -> bool:
+    """True when the per-subscriber page explicitly set a tier (override)."""
+    if entitlement is None:
+        return False
+    try:
+        config = entitlement.config or {}
+    except Exception:  # pragma: no cover
+        return False
+    return "tier" in config
+
+
+def effective_service_tier(
+    entitlement: CustomerServiceEntitlement | None,
+    catalog_item: "ServiceCatalogItem | None",
+) -> tuple[str, str]:
+    """Resolve the tier that actually applies + its source.
+
+    Returns ``(tier, source)`` where source is ``"override"`` (explicit
+    per-subscriber choice) or ``"catalog"`` (the owner's global default).
+    """
+    if entitlement_has_explicit_tier(entitlement):
+        return service_tier_for_entitlement(entitlement), "override"
+    return catalog_default_tier(catalog_item), "catalog"
+
+
 SERVICE_LIMIT_FIELDS = {
     "subscribers": [("max_total", "أقصى عدد مشتركين", "عدد المشتركين المسموح إنشاؤهم.")],
     "backups": [("max_count", "أقصى عدد نسخ احتياطية محفوظة", "عند تجاوز العدد يُحذف الأقدم تلقائيًا (نسخ الريدياس وملف العميل). يُحدَّد حسب الإصدار والرسوم.")],
@@ -1336,7 +1428,6 @@ def _serialize_service(
     config: dict[str, Any] = {}
     expires_at = None
     plan_code = ""
-    tier = SERVICE_TIER_DEFAULT
 
     if entitlement:
         try:
@@ -1348,16 +1439,31 @@ def _serialize_service(
         config = entitlement.config
         expires_at = entitlement.expires_at
         plan_code = entitlement.plan_code or ""
-        tier = service_tier_for_entitlement(entitlement)
         if expires_at and expires_at < utcnow():
             enabled = False
             status = "expired"
 
+    # ── EFFECTIVE TIER (feat/services-catalog-policy) ──────────────────
+    # Explicit per-subscriber tier (the /service-tiers page) always wins;
+    # otherwise the owner's CATALOG default («الخدمات» page) applies. The
+    # catalog default for everything is paid until the owner says otherwise,
+    # so pre-existing behaviour is unchanged for untouched services.
+    tier, tier_source = effective_service_tier(entitlement, catalog_item)
+
+    # Free-limited basic quantities: an explicit per-subscriber limits dict
+    # wins; otherwise the catalog's basic quantities flow into the contract
+    # so the radius side enforces them and the portal can display them.
+    if tier == SERVICE_TIER_FREE_LIMITED and not limits:
+        catalog_limits = catalog_default_limits(catalog_item)
+        if catalog_limits:
+            limits = catalog_limits
+
     # ── FREE TIER OVERRIDE ─────────────────────────────────────────────
-    # When the owner has marked this service free for the subscriber, the
-    # service is available regardless of the entitlement.enabled flag — the
-    # admin's tier choice is the source of truth. (Paid tier keeps the old
-    # gating: the customer must request activation + pay.)
+    # When this service is free for the subscriber (per-subscriber override
+    # OR catalog default), the service is available regardless of the
+    # entitlement.enabled flag — the owner's tier choice is the source of
+    # truth. (Paid tier keeps the old gating: the customer must request
+    # activation + pay.)
     if service_tier_is_free(tier) and license_active:
         if not (expires_at and expires_at < utcnow()):
             enabled = True
@@ -1372,8 +1478,12 @@ def _serialize_service(
         "enabled": enabled,
         "status": status,
         "tier": tier,
+        "tier_source": tier_source,
         "tier_label": SERVICE_TIER_BADGE_LABELS.get(tier, SERVICE_TIER_BADGE_LABELS[SERVICE_TIER_DEFAULT]),
         "tier_tone": SERVICE_TIER_BADGE_TONE.get(tier, "violet"),
+        # free_limited is upgradable by design («قابلة للتطوير») — the portal
+        # shows a ترقية CTA; paid-disabled keeps the طلب تفعيل CTA.
+        "upgradable": tier == SERVICE_TIER_FREE_LIMITED,
     }
     if plan_code:
         payload["plan_code"] = plan_code
@@ -1399,8 +1509,28 @@ def _limits_contract(lic: License | None, customer: Customer | None = None) -> d
     if not customer:
         return limits
     entitlement_map = customer_service_map(customer)
+    catalog_map = {item.service_key: item for item in service_catalog_items()}
     for service_key in SERVICE_LIMIT_FIELDS:
         entitlement = entitlement_map.get(service_key)
+        # Catalog free-limited default (feat/services-catalog-policy): when
+        # the owner made a service «مجاني محدود» globally and the subscriber
+        # has no explicit entitlement limits, the catalog's basic quantities
+        # are the enforced caps — carried in the contract exactly like
+        # entitlement limits so the radius side gates identically.
+        eff_tier, _src = effective_service_tier(entitlement, catalog_map.get(service_key))
+        if eff_tier == SERVICE_TIER_FREE_LIMITED:
+            catalog_caps = catalog_default_limits(catalog_map.get(service_key))
+            entitlement_limits = (entitlement.limits if entitlement else {}) or {}
+            merged = dict(catalog_caps)
+            merged.update({
+                key: int(value)
+                for key, value in entitlement_limits.items()
+                if _is_non_negative_int(value)
+            })
+            if merged:
+                limits.setdefault(service_key, {})
+                limits[service_key].update(merged)
+            continue
         if not entitlement or not entitlement.enabled or entitlement.status != "active":
             continue
         service_limits = entitlement.limits

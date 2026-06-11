@@ -47,6 +47,8 @@ from ..services.customer_control import (
     add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
+    catalog_default_limits,
+    catalog_default_tier,
     clean_role_key,
     clean_service_request_status,
     clean_service_key,
@@ -67,6 +69,7 @@ from ..services.customer_control import (
     service_limit_fields,
     service_limit_summary,
     service_tier_for_entitlement,
+    set_catalog_policy,
     set_service_tier_on_entitlement,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
@@ -4203,3 +4206,89 @@ def customer_service_tiers_save(customer_id: int):
         "success" if changed else "info",
     )
     return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# «الخدمات» — catalog-level default policy (feat/services-catalog-policy)
+#
+# The owner's GLOBAL tier per service: مجاني مطلق / مجاني محدود (+ الكميات
+# الأساسية) / مدفوع غير مفعّل. Complements the PER-SUBSCRIBER page
+# (/customers/<id>/service-tiers) which stays an explicit override that wins.
+# Stored in ServiceCatalogItem.metadata_json (no schema change, idempotent).
+# ═════════════════════════════════════════════════════════════════════════
+
+
+@bp.get("/services")
+@login_required
+def services_catalog_policy():
+    catalog = service_catalog_items()
+    rows = []
+    for item in catalog:
+        rows.append({
+            "item": item,
+            "tier": catalog_default_tier(item),
+            "limit_fields": service_limit_fields(item.service_key),
+            "limits": catalog_default_limits(item),
+        })
+    return render_template(
+        "admin/services_catalog.html",
+        rows=rows,
+        tier_labels=SERVICE_TIER_LABELS,
+        tier_values=SERVICE_TIER_VALUES,
+    )
+
+
+@bp.post("/services/policy")
+@login_required
+def services_catalog_policy_save():
+    """Save the catalog default policy for every posted service row."""
+    catalog = service_catalog_items()
+    changed = 0
+    for item in catalog:
+        key = item.service_key
+        raw_tier = request.form.get(f"tier_{key}")
+        if raw_tier is None:
+            continue  # not posted (defensive — the page posts all rows)
+        try:
+            tier = clean_service_tier(raw_tier)
+            previous_tier = catalog_default_tier(item)
+            previous_limits = catalog_default_limits(item)
+            limits: dict[str, int] = {}
+            if tier == "free_limited":
+                for field_key, _label, _hint in service_limit_fields(key):
+                    raw = (request.form.get(f"limit_{key}_{field_key}") or "").strip()
+                    if not raw:
+                        continue
+                    try:
+                        value = int(raw)
+                    except ValueError as exc:
+                        raise CustomerControlValidationError(
+                            f"الكمية الأساسية «{field_key}» للخدمة {item.name_ar or key} يجب أن تكون رقمًا صحيحًا."
+                        ) from exc
+                    if value < 0:
+                        raise CustomerControlValidationError(
+                            f"الكمية الأساسية «{field_key}» للخدمة {item.name_ar or key} لا يمكن أن تكون سالبة."
+                        )
+                    limits[field_key] = value
+            set_catalog_policy(item, tier, limits)
+            db.session.add(item)
+            if previous_tier != tier or (tier == "free_limited" and previous_limits != limits):
+                changed += 1
+        except CustomerControlValidationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("admin.services_catalog_policy"))
+
+    if changed:
+        audit(
+            "service_catalog_policy_updated", "service_catalog", "global",
+            f"تحديث السياسة الافتراضية لكتالوج الخدمات ({changed} خدمة)",
+            {"services_changed": changed},
+        )
+    db.session.commit()
+    flash(
+        "تم حفظ سياسة الخدمات الافتراضية. تسري فورًا على كل عميل بلا تخصيص خاص."
+        if changed else "لا توجد تغييرات لحفظها.",
+        "success" if changed else "info",
+    )
+    return redirect(url_for("admin.services_catalog_policy"))
