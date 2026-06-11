@@ -118,6 +118,35 @@ def test_bearer_disabled_flag_restores_old_behaviour():
         assert res.status_code == 401  # valid key alone no longer enough
 
 
+def test_bearer_exact_client_shape_body_plus_authorization_header():
+    """The radius-module client sends BOTH the body license_key AND an
+    ``Authorization: Bearer <key>`` header (contract §4). The body is
+    authoritative; the header must never break anything — the server accepts
+    exactly this shape."""
+    app = _strict_app()
+    with app.app_context():
+        lic = _mk_license()
+        client = app.test_client()
+        res = client.post(
+            "/api/integration/hoberadius/runtime-contract",
+            json={"license_key": lic.license_key, "server_fingerprint": "fp-client", "hostname": "radius-vps-1"},
+            headers={"Authorization": f"Bearer {lic.license_key}"},
+            **HTTPS,
+        )
+        assert res.status_code == 200
+        assert res.get_json()["ok"] is True
+
+        # Header alone (stripped body) does NOT authenticate — the body is
+        # authoritative per the header-strip lesson; missing key is 422.
+        res_hdr_only = client.post(
+            "/api/integration/hoberadius/runtime-contract",
+            json={"server_fingerprint": "fp-client"},
+            headers={"Authorization": f"Bearer {lic.license_key}"},
+            **HTTPS,
+        )
+        assert res_hdr_only.status_code in (401, 422)
+
+
 def test_bearer_runtime_contract_over_https():
     app = _strict_app()
     with app.app_context():
