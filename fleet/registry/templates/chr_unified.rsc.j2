@@ -343,10 +343,14 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 acti
 #   [1] hobe-fleet-fw-coa     (wg-data 3799)
 #   [2] hobe-fleet-fw-mgmt    (wg-mgmt — carries REST 8443 too)
 # i.e. every hobe allow precedes every drop (ours or stale).
-/ip firewall filter
-move [find comment="hobe-fleet-fw-mgmt"] destination=0
-move [find comment="hobe-fleet-fw-coa"] destination=0
-move [find comment="hobe-fleet-fw-radius"] destination=0
+# Each move is wrapped in :do/on-error: when the rule is ALREADY at the
+# top, some v7 builds error with «can not move rule before itself» — the
+# desired order is already in place, so the error is harmless noise.
+# Paths are fully qualified inside the :do blocks so the command resolves
+# regardless of the import's current menu context.
+:do { /ip firewall filter move [find comment="hobe-fleet-fw-mgmt"] destination=0 } on-error={}
+:do { /ip firewall filter move [find comment="hobe-fleet-fw-coa"] destination=0 } on-error={}
+:do { /ip firewall filter move [find comment="hobe-fleet-fw-radius"] destination=0 } on-error={}
 
 # ---- 10. control-plane is NOT a data route ----------------
 # Ensure wg-mgmt carries no default route / no forwarding (invariant).
@@ -394,17 +398,41 @@ remove [find name="{{ API_USER }}"]
 add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
     comment="hobe-fleet-api-readonly"
 
-# Self-signed cert for www-ssl. Re-imports replace the cert so the
-# script stays idempotent. The cert's only consumer is www-ssl on this
-# CHR — the panel collector uses `verify_tls=False` (CERT_NONE) at
-# routeros_client.py:99 because every CHR carries its own self-signed
-# leaf; centralising a CA is a later phase. days-valid=3650 keeps
-# silent rotation off the critical path.
+# Self-signed PKI for www-ssl: a tiny local CA + a leaf signed by it.
+#
+# LIVE BUG (chr-vpn-2, RouterOS v7): `sign <leaf>` WITHOUT `ca=` is not a
+# reliable self-sign on all v7 builds — a template whose key-usage is a
+# server profile (tls-server) can fail with «CA not found», leaving
+# www-ssl pointed at a never-signed cert → the TCP listener never binds
+# → the panel collector reports connect_failed forever. The robust v7
+# pattern (per the official Certificates doc) is: create a CA template
+# (key-cert-sign,crl-sign), self-sign IT, then sign the server leaf with
+# `ca=`. `sign` takes the template name as the unnamed first argument.
+#
+# The `:delay 2s` after each sign is belt-and-braces: the docs note the
+# signing time grows with key size, and on some builds `sign` returns
+# while the keypair is still being generated — assigning a half-born
+# cert to www-ssl would reproduce the dead-listener symptom.
+#
+# Idempotent: leaf removed before the CA (re-import safe; removing on an
+# empty find is a no-op). The panel collector uses `verify_tls=False`
+# (CERT_NONE) at routeros_client.py:99, so each CHR carrying its own
+# private CA is fine; centralising a fleet CA is a later phase.
+# days-valid=3650 keeps silent rotation off the critical path.
 /certificate
 remove [find name="hobe-fleet-api-cert"]
+remove [find name="hobe-fleet-ca"]
+add name=hobe-fleet-ca common-name=hobe-fleet-ca \
+    days-valid=3650 key-usage=key-cert-sign,crl-sign
+sign hobe-fleet-ca
+:delay 2s
+# (re-state the menu so the import is robust even if a build resets the
+#  context after the console `:delay` command)
+/certificate
 add name=hobe-fleet-api-cert common-name=hobe-fleet-api \
-    days-valid=3650 key-usage=tls-server
-sign hobe-fleet-api-cert
+    days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server
+sign hobe-fleet-api-cert ca=hobe-fleet-ca
+:delay 2s
 
 # www-ssl = REST API over HTTPS (matches app/services/routeros_client.py).
 # address= is the SOURCE-IP ACL — restrict to the PANEL's wg-mgmt IP, NOT
