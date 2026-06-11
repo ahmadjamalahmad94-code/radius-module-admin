@@ -90,9 +90,14 @@
   function initConfirm() {
     var overlay = document.getElementById('hub-confirm-overlay');
     if (!overlay) return;
-    var msgEl   = document.getElementById('hub-confirm-message');
-    var okBtn   = document.getElementById('hub-confirm-ok');
-    var cancel  = document.getElementById('hub-confirm-cancel');
+    // Query buttons SCOPED to this overlay (and via namespaced IDs) so we can
+    // never grab the look-alike buttons in _partials/_confirm_modal.html (the
+    // hub.js modal). That collision left this modal's «تأكيد» unwired — the
+    // live "buttons don't respond" bug.
+    var msgEl   = overlay.querySelector('#hub-confirm-message');
+    var okBtn   = overlay.querySelector('#hub-confirm-overlay-ok');
+    var cancel  = overlay.querySelector('#hub-confirm-overlay-cancel');
+    if (!okBtn || !cancel) return;
     var pendingForm = null;
     var pendingResolve = null;
     var pendingSubmitter = null;   // the [data-confirm] control that opened us
