@@ -1,13 +1,13 @@
 {% extends "admin/base_new.html" %}
 {% import "_partials/hub.html" as hub %}
 
-{% set _display_name = customer.company_name or customer.email or ('عميل #' ~ customer.id) %}
-{% block title %}تعرفة خدمات العميل — {{ _display_name }}{% endblock %}
-{% block page_title %}تعرفة خدمات العميل{% endblock %}
-{% block page_subtitle %} — {{ _display_name }}{% endblock %}
+{% block title %}الخدمات — السياسة الافتراضية{% endblock %}
+{% block page_title %}الخدمات{% endblock %}
+{% block page_subtitle %} — السياسة الافتراضية لكتالوج الخدمات (تسري على كل عميل بلا تخصيص خاص){% endblock %}
 
 {% block head_extra %}
 <style>
+  /* نفس لغة صفحة تعرفة العميل (.cst-*) — اتساق بصري متعمَّد. */
   .cst-intro{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px;
     padding:14px 16px; display:flex; gap:12px; font-size:13px; line-height:1.75; color:#475569; }
   .cst-intro i{ color:#7c3aed; font-size:18px; margin-top:2px; }
@@ -29,9 +29,6 @@
     font-size:12.5px; font-weight:700; color:#475569; transition:all .15s ease; }
   .cst-tier-radio:hover{ border-color:#c4b5fd; background:#f5f3ff; }
   .cst-tier-radio input{ accent-color:#7c3aed; }
-  .cst-tier-radio.is-paid input:checked ~ span{ color:#5b21b6; }
-  .cst-tier-radio.is-free-unl input:checked ~ span{ color:#15803d; }
-  .cst-tier-radio.is-free-lim input:checked ~ span{ color:#0e7490; }
   .cst-tier-radio:has(input:checked){ background:#f5f3ff; border-color:#7c3aed;
     box-shadow:0 0 0 3px rgba(124,58,237,.12); }
   .cst-tier-radio.is-free-unl:has(input:checked){ background:#dcfce7; border-color:#16a34a;
@@ -51,22 +48,9 @@
   .cst-current.paid{ background:#ede9fe; color:#5b21b6; }
   .cst-current.free_unlimited{ background:#dcfce7; color:#166534; }
   .cst-current.free_limited{ background:#cffafe; color:#155e75; }
-  .cst-flag{ display:inline-flex; align-items:center; gap:5px; margin-inline-start:7px;
-    padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:800; vertical-align:middle; }
-  .cst-flag--hidden{ background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
-  .cst-flag--susp{ background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
-  .cst-ctl{ display:flex; flex-direction:column; gap:8px; min-width:190px; }
-  .cst-ctl-check{ display:inline-flex; align-items:center; gap:8px; padding:8px 11px;
-    border:1px solid #e2e8f0; border-radius:11px; background:#fff; cursor:pointer;
-    font-size:12px; font-weight:700; color:#475569; transition:all .15s ease; }
-  .cst-ctl-check input{ accent-color:#64748b; }
-  .cst-ctl-check--hide:has(input:checked){ background:#f1f5f9; border-color:#94a3b8;
-    box-shadow:0 0 0 3px rgba(100,116,139,.14); color:#334155; }
-  .cst-ctl-check--susp input{ accent-color:#dc2626; }
-  .cst-ctl-check--susp:has(input:checked){ background:#fee2e2; border-color:#dc2626;
-    box-shadow:0 0 0 3px rgba(220,38,38,.14); color:#991b1b; }
-  .cst-empty{ text-align:center; padding:36px 14px; color:#64748b; font-size:13px; }
   .cst-submit{ display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:8px; }
+  .scp-note{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:12px;
+    padding:11px 14px; font-size:12.5px; line-height:1.7; }
   @media (max-width:760px){
     .cst-table thead{ display:none; }
     .cst-table tbody tr{ display:grid; gap:8px; padding:12px; border-bottom:8px solid #f1f5f9; }
@@ -78,29 +62,34 @@
 
 {% block content %}
 {{ hub.hero(
-   "تعرفة خدمات العميل — " ~ _display_name,
-   subtitle="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة. الخدمات المجانية تظهر للعميل مباشرة كجاهزة، والمدفوعة تنتظر طلب تفعيل وتسعير.",
-   icon="layer-group",
-   actions_html='<a class="hub-btn hub-btn--sm" style="background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-right"></i> ملف العميل</a>') }}
+   "الخدمات — السياسة الافتراضية",
+   subtitle="حدّد لكل خدمة في الكتالوج سياستها العامة: أساسية مفتوحة بلا حدود، مفتوحة بكميات أساسية قابلة للتطوير، أو مدفوعة غير مفعّلة حتى الشراء. تسري على كل العملاء تلقائيًا.",
+   icon="layer-group") }}
 
-{% call hub.section("تعرفة الخدمات لهذا العميل", icon="tags") %}
+{% call hub.section("السياسة الافتراضية لكل خدمة", icon="tags") %}
 
 <div class="cst-intro">
   <i class="fa-solid fa-circle-info"></i>
   <div>
-    تنطبق التعرفة على هذا المشترك فقط — يمكنك جعل خدمة مجانية لعميل ومدفوعة لآخر.
-    <b>«مجانية مطلقة»</b> تجعل الخدمة جاهزة فورًا بلا حدود.
-    <b>«مجانية محدودة»</b> تجعلها جاهزة مع حدّ كميّ تحدّده بنفسك.
-    <b>«مدفوعة»</b> تبقى مغلقة في لوحة العميل ويظهر لها زر «طلب تفعيل / ترقية» الذي يفتح طلبًا للإدارة وتسعيرًا.
+    هذه السياسة هي <b>الافتراضي العام للكتالوج</b> — تنطبق على كل عميل لم تخصّص له تعرفة خاصة.
+    <b>«مجانية مطلقة»</b>: خدمة أساسية مفتوحة للجميع بلا أي حدود.
+    <b>«مجانية محدودة»</b>: مفتوحة للجميع حتى الكمية الأساسية التي تحدّدها هنا، ويظهر للعميل زر «ترقية» لرفعها.
+    <b>«مدفوعة»</b>: غير مفعّلة إطلاقًا حتى يطلب العميل تفعيلها ويدفع.
   </div>
 </div>
 
-<form method="post" action="{{ url_for('admin.customer_service_tiers_save', customer_id=customer.id) }}" class="cst-form">
+<div class="scp-note">
+  <i class="fa-solid fa-arrow-right-arrow-left"></i>
+  تخصيص مشترك بعينه (صفحة <b>«تعرفة خدمات العميل»</b> داخل ملف كل عميل) يبقى
+  <b>أقوى من هذه السياسة</b> — أي عميل له تعرفة خاصة لا يتأثر بما تحفظه هنا.
+</div>
+
+<form method="post" action="{{ url_for('admin.services_catalog_policy_save') }}" class="cst-form">
   {{ csrf_input() }}
 
   <div class="cst-actions-top">
     <button type="submit" class="hub-btn hub-btn--primary hub-btn--sm">
-      <i class="fa-solid fa-floppy-disk"></i> حفظ التعرفة
+      <i class="fa-solid fa-floppy-disk"></i> حفظ السياسة
     </button>
   </div>
 
@@ -109,26 +98,20 @@
       <thead>
         <tr>
           <th>الخدمة</th>
-          <th>الحالي</th>
-          <th>التعرفة لهذا المشترك</th>
-          <th>حدود (للمجانية المحدودة)</th>
-          <th>التحكم (إخفاء / إيقاف)</th>
+          <th>السياسة الحالية</th>
+          <th>السياسة الافتراضية</th>
+          <th>الكميات الأساسية (للمجانية المحدودة)</th>
         </tr>
       </thead>
       <tbody>
       {% for row in rows %}
         {% set item = row.item %}
-        {% set ent = row.entitlement %}
         {% set tier = row.tier %}
         <tr>
           <td>
-            <div class="cst-svc-name">
-              {{ item.name_ar or item.name or item.service_key }}
-              {% if row.hidden %}<span class="cst-flag cst-flag--hidden"><i class="fa-solid fa-eye-slash"></i> مخفية</span>{% endif %}
-              {% if row.suspended %}<span class="cst-flag cst-flag--susp"><i class="fa-solid fa-ban"></i> موقوفة</span>{% endif %}
-            </div>
-            {% if item.description %}
-              <div class="cst-svc-desc">{{ item.description }}</div>
+            <div class="cst-svc-name">{{ item.name_ar or item.name or item.service_key }}</div>
+            {% if item.short_description %}
+              <div class="cst-svc-desc">{{ item.short_description }}</div>
             {% endif %}
           </td>
           <td>
@@ -139,11 +122,7 @@
             </span>
           </td>
           <td>
-            <div class="cst-tier-radios" role="radiogroup" aria-label="تعرفة {{ item.name_ar }}">
-              <label class="cst-tier-radio is-paid">
-                <input type="radio" name="tier_{{ item.service_key }}" value="paid" {% if tier == 'paid' %}checked{% endif %}>
-                <span>مدفوعة</span>
-              </label>
+            <div class="cst-tier-radios" role="radiogroup" aria-label="سياسة {{ item.name_ar or item.service_key }}">
               <label class="cst-tier-radio is-free-unl">
                 <input type="radio" name="tier_{{ item.service_key }}" value="free_unlimited" {% if tier == 'free_unlimited' %}checked{% endif %}>
                 <span>مجانية مطلقة</span>
@@ -154,6 +133,10 @@
                 <span>مجانية محدودة</span>
               </label>
               {% endif %}
+              <label class="cst-tier-radio is-paid">
+                <input type="radio" name="tier_{{ item.service_key }}" value="paid" {% if tier == 'paid' %}checked{% endif %}>
+                <span>مدفوعة غير مفعّلة</span>
+              </label>
             </div>
           </td>
           <td>
@@ -168,21 +151,8 @@
                   </div>
                 {% endfor %}
               {% else %}
-                <span class="cst-limits-empty">لا يوجد حدّ كميّ لهذه الخدمة — اختر «مدفوعة» أو «مجانية مطلقة».</span>
+                <span class="cst-limits-empty">لا حقول كمية معرّفة لهذه الخدمة — اختر «مجانية مطلقة» أو «مدفوعة».</span>
               {% endif %}
-            </div>
-          </td>
-          <td>
-            {# orthogonal per-customer states: hide (view) ≠ suspend (function) #}
-            <div class="cst-ctl">
-              <label class="cst-ctl-check cst-ctl-check--hide" title="إزالة الخدمة كليًا من بوابة هذا العميل — حتى لو كانت أساسية/مجانية. لا توقف عملها.">
-                <input type="checkbox" name="hidden_{{ item.service_key }}" {% if row.hidden %}checked{% endif %}>
-                <span><i class="fa-solid fa-eye-slash"></i> مخفية من البوابة</span>
-              </label>
-              <label class="cst-ctl-check cst-ctl-check--susp" title="إيقاف فعلي للخدمة لهذا العميل — تتوقف عن العمل حتى تستأنفها. مستقل عن الإخفاء.">
-                <input type="checkbox" name="suspended_{{ item.service_key }}" {% if row.suspended %}checked{% endif %}>
-                <span><i class="fa-solid fa-ban"></i> موقوفة (إيقاف فعلي)</span>
-              </label>
             </div>
           </td>
         </tr>
@@ -192,11 +162,8 @@
   </div>
 
   <div class="cst-submit">
-    <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="hub-btn hub-btn--ghost">
-      <i class="fa-solid fa-arrow-right"></i> رجوع لملف العميل
-    </a>
     <button type="submit" class="hub-btn hub-btn--primary">
-      <i class="fa-solid fa-floppy-disk"></i> حفظ التعرفة
+      <i class="fa-solid fa-floppy-disk"></i> حفظ السياسة
     </button>
   </div>
 </form>
