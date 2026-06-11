@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import func
 
 from ..auth.routes import audit, current_admin, login_required, super_admin_required
@@ -533,18 +533,17 @@ def _health_cls(pct: float) -> str:
     return "ok"
 
 
-@bp.get("/system-health")
-@login_required
-def system_health():
-    """Render «صحة الخدمات» — host CPU/RAM/Disk + DB/Proxy/WhatsApp + fleet poller.
+def _build_system_health_snapshot() -> dict:
+    """Compose the nested ``health`` dict the system-health page consumes.
 
-    The template (`admin/logs/health_new.html`) consumes EVERYTHING through a
-    single nested ``health`` dict — ``health.resources.cpu_pct``,
-    ``health.server.uptime``, ``health.database.response_ms`` etc. The view
-    must therefore build that nested shape; passing the same values as flat
-    kwargs (the previous behavior) gets silently shadowed by the template's
-    ``{% set %}`` rebinding, which is why this page used to render 0% / «—»
-    everywhere even on a healthy host.
+    Extracted (feat/panel-live-data-5s) so the live polling endpoint at
+    ``/admin/system-health/live.json`` returns IDENTICAL data without
+    duplicating the host-probe / DB-ping / fleet-poller-liveness code.
+    The SSR route ``system_health`` is now a thin caller of this builder.
+
+    Returns ``{"now": dt, "health": {...}, "recent_errors": [...], ...}``
+    — i.e. every kwarg the template needs except the ``cls`` short-form
+    keys (which are recomputed by the SSR caller for backward compat).
     """
     import os
     import time as _time
@@ -742,26 +741,79 @@ def system_health():
         },
     }
 
+    return {
+        "now": now,
+        "health": health,
+        "recent_errors": recent_errors,
+        # Class shortcuts the SSR template still reads alongside `health.*.status`.
+        "cpu_cls": _health_cls(cpu_pct),
+        "mem_cls": _health_cls(mem_pct),
+        "disk_cls": _health_cls(disk_pct),
+        "sv_cls": server_status,
+        "db_cls": db_status,
+        "px_cls": px_status,
+        "wa_cls": wa_status,
+    }
+
+
+@bp.get("/system-health")
+@login_required
+def system_health():
+    """Render «صحة الخدمات» — host CPU/RAM/Disk + DB/Proxy/WhatsApp + fleet poller.
+
+    The template (`admin/logs/health_new.html`) consumes EVERYTHING through a
+    single nested ``health`` dict — ``health.resources.cpu_pct``,
+    ``health.server.uptime``, ``health.database.response_ms`` etc.
+    """
+    snap = _build_system_health_snapshot()
     return render_template(
         "admin/logs/health_new.html",
-        now=now,
-        # Top-level *_cls kwargs are preserved for backward-compat — newer
-        # template revisions read them from `health.<block>.status` via {% set %}
-        # but the legacy chrome still references them in a few places.
-        cpu_cls=_health_cls(cpu_pct),
-        mem_cls=_health_cls(mem_pct),
-        disk_cls=_health_cls(disk_pct),
-        sv_cls=server_status,
-        db_cls=db_status,
-        px_cls=px_status,
-        wa_cls=wa_status,
-        health=health,
-        # Pre-rendered keys the template still expects flat (charts / errors).
+        now=snap["now"],
+        cpu_cls=snap["cpu_cls"], mem_cls=snap["mem_cls"], disk_cls=snap["disk_cls"],
+        sv_cls=snap["sv_cls"], db_cls=snap["db_cls"], px_cls=snap["px_cls"], wa_cls=snap["wa_cls"],
+        health=snap["health"],
         pts_arr=[],
         mpts=[],
-        recent_errors=recent_errors,
+        recent_errors=snap["recent_errors"],
         err=None,
     )
+
+
+@bp.get("/system-health/live.json")
+@login_required
+def system_health_live():
+    """JSON snapshot for the system-health live poller.
+
+    feat/panel-live-data-5s — the page polls this every 5 seconds and
+    updates CPU/mem/disk bars, DB ping ms, the fleet-poller age tile, etc.
+    Returns the same nested ``health`` dict the SSR page consumes, plus a
+    flattened convenience block tailored for the JS poller's dot-paths
+    (so ``data-live-bind="cpu_pct"`` works without ``health.resources.``).
+    """
+    snap = _build_system_health_snapshot()
+    h = snap["health"]
+    # Datetimes need stringifying for JSON.
+    poller_last = h["server"].get("poller_last_at")
+    h["server"]["poller_last_at"] = poller_last.isoformat() if poller_last else None
+    payload = {
+        "ok": True,
+        "ts": snap["now"].isoformat(),
+        "health": h,
+        "cpu_pct": h["resources"]["cpu_pct"],
+        "mem_pct": h["resources"]["mem_pct"],
+        "disk_pct": h["resources"]["disk_pct"],
+        "db_ms":   h["database"]["response_ms"],
+        "db_ok":   h["database"]["ok"],
+        "poller_age_s":   h["server"]["poller_age_s"],
+        "poller_status":  h["server"]["poller_status"],
+        # Pill-friendly per-block class hints (live-class-map consumes these).
+        "status_cls": {
+            "cpu":  snap["cpu_cls"],  "mem":  snap["mem_cls"], "disk": snap["disk_cls"],
+            "srv":  snap["sv_cls"],   "db":   snap["db_cls"],
+            "px":   snap["px_cls"],   "wa":   snap["wa_cls"],
+        },
+    }
+    return jsonify(payload)
 
 
 # ════════════════════════════════════════════════════════════════════════════

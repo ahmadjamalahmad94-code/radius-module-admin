@@ -30,6 +30,7 @@ from fleet.registry.models_chr import (
     FleetProvider,
 )
 from fleet.ui.dashboard_data import (
+    build_dashboard_payload,
     build_node_views,
     check_now,
     get_node_view,
@@ -172,6 +173,22 @@ def fleet_dashboard():
         best_rank=best_rank,
         singleton_chr_match=singleton_match,
     )
+
+
+@bp.get("/live.json")
+@login_required
+def fleet_dashboard_live():
+    """JSON snapshot the dashboard polls every 5 seconds.
+
+    feat/panel-live-data-5s — the page renders once via the regular
+    ``fleet_dashboard`` route; this endpoint then keeps every KPI / status
+    / chart / row up to date IN PLACE, no full reload. Shape contract is
+    documented on ``dashboard_data.build_dashboard_payload``.
+
+    Login-required is enough — no destructive ops, just read access to data
+    the operator can already see on the SSR page.
+    """
+    return jsonify(build_dashboard_payload())
 
 
 # Arabic labels + "what does this status MEAN" + "what's the next step?".

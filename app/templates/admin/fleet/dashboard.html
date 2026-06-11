@@ -441,8 +441,26 @@
 
 {% block content %}
 
+{# feat/panel-live-data-5s — auto-refreshes KPI strip + per-node rows + status
+   counts every 5 seconds. SSR-first: every value below renders from the
+   Jinja context on first load, so the page is fully usable without JS. The
+   live_poll.js util only keeps already-rendered values fresh in place. #}
+<div data-live-endpoint="{{ url_for('fleet_ui.fleet_dashboard_live') }}"
+     data-live-interval="5"
+     data-live-indicator>
+
 {# Top-of-page CSRF (also used by the JS for X-CSRFToken) #}
 <form id="fd-csrf-form" style="display:none">{{ csrf_input() }}</form>
+
+{# Live indicator — appears top-right of the content area. #}
+<div style="display:flex;justify-content:flex-end;margin-block-end:8px">
+  <span class="live-indicator" title="هذه الصفحة تُحدَّث تلقائياً">
+    <span class="live-dot live-dot--ok" data-live-indicator-dot></span>
+    <span>مباشر</span>
+    <span style="opacity:.6">·</span>
+    <span data-live-indicator-text>الآن</span>
+  </span>
+</div>
 
 {# ── Singleton↔Fleet cross-reference notice ──
    When the «CHR الواحد» credentials at /admin/settings#chr point at the SAME
@@ -523,35 +541,38 @@
 <div class="fd-kpis">
   <div class="fd-kpi fd-kpi--total">
     <div class="fd-kpi-icon"><i class="fa-solid fa-network-wired"></i></div>
-    <div><div class="fd-kpi-num">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="totals.nodes">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
   </div>
   <div class="fd-kpi fd-kpi--up">
     <div class="fd-kpi-icon fd-kpi-icon--up"><i class="fa-solid fa-circle-check"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-up">{{ by_health.get('up', 0) }}</div><div class="fd-kpi-label">متّصلة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-up" data-live-bind="by_health.up">{{ by_health.get('up', 0) }}</div><div class="fd-kpi-label">متّصلة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--deg">
     <div class="fd-kpi-icon fd-kpi-icon--deg"><i class="fa-solid fa-triangle-exclamation"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-deg">{{ by_health.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-deg" data-live-bind="by_health.degraded">{{ by_health.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--down">
     <div class="fd-kpi-icon fd-kpi-icon--down"><i class="fa-solid fa-circle-xmark"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-down">{{ by_health.get('down', 0) }}</div><div class="fd-kpi-label">مفصولة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-down" data-live-bind="by_health.down">{{ by_health.get('down', 0) }}</div><div class="fd-kpi-label">مفصولة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--unk">
     <div class="fd-kpi-icon fd-kpi-icon--unk"><i class="fa-solid fa-circle-question"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-unk">{{ by_health.get('unknown', 0) }}</div><div class="fd-kpi-label">غير معروفة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-unk" data-live-bind="by_health.unknown">{{ by_health.get('unknown', 0) }}</div><div class="fd-kpi-label">غير معروفة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--elig">
     <div class="fd-kpi-icon fd-kpi-icon--elig"><i class="fa-solid fa-bolt"></i></div>
-    <div><div class="fd-kpi-num">{{ overview_stats.eligible }}</div><div class="fd-kpi-label">مؤهّلة للجلسات</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="overview.eligible">{{ overview_stats.eligible }}</div><div class="fd-kpi-label">مؤهّلة للجلسات</div></div>
   </div>
   <div class="fd-kpi fd-kpi--off">
     <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
-    <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
+    {# Bound to a derived key the payload composes: by_status.disabled + by_status.provisioning.
+       Two separate bindings sum visually via tabular-nums; the JS picks one slot, so we
+       expose the pre-summed value at totals.off_or_prov server-side instead. #}
+    <div><div class="fd-kpi-num" data-live-bind="overview.off_or_prov">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
   </div>
   <div class="fd-kpi fd-kpi--pend">
     <div class="fd-kpi-icon fd-kpi-icon--pend"><i class="fa-solid fa-spinner"></i></div>
-    <div><div class="fd-kpi-num">{{ pending_jobs_count }}</div><div class="fd-kpi-label">إضافات قيد التنفيذ</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="totals.pending_jobs">{{ pending_jobs_count }}</div><div class="fd-kpi-label">إضافات قيد التنفيذ</div></div>
   </div>
 </div>
 
@@ -564,7 +585,8 @@
       <div class="fd-card-title"><i class="fa-solid fa-heart-pulse"></i> توزيع صحّة الأسطول</div>
       <div class="fd-card-spacer"></div>
       <span class="fb-source" style="background:#e7f8ef;color:#15803d" title="نسبة العقد المتّصلة الآن">
-        <i class="fa-solid fa-wifi"></i> {{ overview_stats.online_pct }}% متّصلة
+        <i class="fa-solid fa-wifi"></i>
+        <span data-live-bind="overview.online_pct" data-live-suffix="% متّصلة">{{ overview_stats.online_pct }}% متّصلة</span>
       </span>
     </div>
     <p class="ov-sub">نظرة بصرية على حالة كل عقد الأسطول — يتحدّث الشريط مع كل دورة فحص.</p>
@@ -594,22 +616,22 @@
       <div class="fd-card-title"><i class="fa-solid fa-gauge-high"></i> السعة والجلسات</div>
     </div>
     <div class="ov-util">
-      <span class="ov-util-num">{{ overview_stats.sessions }}</span>
-      <span class="ov-util-pct">/ {{ overview_stats.capacity }}</span>
-      <span class="ov-util-cap">{{ overview_stats.util_pct }}% من السعة</span>
+      <span class="ov-util-num" data-live-bind="overview.sessions">{{ overview_stats.sessions }}</span>
+      <span class="ov-util-pct">/ <span data-live-bind="overview.capacity">{{ overview_stats.capacity }}</span></span>
+      <span class="ov-util-cap"><span data-live-bind="overview.util_pct">{{ overview_stats.util_pct }}</span>% من السعة</span>
     </div>
-    <div class="ov-bar"><span style="width:{{ overview_stats.util_pct if overview_stats.util_pct <= 100 else 100 }}%"></span></div>
+    <div class="ov-bar"><span data-live-pct="overview.util_pct" style="width:{{ overview_stats.util_pct if overview_stats.util_pct <= 100 else 100 }}%"></span></div>
 
     <div class="ov-stats">
       <div class="ov-stat">
         <span class="ov-stat-ic"><i class="fa-solid fa-users"></i></span>
         <span class="ov-stat-label">الجلسات النشطة عبر الأسطول</span>
-        <b>{{ overview_stats.sessions }}</b>
+        <b data-live-bind="overview.sessions">{{ overview_stats.sessions }}</b>
       </div>
       <div class="ov-stat">
         <span class="ov-stat-ic" style="background:#e0f2fe;color:#0369a1"><i class="fa-solid fa-bolt"></i></span>
         <span class="ov-stat-label">عقد مؤهّلة لاستقبال جلسات جديدة</span>
-        <b>{{ overview_stats.eligible }} / {{ total_nodes }}</b>
+        <b><span data-live-bind="overview.eligible">{{ overview_stats.eligible }}</span> / <span data-live-bind="totals.nodes">{{ total_nodes }}</span></b>
       </div>
     </div>
 
@@ -1233,5 +1255,8 @@
   render();
 })();
 </script>
+
+{# /feat/panel-live-data-5s wrapper opened at the top of {% block content %} #}
+</div>
 
 {% endblock %}
