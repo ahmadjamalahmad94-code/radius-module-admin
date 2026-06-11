@@ -242,18 +242,37 @@ def routing_table():
         # registries. The two tables have independent autoincrement
         # sequences and their ids could otherwise collide, so the model
         # carries them in separate columns and we union them here.
+        #
+        # We publish BOTH the public IP AND the wg-data IP for every
+        # eligible node. RADIUS may legitimately arrive over either path:
+        #   * public_ip   — RADIUS-from-internet (legacy / no wg tunnel)
+        #   * wg_data_ip  — the canonical post-fleet path. The CHR sends
+        #                   over the wg-data tunnel and the proxy SEES the
+        #                   10.98.0.X source address, NOT the public IP.
+        # Without wg_data_ip in this per-realm allowlist the proxy logs
+        # "Packet from unknown CHR IP 10.98.0.11 — dropped" even though
+        # chr_nodes[].wg_data_ip would otherwise allowlist the address —
+        # the live-deploy failure on chr-vpn-1.
         allowed_ips: list[str] = []
         seen: set[str] = set()
+
+        def _push(ip: str | None) -> None:
+            if ip and ip not in seen:
+                allowed_ips.append(ip)
+                seen.add(ip)
+
         for nid in (r.allowed_fleet_chr_node_ids or []):
             node = fleet_chr_by_id.get(nid)
-            if node and node.public_ip and node.public_ip not in seen:
-                allowed_ips.append(node.public_ip)
-                seen.add(node.public_ip)
+            if node is None:
+                continue
+            _push(node.public_ip)
+            _push(_derive_wg_data_ip(node.wg_mgmt_ip))
         for nid in (r.allowed_chr_node_ids or []):
             node = legacy_chr_nodes.get(nid)
-            if node and node.public_ip and node.public_ip not in seen:
-                allowed_ips.append(node.public_ip)
-                seen.add(node.public_ip)
+            if node is None:
+                continue
+            _push(node.public_ip)
+            _push(_derive_wg_data_ip(node.management_ip))
 
         routes_out.append({
             "realm": r.realm,

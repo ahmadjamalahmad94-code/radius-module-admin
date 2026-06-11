@@ -460,6 +460,9 @@
       <i class="fa-solid fa-spinner fa-spin" style="display:none"></i>
       فحص الكل الآن
     </button>
+    <a class="fd-btn fd-btn--ghost" href="{{ url_for('fleet_ui.fleet_troubleshoot_index') }}">
+      <i class="fa-solid fa-stethoscope"></i> تشخيص الاتصال
+    </a>
     <a class="fd-btn fd-btn--primary" href="{{ url_for('fleet_ui.onboarding_wizard') }}">
       <i class="fa-solid fa-wand-magic-sparkles"></i> {{ _('إضافة عقدة جديدة') }}
     </a>

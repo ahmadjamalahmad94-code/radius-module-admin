@@ -342,6 +342,7 @@ def render_chr_script(
     """
     cfg = template_cfg if template_cfg is not None else RouterosTemplateConfig()
     bindings = build_bindings(node, keys, cfg)
+    _assert_no_reserved_subnet_collision(bindings)
     jinja_env = env if env is not None else _build_env()
     template = jinja_env.get_template(_TEMPLATE_NAME)
     return template.render(**bindings)
@@ -367,9 +368,41 @@ def render_from_bindings(bindings: dict[str, Any], *, env: Environment | None = 
             host, port = _split_endpoint(enriched[src], default_port=default_port)
             enriched.setdefault(host_key, host)
             enriched.setdefault(port_key, port)
+    _assert_no_reserved_subnet_collision(enriched)
     jinja_env = env if env is not None else _build_env()
     template = jinja_env.get_template(_TEMPLATE_NAME)
     return template.render(**enriched)
+
+
+def _assert_no_reserved_subnet_collision(bindings: dict[str, Any]) -> None:
+    """Refuse to render a script whose PPP gateway address overlaps the
+    reserved fleet subnets (10.98.0.0/24 wg-data, 10.99.0.0/24 wg-mgmt).
+
+    ``GW_LOCAL_ADDR`` is the CHR-side PPP gateway IP — if it lands inside
+    a reserved /24, the CHR answers the proxy's wg-data IP locally and
+    breaks the RADIUS return path (the live 2026-06 chr-vpn-1 incident).
+    ``CLIENT_SUPERNET`` is the NAT-egress supernet and is intentionally
+    broad (10.0.0.0/8 by default) — it legitimately encloses the reserved
+    /24s as a side effect of being large; the actual PPP client pool the
+    panel writes is validated separately in
+    ``app/services/speed_profiles.ensure_on_chr`` and
+    ``vpn_tunnels.provision``.
+
+    Imports are local to keep this module Flask-free for pure-Python tests.
+    """
+    from app.services.reserved_subnets import (
+        ReservedSubnetError,
+        assert_address_not_reserved,
+    )
+    try:
+        gw = bindings.get("GW_LOCAL_ADDR")
+        if gw:
+            assert_address_not_reserved(str(gw), field_label="GW_LOCAL_ADDR")
+    except ReservedSubnetError as exc:
+        # Raise as ValueError so callers that don't import the helper still
+        # get a recognisable failure — same shape as the existing strict-
+        # binding ``ValueError`` the renderer already raises on bad CIDRs.
+        raise ValueError(str(exc)) from exc
 
 
 __all__ = [

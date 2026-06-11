@@ -159,12 +159,19 @@ class Config:
     # PPP (PPTP/SSTP/L2TP) IPv4 addressing. Without these, profiles authenticate
     # but the client gets NO IPv4 (empty local/remote address). ONE shared pool for
     # ALL speed profiles — profiles differ only by rate-limit, never by pool.
+    #
+    # Defaults MUST stay outside the fleet's reserved /24s (10.98.0.0/24 wg-data,
+    # 10.99.0.0/24 wg-mgmt). A collision there steals the RADIUS source/dst
+    # addresses the proxy uses and produces the live ``unknown CHR IP`` drop.
+    # See app/services/reserved_subnets.py — any write path that accepts these
+    # values MUST call its assert_* helpers.
+    #
     # local-address = the gateway IP on the CHR's side of every PPP link.
-    CHR_PPP_LOCAL_ADDRESS = os.environ.get("CHR_PPP_LOCAL_ADDRESS", "10.98.0.1")
+    CHR_PPP_LOCAL_ADDRESS = os.environ.get("CHR_PPP_LOCAL_ADDRESS", "10.10.0.1")
     # remote-address = name of the single shared /ip/pool clients are allocated from.
     CHR_PPP_ADDRESS_POOL = os.environ.get("CHR_PPP_ADDRESS_POOL", "ppp-vpn-pool")
     # Range used to auto-create the shared pool on the CHR if it is missing.
-    CHR_PPP_POOL_RANGES = os.environ.get("CHR_PPP_POOL_RANGES", "10.98.0.10-10.98.0.250")
+    CHR_PPP_POOL_RANGES = os.environ.get("CHR_PPP_POOL_RANGES", "10.10.0.10-10.10.0.250")
     # Force encryption on provisioned PPP profiles.
     CHR_PPP_USE_ENCRYPTION = _env_bool("CHR_PPP_USE_ENCRYPTION", True)
     # CHR management console (admin page giving full control over the central CHR

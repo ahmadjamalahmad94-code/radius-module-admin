@@ -1,0 +1,139 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}تشخيص العقد — CHR Fleet{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+{% endblock %}
+{% block page_breadcrumb %}تشخيص الاتصال{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ts-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+    border-radius: 18px; padding: 22px 26px; color: #fff;
+    margin-block-end: 18px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .ts-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .ts-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .ts-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 800px; line-height: 1.7; }
+
+  .ts-node {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 18px 20px; margin-block-end: 14px;
+  }
+  .ts-node.bad { border-color: #fecaca; box-shadow: 0 0 0 3px rgba(248, 113, 113, .08) inset; }
+  .ts-node.good { border-color: #bbf7d0; box-shadow: 0 0 0 3px rgba(34, 197, 94, .06) inset; }
+  .ts-node-head {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding-block-end: 12px; border-block-end: 1px dashed #e5e7eb;
+    margin-block-end: 12px;
+  }
+  .ts-node-name { font-size: 17px; font-weight: 800; color: #0f172a; }
+  .ts-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  }
+  .ts-pill.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .ts-pill.bad { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .ts-pill.warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+  .ts-grid {
+    display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px 16px;
+    font-size: 13px; align-items: start;
+  }
+  .ts-grid > div:nth-child(3n+1) { font-weight: 700; color: #0f172a; }
+  .ts-grid > div:nth-child(3n+2) { font-family: ui-monospace, Menlo, Consolas, monospace; color: #1e293b; word-break: break-all; }
+  .ts-grid > div:nth-child(3n+3) { color: #64748b; font-size: 12px; }
+
+  .ts-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-inline-end: 6px; vertical-align: middle;
+  }
+  .ts-dot.ok    { background: #10b981; }
+  .ts-dot.error { background: #ef4444; }
+  .ts-dot.warn  { background: #f59e0b; }
+  .ts-dot.info  { background: #94a3b8; }
+
+  .ts-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-block-end: 14px; }
+  .ts-card {
+    flex: 1 1 180px; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 14px; padding: 12px 16px;
+  }
+  .ts-card .ts-card-num { font-size: 26px; font-weight: 800; color: #0f172a; }
+  .ts-card .ts-card-label { font-size: 12px; color: #64748b; }
+  .ts-card.green .ts-card-num { color: #047857; }
+  .ts-card.red   .ts-card-num { color: #b91c1c; }
+
+  .ts-empty {
+    padding: 32px 20px; text-align: center; color: #64748b;
+    border: 1px dashed #e5e7eb; border-radius: 14px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="ts-hero">
+  <div class="ts-hero-icon"><i class="fa-solid fa-stethoscope"></i></div>
+  <div>
+    <div class="ts-hero-title">تشخيص الاتصال — لكل عقدة CHR</div>
+    <div class="ts-hero-sub">
+      هذه الصفحة تُجيب «لماذا لا يتعرّف الوكيل المركزي على عقدة CHR؟» من اللوحة دون الحاجة لأوامر طرفية.
+      كل صف يُمثّل عقدة CHR ويُعرض فيه: عناوين wg-mgmt و wg-data المُشتقّة، تطابق المفتاح بين اللوحة و CHR،
+      هل تنشر اللوحة العقدة في <code>/api/proxy/routing-table</code>، والسلوك المتوقّع لاختبار RADIUS.
+    </div>
+  </div>
+</section>
+
+{% set total = views|length %}
+{% set ok_count = views|selectattr('all_green')|list|length %}
+{% set bad_count = total - ok_count %}
+<div class="ts-summary">
+  <div class="ts-card"><div class="ts-card-num">{{ total }}</div><div class="ts-card-label">إجمالي العقد</div></div>
+  <div class="ts-card green"><div class="ts-card-num">{{ ok_count }}</div><div class="ts-card-label">سليمة من طرف اللوحة</div></div>
+  <div class="ts-card red"><div class="ts-card-num">{{ bad_count }}</div><div class="ts-card-label">تحتاج تدخّلاً</div></div>
+</div>
+
+{% if not views %}
+  <div class="ts-empty">
+    لا توجد عقد CHR مُسجّلة بعد. أضف عقدة من
+    <a href="{{ url_for('fleet_ui.onboarding_wizard') }}">معالج الإضافة</a>.
+  </div>
+{% endif %}
+
+{% for v in views %}
+<article class="ts-node {{ 'good' if v.all_green else 'bad' }}" data-node-id="{{ v.node_id }}">
+  <header class="ts-node-head">
+    <div class="ts-node-name">
+      <i class="fa-solid fa-server" style="color:#64748b"></i>
+      {{ v.name }}
+    </div>
+    <span class="ts-pill {{ 'ok' if v.all_green else 'bad' }}">
+      {% if v.all_green %}<i class="fa-solid fa-check"></i> جاهزة{% else %}<i class="fa-solid fa-triangle-exclamation"></i> تحتاج تدخّلاً{% endif %}
+    </span>
+    <span class="ts-pill warn"><i class="fa-solid fa-network-wired"></i> {{ v.public_ip or '—' }}</span>
+    <div style="margin-inline-start:auto">
+      <a class="ts-pill warn" href="{{ url_for('fleet_ui.fleet_dashboard') }}#node-{{ v.node_id }}"
+         style="text-decoration:none">
+        <i class="fa-solid fa-arrow-up-right-from-square"></i> فتح التفاصيل
+      </a>
+    </div>
+  </header>
+
+  <div class="ts-grid">
+    {% for r in v.rows %}
+      <div><span class="ts-dot {{ r.severity }}"></span>{{ r.label_ar }}</div>
+      <div>{{ r.value }}</div>
+      <div>{{ r.detail_ar }}</div>
+    {% endfor %}
+  </div>
+</article>
+{% endfor %}
+{% endblock %}

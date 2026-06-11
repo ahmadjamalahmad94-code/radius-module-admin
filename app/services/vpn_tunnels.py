@@ -227,9 +227,23 @@ def provision_tunnel(
         # نضبط البروفايل (حتى الافتراضي) بالعناوين + rate-limit إن وُجد — لكل الأنواع.
         cfg = current_app.config
         pool_name = (cfg.get("CHR_PPP_ADDRESS_POOL") or "ppp-vpn-pool").strip() or "ppp-vpn-pool"
-        local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.98.0.1").strip() or "10.98.0.1"
-        pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.98.0.10-10.98.0.250").strip()
+        local_addr = (cfg.get("CHR_PPP_LOCAL_ADDRESS") or "10.10.0.1").strip() or "10.10.0.1"
+        pool_ranges = (cfg.get("CHR_PPP_POOL_RANGES") or "10.10.0.10-10.10.0.250").strip()
         use_enc = bool(cfg.get("CHR_PPP_USE_ENCRYPTION", True))
+        # Hard guard: PPP gateway + pool ranges MUST stay out of the wg-mgmt
+        # (10.99.0.0/24) and wg-data (10.98.0.0/24) reserved subnets — see
+        # app/services/reserved_subnets.py. Collision there steals the
+        # proxy's RADIUS path (the 2026-06 chr-vpn-1 incident).
+        from .reserved_subnets import (
+            ReservedSubnetError,
+            assert_address_not_reserved,
+            assert_pool_range_not_reserved,
+        )
+        try:
+            assert_address_not_reserved(local_addr, field_label="CHR_PPP_LOCAL_ADDRESS")
+            assert_pool_range_not_reserved(pool_ranges, field_label="CHR_PPP_POOL_RANGES")
+        except ReservedSubnetError as exc:
+            raise VpnTunnelError("reserved_subnet", str(exc)) from exc
         try:
             client.ensure_ip_pool(name=pool_name, ranges=pool_ranges)
             client.ensure_ppp_profile(
