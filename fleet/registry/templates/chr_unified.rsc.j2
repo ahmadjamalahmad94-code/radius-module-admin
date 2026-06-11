@@ -74,6 +74,19 @@
      HOST + PORT bindings before this template runs; the template itself
      must never emit a ``:`` inside ``endpoint-address=``.
 
+   LIVE-METRICS WIRE FIXES (fix/fleet-metrics-wire-bugs):
+     §11 was three different ways broken on the first live CHR:
+       1. enabled api-ssl (binary) while the panel collector speaks REST
+          on www-ssl (app/services/routeros_client.py → /rest/);
+       2. assigned no certificate → RouterOS never bound the TCP socket;
+       3. set the service ACL to the CHR's OWN wg-mgmt IP, which means
+          "only accept connections FROM the CHR" — blocking the panel.
+     §11 now provisions a self-signed cert (hobe-fleet-api-cert), turns
+     www-ssl on (api / api-ssl / www all explicitly disabled), and points
+     the source-IP ACL at PANEL_WG_ADDR (10.99.0.1/32).
+     Compounding all three: wg-mgmt was rendered as /32 (no return route)
+     — onboarding_service.py:667 now emits /24.
+
    DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
      A second field finding: even with host-only endpoint-address,
      ``endpoint-address=proxy.hoberadius.com`` left wg-data with
@@ -129,7 +142,7 @@ add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
     allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s \
     comment="hobe-fleet-mgmt"
 /ip address
-add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/32
+add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/24 (shared mgmt net; /32 broke the return route)
 
 # ---- 2. WireGuard DATA path to RADIUS proxy (wg-data) ------
 # Carries ONLY RADIUS 1812/1813 + CoA 3799 to the proxy.
@@ -147,7 +160,7 @@ add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
     allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
     comment="hobe-fleet-data"
 /ip address
-add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/32
+add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shared data net; /32 broke the RADIUS return path)
 
 # ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
 # Field finding (fix/fleet-endpoint-resolve): even with host-only
@@ -312,11 +325,38 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 acti
 
 # ---- 11. Panel-side read-only API user (live-metrics poller) ----
 # A dedicated RouterOS user the panel logs in as to read CPU, /ppp/active
-# count and interface bytes. Bound to api-ssl ONLY on the wg-mgmt
-# address (NOT the WAN). Idempotent: remove-then-add. The block is
-# skipped entirely when the panel hasn't set both API_USER and
-# API_PASSWORD — keeps the script installable on a virgin node before
-# the operator has configured the credentials in
+# count and interface bytes — over the REST API on www-ssl ONLY, exposed
+# on the wg-mgmt source (NEVER the WAN). The collector at
+# app/services/routeros_client.py speaks HTTPS REST against
+# https://<host>:<port>/rest/... (see _base_url at line 83-85), so the
+# matching RouterOS service is `www-ssl`, NOT the binary `api-ssl`.
+#
+# Three live-incident fixes are baked into this block (live-down on
+# the first prod CHR, fix/fleet-metrics-wire-bugs):
+#
+#   1. PROTOCOL: previously `set api-ssl disabled=no`. That's the binary
+#      api protocol — the panel's HTTPS REST client gets a connection
+#      reset because /rest/ has no handler on api-ssl. We now enable
+#      `www-ssl` (REST over HTTPS) on 8443.
+#
+#   2. CERTIFICATE: RouterOS refuses to bind a TCP listener on www-ssl
+#      (or api-ssl) without a `certificate=` argument. The previous
+#      script left this empty, so the socket never opened → panel TCP
+#      SYN got nothing back → `connect_failed`. We now provision a
+#      self-signed cert `hobe-fleet-api-cert` and assign it.
+#
+#   3. ACL DIRECTION: `/ip service ... address=` is a SOURCE-IP filter,
+#      not a bind address. Previously we set address=WG_MGMT_ADDR (the
+#      CHR's own 10.99.0.11/32) which filters every connection that
+#      DIDN'T come from 10.99.0.11 — i.e. the panel at 10.99.0.1 was
+#      itself blocked at the service layer. Correct value is the PANEL's
+#      wg-mgmt IP (PANEL_WG_ADDR, 10.99.0.1) so only the panel can hit
+#      the REST endpoint.
+#
+# Idempotent: cert + user + service are all remove-before-add or set-
+# based. The block is skipped entirely when the panel hasn't set both
+# API_USER and API_PASSWORD — keeps the script installable on a virgin
+# node before the operator has configured the credentials in
 # «إعدادات بنية الأسطول».
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
 /user
@@ -324,12 +364,28 @@ remove [find name="{{ API_USER }}"]
 add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
     comment="hobe-fleet-api-readonly"
 
-# Bind api-ssl to the wg-mgmt address. We always disable the plain
-# binary ``api`` on 8728 and only enable ``api-ssl`` on the chosen
-# port bound to the wg-mgmt interface — never on the WAN.
+# Self-signed cert for www-ssl. Re-imports replace the cert so the
+# script stays idempotent. The cert's only consumer is www-ssl on this
+# CHR — the panel collector uses `verify_tls=False` (CERT_NONE) at
+# routeros_client.py:99 because every CHR carries its own self-signed
+# leaf; centralising a CA is a later phase. days-valid=3650 keeps
+# silent rotation off the critical path.
+/certificate
+remove [find name="hobe-fleet-api-cert"]
+add name=hobe-fleet-api-cert common-name=hobe-fleet-api \
+    days-valid=3650 key-usage=tls-server
+sign hobe-fleet-api-cert
+
+# www-ssl = REST API over HTTPS (matches app/services/routeros_client.py).
+# address= is the SOURCE-IP ACL — restrict to the PANEL's wg-mgmt IP, NOT
+# the CHR's own. PANEL_WG_ADDR is a fleet-constant binding (10.99.0.1 in
+# the standard pool) coming from infra_settings via _build_bindings.
 /ip service
-set api-ssl disabled=no port={{ API_PORT|default(8443) }} address={{ WG_MGMT_ADDR }}
-set api        disabled=yes  ;# never the plain binary API; SSL only
+set www-ssl disabled=no port={{ API_PORT|default(8443) }} \
+    certificate=hobe-fleet-api-cert address={{ PANEL_WG_ADDR }}/32
+set api     disabled=yes  ;# binary API stays off (we use REST)
+set api-ssl disabled=yes  ;# binary-over-TLS stays off (we use REST/www-ssl)
+set www     disabled=yes  ;# plain HTTP stays off
 
 /ip firewall filter
 remove [find comment="hobe-fleet-fw-api-ssl"]
