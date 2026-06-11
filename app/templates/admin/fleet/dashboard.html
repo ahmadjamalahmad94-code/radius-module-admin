@@ -1,4 +1,5 @@
 {% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
 
 {% block title %}لوحة الأسطول — CHR Fleet{% endblock %}
 
@@ -66,14 +67,48 @@
   .fd-card-title i { color: #1e40af; }
   .fd-card-spacer { flex: 1; }
 
-  .fd-tbl-wrap { overflow-x: auto; }
+  .fd-tbl-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 12px; }
   .fd-tbl { width: 100%; border-collapse: collapse; }
-  .fd-tbl th, .fd-tbl td { padding: 10px 12px; border-block-end: 1px solid #f1f5f9; font-size: 13px; vertical-align: middle; }
+  .fd-tbl th, .fd-tbl td { padding: 11px 13px; border-block-end: 1px solid #f1f5f9; font-size: 13px; vertical-align: middle; }
   .fd-tbl th { background: #f8fafc; font-weight: 700; color: #374151; text-align: start; white-space: nowrap; }
+  .fd-tbl tbody tr { transition: background .12s; }
+  .fd-tbl tbody tr:hover { background: #f9fafb; }
   .fd-tbl tr:last-child td { border-block-end: none; }
   .fd-tbl tr.is-checking { background: #fefce8; }
+  .fd-tbl tr.is-hidden { display: none; }
   .fd-tbl .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .fd-tbl .num  { font-variant-numeric: tabular-nums; }
+
+  /* ─── table controls (search + rows-per-page) ─── */
+  .fd-tctl { display: flex; align-items: center; gap: 10px; margin-block-end: 12px; flex-wrap: wrap; }
+  .fd-tctl-spacer { flex: 1; }
+  .fd-tctl-search { position: relative; display: flex; align-items: center; }
+  .fd-tctl-search i { position: absolute; inset-inline-start: 11px; color: #9ca3af; font-size: 12px; pointer-events: none; }
+  .fd-tctl-search input {
+    height: 36px; padding-inline: 32px 12px; border-radius: 10px;
+    border: 1px solid #e5e7eb; background: #fff; font-size: 13px; min-width: 240px; outline: none;
+  }
+  .fd-tctl-search input:focus { border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.1); }
+  .fd-tctl-perpage { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #475569; font-weight: 600; }
+  .fd-tctl-perpage select {
+    height: 36px; padding-inline: 10px 26px; border-radius: 10px; border: 1px solid #e5e7eb;
+    background: #fff; font-size: 13px; font-weight: 700; color: #0f172a; cursor: pointer; outline: none;
+  }
+
+  /* ─── pagination footer ─── */
+  .fd-pager { display: flex; align-items: center; gap: 10px; margin-block-start: 12px; flex-wrap: wrap; }
+  .fd-pager-spacer { flex: 1; }
+  .fd-pager-info { font-size: 12.5px; color: #6b7280; }
+  .fd-pager-btns { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+  .fd-pg {
+    min-width: 32px; height: 32px; padding-inline: 8px; border-radius: 8px;
+    border: 1px solid #e5e7eb; background: #fff; color: #374151;
+    font-size: 12.5px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .fd-pg:hover:not(:disabled) { background: #f3f4f6; }
+  .fd-pg.is-active { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .fd-pg:disabled { opacity: .45; cursor: not-allowed; }
 
   .fd-badge {
     display: inline-flex; align-items: center; gap: 4px;
@@ -265,6 +300,21 @@
   </div>
 </div>
 
+
+{# ════════════════════════════════════════════════════════════════════════
+   Tabbed layout (feat/fleet-dashboard-tabs): each section shows on its own,
+   navigated from the top tab strip — no more one long scroll. The tab system
+   is the canonical design-system one (hub.tab_bar + admin_design_sweep.js).
+   ════════════════════════════════════════════════════════════════════════ #}
+{% call hub.tab_bar([
+     {'key':'overview', 'label':'نظرة عامة', 'icon':'gauge-high'},
+     {'key':'nodes',    'label':'العقد',     'icon':'server', 'count': total_nodes},
+     {'key':'ranking',  'label':'الترتيب',   'icon':'ranking-star'},
+     {'key':'pending',  'label':'قيد التنفيذ','icon':'spinner', 'count': pending_jobs_count}
+   ], default='overview') %}
+
+{% call hub.tab_panel('overview') %}
+
 <div class="fd-kpis">
   <div class="fd-kpi">
     <div class="fd-kpi-icon"><i class="fa-solid fa-network-wired"></i></div>
@@ -301,6 +351,10 @@
     </div>
   </div>
 </div>
+{% endcall %}{# /overview #}
+
+{% call hub.tab_panel('pending') %}
+
 
 {# ═══════════════════════════════════════════════════════════════════════
    fix/fleet-onboarding-visibility — «عمليات الإضافة قيد التنفيذ»
@@ -564,6 +618,17 @@
 </style>
 {% endif %}
 
+{% if not pending_jobs %}
+  <div class="fd-empty">
+    <i class="fa-solid fa-circle-check"></i>
+    لا توجد عمليات إضافة قيد التنفيذ حالياً. ابدأ عقدة جديدة من «معالج إضافة CHR».
+  </div>
+{% endif %}
+{% endcall %}{# /pending #}
+
+{% call hub.tab_panel('ranking') %}
+
+
 {# ═══════════════════════════════════════════════════════════════════════
    Phase-5 task C — «ترتيب الأسطول» (brain explainability)
    ═══════════════════════════════════════════════════════════════════════ #}
@@ -586,6 +651,12 @@
   <div style="font-size:12.5px;color:#475569;margin-block-end:14px;line-height:1.7">
     الترتيب مبني على وزن أربعة عوامل — الصحّة، استهلاك المعالج، الكلفة، والسعة. الأعلى نقاطاً يستلم
     حركة جديدة أولاً في DNS الذكي. العقد المُستبعَدة تبقى ظاهرة لتعرف سبب استبعادها.
+  </div>
+  <div style="font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;margin-block-end:14px;line-height:1.6">
+    <i class="fa-solid fa-circle-info"></i>
+    الأرقام في هذا التبويب هي <strong>عوامل ترتيب موزونة</strong> (مساهمة كل عامل في النتيجة)،
+    وليست القراءة الخام للعتاد. للقراءات الحيّة الفعلية (المعالج، الذاكرة، الجلسات، النطاق) راجع
+    تبويب «العقد».
   </div>
 
   {% if ranking %}
@@ -678,6 +749,11 @@
   {% endif %}
 </div>
 
+{% endcall %}{# /ranking #}
+
+{% call hub.tab_panel('nodes') %}
+
+
 <div class="fd-card">
   <div class="fd-card-head">
     <div class="fd-card-title"><i class="fa-solid fa-list-ul"></i> عقد CHR — الصحّة والقياسات الحيّة</div>
@@ -688,8 +764,26 @@
   </div>
 
   {% if node_views %}
+    {# ─── table controls: search + rows-per-page (canonical pattern) ─── #}
+    <div class="fd-tctl" id="fd-nodes-ctl">
+      <div class="fd-tctl-search">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="search" id="fd-nodes-search" placeholder="بحث بالاسم أو الـ IP…"
+               autocomplete="off" aria-label="بحث في العقد">
+      </div>
+      <div class="fd-tctl-spacer"></div>
+      <label class="fd-tctl-perpage">
+        صفوف:
+        <select id="fd-nodes-perpage" aria-label="عدد الصفوف في الصفحة">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="0">الكل</option>
+        </select>
+      </label>
+    </div>
     <div class="fd-tbl-wrap">
-      <table class="fd-tbl" id="fd-nodes-tbl">
+      <table class="hub-table fd-tbl" id="fd-nodes-tbl">
         <thead>
           <tr>
             <th>العقدة</th>
@@ -835,6 +929,12 @@
         </tbody>
       </table>
     </div>
+    {# ─── pagination footer ─── #}
+    <div class="fd-pager" id="fd-nodes-pager">
+      <span class="fd-pager-info" id="fd-nodes-info">—</span>
+      <div class="fd-pager-spacer"></div>
+      <div class="fd-pager-btns" id="fd-nodes-pages"></div>
+    </div>
   {% else %}
     <div class="fd-empty">
       <i class="fa-solid fa-server"></i>
@@ -842,6 +942,10 @@
     </div>
   {% endif %}
 </div>
+
+{% endcall %}{# /nodes #}
+{% endcall %}{# /tab_bar #}
+
 
 {# ─── Toast host (info / success / warn / error) ─── #}
 <div class="fd-toast-host" id="fd-toast-host" aria-live="polite" aria-atomic="true"></div>
@@ -861,5 +965,78 @@
 <script src="{{ url_for('static', filename='js/admin_fleet_dashboard.js') }}"
         data-check-one-url="{{ url_for('fleet_ui.chr_node_check_now', node_id=0) }}"
         data-check-all-url="{{ url_for('fleet_ui.chr_nodes_check_all') }}" defer></script>
+
+{# ─── Nodes table: client-side search + rows-per-page + pagination ───
+   Pure front-end: filters/paginates the rows the server already rendered.
+   Hides rows via .is-hidden, which the live-polling JS ignores (it targets
+   rows by data-node-id regardless of visibility). No backend involvement. #}
+<script>
+(function () {
+  'use strict';
+  var tbl = document.getElementById('fd-nodes-tbl');
+  if (!tbl) return;
+  var rows = Array.prototype.slice.call(tbl.tBodies[0].rows);
+  var searchEl = document.getElementById('fd-nodes-search');
+  var perEl = document.getElementById('fd-nodes-perpage');
+  var infoEl = document.getElementById('fd-nodes-info');
+  var pagesEl = document.getElementById('fd-nodes-pages');
+  var page = 1;
+
+  function filtered() {
+    var q = (searchEl.value || '').trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(function (r) {
+      return (r.textContent || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  function perPage() { var v = parseInt(perEl.value, 10); return v > 0 ? v : Infinity; }
+
+  function render() {
+    var list = filtered();
+    var per = perPage();
+    var total = list.length;
+    var pageCount = per === Infinity ? 1 : Math.max(1, Math.ceil(total / per));
+    if (page > pageCount) page = pageCount;
+    var start = (page - 1) * (per === Infinity ? 0 : per);
+    var end = per === Infinity ? total : start + per;
+
+    // Hide everything, then show the current slice.
+    rows.forEach(function (r) { r.classList.add('is-hidden'); });
+    list.slice(start, end).forEach(function (r) { r.classList.remove('is-hidden'); });
+
+    // Info line.
+    if (total === 0) {
+      infoEl.textContent = 'لا نتائج مطابقة';
+    } else if (per === Infinity) {
+      infoEl.textContent = 'عرض ' + total + ' من ' + total;
+    } else {
+      infoEl.textContent = 'عرض ' + (start + 1) + '–' + Math.min(end, total) + ' من ' + total;
+    }
+
+    // Page buttons.
+    pagesEl.innerHTML = '';
+    if (pageCount <= 1) return;
+    function mk(label, p, opts) {
+      opts = opts || {};
+      var b = document.createElement('button');
+      b.className = 'fd-pg' + (opts.active ? ' is-active' : '');
+      b.textContent = label;
+      if (opts.disabled) b.disabled = true;
+      else b.addEventListener('click', function () { page = p; render(); });
+      pagesEl.appendChild(b);
+    }
+    mk('‹', page - 1, { disabled: page === 1 });
+    // Windowed page numbers (max ~7).
+    var from = Math.max(1, page - 3), to = Math.min(pageCount, from + 6);
+    from = Math.max(1, to - 6);
+    for (var i = from; i <= to; i++) mk(String(i), i, { active: i === page });
+    mk('›', page + 1, { disabled: page === pageCount });
+  }
+
+  searchEl.addEventListener('input', function () { page = 1; render(); });
+  perEl.addEventListener('change', function () { page = 1; render(); });
+  render();
+})();
+</script>
 
 {% endblock %}
