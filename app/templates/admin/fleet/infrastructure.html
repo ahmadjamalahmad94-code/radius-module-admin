@@ -419,27 +419,15 @@
 </div>
 {% endif %}
 
-{# Styled confirm + toast (no native confirm) — same shape as the pending card #}
-<div id="fi-confirm" role="dialog" aria-modal="true"
-     style="position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.35)">
-  <div style="background:#fff;border-radius:14px;padding:20px 22px;max-width:460px;width:92%;box-shadow:0 24px 48px -20px rgba(15,23,42,.4)">
-    <div style="font-weight:800;font-size:15px;color:#0f172a;margin-bottom:8px;display:flex;align-items:center;gap:8px">
-      <i class="fa-solid fa-triangle-exclamation" style="color:#b45309"></i> تأكيد
-    </div>
-    <div id="fi-confirm-msg" style="font-size:13px;color:#1f2937;line-height:1.65;margin-bottom:16px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button type="button" id="fi-confirm-cancel"
-              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:700;font-size:13px;cursor:pointer">
-        إلغاء
-      </button>
-      <button type="button" id="fi-confirm-ok"
-              style="height:34px;padding-inline:14px;border-radius:10px;border:1px solid #1e40af;background:#1e40af;color:#fff;font-weight:700;font-size:13px;cursor:pointer">
-        متابعة
-      </button>
-    </div>
-  </div>
-</div>
+{# Confirmation + toast are provided GLOBALLY by the design system
+   (hub-confirm-overlay + admin_design_sweep.js, included from base_new.html).
+   Every [data-confirm] button on this page — «توليد مفتاح اللوحة» and
+   «توليد سرّ قوي» — is handled by that single system, which preserves the
+   submitter's name/value (e.g. auto_generate=1) via requestSubmit().
 
-<script src="{{ url_for('static', filename='js/admin_fleet_infra.js') }}" defer></script>
+   This page previously shipped its OWN fi-confirm modal + admin_fleet_infra.js.
+   The two confirm interceptors opened two stacked full-screen overlays and the
+   buttons went dead (the «توليد مفتاح اللوحة» incident). Removed — exactly one
+   confirm system now. #}
 
 {% endblock %}
