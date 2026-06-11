@@ -24,9 +24,9 @@ class SafeProductionConfig(UnsafeProductionConfig):
     SECRET_KEY = "production-secret-for-tests"
     ADMIN_PASSWORD = "production-admin-password-for-tests"
     SESSION_COOKIE_SECURE = True
-    LICENSE_CHECK_ALLOW_UNSIGNED = False
-    LICENSE_CHECK_SIGNATURE_REQUIRED = True
-    LICENSE_CHECK_HMAC_SECRET = "production-license-signing-secret-for-tests"
+    # Legacy LICENSE_CHECK_ALLOW_UNSIGNED / SIGNATURE_REQUIRED / HMAC_SECRET
+    # were retired with the bearer-only link contract — no longer required by
+    # the strict-prod check in app/__init__.py.
 
 
 class SafeBootstrapConfig(SafeProductionConfig):
@@ -70,20 +70,9 @@ def test_production_rejects_insecure_session_cookie():
         create_app(UnsafeCookieConfig)
 
 
-def test_production_rejects_unsigned_license_checks():
-    class UnsafeUnsignedConfig(SafeProductionConfig):
-        LICENSE_CHECK_ALLOW_UNSIGNED = True
-
-    with pytest.raises(RuntimeError, match="LICENSE_CHECK_ALLOW_UNSIGNED"):
-        create_app(UnsafeUnsignedConfig)
-
-
-def test_production_rejects_missing_license_hmac_secret():
-    class UnsafeSigningSecretConfig(SafeProductionConfig):
-        LICENSE_CHECK_HMAC_SECRET = ""
-
-    with pytest.raises(RuntimeError, match="LICENSE_CHECK_HMAC_SECRET"):
-        create_app(UnsafeSigningSecretConfig)
+# test_production_rejects_unsigned_license_checks +
+# test_production_rejects_missing_license_hmac_secret — retired with the
+# bearer-only link contract. Strict-prod no longer enforces signature flags.
 
 
 def test_production_rejects_debug_mode(monkeypatch):
@@ -117,12 +106,7 @@ def test_bootstrap_rejects_default_flask_secret():
         create_app(UnsafeBootstrapSecretConfig)
 
 
-def test_bootstrap_rejects_missing_license_hmac_secret():
-    class UnsafeBootstrapHmacConfig(SafeBootstrapConfig):
-        LICENSE_CHECK_HMAC_SECRET = ""
-
-    with pytest.raises(RuntimeError, match="LICENSE_CHECK_HMAC_SECRET"):
-        create_app(UnsafeBootstrapHmacConfig)
+# test_bootstrap_rejects_missing_license_hmac_secret — retired with bearer-only.
 
 
 def test_bootstrap_rejects_debug_mode(monkeypatch):

@@ -860,10 +860,45 @@ def hoberadius_service_activations_poll():
 
 @bp.post("/integration/hoberadius/instance-ops/heartbeat")
 def hoberadius_instance_heartbeat():
-    """لوحة العميل تُرسل نبضة حياة — يُحدَّث last_seen_at لـ CustomerRadiusInstance."""
-    from datetime import datetime, timezone
-    from ..models import CustomerRadiusInstance
+    """Bridge heartbeat + RADIUS auto-provision.
 
+    The radius-module hits this endpoint right after a successful bearer
+    authentication. The panel:
+
+    1. validates the license key (bearer auth — see ``verify_license_signature``);
+    2. auto-creates / refreshes the customer's ``CustomerRadiusInstance``
+       and ``ProxyRealmRoute`` from whatever the radius-module reports
+       about its own RADIUS server (see
+       :func:`app.services.radius_auto_provision.provision_on_link`);
+    3. echoes the resolved instance + route shape in the response so the
+       radius-module can confirm the chain is wired end-to-end.
+
+    Contract — the radius-module SHOULD include (all optional; the panel
+    fills in sensible defaults for missing fields):
+
+    .. code-block:: json
+
+        {
+          "license_key": "HBR-…",                  // required (bearer)
+          "instance_url": "https://…",             // optional informational
+          "realm": "client5",                      // optional — slug fallback
+          "radius_auth_ip": "187.77.70.18",        // RADIUS server IP
+          "radius_auth_port": 1812,                // default 1812
+          "radius_acct_port": 1813,                // default 1813
+          "shared_secret": "…",                    // optional — panel mints one when omitted
+          "mgmt_wg_ip": "10.250.0.X",              // optional, informational
+          "hostname": "client5-radius",
+          "server_fingerprint": "…"
+        }
+
+    The response always carries the resolved ``realm`` / ``radius_target``
+    and the ``route_id`` so the operator can correlate. When the panel
+    minted a fresh shared secret it is returned ONCE in
+    ``shared_secret`` so the radius-module can configure its own RADIUS
+    to match in the same round-trip — after this call the plaintext is
+    only persisted at rest (Setting, Fernet-encrypted when the vault key
+    is configured).
+    """
     body = request.get_json(silent=True) or {}
     signed = _verify_integration_signature(body)
     if signed is not None:
@@ -874,20 +909,28 @@ def hoberadius_instance_heartbeat():
     if not result.license:
         return jsonify({"ok": False, "status": result.status}), 404
 
-    instance = CustomerRadiusInstance.query.filter_by(
-        customer_id=result.license.customer_id
-    ).first()
-    if instance:
-        instance.last_seen_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        if result.active and instance.status != "active":
-            instance.status = "active"
-        db.session.commit()
+    from ..services.radius_auto_provision import provision_on_link
+    provision = provision_on_link(
+        current_app,
+        result.license,
+        instance_url=str(body.get("instance_url") or "")[:255],
+        realm=str(body.get("realm") or ""),
+        radius_auth_ip=str(body.get("radius_auth_ip") or "")[:64],
+        radius_auth_port=body.get("radius_auth_port"),
+        radius_acct_port=body.get("radius_acct_port"),
+        shared_secret=str(body.get("shared_secret") or ""),
+        mgmt_wg_ip=str(body.get("mgmt_wg_ip") or "")[:64],
+        hostname=str(body.get("hostname") or "")[:255],
+        fingerprint=str(body.get("server_fingerprint") or "")[:255],
+    )
+    db.session.commit()
 
     return jsonify({
         "ok": True,
         "status": "recorded",
         "license_status": result.status,
-        "instance_found": instance is not None,
+        "instance_found": True,
+        "provision": provision,
     })
 
 
@@ -1104,115 +1147,15 @@ def _payment_error(message: str, status_code: int = 400, *, detail: str = ""):
     return jsonify(payload), status_code
 
 
-@bp.post("/integration/hoberadius/instance/activate")
-def hoberadius_instance_activate():
-    """Bootstrap endpoint — validates a one-time activation code and returns
-    the credentials needed by radius-module to operate the Admin Bridge.
-
-    Authentication: the activation code IS the credential.  No HMAC signature
-    is required (there is no shared_secret yet — that is what we are issuing).
-
-    Security rules:
-    - Token is validated by SHA-256 hash only — never stored or logged in plaintext.
-    - Token is single-use: ``used_at`` is set atomically on first success.
-    - Expired tokens are rejected (HTTP 410).
-    - Used tokens are rejected (HTTP 409).
-    - The ``shared_secret`` returned equals ``license_integration_secret(app, license_key)``
-      which is already accepted as a fallback in ``verify_license_signature()``; no new
-      secret column is needed.
-    - Secrets are NEVER logged or returned in error responses.
-    """
-    import logging as _logging
-    from ..models import InstanceActivationToken, License
-    from ..license_signing import license_integration_secret
-    from ..security import clean_text
-    _log = _logging.getLogger(__name__)
-
-    if not _integration_request_is_secure():
-        return jsonify({"ok": False, "status": "https_required", "message": "التفعيل يتطلب HTTPS."}), 426
-
-    body = request.get_json(silent=True) or {}
-
-    raw_code = str(body.get("activation_code") or "").strip()
-    fingerprint = str(body.get("server_fingerprint") or "").strip()[:255]
-    base_url = str(body.get("base_url") or "").strip()[:255]
-
-    if not raw_code:
-        return jsonify({"ok": False, "status": "invalid_request", "message": "activation_code مطلوب."}), 422
-
-    token_hash = InstanceActivationToken.hash_code(raw_code)
-    token = InstanceActivationToken.query.filter_by(token_hash=token_hash).first()
-
-    if token is None:
-        # Deliberate: same message for not-found and wrong code to prevent enumeration.
-        _log.warning("instance_activate: unknown token hash from %s", client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)))
-        return jsonify({"ok": False, "status": "invalid_token", "message": "كود التفعيل غير صحيح أو منتهي."}), 401
-
-    if token.used_at is not None:
-        return jsonify({"ok": False, "status": "already_used", "message": "كود التفعيل استُخدم مسبقاً. أنشئ كوداً جديداً."}), 409
-
-    from datetime import timezone as _tz
-    from datetime import datetime as _dt
-    now = _dt.now(_tz.utc).replace(tzinfo=None)
-    if token.expires_at <= now:
-        return jsonify({"ok": False, "status": "expired", "message": "انتهت صلاحية كود التفعيل. أنشئ كوداً جديداً."}), 410
-
-    # Find an active (or most recent) license for this customer.
-    from ..services.license_service import check_license as _check_license  # noqa: F401
-    best_license = (
-        License.query
-        .filter_by(customer_id=token.customer_id)
-        .order_by(License.created_at.desc())
-        .first()
-    )
-    if best_license is None:
-        return jsonify({"ok": False, "status": "no_license", "message": "لا يوجد ترخيص مرتبط بهذا العميل."}), 404
-
-    license_key = best_license.license_key
-
-    # Derive the shared secret — no new DB column needed.
-    shared_secret = license_integration_secret(current_app, license_key)
-    if not shared_secret:
-        _log.error("instance_activate: license_integration_secret returned empty for customer_id=%s — LICENSE_CHECK_HMAC_SECRET missing?", token.customer_id)
-        return jsonify({"ok": False, "status": "server_error", "message": "خطأ في إعداد الخادم. تواصل مع الدعم."}), 500
-
-    # Mark token as used — atomic, prevents double-activation.
-    token.used_at = now
-    token.used_fingerprint = fingerprint
-
-    audit_customer_control(
-        actor_admin_id=None,
-        action="instance_activated",
-        entity_type="customer",
-        entity_id=str(token.customer_id),
-        summary=f"راديوس موجّه: تفعيل Admin Bridge عبر كود التفعيل (بصمة: {fingerprint or 'غير محدد'})",
-        metadata={
-            "token_id": token.id,
-            # Bearer mode makes the key a live credential — store only the
-            # masked form in audit metadata (the owner sees the full key on
-            # the customer page anyway).
-            "license_key": _mask_license_key(license_key),
-            "fingerprint": fingerprint,
-            "ip": client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)),
-        },
-    )
-    db.session.commit()
-
-    _log.info(
-        "instance_activate: customer_id=%s activated via token_id=%s fingerprint=%s",
-        token.customer_id, token.id, fingerprint or "(none)",
-    )
-
-    panel_base_url = base_url or current_app.config.get("ADMIN_BASE_URL") or request.host_url.rstrip("/")
-
-    return jsonify({
-        "ok": True,
-        "status": "activated",
-        "license_key": license_key,
-        "shared_secret": shared_secret,
-        "base_url": panel_base_url,
-        "customer_name": token.customer.company_name,
-    })
+# NOTE: the one-time-activation-code endpoint
+#   POST /api/integration/hoberadius/instance/activate
+# was retired with the linking-auth cleanup. The owner wanted "license key,
+# nothing else"; there's nothing to "activate" anymore — the radius-module
+# uses the license key directly as the bearer credential. The route is
+# unmounted so old clients trying to call it now get a 404, and the admin-
+# side token-mint endpoint is gone too. The ``InstanceActivationToken`` ORM
+# stays in models.py for the database heal block (dropping the table is
+# done by a follow-up migration; until then, leftover rows are inert).
 
 
 @bp.post("/license-payments/requests")

@@ -157,32 +157,21 @@ def check_license(
     if fingerprint:
         fingerprints = lic.fingerprints
         if fingerprint not in fingerprints:
-            # Fingerprint is recorded for information, but is NON-BLOCKING by
-            # default: a server reboot / container restart / hardware change
-            # must never lock a paying customer out. Strict hard-lock is opt-in
-            # via LICENSE_FINGERPRINT_STRICT=1.
+            # Fingerprint is purely informational now (zero-touch link spec):
+            # we record it for the «الأجهزة المرصودة» list on the customer
+            # page and rotate the slots when they're full. Hard deny was
+            # retired together with the legacy linking auth — a server
+            # reboot / container restart / hardware change must never lock a
+            # paying customer out.
             slot_limit = 1 if int(lic.max_fingerprints or 0) == 1 else max(3, int(lic.max_fingerprints or 0))
-            strict = bool(current_app.config.get("LICENSE_FINGERPRINT_STRICT", False))
             if len(fingerprints) < slot_limit:
                 fingerprints.append(fingerprint)
                 lic.fingerprints = fingerprints
-            elif not strict:
+            else:
                 # Slots full → rotate: keep the most recent `slot_limit`
                 # fingerprints. Never deny.
                 fingerprints = (fingerprints + [fingerprint])[-slot_limit:]
                 lic.fingerprints = fingerprints
-            else:
-                result = LicenseResult(
-                    False,
-                    "fingerprint_denied",
-                    "denied",
-                    f"بصمة الخادم غير مسموحة لهذا الترخيص (الحد: {slot_limit} بصمات).",
-                    "fingerprint_denied",
-                    lic,
-                )
-                _log_check(lic, key, fingerprint, hostname, version, ip_address, install_id, domain, result)
-                db.session.commit()
-                return result
 
     if in_grace:
         result = LicenseResult(True, "grace", "active", "الترخيص في فترة السماح. الرجاء التجديد قريبًا.", "grace", lic)

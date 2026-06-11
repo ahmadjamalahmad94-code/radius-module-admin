@@ -16,8 +16,10 @@
   {% if not instances %}
     <div class="hub-empty">
       <p>لا توجد نسخ RADIUS مسجّلة.</p>
-      <p style="font-size:13px;color:var(--hub-muted)">
-        لإضافة نسخة: اذهب إلى ملف العميل ← ثم اضغط «تسجيل RADIUS Instance».
+      <p style="font-size:13px;color:var(--hub-muted);line-height:1.9">
+        تُسجَّل النسخة <b>تلقائيًا</b> عند أول ربط ناجح للريديوس بمفتاح ترخيص العميل
+        (مع إنشاء مسار Realm في وكيل RADIUS فورًا). للتسجيل اليدوي المسبق:
+        ملف العميل ← قسم «إعدادات الشبكة» ← زر «تسجيل / تعديل نسخة RADIUS».
       </p>
     </div>
   {% else %}

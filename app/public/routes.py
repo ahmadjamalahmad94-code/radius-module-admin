@@ -3,7 +3,9 @@ from __future__ import annotations
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from ..extensions import db
-from ..license_signing import license_integration_secret
+# Legacy ``license_integration_secret`` import retired with the linking-auth
+# cleanup — the customer portal used to surface the derived secret as «سر
+# التوقيع», which no longer exists.
 from ..models import Customer, CustomerBackupArtifact, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting
 from ..services.customer_control import (
     CustomerControlValidationError,
@@ -1212,6 +1214,14 @@ def customer_portal_whatsapp_embedded_complete():
 
 
 def _runtime_setup_for_license(lic: License | None) -> dict:
+    """Bridge setup snippet shown in the customer portal.
+
+    Bearer-only: the license key IS the credential, so the previous
+    ``HOBERADIUS_ADMIN_SHARED_SECRET`` env var is gone. ``integration_secret``
+    is kept in the return dict as an empty string so any existing template
+    that reads the key doesn't blow up (the admin customer page no longer
+    references it).
+    """
     setting = db.session.get(Setting, "license_api_base_url")
     base_url = str(current_app.config.get("LICENSE_API_BASE_URL") or (setting.value if setting else "")).strip().rstrip("/")
     if not base_url:
@@ -1224,12 +1234,10 @@ def _runtime_setup_for_license(lic: License | None) -> dict:
             "integration_secret": "",
             "env_snippet": "",
         }
-    integration_secret = license_integration_secret(current_app, lic.license_key)
     env_snippet = "\n".join([
         "HOBERADIUS_ADMIN_BRIDGE_ENABLED=true",
         f"HOBERADIUS_ADMIN_BASE_URL={base_url}",
         f"HOBERADIUS_LICENSE_KEY={lic.license_key}",
-        f"HOBERADIUS_ADMIN_SHARED_SECRET={integration_secret}",
         "HOBERADIUS_ADMIN_RUNTIME_CONTRACT_SYNC=1",
         "HOBERADIUS_ADMIN_IDENTITY_SYNC_ENABLED=1",
         "HOBERADIUS_ADMIN_IDENTITY_SYNC_ON_LOGIN=1",
@@ -1240,6 +1248,6 @@ def _runtime_setup_for_license(lic: License | None) -> dict:
         "available": True,
         "base_url": base_url,
         "license_key": lic.license_key,
-        "integration_secret": integration_secret,
+        "integration_secret": "",
         "env_snippet": env_snippet,
     }

@@ -1063,18 +1063,6 @@ def build_runtime_contract_for_license(
     license_status = status or (lic.status if lic else "not_found")
     customer = lic.customer if lic else None
     services = _services_contract(customer, lic, license_active=license_active, license_status=license_status)
-    # Bridge token — bidirectional sync block. The customer's radius reads
-    # this on each runtime-contract poll and overwrites its local copy when
-    # its ``version`` is below the panel's. Failure to serialise (e.g. vault
-    # key unavailable in dev / tests) is silently degraded — the existing
-    # derived ``license_integration_secret`` keeps validating signatures.
-    bridge_token_block: dict[str, Any] | None = None
-    if lic is not None:
-        try:
-            from .bridge_token_sync import serialize_for_contract
-            bridge_token_block = serialize_for_contract(lic)
-        except Exception:  # noqa: BLE001 - degrade gracefully on crypto/db issues
-            bridge_token_block = None
     return {
         "license": {
             "active": bool(license_active),
@@ -1092,7 +1080,10 @@ def build_runtime_contract_for_license(
         "services": services,
         "limits": _limits_contract(lic, customer),
         "customer_users_version": customer_users_version(customer) if customer else 0,
-        "bridge_token": bridge_token_block,
+        # The bridge_token rotation block was retired with the linking-auth
+        # cleanup — there is nothing to rotate; the license key IS the
+        # credential and the customer-radius reads it directly from the
+        # owner's panel.
     }
 
 

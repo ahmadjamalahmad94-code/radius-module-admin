@@ -134,34 +134,9 @@ KEYS: dict[str, Spec] = {
     ),
 
     # ── License-check verification policy ──────────────────────────────
-    "LICENSE_CHECK_SIGNATURE_REQUIRED": Spec(
-        "LICENSE_CHECK_SIGNATURE_REQUIRED", "bool", True, _GROUP_LIC,
-        "يجب أن يكون فحص الترخيص موقّعًا",
-        "عند التفعيل: تُرفض أي فحوصات بدون توقيع HMAC صالح.",
-    ),
-    "LICENSE_CHECK_ALLOW_UNSIGNED": Spec(
-        "LICENSE_CHECK_ALLOW_UNSIGNED", "bool", False, _GROUP_LIC,
-        "السماح بالفحوصات غير الموقّعة",
-        "للتجارب فقط — لا تُفعّل في الإنتاج.",
-    ),
-    "LICENSE_BEARER_AUTH_ENABLED": Spec(
-        "LICENSE_BEARER_AUTH_ENABLED", "bool", True, _GROUP_LIC,
-        "الربط المبسّط — مفتاح الترخيص يكفي",
-        "عند التفعيل: مفتاح الترخيص في جسم الطلب (عبر HTTPS) يوثّق الجسر بنفسه "
-        "بدون توقيع HMAC أو سر ربط. الطلبات الموقّعة القديمة تبقى مقبولة دائمًا.",
-    ),
-    "LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS": Spec(
-        "LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", "int", 300, _GROUP_LIC,
-        "هامش انحراف الساعة المسموح (ثانية)",
-        "الفرق المسموح بين توقيت الفحص وتوقيت الخادم.",
-        min_value=0, max_value=86400,
-    ),
-    "LICENSE_CHECK_REPLAY_WINDOW_SECONDS": Spec(
-        "LICENSE_CHECK_REPLAY_WINDOW_SECONDS", "int", 600, _GROUP_LIC,
-        "نافذة كشف الإعادة (ثانية)",
-        "كم من الوقت نتذكر فيه nonces قديمة لمنع إعادة استخدامها.",
-        min_value=0, max_value=86400,
-    ),
+    # (Legacy LICENSE_CHECK_SIGNATURE_REQUIRED / ALLOW_UNSIGNED /
+    # BEARER_AUTH_ENABLED / clock-skew / replay-window specs retired with the
+    # bearer-only link contract — docs/SIMPLE_LINK_CONTRACT.md.)
 
     # ── WhatsApp operational ───────────────────────────────────────────
     "WHATSAPP_HTTP_TIMEOUT_SECONDS": Spec(
@@ -202,11 +177,7 @@ KEYS: dict[str, Spec] = {
     ),
 
     # ── Integration secrets (encrypted, masked, write-only) ────────────
-    "LICENSE_CHECK_HMAC_SECRET": Spec(
-        "LICENSE_CHECK_HMAC_SECRET", "secret", "", _GROUP_SEC,
-        "مفتاح HMAC لفحص التراخيص",
-        "يُستخدم لتوقيع طلبات /api/license/check. ٣٢ حرفًا عشوائيًا على الأقل.",
-    ),
+    # (Legacy LICENSE_CHECK_HMAC_SECRET retired — bearer-only.)
     "RADIUS_PROXY_SHARED_SECRET": Spec(
         "RADIUS_PROXY_SHARED_SECRET", "secret", "", _GROUP_SEC,
         "السرّ المشترك لوكيل RADIUS",

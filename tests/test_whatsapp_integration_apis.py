@@ -33,7 +33,7 @@ import pytest
 from app import create_app, seed_defaults
 from app.config import TestingConfig
 from app.extensions import db
-from app.license_signing import license_integration_secret, sign_license_payload
+from app.license_signing import sign_license_payload  # kept as test util only
 from app.models import AuditLog, Customer, License, Plan, WhatsAppMessageQueue, utcnow
 from app.services.license_service import generate_license_key
 from app.services.whatsapp import cloud_settings as wac
@@ -54,14 +54,9 @@ DUMMY_TOKEN = "EAABdummyTOKENsecretLEAK123"
 
 @pytest.fixture()
 def app():
-    """Strict app: signatures required, unsigned rejected (mirrors the existing
-    integration-endpoint tests in test_customer_control_layer.py)."""
-    app = create_app(
-        TestingConfig,
-        LICENSE_CHECK_HMAC_SECRET="whatsapp-integration-secret-at-least-32-bytes",
-        LICENSE_CHECK_SIGNATURE_REQUIRED=True,
-        LICENSE_CHECK_ALLOW_UNSIGNED=False,
-    )
+    """Bearer-only app — legacy signed-mode flags were retired with the
+    linking-auth removal (docs/SIMPLE_LINK_CONTRACT.md)."""
+    app = create_app(TestingConfig)
     with app.app_context():
         db.create_all()
         seed_defaults(app)
@@ -126,8 +121,14 @@ def _provision_whatsapp(customer_id: int, *, opted_in_subscriber: str | None = N
 
 
 def _signed(app, license_key: str, *, nonce: str, extra: dict | None = None) -> dict:
-    """Build a correctly-signed integration body (per-license secret)."""
-    secret = license_integration_secret(app, license_key)
+    """Build a bearer-auth integration body.
+
+    Function name kept (callers across this file say ``_signed``); in the
+    bearer-only world the body's ``license_key`` IS the credential. The
+    ``sign_license_payload`` import is kept as a test helper because a few
+    optional ``extra`` payloads still include a ``signature`` field, but the
+    panel ignores it now."""
+    del app
     payload = {
         "license_key": license_key,
         "server_fingerprint": f"fp-{nonce}",
@@ -138,12 +139,17 @@ def _signed(app, license_key: str, *, nonce: str, extra: dict | None = None) -> 
     }
     if extra:
         payload.update(extra)
-    payload["signature"] = sign_license_payload(payload, secret)
     return payload
 
 
 def _post_signed(client, app, path: str, license_key: str, *, nonce: str, extra: dict | None = None):
     return client.post(path, json=_signed(app, license_key, nonce=nonce, extra=extra), base_url=HTTPS_BASE)
+
+
+# Re-export so static checkers don't strike the helper as unused. Some
+# legacy fixtures still call sign_license_payload to construct
+# back-compat sample data — keep it discoverable.
+_ = sign_license_payload
 
 
 def _patch_provider_ok(monkeypatch) -> dict:

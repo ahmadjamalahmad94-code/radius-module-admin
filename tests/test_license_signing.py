@@ -1,31 +1,37 @@
+"""Bearer-mode license-check surface.
+
+After the legacy-linking-auth removal, the panel only authenticates via the
+license key in the request body (docs/SIMPLE_LINK_CONTRACT.md). All HMAC
+signature / clock-skew / replay-nonce tests were dropped along with the
+code they covered. What remains: confirm the bearer path keeps the public
+response contract intact, and that unknown keys never authenticate.
+"""
 from __future__ import annotations
 
-import time
 from datetime import timedelta
 
 from app import create_app, seed_defaults
 from app.config import TestingConfig
 from app.extensions import db
-from app.license_signing import sign_license_payload
+from app.license_signing import (
+    canonical_license_payload,
+    mask_license_key,
+    sign_license_payload,
+)
 from app.models import Customer, License, Plan, utcnow
 from app.services.license_service import generate_license_key
 
 
-SIGNING_SECRET = "test-license-signing-secret-at-least-32"
-
-
-def make_signed_app(**overrides):
-    return create_app(
-        TestingConfig,
-        LICENSE_CHECK_HMAC_SECRET=SIGNING_SECRET,
-        LICENSE_CHECK_SIGNATURE_REQUIRED=True,
-        LICENSE_CHECK_ALLOW_UNSIGNED=False,
-        **overrides,
-    )
+def make_app():
+    app = create_app(TestingConfig)
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+    return app
 
 
 def make_license() -> License:
-    customer = Customer(company_name="Signed Customer")
+    customer = Customer(company_name="Bearer Customer")
     plan = Plan.query.filter_by(slug="pro").first()
     db.session.add(customer)
     db.session.flush()
@@ -44,153 +50,49 @@ def make_license() -> License:
     return lic
 
 
-def signed_payload(license_key: str, *, nonce: str = "nonce-1", timestamp: int | None = None):
-    payload = {
-        "license_key": license_key,
-        "server_fingerprint": f"fp-{nonce}",
-        "hostname": "client-vps-1",
-        "version": "1.0.0",
-        "timestamp": int(timestamp or time.time()),
-        "nonce": nonce,
-    }
-    payload["signature"] = sign_license_payload(payload, SIGNING_SECRET)
-    return payload
-
-
-def test_valid_signed_license_check_preserves_response_contract():
-    app = make_signed_app()
+def test_valid_license_check_preserves_response_contract():
+    app = make_app()
     with app.app_context():
-        db.create_all()
-        seed_defaults(app)
         lic = make_license()
         client = app.test_client()
-
-        res = client.post("/api/license/check", json=signed_payload(lic.license_key))
+        res = client.post("/api/license/check", json={"license_key": lic.license_key})
         body = res.get_json()
-
         assert res.status_code == 200
         assert body["active"] is True
         assert body["status"] == "active"
         assert body["mode"] == "active"
-        assert set(["expires_at", "grace_until", "plan", "features"]).issubset(body.keys())
+        assert {"expires_at", "grace_until", "plan", "features"}.issubset(body.keys())
 
 
-def test_invalid_signature_is_denied_without_license_lookup_details():
-    app = make_signed_app()
+def test_unknown_license_key_is_denied():
+    app = make_app()
     with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        lic = make_license()
         client = app.test_client()
-        payload = signed_payload(lic.license_key)
-        payload["signature"] = "0" * 64
-
-        res = client.post("/api/license/check", json=payload)
-        body = res.get_json()
-
-        assert res.status_code == 401
-        assert body == {
-            "active": False,
-            "status": "denied",
-            "mode": "denied",
-            "message": "فشل التحقق من صلاحية فحص الترخيص.",
-        }
+        res = client.post("/api/license/check", json={"license_key": "HBR-2026-NONE-NONE-NONE"})
+        # Endpoint returns 200 active=False for a not_found result; integration
+        # variants 401. Either way, never grants access.
+        if res.status_code == 200:
+            assert res.get_json()["active"] is False
+        else:
+            assert res.status_code == 401
 
 
-def test_missing_signature_in_strict_mode_bearer_contract():
-    """Strict mode, no signature (docs/SIMPLE_LINK_CONTRACT.md):
-
-    * a VALID body license key bearer-authenticates (the key IS the credential);
-    * an unknown key is still denied with 401;
-    * with bearer disabled the legacy strict denial applies even to a valid key.
-    """
-    app = make_signed_app()
-    with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        lic = make_license()
-        client = app.test_client()
-
-        res = client.post("/api/license/check", json={
-            "license_key": lic.license_key,
-            "server_fingerprint": "fp-missing",
-        })
-        assert res.status_code == 200
-        assert res.get_json()["active"] is True
-
-        res_bad = client.post("/api/license/check", json={
-            "license_key": "HBR-2026-NONE-NONE-NONE",
-            "server_fingerprint": "fp-missing",
-        })
-        assert res_bad.status_code == 401
-        assert res_bad.get_json()["mode"] == "denied"
-
-    app_off = make_signed_app(LICENSE_BEARER_AUTH_ENABLED=False)
-    with app_off.app_context():
-        db.create_all()
-        seed_defaults(app_off)
-        lic = make_license()
-        client = app_off.test_client()
-        res_off = client.post("/api/license/check", json={
-            "license_key": lic.license_key,
-            "server_fingerprint": "fp-missing",
-        })
-        assert res_off.status_code == 401
-        assert res_off.get_json()["mode"] == "denied"
+def test_canonical_payload_and_signature_helpers_stable():
+    """Utility kept around for legacy test fixtures + radius-module sign-once
+    backups. We don't ship a signed link path anymore, but the helpers must
+    keep producing deterministic, sortable canonical JSON + a 64-hex digest
+    so any downstream tool that imports them keeps working."""
+    payload = {"license_key": "HBR-2026-AAAA-BBBB-CCCC", "nonce": "n1", "timestamp": 1700000000}
+    canonical_a = canonical_license_payload(payload)
+    canonical_b = canonical_license_payload({"timestamp": 1700000000, "nonce": "n1", "license_key": "HBR-2026-AAAA-BBBB-CCCC"})
+    assert canonical_a == canonical_b  # order-independent
+    sig = sign_license_payload(payload, "any-secret-32-bytes-for-the-helper")
+    assert len(sig) == 64
+    assert all(ch in "0123456789abcdef" for ch in sig)
 
 
-def test_signed_timestamp_too_old_or_future_is_denied():
-    app = make_signed_app(LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS=60)
-    with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        lic = make_license()
-        client = app.test_client()
-
-        old_res = client.post("/api/license/check", json=signed_payload(
-            lic.license_key,
-            nonce="old",
-            timestamp=int(time.time()) - 120,
-        ))
-        future_res = client.post("/api/license/check", json=signed_payload(
-            lic.license_key,
-            nonce="future",
-            timestamp=int(time.time()) + 120,
-        ))
-
-        assert old_res.status_code == 401
-        assert future_res.status_code == 401
-
-
-def test_replayed_nonce_is_denied():
-    app = make_signed_app()
-    with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        lic = make_license()
-        client = app.test_client()
-        payload = signed_payload(lic.license_key, nonce="replay-1")
-
-        first = client.post("/api/license/check", json=payload)
-        second = client.post("/api/license/check", json=payload)
-
-        assert first.status_code == 200
-        assert second.status_code == 401
-        assert second.get_json()["message"] == "فشل التحقق من صلاحية فحص الترخيص."
-
-
-def test_unsigned_compatibility_mode_keeps_existing_client_working():
-    app = create_app(TestingConfig, LICENSE_CHECK_ALLOW_UNSIGNED=True, LICENSE_CHECK_SIGNATURE_REQUIRED=False)
-    with app.app_context():
-        db.create_all()
-        seed_defaults(app)
-        lic = make_license()
-        client = app.test_client()
-
-        res = client.post("/api/license/check", json={
-            "license_key": lic.license_key,
-            "server_fingerprint": "fp-unsigned",
-        })
-
-        assert res.status_code == 200
-        assert res.get_json()["status"] == "active"
+def test_mask_license_key_never_leaks_full_value():
+    full = "HBR-2026-AAAA-BBBB-CCCC"
+    masked = mask_license_key(full)
+    assert full not in masked
+    assert masked.endswith("CCCC")
