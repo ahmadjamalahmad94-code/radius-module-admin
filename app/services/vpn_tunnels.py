@@ -530,6 +530,54 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         # Surface the node name so the operator UI can show «على chr-best».
         "chr_node_name": (node.name if node else ""),
     }
+    # ── SSTP only: surface the RADIUS-transport binding ─────────────
+    # The owner's architectural intent: an SSTP tunnel created via the
+    # access-connections flow is the RADIUS link between the panel's
+    # RADIUS and the subscriber's MikroTik. The bridge response carries
+    # the realm + RADIUS target so the customer panel can render the
+    # MikroTik-side snippet the subscriber uses to configure RADIUS
+    # client (User-Name suffix uses the realm; the SSTP-Client uses
+    # chr_host:service_port + username/password).
+    if tunnel.tunnel_type == "sstp":
+        try:
+            from ..models import CustomerRadiusInstance
+            radius_inst = (
+                CustomerRadiusInstance.query
+                .filter_by(customer_id=tunnel.customer_id)
+                .first()
+            )
+        except Exception:
+            radius_inst = None
+        if radius_inst is not None:
+            data["radius_link"] = {
+                "role": "radius_transport",
+                "realm": radius_inst.realm or "",
+                "radius_auth_ip": radius_inst.radius_auth_ip or "",
+                "radius_auth_port": int(radius_inst.radius_auth_port or 1812),
+                "radius_acct_port": int(radius_inst.radius_acct_port or 1813),
+                # Subscriber-MikroTik usage hint, in plain prose so the
+                # customer panel can render it without server logic.
+                "usage_ar": (
+                    "أضف SSTP-Client على ميكروتيك المشترك يتصل بـ "
+                    f"{public_host}:{service_port} بهذه البيانات، ثم استخدم "
+                    f"User-Name بصيغة user@{radius_inst.realm or '<realm>'} في إعدادات RADIUS-Client."
+                ),
+            }
+        else:
+            # No instance yet — surface a placeholder so the customer
+            # panel can show «اضبط نسخة RADIUS أولًا» instead of a
+            # silently missing field.
+            data["radius_link"] = {
+                "role": "radius_transport",
+                "realm": "",
+                "radius_auth_ip": "",
+                "radius_auth_port": 1812,
+                "radius_acct_port": 1813,
+                "usage_ar": (
+                    "لم تُسجَّل نسخة RADIUS لهذا العميل بعد — لن يصل وكيل "
+                    "RADIUS الحركة إلى راديوس العميل حتى تُسجَّل النسخة."
+                ),
+            }
     if include_password and tunnel.delivery_status != "delivered" and tunnel.status != "revoked":
         data["password"] = get_tunnel_password(tunnel)
     return data

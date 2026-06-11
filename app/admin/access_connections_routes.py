@@ -73,6 +73,23 @@ def api_customer_licenses(customer_id: int):
     return jsonify({"licenses": ac.license_options(customer_id)})
 
 
+@bp.get("/api/radius-link-preview")
+@login_required
+def api_radius_link_preview():
+    """RADIUS-transport chain audit for the SSTP modal.
+
+    Owner's architectural intent: the SSTP tunnel created here links the
+    subscriber's MikroTik to the customer's RADIUS — auth + accounting +
+    CoA all travel on it. The modal calls this endpoint whenever the
+    operator changes the customer or fleet node so it can preview the
+    realm + RADIUS target + whether the chain is complete BEFORE the
+    create-and-provision happens.
+    """
+    customer_id = _safe_int(request.args.get("customer_id"))
+    fleet_chr_node_id = _safe_int(request.args.get("fleet_chr_node_id"))
+    return jsonify(ac.radius_link_preview(customer_id, fleet_chr_node_id))
+
+
 # ───────────────────────── create: PPP / IPsec ─────────────────────────
 
 
@@ -99,6 +116,25 @@ def create_ppp():
     # Operator's fleet-node pick — empty/missing = let the brain pick the
     # best-eligible node (the internal load balancer).
     fleet_chr_node_id = _safe_int(request.form.get("fleet_chr_node_id"))
+
+    # ── Architectural intent guard for SSTP =====================================
+    # SSTP in this flow is the RADIUS-transport link between the panel's
+    # RADIUS and the subscriber's MikroTik. If the customer has no
+    # CustomerRadiusInstance / no active ProxyRealmRoute / picked node
+    # not in the realm's allow-list, the tunnel will still create on the
+    # CHR but the RADIUS path won't reach the customer's RADIUS. We
+    # surface the chain status as an Arabic flash; we do NOT block the
+    # create (the operator may be staging things in a specific order).
+    if tunnel_type == "sstp":
+        preview = ac.radius_link_preview(customer.id, fleet_chr_node_id)
+        if not preview.get("ok"):
+            flash(
+                "تنبيه — رابط SSTP يحمل حركة RADIUS بين راديوس العميل وميكروتيك المشترك: "
+                + (preview.get("message") or "السلسلة غير مكتملة."),
+                "warning",
+            )
+    # ===========================================================================
+
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -126,14 +162,25 @@ def create_ppp():
         "customer_vpn_tunnel",
         str(tunnel.id),
         f"إنشاء اتصال {tunnel.tunnel_type} للعميل {customer.company_name} من «اتصالات الوصول»",
-        {"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username},
+        {"customer_id": customer.id, "tunnel_type": tunnel.tunnel_type, "username": tunnel.username,
+         "fleet_chr_node_id": tunnel.fleet_chr_node_id},
     )
     db.session.commit()
-    flash(
-        f"تم إنشاء اتصال {vt.TUNNEL_TYPE_LABELS.get(tunnel.tunnel_type, tunnel.tunnel_type)} "
-        f"({tunnel.username}) — سيُسلَّم للعميل عبر الجسر.",
-        "success",
-    )
+    # The SSTP success toast names the RADIUS-transport role explicitly so
+    # the operator remembers what they just created. Other PPP tunnel
+    # types stick with the generic «اتصال» wording.
+    if tunnel.tunnel_type == "sstp":
+        flash(
+            f"تم إنشاء رابط RADIUS عبر SSTP ({tunnel.username}) على عقدة الأسطول — "
+            "سيتسلّم العميل بياناته عبر الجسر ثم يُدخلها في إعدادات SSTP-Client على ميكروتيك المشترك.",
+            "success",
+        )
+    else:
+        flash(
+            f"تم إنشاء اتصال {vt.TUNNEL_TYPE_LABELS.get(tunnel.tunnel_type, tunnel.tunnel_type)} "
+            f"({tunnel.username}) — سيُسلَّم للعميل عبر الجسر.",
+            "success",
+        )
     return redirect(url_for("admin_access.index"))
 
 
