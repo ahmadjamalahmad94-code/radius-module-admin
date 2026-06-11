@@ -180,6 +180,95 @@ def _resolve_user_and_password(node: FleetChrNode) -> tuple[str, str]:
     return user or fleet_user or HARD_DEFAULT_USER, ""
 
 
+def credentials_diagnostics(node: FleetChrNode) -> dict:
+    """Explain EXACTLY why :func:`credentials_for` returns what it returns.
+
+    Field incident: the UI said «لا توجد بيانات اعتماد API لهذه العقدة»
+    while ``fleet_chr_nodes`` visibly held user + port + ciphertext. The
+    real cause was a Fernet decrypt failure (password encrypted under a
+    different master key) which :func:`decrypt_password` collapses to
+    ``""`` — indistinguishable from "never set". This function keeps the
+    failure modes apart so the route can say WHICH source is broken:
+
+    Returned dict::
+
+        {
+          "ok": bool,                # credentials_for() would succeed
+          "source": "node"|"fleet_default"|"",   # winning source when ok
+          "reason_code": str,        # machine code when not ok
+          "message_ar": str,         # precise operator-facing Arabic
+          "node_password_state":  "ok"|"unset"|"decrypt_failed",
+          "fleet_password_state": "ok"|"unset"|"decrypt_failed",
+        }
+
+    Reason codes (when ``ok`` is False):
+    * ``no_mgmt_ip``        — node row has no wg_mgmt_ip (host unknown).
+    * ``node_decrypt_failed``  — per-node ciphertext exists but the panel
+      master key can't open it (re-enter the password from the UI).
+    * ``fleet_decrypt_failed`` — same, for the fleet-default ciphertext.
+    * ``no_password_anywhere`` — neither source has any ciphertext.
+    """
+    if node is None or not (node.wg_mgmt_ip or "").strip():
+        return {
+            "ok": False, "source": "", "reason_code": "no_mgmt_ip",
+            "message_ar": (
+                "العقدة بلا عنوان wg-mgmt — لا يمكن الوصول إليها عبر قناة "
+                "الإدارة. أكمل التزويد أولاً."
+            ),
+            "node_password_state": "unset", "fleet_password_state": "unset",
+        }
+
+    def _state(ciphertext: str) -> str:
+        if not (ciphertext or "").strip():
+            return "unset"
+        return "ok" if decrypt_password(ciphertext) else "decrypt_failed"
+
+    node_state = _state(node.routeros_api_password_enc or "")
+    fleet_state = _state(_setting_value(DEFAULT_PASSWORD_SETTING_KEY) or "")
+
+    if node_state == "ok":
+        return {
+            "ok": True, "source": "node", "reason_code": "",
+            "message_ar": "بيانات اعتماد خاصة بالعقدة — جاهزة.",
+            "node_password_state": node_state, "fleet_password_state": fleet_state,
+        }
+    if fleet_state == "ok":
+        # Per-node may be unset (fine) or broken (worth flagging even
+        # though the fleet default saves the day).
+        note = (
+            " (تنبيه: كلمة مرور العقدة الخاصة موجودة لكن تعذّر فك تشفيرها — "
+            "أعد إدخالها أو امسحها.)" if node_state == "decrypt_failed" else ""
+        )
+        return {
+            "ok": True, "source": "fleet_default", "reason_code": "",
+            "message_ar": "بيانات الاعتماد الافتراضية للأسطول — جاهزة." + note,
+            "node_password_state": node_state, "fleet_password_state": fleet_state,
+        }
+
+    # Nothing usable — say precisely why, per source.
+    if node_state == "decrypt_failed":
+        code, msg = "node_decrypt_failed", (
+            "كلمة مرور العقدة محفوظة لكن يتعذّر فك تشفيرها (مفتاح التشفير "
+            "تغيّر؟). أعد إدخالها من «بيانات اعتماد قراءة المقاييس» على صف "
+            "العقدة."
+        )
+    elif fleet_state == "decrypt_failed":
+        code, msg = "fleet_decrypt_failed", (
+            "كلمة المرور الافتراضية للأسطول محفوظة لكن يتعذّر فك تشفيرها "
+            "(مفتاح التشفير تغيّر؟). أعد إدخالها من «إعدادات بنية الأسطول»."
+        )
+    else:
+        code, msg = "no_password_anywhere", (
+            "لا توجد كلمة مرور REST لا على العقدة ولا في افتراضيات الأسطول — "
+            "اضبط «بيانات اعتماد قراءة المقاييس» في إعدادات بنية الأسطول، أو "
+            "أدخل تجاوزاً خاصاً بهذه العقدة."
+        )
+    return {
+        "ok": False, "source": "", "reason_code": code, "message_ar": msg,
+        "node_password_state": node_state, "fleet_password_state": fleet_state,
+    }
+
+
 def _setting_value(key: str) -> str:
     try:
         row = db.session.get(Setting, key)
@@ -287,6 +376,7 @@ __all__ = [
     "mask_password",
     "set_credentials",
     "clear_credentials",
+    "credentials_diagnostics",
     "credentials_for",
     "set_default_user",
     "set_default_password",

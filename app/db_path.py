@@ -154,18 +154,62 @@ def validate_database_uri(uri: str) -> None:
 
 # ── operator diagnostics ────────────────────────────────────────────────
 
-def detect_legacy_sibling() -> Path | None:
-    """Return the path of a legacy ``license_panel.db`` sibling if one
-    exists next to the canonical SQLite file, else ``None``.
+#: Classification of the legacy ``license_panel.db`` path next to the
+#: canonical file. Returned by :func:`classify_legacy_sibling`.
+LEGACY_ABSENT = "absent"          # no license_panel.db at all — clean
+LEGACY_SYMLINK_OK = "symlink_ok"  # symlink/hardlink resolving to the canonical file — harmless
+LEGACY_CONFLICT = "conflict"      # a SEPARATE real file — the split-brain hazard
 
-    The app factory calls this at boot. When a sibling is detected, the
-    operator gets a single warning log line pointing at the
-    reconciliation runbook — never an automatic move/delete (the field
-    report's whole point is that the panel CANNOT pick which file is
-    authoritative; only the operator can).
+
+def classify_legacy_sibling() -> tuple[str, Path | None]:
+    """Classify the legacy ``license_panel.db`` path. Returns
+    ``(state, path-or-None)`` where state is one of
+    :data:`LEGACY_ABSENT` / :data:`LEGACY_SYMLINK_OK` / :data:`LEGACY_CONFLICT`.
+
+    Production hosts commonly keep ``license_panel.db`` as a SYMLINK to
+    the canonical ``license_panel.sqlite3`` (the owner's post-reconcile
+    setup) so stray tooling that still references the old name lands on
+    the same physical database. That is SAFE and must not warn.
+
+    A separate REAL file at the legacy path is the split-brain hazard the
+    field report documented — data written there is invisible to the
+    running panel. The app factory refuses to boot in that state (see
+    ``app/__init__.py::_validate_and_log_db_path``) so the operator
+    reconciles BEFORE divergence grows, instead of after.
+
+    Resolution notes:
+    * ``Path.resolve()`` follows symlinks on every platform, so a chain
+      of links ultimately landing on the canonical file classifies OK.
+    * ``Path.samefile()`` additionally catches hardlinks (same inode).
+      It can raise ``OSError`` on a dangling link — a dangling legacy
+      symlink is harmless (opens nothing), classified OK.
     """
     legacy = INSTANCE_DIR / LEGACY_SQLITE_FILENAME
-    return legacy if legacy.exists() else None
+    # exists() follows symlinks; is_symlink() does not — check link-ness
+    # FIRST so a dangling symlink (exists()==False) is still classified.
+    if not legacy.exists() and not legacy.is_symlink():
+        return LEGACY_ABSENT, None
+    canonical = canonical_sqlite_path()
+    try:
+        if legacy.resolve() == canonical:
+            return LEGACY_SYMLINK_OK, legacy
+        if canonical.exists() and legacy.exists() and legacy.samefile(canonical):
+            return LEGACY_SYMLINK_OK, legacy  # hardlink — same inode
+    except OSError:
+        # Dangling symlink (resolve/samefile failed) — opens nothing,
+        # cannot split-brain. Treat as harmless.
+        return LEGACY_SYMLINK_OK, legacy
+    return LEGACY_CONFLICT, legacy
+
+
+def detect_legacy_sibling() -> Path | None:
+    """Back-compat shim: return the legacy path ONLY when it is a real
+    CONFLICTING file (a separate database). Symlinks/hardlinks to the
+    canonical file return ``None`` — they are the owner's sanctioned
+    aliasing setup, not a hazard.
+    """
+    state, path = classify_legacy_sibling()
+    return path if state == LEGACY_CONFLICT else None
 
 
 def resolved_sqlite_path_for(uri: str) -> Path | None:
@@ -190,10 +234,14 @@ __all__ = [
     "CANONICAL_SQLITE_FILENAME",
     "DatabaseURIError",
     "INSTANCE_DIR",
+    "LEGACY_ABSENT",
+    "LEGACY_CONFLICT",
     "LEGACY_SQLITE_FILENAME",
+    "LEGACY_SYMLINK_OK",
     "REPO_ROOT",
     "canonical_database_uri",
     "canonical_sqlite_path",
+    "classify_legacy_sibling",
     "detect_legacy_sibling",
     "resolved_sqlite_path_for",
     "validate_database_uri",
