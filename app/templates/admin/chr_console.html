@@ -80,7 +80,7 @@
       <i class="fa-solid fa-plug-circle-xmark"></i>
       <b>CHR غير مضبوط.</b> {{ data.message or "أكمل إعداد الاتصال أولًا." }}
       <div style="margin-top: var(--cc-sp-6)">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings">
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr">
           <i class="fa-solid fa-gear"></i> إعدادات CHR
         </a>
       </div>
@@ -93,7 +93,7 @@
       <b>تعذّر الوصول إلى CHR.</b>
       {{ data.system.error or "تحقّق من بيانات الاتصال في الإعدادات وأن REST مفعّل." }}
       <div style="margin-top: var(--cc-sp-6)">
-        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr-settings">
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin.settings_page') }}#chr">
           <i class="fa-solid fa-gear"></i> إعدادات CHR
         </a>
       </div>

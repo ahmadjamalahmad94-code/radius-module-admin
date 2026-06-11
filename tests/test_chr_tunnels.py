@@ -449,8 +449,12 @@ def test_settings_page_shows_chr_section(app, client):
     _login(client)
     resp = client.get("/admin/settings")
     assert resp.status_code == 200
+    # The CHR connection section lives in the live settings page (general_new.html)
+    # as the «MikroTik CHR» tab — it was previously orphaned in the unused
+    # settings.html. Assert the tab + its save form are present.
     assert "MikroTik CHR".encode() in resp.data
-    assert b"chr-settings" in resp.data
+    assert b'id="tab-chr"' in resp.data
+    assert b'action="/admin/settings/chr"' in resp.data
 
 
 def test_customer_tunnels_page_renders(app, client, customer):

@@ -28,7 +28,7 @@ def _enabled_guard():
     """يعيد None إن كانت الوحدة مفعّلة؛ وإلا redirect إلى الإعدادات."""
     if not chr_console.enabled():
         flash("وحدة تحكّم CHR غير مُفعّلة (فعّل CHR_CONSOLE_ENABLED وأكمل إعداد CHR).", "error")
-        return redirect(url_for("admin.settings_page") + "#chr-settings")
+        return redirect(url_for("admin.settings_page") + "#chr")
     return None
 
 

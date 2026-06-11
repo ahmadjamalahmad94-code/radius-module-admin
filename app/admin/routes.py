@@ -2993,7 +2993,7 @@ def whatsapp_embedded_reveal():
 
 # ── MikroTik CHR connection settings (owner-managed, encrypted) ────────────
 def _chr_redirect():
-    return redirect(url_for("admin.settings_page") + "#chr-settings")
+    return redirect(url_for("admin.settings_page") + "#chr")
 
 
 def _chr_guard():
