@@ -9,6 +9,13 @@
 > auto-provisioning — the customer-side analog of the CHR↔proxy `wg-data`
 > tunnel that already works.
 
+> **HEADLINE REQUIREMENT (owner, first-class principle):** *ALL secrets and
+> keys are AUTOMATICALLY synchronized — the operator must NEVER hunt for which
+> one differs and fix it manually.* The panel is the single source of truth
+> for every credential; every party FETCHES/RECEIVES its copy from the panel
+> over an authenticated channel; continuous reconcile self-heals drift. No
+> secret is ever typed twice. See §6 — it governs every other section.
+
 ---
 
 ## 1. Topology + IP plan
@@ -253,23 +260,101 @@ response is currently dropped) and once immediately after license link:
 
 ---
 
-## 6. The FreeRADIUS secret (one secret, two consumers)
+## 6. Automatic Secret & Key Synchronization (zero manual matching) — THE HEADLINE
 
-The secret ALREADY has a single source of truth: `provision_on_link` mints it
-into `Setting["radius_secret.customer.<id>"]` (Fernet) and points
-`ProxyRealmRoute.secret_vault_ref` at it (`app/services/radius_auto_provision.py:59-110`).
-Today it reaches ONE consumer — the proxy — in plaintext via
-`/api/proxy/routing-table` (`routing_table.py:121` on the proxy ingests it).
+**Principle (owner, non-negotiable):** the PANEL is the single source of truth
+for every secret and key in the system. Every party FETCHES/RECEIVES its copy
+from the panel over an authenticated channel, applies it automatically, and a
+continuous reconcile loop self-heals drift. **The operator never compares two
+strings, never edits a config file to "make them match", and never types a
+secret more than once (most are never typed at all — the panel mints them).**
 
-Design: the SAME stored secret is included as `radius_tunnel.radius_secret` in
-EVERY heartbeat response (§3.2) — not once — so the radius side can always
-reconverge (lost disk, reinstall) without operator action. Channel security is
-identical to the proxy path (HTTPS + authenticated peer). The radius side
-writes it only into `proxy-client.conf` (never logs it; reuse the wizard's
-secret-charset guard). Rotation = owner edits/regenerates in panel → next
-routing-table refresh updates the proxy (≤60s) and next heartbeat updates
-FreeRADIUS (≤300s); the brief skew window equals today's router-secret
-rotation behaviour.
+**The incident this must make impossible:** the CHR↔proxy RADIUS secret lived
+in TWO hand-managed places — the panel Setting `CHR_SHARED_SECRET` (baked into
+every CHR script) and the proxy's hand-edited env `PROXY_CHR_SECRET`
+(`radius-proxy/config.py:120`, frozen into the relay at `proxy.py:56`). They
+drifted (64-char vs 34-char), every Access-Request died on
+Message-Authenticator mismatch, and the owner diffed secrets by eye.
+**Unacceptable; eliminated by construction below.**
+
+The lifecycle of EVERY credential: **mint once on the panel → push everywhere
+automatically → reconcile continuously → mismatches self-heal.**
+
+| # | Credential | Minted / canonical | Auto-distribution channel | Consumers | Convergence | Manual steps |
+|---|---|---|---|---|---|---|
+| 1 | CHR↔proxy RADIUS secret | panel Setting `CHR_SHARED_SECRET` (Fernet; `fleet/registry/infra_settings.py:407-428`, mint button exists) | baked into every CHR script (existing) **+ NEW: `chr_shared_secret` field in the authenticated `GET /api/proxy/routing-table` response** | every CHR + the proxy relay | proxy ≤60s (table refresh); CHRs on re-import | **zero** (env becomes bootstrap-only) |
+| 2 | proxy↔customer-RADIUS route secret | panel mints in `provision_on_link` → `Setting["radius_secret.customer.<id>"]` (`radius_auto_provision.py:59-110`) | routing-table → proxy route (existing, `routing_table.py:121`) **+ heartbeat `radius_tunnel.radius_secret` → customer FreeRADIUS (§3.2)** | proxy + customer `clients.conf` | proxy ≤60s; customer ≤300s (next heartbeat) | **zero** (never typed by anyone) |
+| 3 | WG keys (panel / proxy / CHR / customer) | each party generates its OWN keypair; panel is canonical for its own (stable slot `PANEL_WG_PRIVKEY`, never implicitly regenerated) and the registry of everyone's PUBKEYS | pubkeys flow over authenticated channels: CHR→panel (onboarding + verify), customer→panel (heartbeat §3.1), proxy→panel (pasted once at deploy); peers re-published every cycle via `/api/proxy/wg-peers` + `/api/proxy/radius-peers` | wg interfaces on all parties | ≤60s reconcile cycle | proxy pubkey pasted ONCE at deploy; everything else zero |
+| 4 | X-Proxy-Token (`RADIUS_PROXY_SHARED_SECRET`) | panel Setting (UI-editable) | **the one bootstrap credential** — it authenticates the channel all other secrets ride on; set once on both sides at proxy deploy | panel + proxy | — | typed once at deploy (unavoidable trust anchor) |
+
+### 6.1 CHR↔proxy secret — proxy fetches from the panel (kills the live incident)
+
+**Panel:** the routing-table response gains one authenticated field:
+
+```jsonc
+GET /api/proxy/routing-table   (X-Proxy-Token; existing endpoint)
+{
+  "ok": true,
+  "chr_shared_secret": "u8Qk…N2p",   // decrypted from Setting CHR_SHARED_SECRET; "" when unset
+  "routes": [ ... ],                  // existing
+  "chr_nodes": [ ... ]                // existing
+}
+```
+
+This is the SAME value the panel bakes into every CHR script — equality is now
+**by construction**, not by operator diligence.
+
+**Proxy:** `RouteTable` stores `chr_shared_secret` from each refresh and the
+relay reads it **per packet through the table** (replace the constructor-frozen
+`self._chr_secret`, `proxy.py:56`, with a provider —
+`routing.chr_secret()`). Precedence: **panel value wins whenever non-empty**;
+the `PROXY_CHR_SECRET` env is demoted to a bootstrap-only fallback used solely
+before the first successful table fetch, and when the env value differs from
+the panel's, the proxy logs ONE deprecation warning and **adopts the panel
+value** (never the reverse). Caching: last-known secret persists in the
+existing state-dir (`/var/lib/hobe-radius-proxy/`, mode 0600) so a proxy
+restart during a panel outage keeps relaying.
+
+**Rotation without an outage window:** CHRs converge slower than the proxy
+(re-import vs 60s), so the proxy keeps the PREVIOUS secret and validates each
+inbound Message-Authenticator against **current, then previous** (grace window
+`PROXY_CHR_SECRET_GRACE_SECONDS`, default 24h after a change); responses are
+always signed with whichever secret validated the request. Rotation flow:
+owner mints in panel → proxy dual-accepts within 60s → owner re-imports CHR
+scripts at leisure → grace expires. No RADIUS drop at any point.
+
+### 6.2 Route secret — one mint, two automatic consumers
+
+Already single-sourced (`provision_on_link`); the design completes its second
+leg: the SAME stored secret is included as `radius_tunnel.radius_secret` in
+EVERY heartbeat response (§3.2) — not once — so the customer side always
+reconverges (lost disk, reinstall) with zero operator action. The radius side
+writes it only into `proxy-client.conf` (atomic write, wizard secret-charset
+guard, never logged). Rotation = owner regenerates in panel → proxy ≤60s,
+FreeRADIUS ≤300s. The customer-side `config_fingerprint` (§3.1) lets the panel
+SEE convergence (and the customer page shows "secret in sync ✓" instead of the
+owner ever wondering).
+
+### 6.3 WG keys — generate locally, register automatically, re-sync heals
+
+Private keys never move. Public keys are registry data the panel owns:
+CHR pubkeys land via onboarding/verify (existing), customer-RADIUS pubkeys
+land via heartbeat (§3.1), and the reconcilers (`wg-peers` / `radius-peers`)
+re-publish the COMPLETE desired peer set every cycle — so the
+`panel_key_mismatch` class of failure self-heals on the next sync instead of
+requiring a human: a party that regenerated its key simply reports the new
+pubkey and every peer table converges within one cycle. The panel's own key
+follows the stable-slot rule (`PANEL_WG_PRIVKEY` is never regenerated
+implicitly — the zero-touch invariant).
+
+### 6.4 Drift visibility (trust but verify, automatically)
+
+Every consumer reports a non-reversible `config_fingerprint` of what it
+actually applied (customer: §3.1; proxy: add the same to its heartbeat
+payload). The panel compares against what it published and surfaces a single
+boolean per party — «متزامن ✓ / بانتظار التقارب…» — on the proxy page and the
+customer page. Alert (fleet-alerts P9 pipeline) if any party stays divergent
+for > 3 cycles. The operator's job collapses to reading a green checkmark.
 
 ---
 
@@ -312,12 +397,22 @@ rotation behaviour.
    same masked/stable treatment as `PANEL_WG_*` (`fleet/registry/infra_settings.py`).
 6. Customer page: tunnel-health chip (pubkey present? last handshake age?) on
    the «ربط الريدياس» card.
-7. **Tests:** allocator determinism + bounds (`customer_id` overflow), pubkey
+7. **§6.1 — publish the CHR secret:** routing-table response gains
+   `chr_shared_secret` (decrypted from the infra Setting; `""` when unset) —
+   `app/api/proxy_api.py` routing_table handler. Audit-log on every rotation
+   (`set_chr_shared_secret` already exists at `infra_settings.py:407`).
+8. **§6.4 — drift visibility:** accept `config_fingerprint` from both the
+   proxy heartbeat (`/api/proxy/heartbeat`) and the customer heartbeat; store
+   + compare against published state; sync chip on proxy/customer pages +
+   P9 alert after 3 divergent cycles.
+9. **Tests:** allocator determinism + bounds (`customer_id` overflow), pubkey
    ingest + change-audit, `radius_tunnel` block shape (enabled/disabled, no
    proxy key configured ⇒ `proxy_public_key:""`), radius-peers endpoint
    (auth-gated 401, complete-set semantics, /32 allowed_ips, excludes
    disabled + missing-pubkey instances), secret always present in response,
-   heartbeat round-trip integration.
+   **`chr_shared_secret` present in routing-table (and absent → `""` when
+   unset; never logged)**, fingerprint compare + alert trigger, heartbeat
+   round-trip integration.
 
 ### B) radius-module (customer — keygen, wg bring-up, FreeRADIUS)
 1. `app/radius/services/proxy_tunnel_manager.py` (NEW) — keypair ensure,
@@ -353,10 +448,25 @@ rotation behaviour.
 5. `DEPLOY_PROXY.md` — §2bis wg-radius host bootstrap (keypair, conf with
    `Address 10.200.0.1/16` + `ListenPort 51822`, wg-quick enable, where to
    paste the pubkey/endpoint into the panel).
-6. **Tests:** clone the `tests/test_wg_peer_sync.py` matrix against the new
+6. **§6.1 — CHR secret from the panel (kills the live mismatch):**
+   `routing_table.py` ingests `chr_shared_secret` from the table response +
+   persists last-known value in the state dir (0600); `proxy.py` reads the
+   secret per-packet via a `routing.chr_secret()` provider instead of the
+   constructor-frozen `self._chr_secret` (`proxy.py:56`); precedence
+   panel-over-env with a one-time deprecation warning when the env differs;
+   dual-accept grace on inbound Message-Authenticator (current → previous,
+   `PROXY_CHR_SECRET_GRACE_SECONDS` default 86400) so rotation never drops
+   RADIUS while CHRs re-import.
+7. **§6.4:** include `config_fingerprint` (chr_secret + peer-set hash) in the
+   existing heartbeat POST.
+8. **Tests:** clone the `tests/test_wg_peer_sync.py` matrix against the new
    JSON key + interface (fetch/parse/validate, complete-set add/remove,
    managed-state protection, dry-run degradation, 404-inert), loop
-   registration smoke, sudoers script idempotence if tested today.
+   registration smoke, **chr-secret sync (panel value adopted over env,
+   bootstrap fallback before first fetch, persisted across restart,
+   dual-accept validates old+new during grace then rejects old after,
+   re-sign uses the secret that validated)**, sudoers script idempotence if
+   tested today.
 
 ### Sequencing
 Panel (A) ships first — endpoints tolerate empty peer sets and missing proxy
