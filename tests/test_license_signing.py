@@ -97,7 +97,13 @@ def test_invalid_signature_is_denied_without_license_lookup_details():
         }
 
 
-def test_missing_signature_in_strict_mode_is_denied():
+def test_missing_signature_in_strict_mode_bearer_contract():
+    """Strict mode, no signature (docs/SIMPLE_LINK_CONTRACT.md):
+
+    * a VALID body license key bearer-authenticates (the key IS the credential);
+    * an unknown key is still denied with 401;
+    * with bearer disabled the legacy strict denial applies even to a valid key.
+    """
     app = make_signed_app()
     with app.app_context():
         db.create_all()
@@ -109,9 +115,28 @@ def test_missing_signature_in_strict_mode_is_denied():
             "license_key": lic.license_key,
             "server_fingerprint": "fp-missing",
         })
+        assert res.status_code == 200
+        assert res.get_json()["active"] is True
 
-        assert res.status_code == 401
-        assert res.get_json()["mode"] == "denied"
+        res_bad = client.post("/api/license/check", json={
+            "license_key": "HBR-2026-NONE-NONE-NONE",
+            "server_fingerprint": "fp-missing",
+        })
+        assert res_bad.status_code == 401
+        assert res_bad.get_json()["mode"] == "denied"
+
+    app_off = make_signed_app(LICENSE_BEARER_AUTH_ENABLED=False)
+    with app_off.app_context():
+        db.create_all()
+        seed_defaults(app_off)
+        lic = make_license()
+        client = app_off.test_client()
+        res_off = client.post("/api/license/check", json={
+            "license_key": lic.license_key,
+            "server_fingerprint": "fp-missing",
+        })
+        assert res_off.status_code == 401
+        assert res_off.get_json()["mode"] == "denied"
 
 
 def test_signed_timestamp_too_old_or_future_is_denied():

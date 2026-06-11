@@ -68,6 +68,49 @@ def license_integration_secret(app: Flask, license_key: str) -> str:
     return hmac.new(root_secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def mask_license_key(license_key: str) -> str:
+    """Display/log-safe form of a license key: ``HBR-…-1234``.
+
+    In bearer mode the key IS the credential, so it must never land in
+    logs or audit metadata in full. Keeps the prefix (key family) and the
+    last group (enough for the owner to match it against his panel)."""
+    key = str(license_key or "").strip().upper()
+    if not key:
+        return ""
+    parts = key.split("-")
+    if len(parts) >= 3:
+        return f"{parts[0]}-…-{parts[-1]}"
+    return key[:3] + "…" + key[-2:] if len(key) > 6 else "…"
+
+
+def bearer_auth_enabled(app: Flask) -> bool:
+    """Is simple-link bearer auth on? DB knob first, config fallback (default True)."""
+    try:
+        from .services import platform_settings as ps
+        return bool(ps.get_bool("LICENSE_BEARER_AUTH_ENABLED"))
+    except Exception:  # noqa: BLE001 - settings table unavailable → config
+        return bool(app.config.get("LICENSE_BEARER_AUTH_ENABLED", True))
+
+
+def _bearer_license_key_ok(body: dict[str, Any]) -> bool:
+    """True iff the body's ``license_key`` resolves to a real license.
+
+    The key is the bearer credential (docs/SIMPLE_LINK_CONTRACT.md §4): it
+    travels only over HTTPS (the integration endpoints already 426 plain
+    HTTP) and is compared constant-time against the stored key."""
+    key = str(body.get("license_key") or "").strip().upper()
+    if not key:
+        return False
+    try:
+        from .models import License
+        lic = License.query.filter_by(license_key=key).first()
+    except Exception:  # noqa: BLE001 - no app/db context (signing-only scripts)
+        return False
+    if lic is None:
+        return False
+    return hmac.compare_digest(str(lic.license_key or "").strip().upper(), key)
+
+
 def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
     signature = str(body.get("signature") or body.get("hmac_signature") or "").strip().lower()
     # DB-first policy knobs (UI-editable). The env var stays as the bootstrap
@@ -82,6 +125,15 @@ def verify_license_signature(app: Flask, body: dict[str, Any]) -> str:
         allow_unsigned = bool(app.config.get("LICENSE_CHECK_ALLOW_UNSIGNED"))
 
     if not signature:
+        # Simple-link bearer mode (docs/SIMPLE_LINK_CONTRACT.md): the license
+        # key in the BODY is the credential — no signature required. Checked
+        # BEFORE the unsigned-allowed fallback so a valid key authenticates
+        # even in strict (signature-required) postures. A missing/unknown key
+        # falls through to the legacy rules (401 in strict, "unsigned" in
+        # lenient), so old behaviour is fully preserved when the flag is off
+        # or the key doesn't resolve.
+        if bearer_auth_enabled(app) and _bearer_license_key_ok(body):
+            return "bearer"
         if required or not allow_unsigned:
             raise LicenseSignatureError("فشل التحقق من صلاحية فحص الترخيص.")
         return "unsigned"

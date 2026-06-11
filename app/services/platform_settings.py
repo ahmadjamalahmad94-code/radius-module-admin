@@ -144,6 +144,12 @@ KEYS: dict[str, Spec] = {
         "السماح بالفحوصات غير الموقّعة",
         "للتجارب فقط — لا تُفعّل في الإنتاج.",
     ),
+    "LICENSE_BEARER_AUTH_ENABLED": Spec(
+        "LICENSE_BEARER_AUTH_ENABLED", "bool", True, _GROUP_LIC,
+        "الربط المبسّط — مفتاح الترخيص يكفي",
+        "عند التفعيل: مفتاح الترخيص في جسم الطلب (عبر HTTPS) يوثّق الجسر بنفسه "
+        "بدون توقيع HMAC أو سر ربط. الطلبات الموقّعة القديمة تبقى مقبولة دائمًا.",
+    ),
     "LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS": Spec(
         "LICENSE_CHECK_MAX_CLOCK_SKEW_SECONDS", "int", 300, _GROUP_LIC,
         "هامش انحراف الساعة المسموح (ثانية)",

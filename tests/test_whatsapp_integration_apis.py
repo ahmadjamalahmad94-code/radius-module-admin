@@ -186,16 +186,29 @@ ENDPOINTS = [
 
 @pytest.mark.parametrize("path,extra", ENDPOINTS)
 def test_unsigned_request_is_rejected_401(client, app, path, extra):
-    """No signature -> 401 (same as the other integration endpoints)."""
+    """No signature AND no valid bearer key -> 401.
+
+    Simple-link (docs/SIMPLE_LINK_CONTRACT.md): a VALID body license key now
+    bearer-authenticates an unsigned request, so the rejection is exercised
+    with a key that doesn't resolve — that must still 401 — and the bearer
+    acceptance with the real key is asserted alongside.
+    """
     customer_id, _license_id, license_key = _make_customer_with_license("Unsigned Co")
     _provision_whatsapp(customer_id)
 
-    body = {"license_key": license_key, "server_fingerprint": "fp-unsigned"}
+    body = {"license_key": "HBR-2026-NONE-NONE-NONE", "server_fingerprint": "fp-unsigned"}
     body.update(extra)
-    # Even over HTTPS, a missing signature must be rejected.
+    # Even over HTTPS, no signature + unresolvable key must be rejected.
     res = client.post(path, json=body, base_url=HTTPS_BASE)
     assert res.status_code == 401
     assert res.get_json()["ok"] is False
+
+    # Bearer mode: the same unsigned request with the VALID key authenticates
+    # (business-level responses vary per endpoint — what matters is: not 401).
+    body_ok = {"license_key": license_key, "server_fingerprint": "fp-unsigned"}
+    body_ok.update(extra)
+    res_ok = client.post(path, json=body_ok, base_url=HTTPS_BASE)
+    assert res_ok.status_code != 401
 
 
 @pytest.mark.parametrize("path,extra", ENDPOINTS)

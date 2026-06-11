@@ -3,7 +3,11 @@ from __future__ import annotations
 from flask import Blueprint, Response, abort, current_app, jsonify, request, url_for
 
 from ..extensions import db
-from ..license_signing import LicenseSignatureError, verify_license_signature
+from ..license_signing import (
+    LicenseSignatureError,
+    mask_license_key as _mask_license_key,
+    verify_license_signature,
+)
 from ..models import CustomerUser, utcnow
 from ..security import clean_text, client_ip
 from ..services.license_payments import (
@@ -67,12 +71,15 @@ def license_check():
             "message": str(exc),
         }), 422
 
-    if not license_key or not fingerprint:
+    # Simple-link: the fingerprint is OPTIONAL/informational now — only the
+    # license key is required (docs/SIMPLE_LINK_CONTRACT.md §4). When sent it
+    # is still recorded + slot-rotated by check_license for the devices list.
+    if not license_key:
         return jsonify({
             "active": False,
             "status": "invalid_request",
             "mode": "denied",
-            "message": "license_key and server_fingerprint are required.",
+            "message": "license_key is required.",
         }), 422
 
     result = check_license(
@@ -1040,8 +1047,10 @@ def _checked_license_from_integration_body(body: dict):
         domain = clean_text(body.get("domain") or body.get("server_domain"), 255)
     except ValueError as exc:
         return None, (jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422)
-    if not license_key or not fingerprint:
-        return None, (jsonify({"ok": False, "status": "invalid_request", "message": "license_key and server_fingerprint are required."}), 422)
+    # Simple-link: only the license key is required; the fingerprint is
+    # optional/informational (docs/SIMPLE_LINK_CONTRACT.md §4).
+    if not license_key:
+        return None, (jsonify({"ok": False, "status": "invalid_request", "message": "license_key is required."}), 422)
     result = check_license(
         license_key=license_key,
         fingerprint=fingerprint,
@@ -1067,9 +1076,13 @@ def _checked_license_from_integration_body(body: dict):
                 "حساب العميل بانتظار التفعيل من الإدارة." if cstatus == "pending"
                 else "حساب العميل موقوف. تواصل مع الدعم."
             )
+            # Machine-readable denial: clients branch on ``reason`` to show a
+            # friendly message instead of a bare 403 (the proxy-era confusion
+            # was exactly this gate denying silently — see SIMPLE_LINK_CONTRACT §2).
             return None, (jsonify({
                 "ok": False,
                 "status": denial_status,
+                "reason": denial_status,
                 "message": denial_msg,
                 "customer_status": cstatus,
             }), 403)
@@ -1175,7 +1188,10 @@ def hoberadius_instance_activate():
         summary=f"راديوس موجّه: تفعيل Admin Bridge عبر كود التفعيل (بصمة: {fingerprint or 'غير محدد'})",
         metadata={
             "token_id": token.id,
-            "license_key": license_key,
+            # Bearer mode makes the key a live credential — store only the
+            # masked form in audit metadata (the owner sees the full key on
+            # the customer page anyway).
+            "license_key": _mask_license_key(license_key),
             "fingerprint": fingerprint,
             "ip": client_ip(current_app.config.get("TRUST_PROXY_HEADERS", False)),
         },

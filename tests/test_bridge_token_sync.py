@@ -382,12 +382,36 @@ class TestSignatureAcceptance:
 class TestReverseChannelEndpoint:
     URL = "/api/integration/hoberadius/bridge-token/report"
 
-    def test_unsigned_request_is_401(self, configured_app, client, customer_with_license):
+    def test_unsigned_request_bearer_contract(self, configured_app, client, customer_with_license):
+        """Simple-link (docs/SIMPLE_LINK_CONTRACT.md): an unsigned report whose
+        body carries a VALID license key now authenticates via bearer mode —
+        the key is the credential. With bearer disabled, the legacy strict
+        401 behaviour returns unchanged."""
         _customer, lic = customer_with_license
         body = {"license_key": lic.license_key, "server_fingerprint": "fp",
                 "bridge_token": "Z" * 64, "bridge_token_version": 99}
         r = _post_signed(client, self.URL, body)
-        assert r.status_code == 401
+        assert r.status_code == 200
+        assert r.get_json()["ok"] is True
+
+        # Unknown key never bearer-authenticates.
+        bad = dict(body, license_key="HBR-2026-NONE-NONE-NONE")
+        r_bad = _post_signed(client, self.URL, bad)
+        assert r_bad.status_code == 401
+
+        # Owner can force the old posture back via the flag. The platform-
+        # settings resolver caches per app-context (flask.g) and the test
+        # fixture holds one context for the whole test — invalidate so the
+        # flipped config value is actually read.
+        from app.services import platform_settings as ps
+        configured_app.config["LICENSE_BEARER_AUTH_ENABLED"] = False
+        ps._invalidate_cache()
+        try:
+            r_off = _post_signed(client, self.URL, body)
+            assert r_off.status_code == 401
+        finally:
+            configured_app.config["LICENSE_BEARER_AUTH_ENABLED"] = True
+            ps._invalidate_cache()
 
     def test_plain_http_is_426(self, configured_app, client, customer_with_license):
         _customer, lic = customer_with_license

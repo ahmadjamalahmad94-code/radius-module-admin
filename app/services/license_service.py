@@ -10,6 +10,7 @@ from decimal import Decimal
 from flask import current_app
 
 from ..extensions import db
+from ..license_signing import mask_license_key
 from ..models import AuditLog, License, LicenseCheck, Renewal, Setting, utcnow
 from .vpn_entitlements import vpn_services_contract_for_license
 
@@ -252,7 +253,7 @@ def renew_license(
         notes=notes or "",
     )
     db.session.add(renewal)
-    _audit(actor_admin_id, "license_renewed", "license", str(lic.id), f"Renewed {lic.license_key} for {months} month(s)", {
+    _audit(actor_admin_id, "license_renewed", "license", str(lic.id), f"Renewed {mask_license_key(lic.license_key)} for {months} month(s)", {
         "months": months,
         "amount": str(amount),
         "period_end": iso_z(end),
@@ -264,12 +265,12 @@ def renew_license(
 def set_license_status(lic: License, status: str, actor_admin_id: int | None) -> None:
     lic.status = status
     db.session.add(lic)
-    _audit(actor_admin_id, f"license_{status}", "license", str(lic.id), f"License {lic.license_key} changed to {status}")
+    _audit(actor_admin_id, f"license_{status}", "license", str(lic.id), f"License {mask_license_key(lic.license_key)} changed to {status}")
     db.session.commit()
 
 
 def reset_fingerprints(lic: License, actor_admin_id: int | None) -> None:
     lic.fingerprints = []
     db.session.add(lic)
-    _audit(actor_admin_id, "fingerprints_reset", "license", str(lic.id), f"Fingerprints reset for {lic.license_key}")
+    _audit(actor_admin_id, "fingerprints_reset", "license", str(lic.id), f"Fingerprints reset for {mask_license_key(lic.license_key)}")
     db.session.commit()
