@@ -494,6 +494,12 @@ def ensure_schema_compatibility(app: Flask) -> None:
             if db.engine.dialect.name == "sqlite"
             else "BOOLEAN NOT NULL DEFAULT FALSE",
         })
+    # حقائق جهاز RouterOS على عقد CHR (نسخة/لوحة/uptime…) تُلتقط مع كل استطلاع
+    # ناجح. القواعد الجديدة تنشئ العمود عبر db.create_all()؛ هذا يداوي القائمة.
+    if "chr_nodes" in tables:
+        _add_columns_if_missing("chr_nodes", {
+            "device_facts_json": "TEXT NOT NULL DEFAULT '{}'",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {

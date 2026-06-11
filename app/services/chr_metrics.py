@@ -87,6 +87,22 @@ def _collect_one(node: ChrNode) -> ChrNodeMetric | None:
         log.warning("chr_metrics: unexpected error reading resources from %s: %s", node.name, exc)
         return None
 
+    # ── حقائق الجهاز (نسخة/لوحة/uptime…) — كانت تُهمَل رغم أن RouterOS يعيدها
+    # في نفس ردّ system/resource. تُخزَّن على العقدة لتظهر في صفحة التفاصيل.
+    try:
+        node.device_facts = {
+            "version": str(resource.get("version", "") or ""),
+            "board_name": str(resource.get("board-name", "") or ""),
+            "platform": str(resource.get("platform", "") or ""),
+            "architecture": str(resource.get("architecture-name", "") or ""),
+            "cpu": str(resource.get("cpu", "") or ""),
+            "cpu_count": str(resource.get("cpu-count", "") or ""),
+            "total_memory_bytes": total_mem,
+            "uptime": str(resource.get("uptime", "") or ""),
+        }
+    except Exception:  # facts هي إثراء فقط — لا تُفشِل القراءة
+        pass
+
     # ── جلسات PPP النشطة ──────────────────────────────────────────────────────
     try:
         sessions = client.list_ppp_active()
@@ -145,6 +161,12 @@ def _collect_one(node: ChrNode) -> ChrNodeMetric | None:
         traffic_month_bytes=tx_total,
     )
     node.last_seen_at = now
+    # ترقية تلقائية: استطلاع ناجح يعني أن العقدة موصولة وتستجيب — عقدة «قيد
+    # التهيئة» (pending) تصبح «نشطة» تلقائيًا بدل أن تعلق على pending للأبد
+    # رغم أنها ترسل قياسات حيّة. (maintenance/decommissioned لا تُمَسّ.)
+    if node.status == "pending":
+        node.status = "active"
+        log.info("chr_metrics: node %s auto-promoted pending → active after successful poll", node.name)
     return metric
 
 
@@ -153,7 +175,11 @@ def collect_all_nodes() -> dict[str, int]:
 
     تُعيد ملخّص ``{"polled": N, "ok": N, "skipped": N, "errors": N}``.
     """
-    nodes = ChrNode.query.filter_by(status="active").all()
+    # تشمل العقد «قيد التهيئة» أيضًا: عقدة pending مكتملة البيانات لم تكن
+    # تُستطلَع أبدًا (الفلتر كان active فقط) فلا شيء يرقّيها إلى active —
+    # فتعلق على «قيد التهيئة» للأبد رغم أنها تعمل. الآن تُستطلَع، وعند أول
+    # نجاح يرقّيها _collect_one تلقائيًا.
+    nodes = ChrNode.query.filter(ChrNode.status.in_(("active", "pending"))).all()
     summary = {"polled": len(nodes), "ok": 0, "skipped": 0, "errors": 0}
 
     for node in nodes:

@@ -1519,6 +1519,10 @@ class ChrNode(TimestampMixin, db.Model):
     status = db.Column(db.String(20), default="pending", nullable=False, index=True)
     notes = db.Column(db.Text, default="", nullable=False)
     last_seen_at = db.Column(db.DateTime, nullable=True)
+    # Device facts captured from RouterOS on every successful poll (version,
+    # board-name, uptime, cpu-count, total memory, architecture). JSON text for
+    # portability; existing DBs get the column via ensure_schema_compatibility.
+    device_facts_json = db.Column(db.Text, default="{}", nullable=False)
 
     metrics = db.relationship(
         "ChrNodeMetric", back_populates="chr_node",
@@ -1535,6 +1539,14 @@ class ChrNode(TimestampMixin, db.Model):
     @enabled_services.setter
     def enabled_services(self, value: list) -> None:
         self.enabled_services_json = json_dumps(value or [])
+
+    @property
+    def device_facts(self) -> dict:
+        return json_loads(self.device_facts_json, {})
+
+    @device_facts.setter
+    def device_facts(self, value: dict) -> None:
+        self.device_facts_json = json_dumps(value or {})
 
 
 class ChrNodeMetric(db.Model):

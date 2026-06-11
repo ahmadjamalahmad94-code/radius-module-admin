@@ -109,7 +109,27 @@
   .nd-card-sub{font-size:12px;color:var(--ndx-mut);}
   .nd-card-actions{margin-inline-start:auto;display:flex;gap:8px;}
 
-  /* ── KV grid ──────────────────────────────────────────────────────── */
+  /* ── info tab: two-card layout ────────────────────────────────────── */
+  .nd-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  .nd-icard{background:var(--ndx-card);border:1px solid var(--ndx-line);border-radius:18px;box-shadow:var(--ndx-sh);overflow:hidden;}
+  .nd-icard-head{display:flex;align-items:center;gap:10px;padding:15px 20px;border-block-end:1px solid var(--ndx-line);
+    background:linear-gradient(180deg,#fafbff,#fff);}
+  .nd-icard-ic{width:36px;height:36px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:15px;background:var(--ndx-brand-soft);color:var(--ndx-brand);}
+  .nd-icard-title{font-weight:900;font-size:14.5px;color:var(--ndx-ink);}
+  .nd-icard-sub{font-size:11px;color:var(--ndx-mut);margin-top:2px;}
+  .nd-icard-body{padding:6px 20px 14px;}
+  .nd-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-block-end:1px solid var(--ndx-line2);}
+  .nd-row:last-child{border-block-end:none;}
+  .nd-row-ic{width:28px;height:28px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    font-size:11.5px;background:#f4f6fb;color:var(--ndx-ink2);}
+  .nd-row-k{font-size:12px;font-weight:700;color:var(--ndx-ink2);flex:1;}
+  .nd-row-v{font-size:13px;color:var(--ndx-ink);font-weight:700;text-align:start;}
+  .nd-row-v.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;}
+  .nd-row-v .nd-na{color:#b6c0cf;font-weight:700;}
+  .nd-status-band{display:flex;gap:8px;flex-wrap:wrap;padding:13px 20px;border-block-end:1px solid var(--ndx-line2);background:#fbfcff;}
+
+  /* (legacy kv kept for edit-form fallback spacing) */
   .nd-kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;padding:8px 22px 16px;}
   .nd-kv{display:flex;flex-direction:column;gap:4px;padding:13px 0;border-block-end:1px solid var(--ndx-line2);}
   .nd-kv--full{grid-column:1 / -1;}
@@ -181,7 +201,7 @@
   .nd-kpi-ic{animation:nd-pop .5s both .12s;}
   @media (prefers-reduced-motion:reduce){.nd-kpi,.nd-kpi-ic,.nd-bar>span,.nd-orb{animation:none!important;}}
 
-  @media (max-width:1100px){.nd-kpis{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:1100px){.nd-kpis{grid-template-columns:repeat(2,1fr);}.nd-info-grid{grid-template-columns:1fr;}}
   @media (max-width:640px){.nd-kpis{grid-template-columns:1fr;}.nd-kv-grid,.nd-form-grid{grid-template-columns:1fr;}.nd-hero{padding:20px;}}
 </style>
 {% endblock %}
@@ -287,7 +307,23 @@
   <div class="nd-bar nd-bar--{{ lvl }}"><span style="width:{{ [pct,100]|min }}%"></span></div>
   <div class="nd-cap-foot">
     <b>{{ pct }}%</b> من السعة المحجوزة مُستخدَمة — <span class="mono" dir="ltr">{{ reserved_mbps }} / {{ node.max_reserved_mbps }} Mbps</span>
+    {% if reserved_mbps == 0 %}<span style="color:var(--ndx-mut)"> · لا تخصيصات عملاء بعد — يرتفع الشريط مع كل تخصيص جديد.</span>{% endif %}
   </div>
+
+  {# الاستخدام الحي الفعلي من آخر قياس (منفصل عن المحجوز بالتخصيصات) #}
+  {% if lm %}
+    {% set live_mbps = (lm.current_rx_mbps + lm.current_tx_mbps)|float|round(1) %}
+    {% set live_pct = (live_mbps * 100 / node.capacity_mbps)|round(1) if node.capacity_mbps else 0 %}
+    {% set live_lvl = 'red' if live_pct >= 85 else ('amber' if live_pct >= 70 else 'green') %}
+    <div style="margin-block-start:14px;padding-block-start:12px;border-block-start:1px dashed var(--ndx-line)">
+      <div class="nd-bar nd-bar--{{ live_lvl }}" style="height:8px"><span style="width:{{ [live_pct,100]|min }}%"></span></div>
+      <div class="nd-cap-foot">
+        <b>الاستخدام الحي الآن:</b> <span class="mono" dir="ltr">{{ live_mbps }} Mbps</span>
+        (↓{{ '%.1f'|format(lm.current_rx_mbps) }} / ↑{{ '%.1f'|format(lm.current_tx_mbps) }})
+        — <b>{{ live_pct }}%</b> من السعة الكلية <span class="mono" dir="ltr">{{ node.capacity_mbps }} Mbps</span>
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 {# ── TABS ─────────────────────────────────────────────────────────────── #}
@@ -299,50 +335,133 @@
 
 {# ── Tab: info ────────────────────────────────────────────────────────── #}
 <div class="nd-panel is-active" id="ndpanel-info" role="tabpanel">
-  <div class="nd-card">
-    <div class="nd-card-head">
-      <div class="nd-card-title"><i class="fa-solid fa-server"></i> بيانات العقدة</div>
-    </div>
 
-    <div class="nd-kv-grid" id="nd-info-view">
-      <div class="nd-kv"><span class="nd-kv-k">الـ IP العام</span><span class="nd-kv-v mono" dir="ltr">{{ node.public_ip or '—' }}</span></div>
-      <div class="nd-kv"><span class="nd-kv-k">IP الإدارة (WG)</span><span class="nd-kv-v mono" dir="ltr">{{ node.management_ip or '—' }}</span></div>
-      <div class="nd-kv"><span class="nd-kv-k">الدومين</span><span class="nd-kv-v mono" dir="ltr">{{ node.domain or '—' }}</span></div>
-      <div class="nd-kv"><span class="nd-kv-k">الموقع</span><span class="nd-kv-v">{{ node.location or '—' }}</span></div>
-      <div class="nd-kv"><span class="nd-kv-k">RouterOS</span><span class="nd-kv-v mono" dir="ltr">{{ node.routeros_host or '—' }}{% if node.routeros_host %}:{{ node.routeros_port }} ({{ node.routeros_user }}){% endif %}</span></div>
-      <div class="nd-kv">
-        <span class="nd-kv-k">الصحّة الحيّة</span>
-        <span class="nd-kv-v">
-          {% if is_live %}<span class="nd-pill nd-pill--green"><span class="nd-hb"></span> نشطة (قياسات حيّة)</span>
-          {% elif lm or node.last_seen_at %}<span class="nd-pill nd-pill--amber">متأخّرة</span>
-          {% else %}<span class="nd-pill nd-pill--grey">بانتظار أول قياس</span>{% endif %}
-        </span>
-      </div>
-      <div class="nd-kv">
-        <span class="nd-kv-k">حالة التسجيل</span>
-        <span class="nd-kv-v">
-          {% if node.status == 'active' %}<span class="nd-pill nd-pill--green">نشط</span>
-          {% elif node.status == 'maintenance' %}<span class="nd-pill nd-pill--amber">صيانة</span>
-          {% elif node.status == 'decommissioned' %}<span class="nd-pill nd-pill--red">مُوقف</span>
-          {% elif node.status == 'pending' %}<span class="nd-pill nd-pill--brand">قيد التهيئة</span>
-          {% else %}<span class="nd-pill nd-pill--grey">{{ node.status }}</span>{% endif %}
-        </span>
-      </div>
-      <div class="nd-kv cd-kv--full nd-kv--full"><span class="nd-kv-k">الخدمات المتاحة</span>
-        <span class="nd-kv-v">
-          <div class="nd-chips">
-            {% for s in node.enabled_services %}<span class="nd-chip">{{ s }}</span>
-            {% else %}<span style="color:var(--ndx-mut)">لا توجد خدمات محددة</span>{% endfor %}
+  {# ── view mode: two rich cards (identity/network + RouterOS device) ── #}
+  <div id="nd-info-view">
+    <div class="nd-info-grid">
+
+      {# card 1 — الهوية والشبكة #}
+      <div class="nd-icard">
+        <div class="nd-icard-head">
+          <div class="nd-icard-ic"><i class="fa-solid fa-network-wired"></i></div>
+          <div>
+            <div class="nd-icard-title">الهوية والشبكة</div>
+            <div class="nd-icard-sub">عناوين العقدة وخدماتها كما سجّلتها اللوحة</div>
           </div>
-        </span></div>
-      {% if node.notes %}
-      <div class="nd-kv nd-kv--full"><span class="nd-kv-k">ملاحظات</span><span class="nd-kv-v">{{ node.notes }}</span></div>
-      {% endif %}
-    </div>
+        </div>
+        <div class="nd-icard-body">
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-tag"></i></span>
+            <span class="nd-row-k">اسم العقدة</span>
+            <span class="nd-row-v mono" dir="ltr">{{ node.name }}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-globe"></i></span>
+            <span class="nd-row-k">الـ IP العام</span>
+            <span class="nd-row-v mono" dir="ltr">{{ node.public_ip or '—' }}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-shield-halved"></i></span>
+            <span class="nd-row-k">IP الإدارة (WG)</span>
+            <span class="nd-row-v mono" dir="ltr">{{ node.management_ip or '—' }}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-link"></i></span>
+            <span class="nd-row-k">الدومين</span>
+            <span class="nd-row-v mono" dir="ltr">{% if node.domain %}{{ node.domain }}{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-location-dot"></i></span>
+            <span class="nd-row-k">الموقع</span>
+            <span class="nd-row-v">{{ node.location or '—' }}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-layer-group"></i></span>
+            <span class="nd-row-k">الخدمات المتاحة</span>
+            <span class="nd-row-v">
+              <div class="nd-chips">
+                {% for s in node.enabled_services %}<span class="nd-chip">{{ s }}</span>
+                {% else %}<span class="nd-na">لا توجد خدمات محددة</span>{% endfor %}
+              </div>
+            </span>
+          </div>
+          {% if node.notes %}
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-note-sticky"></i></span>
+            <span class="nd-row-k">ملاحظات</span>
+            <span class="nd-row-v" style="font-weight:500">{{ node.notes }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
 
-    {# edit form — hidden by default; field names preserved for chr_node_edit #}
-    <form id="nd-edit-form" class="nd-form nd-hidden" method="post"
-          action="{{ url_for('admin_infra.chr_node_edit', node_id=node.id) }}">
+      {# card 2 — جهاز RouterOS: الحالة + الحقائق الملتقطة مع كل استطلاع #}
+      {% set facts = node.device_facts %}
+      <div class="nd-icard">
+        <div class="nd-icard-head">
+          <div class="nd-icard-ic" style="background:#e0f2fe;color:#0369a1"><i class="fa-solid fa-microchip"></i></div>
+          <div>
+            <div class="nd-icard-title">جهاز RouterOS</div>
+            <div class="nd-icard-sub">يُقرأ من العقدة نفسها مع كل استطلاع ناجح</div>
+          </div>
+        </div>
+        <div class="nd-status-band">
+          {% if is_live %}<span class="nd-pill nd-pill--green"><span class="nd-hb"></span> الصحّة الحيّة: نشطة</span>
+          {% elif lm or node.last_seen_at %}<span class="nd-pill nd-pill--amber">الصحّة الحيّة: متأخّرة</span>
+          {% else %}<span class="nd-pill nd-pill--grey">الصحّة الحيّة: بانتظار أول قياس</span>{% endif %}
+          {% if node.status == 'active' %}<span class="nd-pill nd-pill--green">التسجيل: نشط</span>
+          {% elif node.status == 'maintenance' %}<span class="nd-pill nd-pill--amber">التسجيل: صيانة</span>
+          {% elif node.status == 'decommissioned' %}<span class="nd-pill nd-pill--red">التسجيل: مُوقف</span>
+          {% elif node.status == 'pending' %}<span class="nd-pill nd-pill--brand">التسجيل: قيد التهيئة — يترقّى تلقائيًا مع أول استطلاع ناجح</span>
+          {% else %}<span class="nd-pill nd-pill--grey">التسجيل: {{ node.status }}</span>{% endif %}
+        </div>
+        <div class="nd-icard-body">
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-plug"></i></span>
+            <span class="nd-row-k">نقطة REST</span>
+            <span class="nd-row-v mono" dir="ltr">{% if node.routeros_host %}{{ node.routeros_host }}:{{ node.routeros_port }} ({{ node.routeros_user }}){% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-code-branch"></i></span>
+            <span class="nd-row-k">نسخة RouterOS</span>
+            <span class="nd-row-v mono" dir="ltr">{% if facts.get('version') %}{{ facts.version }}{% else %}<span class="nd-na">— ستُلتقط مع أول استطلاع —</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-server"></i></span>
+            <span class="nd-row-k">اللوحة (Board)</span>
+            <span class="nd-row-v mono" dir="ltr">{% if facts.get('board_name') %}{{ facts.board_name }}{% if facts.get('platform') %} · {{ facts.platform }}{% endif %}{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-microchip"></i></span>
+            <span class="nd-row-k">المعالج</span>
+            <span class="nd-row-v mono" dir="ltr">{% if facts.get('cpu_count') %}{{ facts.cpu_count }} نواة{% if facts.get('architecture') %} · {{ facts.architecture }}{% endif %}{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-memory"></i></span>
+            <span class="nd-row-k">الذاكرة الكلية</span>
+            <span class="nd-row-v mono" dir="ltr">{% if facts.get('total_memory_bytes') %}{{ (facts.total_memory_bytes / 1048576)|round(0)|int }} MB{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-regular fa-clock"></i></span>
+            <span class="nd-row-k">مدة التشغيل (Uptime)</span>
+            <span class="nd-row-v mono" dir="ltr">{% if facts.get('uptime') %}{{ facts.uptime }}{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+          <div class="nd-row">
+            <span class="nd-row-ic"><i class="fa-solid fa-satellite-dish"></i></span>
+            <span class="nd-row-k">آخر استطلاع ناجح</span>
+            <span class="nd-row-v mono" dir="ltr">{% if node.last_seen_at %}{{ node.last_seen_at.strftime('%Y-%m-%d %H:%M') }}{% else %}<span class="nd-na">—</span>{% endif %}</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {# edit form — hidden by default; field names preserved for chr_node_edit.
+     The card chrome lives on the form itself so hiding it leaves no empty shell. #}
+  <form id="nd-edit-form" class="nd-card nd-form nd-hidden" method="post"
+        style="margin-block-start:16px;border-block-start:1px solid var(--ndx-line)"
+        action="{{ url_for('admin_infra.chr_node_edit', node_id=node.id) }}">
       {{ csrf_input() }}
       <div class="nd-form-grid">
         <div class="nd-field"><label class="nd-label" for="e-pub-ip">IP العام</label>
@@ -403,8 +522,7 @@
         <button class="nd-btn nd-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ التغييرات</button>
         <button class="nd-btn" type="button" onclick="ndToggleEdit()">إلغاء</button>
       </div>
-    </form>
-  </div>
+  </form>
 </div>
 
 {# ── Tab: allocations ─────────────────────────────────────────────────── #}
