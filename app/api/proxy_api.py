@@ -435,6 +435,106 @@ def heartbeat():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# WireGuard data-plane peers (zero-touch auto peer sync)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@bp.get("/wg-peers")
+def wg_peers():
+    """Publish the desired wg-DATA peer set for the proxy agent to apply.
+
+    The panel mints every CHR's wg-data keypair, so it already KNOWS the public
+    key the proxy must trust + the ``10.98.0.X/32`` allowed-ip the RADIUS
+    traffic arrives from. This endpoint hands the proxy that desired set so a
+    coordinated proxy-side agent can reconcile its ``wg-data`` interface with no
+    manual hand-peering — closing the second half of the WireGuard drift that
+    caused ``panel_key_mismatch`` / dropped-RADIUS incidents.
+
+    Auth: the same ``X-Proxy-Token`` HMAC as the rest of ``/api/proxy/*``.
+
+    Eligibility mirrors ``/api/proxy/routing-table`` EXACTLY (enabled + not
+    drain + status != 'disabled'); a node missing its wg-data pubkey or whose
+    wg-data IP can't be derived is omitted (the panel surfaces that as a FAILED
+    sync stage, not a silent gap).
+
+    Response shape (additive, frozen alongside routing-table)::
+
+        {
+          "ok": true,
+          "generated_at": "2026-06-11T12:00:00Z",
+          "panel_wg_pubkey": "PANEL_MGMT_PUBKEY=",   // info: control-plane key
+          "interface": "wg-data",
+          "listen_port": 51821,
+          "peer_count": 1,
+          "wg_data_peers": [
+            {
+              "name": "chr-vpn-1",
+              "public_key": "CHR_WG_DATA_PUBKEY=",
+              "allowed_ips": ["10.98.0.11/32"],
+              "wg_data_ip": "10.98.0.11",
+              "endpoint_hint": "203.0.113.45",       // CHR public IP (info only)
+              "status": "up", "enabled": true, "drain": false
+            }
+          ]
+        }
+
+    The proxy SHOULD treat ``wg_data_peers`` as the COMPLETE desired set for its
+    ``wg-data`` interface (add missing, remove peers not listed). ``allowed_ips``
+    is authoritative; ``endpoint_hint`` is informational (the proxy is the
+    wg-data listener — CHRs dial IN — so it needs no endpoint per peer).
+    """
+    denied = _auth_required()
+    if denied:
+        return denied
+
+    try:
+        from fleet.sync.peers import desired_proxy_peers
+        peers = desired_proxy_peers()
+    except Exception as exc:  # noqa: BLE001 — defensive: branch w/o fleet/sync
+        current_app.logger.warning(
+            "wg_peers: desired_proxy_peers failed (%s); returning empty set",
+            exc.__class__.__name__,
+        )
+        peers = []
+
+    panel_pubkey = ""
+    try:
+        from fleet.registry.infra_settings import panel_pubkey_for_display
+        panel_pubkey = (panel_pubkey_for_display() or "").strip()
+    except Exception:  # noqa: BLE001
+        panel_pubkey = ""
+
+    wg_data_peers = [
+        {
+            "name": p.name,
+            "public_key": p.public_key,
+            "allowed_ips": list(p.allowed_ips),
+            "wg_data_ip": p.address,
+            "endpoint_hint": p.endpoint_hint,
+            "status": p.status,
+            "enabled": p.enabled,
+            "drain": p.drain,
+        }
+        for p in peers
+    ]
+
+    try:
+        from app.services.proxy_api_debug import dlog
+        dlog("wg-peers", peer_count=len(wg_data_peers))
+    except Exception:  # noqa: BLE001
+        pass
+
+    return jsonify({
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "panel_wg_pubkey": panel_pubkey,
+        "interface": "wg-data",
+        "listen_port": 51821,
+        "peer_count": len(wg_data_peers),
+        "wg_data_peers": wg_data_peers,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CHR node list (for proxy to validate source IPs)
 # ──────────────────────────────────────────────────────────────────────────────
 

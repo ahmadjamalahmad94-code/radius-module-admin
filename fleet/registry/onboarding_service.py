@@ -520,6 +520,11 @@ class OnboardingService:
             public_ipv6=form.public_ipv6,
             wg_mgmt_ip=form.wg_mgmt_ip or self._allocate_mgmt_ip(),
             wg_mgmt_pubkey=mgmt.public_key,
+            # Denormalize the wg-data pubkey so the proxy wg-peers publisher and
+            # the panel reconcile can build peers without the job ref (feat/
+            # fleet-zero-touch-sync). The private side stays vaulted; only the
+            # public key lands on the row.
+            wg_data_pubkey=data.public_key,
             max_sessions=form.max_sessions,
             link_speed_mbps=form.link_speed_mbps,
             weight=form.weight,

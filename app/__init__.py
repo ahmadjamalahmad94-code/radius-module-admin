@@ -105,6 +105,10 @@ def create_app(config_object=None, **overrides) -> Flask:
     from fleet.ui.routes_p8 import bp as fleet_p8_ui_bp
     # Phase 9 owner alerts (recent alerts + per-kind settings).
     from fleet.notify.ui_routes import bp as fleet_p9_alerts_bp
+    # feat/fleet-zero-touch-sync: live staged sync/onboarding progress + the
+    # SyncJob model (importing the routes pulls in fleet.sync.models so the
+    # fleet_sync_jobs table lands in db.metadata for db.create_all()).
+    from fleet.sync.routes import bp as fleet_sync_bp
     # Register the remaining Phase-2 fleet ORM models so db.create_all() builds
     # ALL fleet tables. The route imports above only pull in the P3-referenced
     # models (providers, chr_nodes, onboarding_jobs, chr_secrets); these four
@@ -140,6 +144,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(fleet_p7_ui_bp)
     app.register_blueprint(fleet_p8_ui_bp)
     app.register_blueprint(fleet_p9_alerts_bp)
+    app.register_blueprint(fleet_sync_bp)
 
     @app.get("/")
     def root():
@@ -621,6 +626,11 @@ def ensure_schema_compatibility(app: Flask) -> None:
     # db.create_all() they're already present; this heal exists for the
     # LIVE deployment where the table predates this branch.
     if "fleet_chr_nodes" in tables:
+        bool_false = (
+            "BOOLEAN NOT NULL DEFAULT 0"
+            if db.engine.dialect.name == "sqlite"
+            else "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
         _add_columns_if_missing("fleet_chr_nodes", {
             "routeros_api_user": "VARCHAR(80) NOT NULL DEFAULT ''",
             "routeros_api_password_enc": "TEXT NOT NULL DEFAULT ''",
@@ -628,7 +638,19 @@ def ensure_schema_compatibility(app: Flask) -> None:
             # Nullable on purpose: only rows imported FROM the legacy chr_nodes
             # table carry a value; native fleet rows leave it NULL.
             "legacy_chr_node_id": "INTEGER",
+            # feat/fleet-zero-touch-sync: CHR wg-data pubkey (proxy peer) +
+            # the stale-script flag flipped on panel-key drift.
+            "wg_data_pubkey": "TEXT NOT NULL DEFAULT ''",
+            "needs_reimport": bool_false,
         })
+        # Backfill wg_data_pubkey from the onboarding job refs for rows that
+        # predate the column. Best-effort + idempotent: only touches rows that
+        # are still empty and whose job carried a data_pubkey. Never raises.
+        try:
+            from fleet.sync.backfill import backfill_wg_data_pubkeys
+            backfill_wg_data_pubkeys()
+        except Exception:  # noqa: BLE001 — schema heal must never crash boot
+            db.session.rollback()
 
     # ProxyRealmRoute — fleet allow-list column. (Pre-step-6 schemas had a
     # separate ``allowed_chr_node_ids_json`` for the legacy chr_nodes table;

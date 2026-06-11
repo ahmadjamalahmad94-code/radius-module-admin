@@ -544,14 +544,39 @@ def fleet_infra_generate_panel_keypair():
     )
     db.session.commit()
     if result["regenerated"]:
+        # KEY DRIFT CASCADE (feat/fleet-zero-touch-sync): the panel key is the
+        # single stable source of truth; a deliberate regen MUST trigger a fleet
+        # re-push. Flag every node needs_reimport and kick off a re-sync job so
+        # the owner sees live staged progress instead of silent drift.
+        flagged = _cascade_panel_key_change()
         flash(
             "تم توليد زوج مفاتيح اللوحة الجديد. ⚠ السكربتات الصادرة سابقاً "
-            "للعقد لم تعد صالحة — أعد إنشاء سكربت كل عقدة من «عرض السكربت».",
+            f"للعقد لم تعد صالحة — وُسِمت {len(flagged)} عقدة لإعادة الاستيراد "
+            "وبدأت «إعادة مزامنة الأسطول». أعد إنشاء سكربت كل عقدة من «عرض السكربت».",
             "warning",
         )
     else:
         flash("تم توليد زوج مفاتيح اللوحة بنجاح.", "success")
     return _infra_redirect()
+
+
+def _cascade_panel_key_change() -> list[str]:
+    """Panel wg-mgmt key changed → flag every node stale + start a re-sync job.
+
+    Idempotent + defensive: never lets a cascade failure break the key-change
+    response (the flag is the durable signal; the job is a convenience)."""
+    flagged: list[str] = []
+    try:
+        from fleet.sync.keys import flag_fleet_needs_reimport
+        flagged = flag_fleet_needs_reimport()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+    try:
+        from fleet.sync.service import create_job
+        create_job(scope="fleet")
+    except Exception:  # noqa: BLE001 — job is best-effort; flag already persisted
+        db.session.rollback()
+    return flagged
 
 
 @bp.post("/infrastructure/panel-pubkey")
@@ -584,7 +609,12 @@ def fleet_infra_save_panel_pubkey():
             "success",
         )
     elif result["replaced"]:
-        flash("⚠ تم استبدال المفتاح العام للوحة — السكربتات السابقة للعقد لم تعد صالحة.", "warning")
+        flagged = _cascade_panel_key_change()
+        flash(
+            "⚠ تم استبدال المفتاح العام للوحة — السكربتات السابقة للعقد لم تعد صالحة. "
+            f"وُسِمت {len(flagged)} عقدة لإعادة الاستيراد وبدأت «إعادة مزامنة الأسطول».",
+            "warning",
+        )
     else:
         flash("تم حفظ المفتاح العام للوحة.", "success")
     return _infra_redirect()

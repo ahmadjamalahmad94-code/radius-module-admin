@@ -119,6 +119,22 @@ class FleetChrNode(TimestampMixin, db.Model):
     public_ipv6 = db.Column(db.String(45))                              # optional AAAA candidate
     wg_mgmt_ip = db.Column(db.String(45), nullable=False, unique=True)  # control-plane address
     wg_mgmt_pubkey = db.Column(db.Text, nullable=False)                 # CHR WireGuard public key
+    # CHR's wg-DATA public key (RADIUS data plane → proxy). Denormalized here
+    # (feat/fleet-zero-touch-sync) so the proxy wg-peers publisher and the
+    # panel-host peer reconcile never have to reach back into the onboarding
+    # job's wg_keypair_ref JSON. Written at generate_keys() time; backfilled
+    # from job refs for pre-existing rows in ensure_schema_compatibility.
+    # Empty string = unknown (older row whose job ref is gone) — the publisher
+    # skips a node with no data pubkey rather than fabricate a peer.
+    wg_data_pubkey = db.Column(db.Text, nullable=False, default="", server_default="")
+    # Set TRUE whenever the panel's wg-mgmt pubkey changes (key drift) so the
+    # script this node carries is known-stale and MUST be re-imported. The
+    # zero-touch re-sync clears it once a freshly-rendered script (carrying the
+    # CURRENT panel pubkey) is applied. This is the missing flag that let the
+    # panel_key_mismatch incident go silent (see fleet/health/wg_verify.py).
+    needs_reimport = db.Column(
+        db.Boolean, nullable=False, default=False, server_default=db.text("FALSE")
+    )
     # RouterOS REST API port we use for live metrics polling. Default 8443
     # because the production deploy occupies 443 with SSTP; the unified
     # provisioning script enables ``www-ssl`` on this port and binds it to

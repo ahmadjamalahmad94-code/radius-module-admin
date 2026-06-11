@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""hobe-wg-sync — the ONLY privileged action the zero-touch fleet sync performs.
+
+Installed at /usr/local/sbin/hobe-wg-sync (root-owned, 0755) by
+install_wg_helper.sh. A scoped sudoers line lets the unprivileged panel user
+(hoberadius) run ONLY this command with no password. The panel hands it the
+desired wg-mgmt peer set as JSON on stdin; it reconciles the running interface
+and persists the result. It NEVER reads or writes the [Interface] private key,
+never manages any interface other than the hardcoded wg-mgmt control plane, and
+validates every pubkey/allowed-ip before applying.
+
+Usage:
+    hobe-wg-sync apply   < {"interface":"wg-mgmt","peers":[{"public_key":"..","allowed_ips":["10.99.0.11/32"]}]}
+        → reconciles peers (add desired, remove stale) and prints
+          {"applied_pubkeys":[...]}
+    hobe-wg-sync show
+        → prints {"peers":[...current pubkeys...]}
+
+Exit non-zero (with a short stderr message) on any validation/runtime error.
+"""
+import ipaddress
+import json
+import re
+import subprocess
+import sys
+
+# Hardcoded allow-list: this helper manages ONLY the control-plane interface.
+ALLOWED_INTERFACES = {"wg-mgmt"}
+# The control pool peers must live inside. Anything outside is rejected.
+MGMT_POOL = ipaddress.ip_network("10.99.0.0/24")
+_WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+
+
+def _die(msg: str, code: int = 1) -> None:
+    sys.stderr.write(msg.rstrip() + "\n")
+    sys.exit(code)
+
+
+def _wg(*args: str) -> str:
+    proc = subprocess.run(["wg", *args], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        _die(f"wg {' '.join(args)} failed: {proc.stderr.strip() or proc.returncode}")
+    return proc.stdout
+
+
+def _current_peers(iface: str) -> list[str]:
+    out = _wg("show", iface, "peers")
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+
+def _valid_pubkey(k: str) -> bool:
+    return bool(_WG_KEY_RE.match(k or ""))
+
+
+def _valid_allowed_ips(ips) -> list[str]:
+    clean: list[str] = []
+    for raw in ips or []:
+        try:
+            net = ipaddress.ip_network(str(raw).strip(), strict=False)
+        except ValueError:
+            _die(f"invalid allowed-ip: {raw!r}")
+        if net.version != 4 or not net.subnet_of(MGMT_POOL):
+            _die(f"allowed-ip {raw!r} outside the wg-mgmt control pool {MGMT_POOL}")
+        clean.append(str(net))
+    if not clean:
+        _die("a peer must declare at least one allowed-ip")
+    return clean
+
+
+def cmd_show() -> None:
+    iface = "wg-mgmt"
+    print(json.dumps({"peers": _current_peers(iface)}))
+
+
+def cmd_apply() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except (ValueError, OSError) as exc:
+        _die(f"invalid JSON on stdin: {exc}")
+
+    iface = str(payload.get("interface") or "wg-mgmt")
+    if iface not in ALLOWED_INTERFACES:
+        _die(f"refusing to manage interface {iface!r}; only {sorted(ALLOWED_INTERFACES)} allowed")
+
+    desired: dict[str, list[str]] = {}
+    for peer in payload.get("peers") or []:
+        pub = str(peer.get("public_key") or "").strip()
+        if not _valid_pubkey(pub):
+            _die(f"invalid public key: {pub!r}")
+        desired[pub] = _valid_allowed_ips(peer.get("allowed_ips"))
+
+    current = set(_current_peers(iface))
+
+    # Add / update desired peers.
+    for pub, ips in desired.items():
+        _wg("set", iface, "peer", pub, "allowed-ips", ",".join(ips))
+
+    # Remove peers no longer desired (drift cleanup).
+    for pub in current - set(desired):
+        _wg("set", iface, "peer", pub, "remove")
+
+    # Persist runtime → /etc/wireguard/<iface>.conf (keeps [Interface] intact).
+    save = subprocess.run(["wg-quick", "save", iface], capture_output=True, text=True, check=False)
+    if save.returncode != 0:
+        _die(f"wg-quick save {iface} failed: {save.stderr.strip() or save.returncode}")
+
+    print(json.dumps({"applied_pubkeys": sorted(desired.keys())}))
+
+
+def main() -> None:
+    if len(sys.argv) < 2 or sys.argv[1] not in ("apply", "show"):
+        _die("usage: hobe-wg-sync {apply|show}")
+    if sys.argv[1] == "show":
+        cmd_show()
+    else:
+        cmd_apply()
+
+
+if __name__ == "__main__":
+    main()

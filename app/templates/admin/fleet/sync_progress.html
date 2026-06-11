@@ -1,0 +1,173 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إعادة مزامنة الأسطول — CHR Fleet{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+{% endblock %}
+{% block page_breadcrumb %}إعادة مزامنة الأسطول{% endblock %}
+
+{% block head_extra %}
+<style>
+  :root { --zt-brand:#4f46e5; --zt-ink:#0f172a; --zt-line:#e5e7eb; }
+  .zt-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #4f46e5 100%);
+    border-radius: 18px; padding: 22px 26px; color: #fff;
+    margin-block-end: 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .zt-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px; flex: 0 0 auto;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .zt-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .zt-hero-sub { font-size: 13px; color: rgba(255,255,255,.82); margin-top: 6px; max-width: 760px; line-height: 1.7; }
+  .zt-hero-actions { margin-inline-start: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .zt-btn {
+    appearance: none; border: 0; cursor: pointer; font-weight: 800; font-size: 14px;
+    border-radius: 12px; padding: 11px 18px; display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+  }
+  .zt-btn:active { transform: translateY(1px); }
+  .zt-btn--primary { background: #fff; color: #3730a3; box-shadow: 0 10px 22px -12px rgba(0,0,0,.5); }
+  .zt-btn--ghost { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+  .zt-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  /* Overall progress */
+  .zt-overall { background:#fff; border:1px solid var(--zt-line); border-radius:16px; padding:18px 20px; margin-block-end:16px; }
+  .zt-overall-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-block-end:12px; }
+  .zt-overall-title { font-size:15px; font-weight:800; color:var(--zt-ink); }
+  .zt-status-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:800; }
+  .zt-status-pill.running { background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; }
+  .zt-status-pill.done    { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  .zt-status-pill.failed  { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+  .zt-overall-counts { margin-inline-start:auto; display:flex; gap:14px; font-size:12.5px; color:#475569; }
+  .zt-overall-counts b { font-size:15px; }
+  .zt-c-done b{color:#047857;} .zt-c-warn b{color:#b45309;} .zt-c-failed b{color:#b91c1c;}
+
+  .zt-bar { position:relative; height:14px; border-radius:999px; background:#eef2f7; overflow:hidden; }
+  .zt-bar-fill {
+    position:absolute; inset-block:0; inset-inline-start:0; width:0%;
+    border-radius:999px; background: linear-gradient(90deg,#6366f1,#22c55e);
+    transition: width .55s cubic-bezier(.4,0,.2,1);
+  }
+  .zt-bar-fill.is-failed { background: linear-gradient(90deg,#6366f1,#ef4444); }
+  .zt-bar.is-active .zt-bar-fill::after {
+    content:""; position:absolute; inset:0; border-radius:999px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+    animation: zt-sheen 1.15s linear infinite;
+  }
+  @keyframes zt-sheen { from { transform: translateX(-100%);} to { transform: translateX(100%);} }
+  .zt-pct { font-variant-numeric: tabular-nums; font-weight:900; color:var(--zt-ink); font-size:14px; }
+
+  /* Panel-host apply banner */
+  .zt-panel-apply { margin-block-start:12px; font-size:12.5px; padding:10px 12px; border-radius:10px; line-height:1.7; }
+  .zt-panel-apply.ok   { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  .zt-panel-apply.warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; }
+  .zt-panel-apply.bad  { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+
+  /* Node card */
+  .zt-node { background:#fff; border:1px solid var(--zt-line); border-radius:16px; padding:16px 18px; margin-block-end:14px; animation: zt-rise .35s ease both; }
+  .zt-node.state-failed { border-color:#fecaca; }
+  .zt-node.state-done   { border-color:#bbf7d0; }
+  .zt-node-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-block-end:12px; padding-block-end:10px; border-block-end:1px dashed var(--zt-line); }
+  .zt-node-name { font-size:16px; font-weight:800; color:var(--zt-ink); display:flex; align-items:center; gap:8px; }
+  .zt-node-ip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:#64748b; }
+  .zt-pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; }
+  .zt-pill.running{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;}
+  .zt-pill.done{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;}
+  .zt-pill.warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a;}
+  .zt-pill.failed{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;}
+  .zt-pill.blocked{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;}
+  .zt-pill.reimport{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
+
+  /* Stage rows */
+  .zt-stages { display:flex; flex-direction:column; gap:2px; }
+  .zt-stage { display:grid; grid-template-columns: 30px 1fr; gap:10px; align-items:start; padding:8px 6px; border-radius:10px; transition: background .2s ease; }
+  .zt-stage.is-running { background:#f5f7ff; }
+  .zt-stage-ic { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; flex:0 0 auto; }
+  .ic-pending{ background:#f1f5f9; color:#94a3b8; }
+  .ic-running{ background:#e0e7ff; color:#4f46e5; }
+  .ic-done{ background:#dcfce7; color:#16a34a; animation: zt-pop .3s ease; }
+  .ic-warn{ background:#fef3c7; color:#d97706; }
+  .ic-failed{ background:#fee2e2; color:#dc2626; animation: zt-shake .35s ease; }
+  .ic-blocked{ background:#f1f5f9; color:#cbd5e1; }
+  .zt-stage-label { font-size:13.5px; font-weight:700; color:var(--zt-ink); }
+  .zt-stage-num { color:#94a3b8; font-weight:800; margin-inline-end:4px; }
+  .zt-stage-reason { font-size:12px; color:#64748b; margin-top:3px; line-height:1.65; }
+  .zt-stage.sev-failed .zt-stage-reason { color:#b91c1c; }
+  .zt-stage.sev-warn .zt-stage-reason { color:#b45309; }
+  .zt-stage-value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:11.5px; color:#475569; margin-top:2px; }
+  .zt-spin { animation: zt-rot .8s linear infinite; }
+
+  .zt-empty { padding:30px; text-align:center; color:#64748b; border:1px dashed var(--zt-line); border-radius:14px; }
+
+  @keyframes zt-rise { from { opacity:0; transform: translateY(10px);} }
+  @keyframes zt-pop { 0%{transform:scale(.4);} 60%{transform:scale(1.18);} 100%{transform:scale(1);} }
+  @keyframes zt-shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
+  @keyframes zt-rot { to { transform: rotate(360deg);} }
+
+  /* Toast */
+  .zt-toast-host { position:fixed; inset-inline-end:24px; bottom:24px; z-index:140; display:flex; flex-direction:column; gap:10px; max-width:360px; }
+  .zt-toast { background:#fff; border:1px solid var(--zt-line); border-radius:14px; padding:13px 15px; display:flex; gap:11px; align-items:flex-start; box-shadow:0 18px 40px -20px rgba(15,23,42,.5); animation: zt-rise .25s ease; }
+  .zt-toast--success i{color:#047857;} .zt-toast--error i{color:#b91c1c;} .zt-toast--info i{color:#0284c7;}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="zt-hero">
+  <div class="zt-hero-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+  <div>
+    <div class="zt-hero-title">إضافة بلا لمس + مزامنة تلقائية للأسطول</div>
+    <div class="zt-hero-sub">
+      تُسجِّل اللوحة نظراء WireGuard تلقائياً (wg-mgmt على اللوحة و wg-data على الوكيل)، تُثبِّت استقرار مفتاح
+      اللوحة كمصدر وحيد للحقيقة، وتعرض هنا تقدّماً حيّاً بثماني مراحل لكل عقدة — يُظهِر أين يعمل النظام،
+      ما اكتمل، وأين توقّف ولماذا. كل مرحلة فحص حقيقي، لا تقدّم وهمي.
+    </div>
+  </div>
+  <div class="zt-hero-actions">
+    <button type="button" class="zt-btn zt-btn--primary" id="zt-start-fleet">
+      <i class="fa-solid fa-rotate"></i> إعادة مزامنة الأسطول
+    </button>
+    <a class="zt-btn zt-btn--ghost" href="{{ url_for('fleet_ui.fleet_troubleshoot_index') }}">
+      <i class="fa-solid fa-stethoscope"></i> التشخيص
+    </a>
+  </div>
+</section>
+
+<div class="zt-overall" id="zt-overall" hidden>
+  <div class="zt-overall-top">
+    <span class="zt-overall-title">التقدّم الإجمالي</span>
+    <span class="zt-status-pill running" id="zt-status"><i class="fa-solid fa-spinner zt-spin"></i> جارٍ…</span>
+    <div class="zt-overall-counts">
+      <span class="zt-c-done">مكتمل <b id="zt-n-done">0</b></span>
+      <span class="zt-c-warn">تنبيه <b id="zt-n-warn">0</b></span>
+      <span class="zt-c-failed">فشل <b id="zt-n-failed">0</b></span>
+      <span class="zt-pct" id="zt-pct">0%</span>
+    </div>
+  </div>
+  <div class="zt-bar is-active" id="zt-bar"><div class="zt-bar-fill" id="zt-bar-fill"></div></div>
+  <div class="zt-panel-apply" id="zt-panel-apply" hidden></div>
+</div>
+
+<div id="zt-nodes"></div>
+
+<div class="zt-empty" id="zt-empty">
+  اضغط «إعادة مزامنة الأسطول» لبدء مزامنة تلقائية شاملة، أو أضِف عقدة جديدة من
+  <a href="{{ url_for('fleet_ui.onboarding_wizard') }}">معالج الإضافة</a>.
+</div>
+
+<div class="zt-toast-host" id="zt-toast-host"></div>
+<form id="zt-csrf" style="display:none">{{ csrf_input() }}</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/fleet_sync_progress.js') }}"
+        data-create-url="{{ url_for('fleet_sync.create_sync_job') }}"
+        data-job-url="{{ url_for('fleet_sync.get_sync_job', job_id=0) }}"
+        data-tick-url="{{ url_for('fleet_sync.tick_sync_job', job_id=0) }}"
+        data-latest-job="{{ latest_job_id if latest_job_id is not none else '' }}"
+        defer></script>
+{% endblock %}
