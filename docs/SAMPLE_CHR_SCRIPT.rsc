@@ -1,118 +1,10 @@
-{# ============================================================================
-   HobeRadius unified CHR provisioning script — Jinja2 source.
-   Renders RouterOS v7.x configuration that is IDENTICAL across the fleet
-   except for the documented per-CHR bindings. See:
 
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5  — the canonical script
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5.1 — which vars are per-CHR
-
-   Per-CHR (renders differ between two CHRs):
-     - WG_MGMT_PRIVKEY, WG_MGMT_ADDR          (control tunnel)
-     - WG_DATA_PRIVKEY, WG_DATA_ADDR          (data tunnel)
-     - WG_DATA_ADDR_IP                        (data tunnel IP w/o /mask)
-     - ROUTER_IDENTITY, CHR_PUBLIC_IP         (form / detected)
-     - WAN_IFACE                              (detected)
-
-   Fleet-constant (identical in every render):
-     - PANEL_WG_PUBKEY / PANEL_WG_HOST / PANEL_WG_PORT / PANEL_WG_ADDR
-     - PROXY_WG_PUBKEY / PROXY_WG_HOST / PROXY_WG_PORT / PROXY_WG_ADDR
-       (HOST/PORT are derived from the stored PANEL_WG_ENDPOINT /
-        PROXY_WG_ENDPOINT "host:port" Setting rows — RouterOS forbids the
-        combined host:port shape inside endpoint-address. See
-        fleet.registry.script_render._split_endpoint.)
-     - CHR_SHARED_SECRET (matches proxy's PROXY_CHR_SECRET; §6.5.1 note)
-     - SSTP_CERT_NAME, IKE_CERT_NAME
-     - CLIENT_SUPERNET, DNS_PUSH, GW_LOCAL_ADDR
-
-   See ``fleet/registry/script_render.py`` for the binding model and dataclass.
-
-   IDEMPOTENCY (fix/fleet-script-idempotent):
-     Every `add` in this script is preceded by `remove [find …]` so the
-     whole .rsc is safe to import twice in a row, or to re-import after a
-     partial first run that already created some of the resources. RouterOS
-     `remove` of an empty find-result is a no-op, so the same pattern works
-     on a virgin CHR. Anchors used:
-
-       - /interface wireguard            → find name="wg-mgmt|wg-data"
-       - /interface wireguard peers      → find interface="wg-mgmt|wg-data"
-       - /ip address                     → find interface="wg-mgmt|wg-data"
-       - /radius                         → find comment="hobe-fleet-radius"
-       - /ip ipsec profile|proposal|
-         mode-config|peer                → find name="hobe-…"
-       - /ip ipsec identity              → find peer="hobe-peer"
-       - /ppp profile                    → find comment="hobe-fleet-ppp"
-                                            (defensive — current template
-                                             only `set`s the built-in
-                                             default-encryption; this is the
-                                             anchor for any future custom
-                                             profile add)
-       - /ip pool                        → find name~"^hobe-fleet-pool"
-                                            (defensive — no pool today; the
-                                             anchor is here in case the
-                                             owner ever adds custom pools)
-       - /ip firewall nat                → find comment="hobe-fleet-nat-…"
-       - /ip firewall filter             → find comment~"^hobe-fleet-fw-"
-         (regex match — removes ALL hobe-tagged input rules at once)
-
-     `set`-based blocks (/radius incoming, /ppp aaa, /ppp profile, the
-     pptp/sstp/ipsec server enable lines) are intrinsically idempotent.
-
-   RADIUS ENTRY ALWAYS ENABLED (fix/fleet-endpoint-and-idempotency):
-     After `/radius add … comment="hobe-fleet-radius"`, the script forces
-     the entry to enabled via `/radius enable [find comment="…"]`. The
-     first live CHR install hit a case where the entry landed disabled
-     (`Flags: X - DISABLED`) and no RADIUS packets ever reached the
-     proxy even though PPP AAA was wired to RADIUS and the entry existed.
-     The explicit enable closes that hole on every (re-)import.
-
-   ENDPOINT FORMAT (fix/fleet-endpoint-and-idempotency):
-     `/interface wireguard peers` peers MUST use host-only
-     ``endpoint-address=<host>`` with a separate ``endpoint-port=<n>``.
-     RouterOS silently rejects ``host:port`` inside ``endpoint-address=``
-     (the peer lands with current-endpoint-address="" and never handshakes).
-     The renderer splits the operator-supplied "host:port" Setting into
-     HOST + PORT bindings before this template runs; the template itself
-     must never emit a ``:`` inside ``endpoint-address=``.
-
-   LIVE-METRICS WIRE FIXES (fix/fleet-metrics-wire-bugs):
-     §11 was three different ways broken on the first live CHR:
-       1. enabled api-ssl (binary) while the panel collector speaks REST
-          on www-ssl (app/services/routeros_client.py → /rest/);
-       2. assigned no certificate → RouterOS never bound the TCP socket;
-       3. set the service ACL to the CHR's OWN wg-mgmt IP, which means
-          "only accept connections FROM the CHR" — blocking the panel.
-     §11 now provisions a self-signed cert (hobe-fleet-api-cert), turns
-     www-ssl on (api / api-ssl / www all explicitly disabled), and points
-     the source-IP ACL at PANEL_WG_ADDR (10.99.0.1/32).
-     Compounding all three: wg-mgmt was rendered as /32 (no return route)
-     — onboarding_service.py:667 now emits /24.
-
-   DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
-     A second field finding: even with host-only endpoint-address,
-     ``endpoint-address=proxy.hoberadius.com`` left wg-data with
-     current-endpoint-address="" and no handshake — replacing with the
-     resolved IP literal worked instantly. RouterOS does not always
-     resolve the peer host into a working endpoint at peer-add time
-     (the peer is created before DNS is usable, or RouterOS caches an
-     empty resolve).
-     The script now:
-       (a) ensures /ip dns has at least one server (sets 1.1.1.1,8.8.8.8
-           as fallback — does NOT clobber an operator-set list);
-       (b) tags each peer with a stable comment (``hobe-fleet-mgmt`` /
-           ``hobe-fleet-data``);
-       (c) runs ``:resolve`` against PANEL_WG_HOST / PROXY_WG_HOST with
-           up to 5 retries (2-second back-off) and ``set [find
-           comment="…"] endpoint-address=<resolved-ip>`` on each peer.
-     If ``:resolve`` ultimately fails (no network at all), we leave the
-     hostname endpoint in place and ``:log error`` — that's no worse than
-     the prior behaviour, and the operator sees the cause in the log.
-   ============================================================================ #}
 # ============================================================
 # HobeRadius unified CHR provisioning script  (v2, idempotent)
 # Safe to re-import: every resource removes prior copies first.
 # ============================================================
 
-/system identity set name="{{ ROUTER_IDENTITY }}"
+/system identity set name="chr-vpn-1"
 
 # ---- 0. DNS bootstrap (so :resolve works in section 2b) ----
 # If the CHR has no DNS servers configured yet (fresh install / cloud image
@@ -131,18 +23,15 @@ remove [find interface="wg-mgmt"]
 remove [find interface="wg-mgmt"]
 /interface wireguard
 remove [find name="wg-mgmt"]
-add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
+add name=wg-mgmt listen-port=51820 private-key="<vault>"
 /interface wireguard peers
-{# endpoint-address MUST be host-only — RouterOS rejects host:port silently
-   and leaves current-endpoint-address="" with no handshake. The renderer
-   splits the stored host:port into HOST + PORT bindings; see
-   fleet.registry.script_render._split_endpoint. #}
-add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
-    endpoint-address={{ PANEL_WG_HOST }} endpoint-port={{ PANEL_WG_PORT }} \
-    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s \
+
+add interface=wg-mgmt public-key="PANELpubkey...=" \
+    endpoint-address=panel.hoberadius.com endpoint-port=51820 \
+    allowed-address=10.99.0.1/32 persistent-keepalive=25s \
     comment="hobe-fleet-mgmt"
 /ip address
-add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/24 (shared mgmt net; /32 broke the return route)
+add interface=wg-mgmt address=10.99.0.11/24     ;# e.g. 10.99.0.11/24 (shared mgmt net; /32 broke the return route)
 
 # ---- 2. WireGuard DATA path to RADIUS proxy (wg-data) ------
 # Carries ONLY RADIUS 1812/1813 + CoA 3799 to the proxy.
@@ -152,15 +41,15 @@ remove [find interface="wg-data"]
 remove [find interface="wg-data"]
 /interface wireguard
 remove [find name="wg-data"]
-add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
+add name=wg-data listen-port=51821 private-key="<vault>"
 /interface wireguard peers
-{# Same as the wg-mgmt block — host-only endpoint-address, port separate. #}
-add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
-    endpoint-address={{ PROXY_WG_HOST }} endpoint-port={{ PROXY_WG_PORT }} \
-    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
+
+add interface=wg-data public-key="PROXYpubkey...=" \
+    endpoint-address=proxy.hoberadius.com endpoint-port=51821 \
+    allowed-address=10.98.0.1/32 persistent-keepalive=25s \
     comment="hobe-fleet-data"
 /ip address
-add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shared data net; /32 broke the RADIUS return path)
+add interface=wg-data address=10.98.0.11/24     ;# e.g. 10.98.0.11/24 (shared data net; /32 broke the RADIUS return path)
 
 # ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
 # Field finding (fix/fleet-endpoint-resolve): even with host-only
@@ -187,12 +76,12 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shar
     :return $host
 }
 
-:local panelIP [$hobeResolve "{{ PANEL_WG_HOST }}"]
-:local proxyIP [$hobeResolve "{{ PROXY_WG_HOST }}"]
+:local panelIP [$hobeResolve "panel.hoberadius.com"]
+:local proxyIP [$hobeResolve "proxy.hoberadius.com"]
 
 /interface wireguard peers
-set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port={{ PANEL_WG_PORT }}
-set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ PROXY_WG_PORT }}
+set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port=51820
+set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port=51821
 
 # ---- 2c. Key-identity audit trail ----
 # Field incident: a wrong panel public key on the wg-mgmt peer produced a
@@ -202,16 +91,16 @@ set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ 
 #   - expected PANEL pubkey (what the wg-mgmt peer must trust)
 #   - expected PROXY pubkey (what the wg-data peer must trust)
 #   - this CHR's OWN wg-mgmt pubkey (what the panel's peer must trust)
-:log info ("hobe-fleet: wg-mgmt peer expects PANEL pubkey = {{ PANEL_WG_PUBKEY }}")
-:log info ("hobe-fleet: wg-data peer expects PROXY pubkey = {{ PROXY_WG_PUBKEY }}")
+:log info ("hobe-fleet: wg-mgmt peer expects PANEL pubkey = PANELpubkey...=")
+:log info ("hobe-fleet: wg-data peer expects PROXY pubkey = PROXYpubkey...=")
 :log info ("hobe-fleet: this CHR wg-mgmt pubkey (give to panel) = " . [/interface wireguard get [find name="wg-mgmt"] public-key])
 
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
 remove [find comment="hobe-fleet-radius"]
-add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
+add service=ppp,login address=10.98.0.1 secret="<secret>" \
     authentication-port=1812 accounting-port=1813 \
-    src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
+    src-address=10.98.0.11 timeout=3s \
     comment="hobe-fleet-radius"
 # Guarantee the entry is ENABLED. The first live install hit this: PPP AAA
 # was using RADIUS and the entry existed, but `/radius print detail` showed
@@ -242,8 +131,8 @@ remove [find comment="hobe-fleet-ppp"]
 /ip pool
 remove [find name~"^hobe-fleet-pool"]
 /ppp profile
-set default-encryption local-address={{ GW_LOCAL_ADDR }} \
-    use-encryption=required dns-server={{ DNS_PUSH }} \
+set default-encryption local-address=10.255.255.1 \
+    use-encryption=required dns-server=1.1.1.1 \
     only-one=yes        ;# remote-address from RADIUS Framed-IP; refuse 2nd local session
 
 # ---- 5. PPTP server ---------------------------------------
@@ -252,23 +141,12 @@ set enabled=yes authentication=mschap2 default-profile=default-encryption \
     keepalive-timeout=30
 
 # ---- 6. SSTP server (TLS 443) -----------------------------
-{# Cert-conditional: SSTP requires a TLS cert pre-imported on the CHR. We
-   skip the whole sub-section when no cert name is configured on the panel
-   — emitting `certificate=` empty would fail with "input does not match
-   any value of certificate". The owner can ship cert provisioning + a
-   re-render later. #}
-{% if SSTP_CERT_NAME %}
-# Shared cert installed on EVERY CHR (must exist as a /certificate row
-# named below before this section runs).
-/interface sstp-server server
-set enabled=yes port=443 authentication=mschap2 \
-    certificate={{ SSTP_CERT_NAME }} tls-version=only-1.2 \
-    default-profile=default-encryption verify-client-certificate=no
-{% else %}
+
+
 # SSTP skipped: no TLS certificate configured on the panel yet.
 # Set SSTP_CERT_NAME in /admin/fleet config (and pre-install the matching
 # /certificate row on each CHR) to enable the SSTP server block here.
-{% endif %}
+
 
 # ---- 7. IPsec / IKEv2 server ------------------------------
 # IPsec children reference parents by name — clean child→parent order on
@@ -289,24 +167,18 @@ add name=hobe-prop enc-algorithms=aes-256-cbc,aes-256-gcm pfs-group=modp2048
 /ip ipsec mode-config
 # Address ALSO via RADIUS for IKEv2 (no local pool); identity = vpn.hoberadius.com
 add name=hobe-mc responder=yes
-{% if IKE_CERT_NAME %}
-/ip ipsec peer
-add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
-/ip ipsec identity
-add auth-method=eap-radius generate-policy=port-strict mode-config=hobe-mc \
-    peer=hobe-peer certificate={{ IKE_CERT_NAME }}
-{% else %}
+
 # IPsec identity + peer skipped: no IKEv2 certificate configured on the
 # panel yet. Set IKE_CERT_NAME in /admin/fleet config (and pre-install the
 # matching /certificate row on each CHR) to enable IKEv2.
-{% endif %}
+
 
 # ---- 8. NAT / masquerade to the internet ------------------
 # Client (RADIUS-assigned) range egresses via this CHR's public IP.
 /ip firewall nat
 remove [find comment="hobe-fleet-nat-egress"]
-add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
-    src-address={{ CLIENT_SUPERNET }} comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
+add chain=srcnat action=masquerade out-interface=ether1 \
+    src-address=10.0.0.0/8 comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
 
 # ---- 9. Firewall: RADIUS/CoA only over wg, never public ---
 # Strip every prior hobe-fleet-fw-* rule in one go, then re-add the current
@@ -321,14 +193,10 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop                
 # Allow VPN protocols inbound on WAN — each gate matches the corresponding
 # server block above (skip the SSTP/IKE openings when their certs aren't
 # configured so we don't expose a dangling port to the internet).
-{% if SSTP_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 action=accept     comment="hobe-fleet-fw-sstp"
-{% endif %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 action=accept    comment="hobe-fleet-fw-pptp-ctrl"
-add chain=input in-interface={{ WAN_IFACE }} protocol=gre action=accept                  comment="hobe-fleet-fw-pptp-data"
-{% if IKE_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 action=accept comment="hobe-fleet-fw-ike"
-{% endif %}
+
+add chain=input in-interface=ether1 protocol=tcp dst-port=1723 action=accept    comment="hobe-fleet-fw-pptp-ctrl"
+add chain=input in-interface=ether1 protocol=gre action=accept                  comment="hobe-fleet-fw-pptp-data"
+
 
 # ---- 9b. RULE ORDER: hoist wg allow rules above any stale drops ----
 # Field incident: a pre-existing operator rule
@@ -388,10 +256,10 @@ move [find comment="hobe-fleet-fw-radius"] destination=0
 # API_USER and API_PASSWORD — keeps the script installable on a virgin
 # node before the operator has configured the credentials in
 # «إعدادات بنية الأسطول».
-{% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+
 /user
-remove [find name="{{ API_USER }}"]
-add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
+remove [find name="hobe-panel"]
+add name="hobe-panel" group=read password="pw" \
     comment="hobe-fleet-api-readonly"
 
 # Self-signed cert for www-ssl. Re-imports replace the cert so the
@@ -411,24 +279,19 @@ sign hobe-fleet-api-cert
 # the CHR's own. PANEL_WG_ADDR is a fleet-constant binding (10.99.0.1 in
 # the standard pool) coming from infra_settings via _build_bindings.
 /ip service
-set www-ssl disabled=no port={{ API_PORT|default(8443) }} \
-    certificate=hobe-fleet-api-cert address={{ PANEL_WG_ADDR }}/32
+set www-ssl disabled=no port=8443 \
+    certificate=hobe-fleet-api-cert address=10.99.0.1/32
 set api     disabled=yes  ;# binary API stays off (we use REST)
 set api-ssl disabled=yes  ;# binary-over-TLS stays off (we use REST/www-ssl)
 set www     disabled=yes  ;# plain HTTP stays off
 
 /ip firewall filter
 remove [find comment="hobe-fleet-fw-api-ssl"]
-add chain=input in-interface=wg-mgmt protocol=tcp dst-port={{ API_PORT|default(8443) }} \
+add chain=input in-interface=wg-mgmt protocol=tcp dst-port=8443 \
     action=accept comment="hobe-fleet-fw-api-ssl"
-{% else %}
-# Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
-# the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
-# sessions / bandwidth until the operator configures these in
-# «إعدادات بنية الأسطول → بيانات اعتماد قراءة المقاييس».
-{% endif %}
 
-# CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
+
+# CHR_PUBLIC_IP for this node (egress identity, documented for ops): 178.105.244.112
 # ============================================================
 # END unified script — bindings above are the ONLY per-CHR delta.
 # Re-importable: every resource above clears its prior copy first.

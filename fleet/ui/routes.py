@@ -678,6 +678,27 @@ def fleet_chr_node_save_metrics_creds(node_id: int):
     })
 
 
+@bp.post("/chr-nodes/<int:node_id>/verify-wg")
+@super_admin_required
+def fleet_chr_node_verify_wg(node_id: int):
+    """Both-directions WireGuard key verification (panel ↔ CHR) over REST.
+
+    Field-incident armour: a wrong panel pubkey on the CHR's wg-mgmt peer
+    used to be invisible until everything downstream failed. This endpoint
+    answers «هل المفاتيح متطابقة؟» in one click, with both keys echoed so
+    the operator can eyeball the diff. JSON for the dashboard JS toast.
+    """
+    from fleet.health.wg_verify import verify_node_wg_identity
+    from fleet.registry.models_chr import FleetChrNode
+
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    result = verify_node_wg_identity(node)
+    status = 200 if result.ok else 409
+    return jsonify(result.to_dict()), status
+
+
 @bp.post("/chr-nodes/<int:node_id>/poll-metrics-now")
 @super_admin_required
 def fleet_chr_node_poll_metrics_now(node_id: int):
@@ -687,20 +708,23 @@ def fleet_chr_node_poll_metrics_now(node_id: int):
     :class:`NodeView` for the dashboard JS to splice into the row.
     """
     from fleet.health.metrics_poller import poll_all
-    from fleet.health.routeros_creds import credentials_for
+    from fleet.health.routeros_creds import credentials_diagnostics, credentials_for
     from fleet.registry.models_chr import FleetChrNode
 
     node = db.session.get(FleetChrNode, node_id)
     if node is None:
         return jsonify({"ok": False, "error": "not_found"}), 404
     if credentials_for(node) is None:
+        # Precise per-source verdict — «which credential source is broken»
+        # was the field gap: a Fernet decrypt failure looked identical to
+        # "never configured" and sent the operator to the wrong screen.
+        diag = credentials_diagnostics(node)
         return jsonify({
             "ok": False, "error": "no_credentials",
-            "detail": (
-                "لا توجد بيانات اعتماد API لهذه العقدة — اضبطها من «بيانات "
-                "اعتماد قراءة المقاييس» في إعدادات بنية الأسطول، أو أدخل "
-                "تجاوزاً خاصاً بهذه العقدة."
-            ),
+            "reason_code": diag["reason_code"],
+            "detail": diag["message_ar"],
+            "node_password_state": diag["node_password_state"],
+            "fleet_password_state": diag["fleet_password_state"],
         }), 409
 
     # Restrict the pass to this one node by skipping siblings without

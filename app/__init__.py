@@ -193,16 +193,30 @@ def _configure_logging(app: Flask) -> None:
 
 
 def _validate_and_log_db_path(app: Flask) -> None:
-    """Reject relative sqlite:/// URIs at boot + warn on a legacy sibling.
+    """Reject relative sqlite:/// URIs at boot + police the legacy sibling.
 
     The historical split-brain (license_panel.db vs license_panel.sqlite3)
     came from cwd-dependent path resolution. We refuse to start with a
     config that would re-create the same trap, and we log the resolved
     on-disk path so the operator can verify it in journalctl.
+
+    Legacy-sibling policy (field-hardened):
+    * ``license_panel.db`` as a SYMLINK/hardlink to the canonical
+      ``.sqlite3`` → silent OK. This is the owner's sanctioned aliasing
+      so stray tooling that still references the old name hits the same
+      physical database. No warning noise.
+    * ``license_panel.db`` as a SEPARATE REAL FILE → **refuse to boot**
+      when this process is actually using the file-backed canonical DB.
+      Booting in that state is how the original incident silently grew:
+      writes landed in a file the running app never reads. Failing
+      loudly at start-up forces reconciliation while the divergence is
+      still small. In-memory / PostgreSQL deployments skip the check —
+      the sibling is irrelevant to them.
     """
     from .db_path import (
+        LEGACY_CONFLICT,
         DatabaseURIError,
-        detect_legacy_sibling,
+        classify_legacy_sibling,
         resolved_sqlite_path_for,
         validate_database_uri,
     )
@@ -218,13 +232,29 @@ def _validate_and_log_db_path(app: Flask) -> None:
     resolved = resolved_sqlite_path_for(uri)
     if resolved is not None:
         app.logger.info("SQLite database resolved to: %s", resolved)
-    sibling = detect_legacy_sibling()
-    if sibling is not None:
+    from .db_path import canonical_sqlite_path
+    state, sibling = classify_legacy_sibling()
+    if state == LEGACY_CONFLICT:
+        if resolved is not None and resolved == canonical_sqlite_path():
+            # This process runs ON the canonical file AND a divergent
+            # twin exists → refuse. The operator must consolidate (or
+            # symlink) BEFORE the panel writes another row that the
+            # other file will never see.
+            raise RuntimeError(
+                f"SQLite split-brain detected: {sibling} is a SEPARATE real "
+                "database file next to the canonical license_panel.sqlite3. "
+                "Refusing to boot so the divergence cannot grow. Reconcile "
+                "per docs/DB_PATH_FIX_RUNBOOK.md (merge what you need, then "
+                "delete the legacy file or replace it with a symlink to the "
+                "canonical file)."
+            )
+        # Not running on the file-backed canonical DB (tests / Postgres):
+        # the sibling can't bite this process, but tell the operator.
         app.logger.warning(
-            "Legacy SQLite sibling detected next to the canonical file: %s. "
-            "The panel only reads the canonical file; data in the legacy "
-            "file is INVISIBLE to the running app. See "
-            "docs/DB_PATH_FIX_RUNBOOK.md before deleting or moving it.",
+            "Legacy SQLite sibling present (separate real file): %s. This "
+            "process is not using the canonical SQLite file so it is not "
+            "affected, but reconcile per docs/DB_PATH_FIX_RUNBOOK.md before "
+            "any SQLite-backed deployment starts.",
             sibling,
         )
 
@@ -261,8 +291,24 @@ def _validate_production_config(app: Flask) -> None:
         raise RuntimeError("Production/bootstrap deployment requires a non-default FLASK_SECRET.")
     if str(app.config.get("ADMIN_PASSWORD", "")) in weak_passwords:
         raise RuntimeError("Production/bootstrap deployment requires a non-default LICENSE_ADMIN_PASSWORD.")
-    if app.config.get("SQLALCHEMY_DATABASE_URI") == Config.DEFAULT_DATABASE_URI:
-        raise RuntimeError("Production/bootstrap deployment requires an explicit DATABASE_URL.")
+    # "Explicit DATABASE_URL" means the OPERATOR set one — i.e. the env
+    # var exists — NOT that its value differs from the built-in default.
+    # The previous string-equality check (`uri == DEFAULT_DATABASE_URI`)
+    # rejected a perfectly explicit env URL whenever it happened to spell
+    # the same canonical path the default computes (which is exactly what
+    # a correct prod env file does: it points at
+    # /opt/.../instance/license_panel.sqlite3). That false rejection is
+    # what forced the run_panel.sh wrapper workaround in the field —
+    # the wrapper "fixed" boot only because it exported a DIFFERENT
+    # string (the legacy .db symlink path). Presence-of-env is the real
+    # contract; the URI's own validity is enforced separately by
+    # _validate_and_log_db_path / validate_database_uri.
+    if not (os.environ.get("DATABASE_URL") or "").strip():
+        raise RuntimeError(
+            "Production/bootstrap deployment requires an explicit DATABASE_URL "
+            "environment variable (set it in /etc/hoberadius-license-panel/"
+            "license-panel.env; systemd EnvironmentFile= delivers it)."
+        )
     if not app.config.get("RATE_LIMITS_ENABLED", True):
         raise RuntimeError("Production/bootstrap deployment requires RATE_LIMITS_ENABLED=1.")
     if production_mode and not app.config.get("SESSION_COOKIE_SECURE", False):
