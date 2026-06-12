@@ -161,6 +161,10 @@ class TestOnlyBindingsDiffer:
         for value in fleet_constant_values:
             if not value:  # skip empty placeholder defaults
                 continue
+            # Skip non-text bindings (e.g. NODE_ROLES_SET = frozenset(...))
+            # — they drive Jinja conditions, never appear as literals.
+            if not isinstance(value, (str, int)):
+                continue
             pattern = re.compile(r"(?<![\w./])" + re.escape(str(value)) + r"(?![\w./])")
             count_a = sum(1 for line in out_a if pattern.search(line))
             count_b = sum(1 for line in out_b if pattern.search(line))
@@ -220,16 +224,19 @@ class TestRouterosSanity:
         node, keys = chr_a
         out = render_chr_script(node, keys, fleet_cfg)
         # Each section header from §6.5 must appear, in order, at least once.
+        # §4 renamed in feat/chr-unified-provisioning-complete (shared pool
+        # is now the design, not an anti-pattern); §9 is now SURGICAL block
+        # spelled out in the header comment of the template.
         expected_headers = [
             "# ---- 1. WireGuard CONTROL tunnel",
             "# ---- 2. WireGuard DATA path",
             "# ---- 3. RADIUS client",
-            "# ---- 4. IP-FROM-RADIUS ONLY",
+            "# ---- 4. Shared IP pool",
             "# ---- 5. PPTP server",
             "# ---- 6. SSTP server",
             "# ---- 7. IPsec / IKEv2 server",
             "# ---- 8. NAT / masquerade",
-            "# ---- 9. Firewall",
+            "# 9. SURGICAL FIREWALL",
             "# ---- 10. control-plane is NOT a data route",
         ]
         last_pos = -1
@@ -274,35 +281,44 @@ class TestRouterosSanity:
                 f"line {lineno} has an odd number of double-quotes: {line!r}"
             )
 
-    def test_pool_anti_pattern_absent(self, chr_a, fleet_cfg) -> None:
-        """§6.5 invariant: NO local IP pool for clients — addresses come from
-        RADIUS. So the template must not CREATE an ``/ip pool`` entry nor
-        emit any ``remote-address-list``/``local-address-list`` pool reference
-        for client traffic.
+    def test_shared_pool_is_the_fleet_constant_pool(self, chr_a, fleet_cfg) -> None:
+        """feat/chr-unified-provisioning-complete §6.5.2: every node carries
+        the SAME shared pool name + ranges so a subscriber roaming between
+        nodes keeps the same Framed-IP and the same profile.
 
-        Note: a `remove [find ...]` under ``/ip pool`` is allowed as defensive
-        idempotency for stale rows; what's forbidden is an `add`."""
+        Constraints:
+          - The pool MUST be created with the fleet-constant name (one
+            source of truth).
+          - Any ``/ip pool add`` line MUST use the configured
+            ``IP_POOL_NAME``; no per-node ad-hoc pools.
+          - RADIUS Framed-IP still wins in the access-accept response;
+            the local pool is the fallback so an Access-Accept that
+            omits Framed-IP still gets a valid address.
+        """
         node, keys = chr_a
         out = render_chr_script(node, keys, fleet_cfg)
-        # Strip line continuations so `/ip pool\nadd ...` parses cleanly.
         flat = out.replace(" \\\n", " ")
-        # Track active table; flag any `add` that lands while `/ip pool` is selected.
         table = None
-        for lineno, raw in enumerate(flat.splitlines(), start=1):
+        pool_adds: list[str] = []
+        for raw in flat.splitlines():
             line = raw.strip()
             if line.startswith("/"):
                 table = line
                 continue
             if table == "/ip pool" and line.startswith("add "):
-                raise AssertionError(
-                    f"L{lineno}: /ip pool add present — §6.5 forbids local "
-                    f"pools (RADIUS-only addresses): {line!r}"
-                )
-        # ``remote-address`` may not be set explicitly (RADIUS provides it).
-        # We use a word-boundary so ``remote-address-list`` etc. wouldn't false-match.
-        assert not re.search(r"\bremote-address=", out), (
-            "explicit remote-address present — violates the RADIUS-only invariant"
-        )
+                pool_adds.append(line)
+        assert pool_adds, "expected /ip pool add for the shared fleet pool"
+        for line in pool_adds:
+            assert f'name="{fleet_cfg.ip_pool_name}"' in line, (
+                "/ip pool add must use the fleet-constant pool name "
+                f"({fleet_cfg.ip_pool_name!r}); got: {line!r}"
+            )
+        # Cross-CHR roaming guarantee: the central pool name is the only
+        # remote-address pool reference for client traffic.
+        assert (
+            f'remote-address="{fleet_cfg.ip_pool_name}"' in out
+            or f"remote-address={fleet_cfg.ip_pool_name}" in out
+        ), "PPP profile must reference the fleet-constant pool"
 
     def test_strict_undefined_catches_missing_binding(self, chr_a, fleet_cfg) -> None:
         """If a future template edit introduces a new variable but render_chr_script

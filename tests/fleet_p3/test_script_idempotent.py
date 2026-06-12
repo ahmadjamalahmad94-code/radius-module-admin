@@ -183,10 +183,15 @@ def test_every_add_under_relevant_section_has_cleanup():
 
 def test_set_based_blocks_unchanged():
     script = _render()
+    # The `set` form is intrinsically idempotent — preserved across the
+    # feat/chr-unified-provisioning-complete expansion. The /ppp profile
+    # block now ALSO emits an `add` for the hobe-fleet-default profile,
+    # but `set default-encryption` is still emitted so a tunnel landing
+    # on the built-in default keeps a valid PPP shape.
     for token in (
         "/radius incoming\n# Enable CoA",
         "/ppp aaa\nset use-radius=yes",
-        "/ppp profile\nset default-encryption",
+        "set default-encryption local-address=",
         "/interface pptp-server server\nset enabled=yes",
     ):
         assert token in script, f"missing/changed set-block: {token!r}"

@@ -216,9 +216,25 @@ def test_section_11_skipped_cleanly_when_creds_blank():
 def test_firewall_rule_only_accepts_on_wg_mgmt():
     script = _render_full()
     # The api-port firewall rule must be wg-mgmt-only — never on WAN.
-    assert (
-        "in-interface=wg-mgmt protocol=tcp dst-port=8443" in script
+    # feat/chr-unified-provisioning-complete tightened the rule with an
+    # additional src-address=PANEL_WG_ADDR/32 ACL between the interface
+    # and the dst-port; both invariants are checked separately.
+    import re
+    # Find the api-ssl rule's full line (joins line continuations).
+    flat = script.replace(" \\\n", " ")
+    rule = next(
+        (ln for ln in flat.splitlines()
+         if 'comment="hobe-fleet-fw-api-ssl"' in ln
+         and ln.lstrip().startswith("add ")),
+        None,
     )
-    # And it carries its hobe-fleet comment so the idempotent remove
-    # block strips it on re-import.
-    assert 'comment="hobe-fleet-fw-api-ssl"' in script
+    assert rule, "api-ssl firewall rule missing from rendered script"
+    assert "in-interface=wg-mgmt" in rule, (
+        f"api-ssl rule must be wg-mgmt-only — got: {rule!r}"
+    )
+    assert "dst-port=8443" in rule, (
+        f"api-ssl rule must target the metrics port — got: {rule!r}"
+    )
+    assert "protocol=tcp" in rule, (
+        f"api-ssl rule must be TCP — got: {rule!r}"
+    )

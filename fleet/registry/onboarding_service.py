@@ -335,6 +335,18 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
     "API_USER": "",
     "API_PASSWORD": "",
     "API_PORT": 8443,
+    # ── shared client pool + PPP profile (feat/chr-unified-provisioning-
+    # complete). Same name + ranges on every node so a subscriber roaming
+    # between CHRs keeps the same Framed-IP and the same profile (§10.2).
+    "IP_POOL_NAME": "hobe-fleet-pool",
+    "IP_POOL_RANGES": "10.50.0.10-10.50.255.254",
+    "PPP_PROFILE_NAME": "hobe-fleet-default",
+    # ── user-WireGuard listener (role: vpn_wireguard) ──────────────────
+    # 51822 chosen to avoid collision with wg-mgmt 51820 / wg-data 51821.
+    "WG_USERS_PORT": 51822,
+    "WG_USERS_ADDR": "10.51.0.1/24",
+    # ── self-lockout rollback window (§0a / §12 in the template) ──────
+    "SAFEMODE_ROLLBACK_DELAY": "3m",
 }
 
 # Pool the wg-mgmt control-plane addresses are allocated from (§6.3).
@@ -703,6 +715,19 @@ class OnboardingService:
         # fleet-constant
         for key in _FLEET_CONST_DEFAULTS:
             bindings[key] = self._const(key)
+
+        # Per-node role set (feat/chr-unified-provisioning-complete). The
+        # template gates each VPN service + its firewall accept on this
+        # SET. Empty roles_json column ⇒ all-roles-enabled (back-compat
+        # for nodes registered before the column landed).
+        try:
+            from app.services.node_roles import enabled_roles  # local import — Flask context
+            bindings["NODE_ROLES_SET"] = set(enabled_roles(node))
+        except Exception:  # noqa: BLE001 — never break onboarding on a roles probe
+            bindings["NODE_ROLES_SET"] = {
+                "radius_transport", "vpn_sstp", "vpn_pptp",
+                "vpn_ipsec", "vpn_wireguard",
+            }
 
         # API user provisioning (live-metrics poller). Resolution: per-node
         # override on the FleetChrNode row beats Setting layer beats the

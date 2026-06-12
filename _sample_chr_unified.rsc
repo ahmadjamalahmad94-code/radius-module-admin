@@ -1,137 +1,18 @@
-{# ============================================================================
-   HobeRadius unified CHR provisioning script — Jinja2 source.
-   Renders RouterOS v7.x configuration that is IDENTICAL across the fleet
-   except for the documented per-CHR bindings. See:
-
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5  — the canonical script
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5.1 — which vars are per-CHR
-     * docs/CUSTOMER_RADIUS_TUNNEL_DESIGN.md §10    — node-role gating
-
-   Per-CHR (renders differ between two CHRs):
-     - WG_MGMT_PRIVKEY, WG_MGMT_ADDR          (control tunnel)
-     - WG_DATA_PRIVKEY, WG_DATA_ADDR          (data tunnel)
-     - WG_DATA_ADDR_IP                        (data tunnel IP w/o /mask)
-     - ROUTER_IDENTITY, CHR_PUBLIC_IP         (form / detected)
-     - WAN_IFACE                              (detected)
-     - NODE_ROLES_SET                         (per-node enabled-roles set)
-
-   Fleet-constant (identical in every render):
-     - PANEL_WG_PUBKEY / PANEL_WG_HOST / PANEL_WG_PORT / PANEL_WG_ADDR
-     - PROXY_WG_PUBKEY / PROXY_WG_HOST / PROXY_WG_PORT / PROXY_WG_ADDR
-     - CHR_SHARED_SECRET (matches proxy's PROXY_CHR_SECRET; §6.5.1 note)
-     - SSTP_CERT_NAME, IKE_CERT_NAME
-     - CLIENT_SUPERNET, DNS_PUSH, GW_LOCAL_ADDR
-     - IP_POOL_NAME, IP_POOL_RANGES         (shared client pool — §6.5.2)
-     - PPP_PROFILE_NAME                      (shared default PPP profile)
-     - WG_USERS_PORT                         (user-WireGuard listener)
-     - WG_USERS_ADDR                         (user-WG gateway address)
-     - SAFEMODE_ROLLBACK_DELAY               (e.g. "3m"; rollback window)
-
-   See ``fleet/registry/script_render.py`` for the binding model and dataclass.
-
-   IDEMPOTENCY (fix/fleet-script-idempotent):
-     Every `add` in this script is preceded by `remove [find …]` so the
-     whole .rsc is safe to import twice in a row, or to re-import after a
-     partial first run that already created some of the resources.
-
-   SELF-LOCKOUT PROOF (feat/chr-unified-provisioning-complete):
-     The owner runs this script on a CHR he is CONNECTED to. A broken
-     firewall edit could lock him out mid-apply. RouterOS has no scripted
-     ``safe-mode`` toggle that survives ``/import``, so we provision an
-     explicit rollback guard:
-
-       (a) ``/system backup save name="hobe-fleet-pre-apply"`` snapshots
-           the prior working config;
-       (b) ``/system scheduler add name="hobe-fleet-rollback"
-           interval=SAFEMODE_ROLLBACK_DELAY on-event="/system backup
-           load …"`` — the rollback fires at T+delay UNLESS we cancel
-           it;
-       (c) the LAST line of the script removes the scheduler.
-
-     Clean run ⇒ cancel executes, rollback never fires. Halted run
-     (script error, lost connectivity, broken firewall) ⇒ scheduler
-     trips at T+delay and restores the pre-apply backup. The window is
-     documented in this header so the operator knows to wait before
-     re-running.
-
-   ROLE GATING (feat/chr-unified-provisioning-complete):
-     ``NODE_ROLES_SET`` is the SET of roles enabled on this node (see
-     app/services/node_roles.py — empty list ⇒ all roles). The template
-     conditionally enables service blocks per role:
-
-       * ``radius_transport`` — wg-data + RADIUS client + CoA listener;
-       * ``vpn_sstp``         — SSTP server (still gated on
-                                ``SSTP_CERT_NAME`` being non-empty);
-       * ``vpn_pptp``         — PPTP server + GRE allow;
-       * ``vpn_ipsec``        — IKEv2 + L2TP/IPsec server (IKEv2 still
-                                gated on ``IKE_CERT_NAME``);
-       * ``vpn_wireguard``    — wg-users user-WireGuard server.
-
-     The firewall block emits the matching ``accept`` rules ONLY for
-     roles that are enabled, so an unwanted port is never exposed.
-
-   SURGICAL FIREWALL (feat/chr-unified-provisioning-complete):
-     Owner brief: «بدي كل شي جراحي وقوي، ما تحظر شي يمنع اتصالات». Block:
-
-       1. ``hobe-fleet-fw-conntrack`` accept established,related,untracked
-          — first match for any existing flow including the SSH session
-          carrying this very ``/import``;
-       2. ``hobe-fleet-fw-invalid`` drop conntrack=invalid — hygiene;
-       3. ``hobe-fleet-fw-mgmt`` accept in=wg-mgmt src=PANEL_WG_ADDR/32 —
-          panel-only management BEFORE any drop;
-       4. ``hobe-fleet-fw-radius`` / ``-coa`` accept in=wg-data
-          src=PROXY_WG_ADDR/32 (only when ``radius_transport`` enabled);
-       5. wg-mgmt + wg-data UDP handshake accepts on the WAN iface;
-       6. per-role VPN service accepts (sstp 443/tcp, pptp 1723/tcp +
-          gre, ike 500,4500/udp + esp/50, l2tp 1701/udp, wg-users
-          WG_USERS_PORT/udp) — each labelled with its role so the
-          remove-by-regex picks them up cleanly;
-       7. ICMP accept with a rate limit;
-       8. ``hobe-fleet-fw-no-public-radius`` drop udp 1812/1813/3799 on
-          any iface OTHER than wg-data — defence vs an operator who
-          forgot to enable the role;
-       9. ``hobe-fleet-fw-drop-last`` is the FINAL input rule — every
-          accept above explicit, then deny the rest.
-
-     The explicit hoist-to-top of conntrack + mgmt + coa + radius via
-     ``move destination=0`` survives stale operator drops the way the
-     original §9b fix established. ``conntrack`` lands at absolute top so
-     a re-import never breaks the very session running it.
-
-   DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
-     A field finding: even with host-only endpoint-address,
-     ``endpoint-address=proxy.hoberadius.com`` left wg-data with
-     current-endpoint-address="" and no handshake — replacing with the
-     resolved IP literal worked instantly. The script now:
-       (a) ensures /ip dns has at least one server (sets 1.1.1.1,8.8.8.8
-           as fallback — does NOT clobber an operator-set list);
-       (b) tags each peer with a stable comment;
-       (c) runs ``:resolve`` against PANEL_WG_HOST / PROXY_WG_HOST with
-           up to 5 retries (2-second back-off) and overwrites the peer's
-           endpoint-address with the resolved IP literal.
-   ============================================================================ #}
-{%- set ROLES = NODE_ROLES_SET|default(['radius_transport','vpn_sstp','vpn_pptp','vpn_ipsec','vpn_wireguard']) -%}
-{%- set IP_POOL_NAME = IP_POOL_NAME|default('hobe-fleet-pool') -%}
-{%- set IP_POOL_RANGES = IP_POOL_RANGES|default('10.50.0.10-10.50.255.254') -%}
-{%- set PPP_PROFILE_NAME = PPP_PROFILE_NAME|default('hobe-fleet-default') -%}
-{%- set WG_USERS_PORT = WG_USERS_PORT|default(51822) -%}
-{%- set WG_USERS_ADDR = WG_USERS_ADDR|default('10.51.0.1/24') -%}
-{%- set SAFEMODE_ROLLBACK_DELAY = SAFEMODE_ROLLBACK_DELAY|default('3m') -%}
 # ============================================================
 # HobeRadius unified CHR provisioning script  (v3, idempotent)
 # Safe to re-import: every resource removes prior copies first.
-# Self-lockout safe: arms a {{ SAFEMODE_ROLLBACK_DELAY }} rollback BEFORE
+# Self-lockout safe: arms a 3m rollback BEFORE
 # touching anything; cancels it on clean completion. If you lose your
 # session mid-apply, the CHR auto-reverts and you can re-run.
 # ============================================================
 
-/system identity set name="{{ ROUTER_IDENTITY }}"
+/system identity set name="chr-vpn-1"
 
 # ============================================================
 # 0a. SELF-LOCKOUT GUARD — snapshot + auto-rollback
 # ============================================================
 # Take a backup of the CURRENT (working) config, then arm a one-shot
-# scheduler that, in {{ SAFEMODE_ROLLBACK_DELAY }}, loads it back. The
+# scheduler that, in 3m, loads it back. The
 # very last block of this script removes the scheduler. If anything
 # below fails or breaks the admin session, the scheduler fires and the
 # CHR boots into the snapshot, recovering the prior working state.
@@ -140,11 +21,11 @@
 :delay 1s
 /system scheduler
 remove [find name="hobe-fleet-rollback"]
-add name="hobe-fleet-rollback" interval={{ SAFEMODE_ROLLBACK_DELAY }} \
-    on-event=(":log warning \"hobe-fleet: rollback fired (no cancel within {{ SAFEMODE_ROLLBACK_DELAY }})\"; /system backup load name=hobe-fleet-pre-apply") \
+add name="hobe-fleet-rollback" interval=3m \
+    on-event=(":log warning \"hobe-fleet: rollback fired (no cancel within 3m)\"; /system backup load name=hobe-fleet-pre-apply") \
     policy=read,write,policy,test,password,sensitive \
     comment="hobe-fleet-rollback-guard"
-:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) — script must run to completion to cancel it"
+:log info "hobe-fleet: rollback guard armed (3m window) — script must run to completion to cancel it"
 
 # ---- 0b. DNS bootstrap (so :resolve works in section 2b) ----
 # If the CHR has no DNS servers configured yet, set a public fallback.
@@ -162,20 +43,17 @@ remove [find interface="wg-mgmt"]
 remove [find interface="wg-mgmt"]
 /interface wireguard
 remove [find name="wg-mgmt"]
-add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
+add name=wg-mgmt listen-port=51820 private-key="MGMT_PRIVKEY_BASE64_PLACEHOLDER=="
 /interface wireguard peers
-{# endpoint-address MUST be host-only — RouterOS rejects host:port silently
-   and leaves current-endpoint-address="" with no handshake. The renderer
-   splits the stored host:port into HOST + PORT bindings; see
-   fleet.registry.script_render._split_endpoint. #}
-add interface=wg-mgmt public-key="{{ PANEL_WG_PUBKEY }}" \
-    endpoint-address={{ PANEL_WG_HOST }} endpoint-port={{ PANEL_WG_PORT }} \
-    allowed-address={{ PANEL_WG_ADDR }}/32 persistent-keepalive=25s \
+
+add interface=wg-mgmt public-key="PANELPUBKEY_BASE64_PLACEHOLDER_AAAAAAAAAAAA=" \
+    endpoint-address=control.hoberadius.com endpoint-port=51820 \
+    allowed-address=10.99.0.1/32 persistent-keepalive=25s \
     comment="hobe-fleet-mgmt"
 /ip address
-add interface=wg-mgmt address={{ WG_MGMT_ADDR }}     ;# e.g. 10.99.0.11/24 (shared mgmt net; /32 broke the return route)
+add interface=wg-mgmt address=10.99.0.11/24     ;# e.g. 10.99.0.11/24 (shared mgmt net; /32 broke the return route)
 
-{% if 'radius_transport' in ROLES %}
+
 # ---- 2. WireGuard DATA path to RADIUS proxy (wg-data) ------
 # Carries ONLY RADIUS 1812/1813 + CoA 3799 to the proxy. Role-gated on
 # ``radius_transport``: nodes that are pure VPN terminators (no RADIUS
@@ -186,19 +64,16 @@ remove [find interface="wg-data"]
 remove [find interface="wg-data"]
 /interface wireguard
 remove [find name="wg-data"]
-add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
+add name=wg-data listen-port=51821 private-key="DATA_PRIVKEY_BASE64_PLACEHOLDER=="
 /interface wireguard peers
-{# Same as the wg-mgmt block — host-only endpoint-address, port separate. #}
-add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
-    endpoint-address={{ PROXY_WG_HOST }} endpoint-port={{ PROXY_WG_PORT }} \
-    allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
+
+add interface=wg-data public-key="PROXYPUBKEY_BASE64_PLACEHOLDER_AAAAAAAAAAAA=" \
+    endpoint-address=proxy.hoberadius.com endpoint-port=51821 \
+    allowed-address=10.98.0.1/32 persistent-keepalive=25s \
     comment="hobe-fleet-data"
 /ip address
-add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shared data net; /32 broke the RADIUS return path)
-{% else %}
-# wg-data skipped: ``radius_transport`` role not enabled on this node.
-# Pure VPN-terminator CHRs don't carry RADIUS to/from the proxy.
-{% endif %}
+add interface=wg-data address=10.98.0.11/24     ;# e.g. 10.98.0.11/24 (shared data net; /32 broke the RADIUS return path)
+
 
 # ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
 # Field finding (fix/fleet-endpoint-resolve): RouterOS doesn't always
@@ -221,32 +96,32 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shar
     :return $host
 }
 
-:local panelIP [$hobeResolve "{{ PANEL_WG_HOST }}"]
+:local panelIP [$hobeResolve "control.hoberadius.com"]
 /interface wireguard peers
-set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port={{ PANEL_WG_PORT }}
-{% if 'radius_transport' in ROLES %}
-:local proxyIP [$hobeResolve "{{ PROXY_WG_HOST }}"]
+set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port=51820
+
+:local proxyIP [$hobeResolve "proxy.hoberadius.com"]
 /interface wireguard peers
-set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ PROXY_WG_PORT }}
-{% endif %}
+set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port=51821
+
 
 # ---- 2c. Key-identity audit trail ----
 # Identity log lines: when a key mismatch produces a silent dead tunnel,
 # /log carries the EXPECTED identities for one-glance comparison against
 # «إعدادات بنية الأسطول» on the panel.
-:log info ("hobe-fleet: wg-mgmt peer expects PANEL pubkey = {{ PANEL_WG_PUBKEY }}")
-{% if 'radius_transport' in ROLES %}
-:log info ("hobe-fleet: wg-data peer expects PROXY pubkey = {{ PROXY_WG_PUBKEY }}")
-{% endif %}
+:log info ("hobe-fleet: wg-mgmt peer expects PANEL pubkey = PANELPUBKEY_BASE64_PLACEHOLDER_AAAAAAAAAAAA=")
+
+:log info ("hobe-fleet: wg-data peer expects PROXY pubkey = PROXYPUBKEY_BASE64_PLACEHOLDER_AAAAAAAAAAAA=")
+
 :log info ("hobe-fleet: this CHR wg-mgmt pubkey (give to panel) = " . [/interface wireguard get [find name="wg-mgmt"] public-key])
 
-{% if 'radius_transport' in ROLES %}
+
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
 remove [find comment="hobe-fleet-radius"]
-add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
+add service=ppp,login address=10.98.0.1 secret="PLACEHOLDER_central_shared_secret_from_panel" \
     authentication-port=1812 accounting-port=1813 \
-    src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
+    src-address=10.98.0.11 timeout=3s \
     comment="hobe-fleet-radius"
 # Force the entry to ENABLED on every (re-)import (X - DISABLED was seen on
 # the first live install and silently killed RADIUS).
@@ -258,10 +133,7 @@ set accept=yes port=3799
 # Make PPP + login use RADIUS:
 /ppp aaa
 set use-radius=yes accounting=yes interim-update=5m
-{% else %}
-# RADIUS client skipped: ``radius_transport`` role not enabled.
-# This node terminates VPNs locally (or only via the WireGuard mesh).
-{% endif %}
+
 
 # ---- 4. Shared IP pool + unified PPP profile (FLEET-CONSTANT) --
 # §10.2 / §6.5.2: every node carries the SAME pool name + ranges + the
@@ -272,64 +144,47 @@ set use-radius=yes accounting=yes interim-update=5m
 # Idempotent: remove by stable comment/name-prefix, then re-add.
 /ppp profile
 remove [find comment="hobe-fleet-ppp"]
-remove [find name="{{ PPP_PROFILE_NAME }}"]
+remove [find name="hobe-fleet-default"]
 /ip pool
 remove [find name~"^hobe-fleet-pool"]
-remove [find name="{{ IP_POOL_NAME }}"]
-add name="{{ IP_POOL_NAME }}" ranges="{{ IP_POOL_RANGES }}" comment="hobe-fleet-pool"
+remove [find name="hobe-fleet-pool"]
+add name="hobe-fleet-pool" ranges="10.50.0.10-10.50.255.254" comment="hobe-fleet-pool"
 /ppp profile
 # IP allocation flow: prefer RADIUS Framed-IP (Access-Accept attribute);
 # fall back to the shared pool by name. Same name + ranges on every node
 # guarantees the framed IP is also valid post-roam.
-add name="{{ PPP_PROFILE_NAME }}" local-address={{ GW_LOCAL_ADDR }} \
-    remote-address="{{ IP_POOL_NAME }}" \
-    use-encryption=required dns-server={{ DNS_PUSH }} \
+add name="hobe-fleet-default" local-address=10.10.0.1 \
+    remote-address="hobe-fleet-pool" \
+    use-encryption=required dns-server=1.1.1.1,1.0.0.1 \
     only-one=yes comment="hobe-fleet-ppp"
 # Built-in default-encryption stays in sync as a safety mirror; CHR-level
 # defaults (RouterOS pre-creates `default-encryption`) still need their
 # remote-address to point at the shared pool so a tunnel that lands on
 # the built-in profile still gets an IP.
-set default-encryption local-address={{ GW_LOCAL_ADDR }} \
-    remote-address="{{ IP_POOL_NAME }}" \
-    use-encryption=required dns-server={{ DNS_PUSH }} \
+set default-encryption local-address=10.10.0.1 \
+    remote-address="hobe-fleet-pool" \
+    use-encryption=required dns-server=1.1.1.1,1.0.0.1 \
     only-one=yes        ;# RADIUS Framed-IP wins when present
 
-{% if 'vpn_pptp' in ROLES %}
+
 # ---- 5. PPTP server (role: vpn_pptp) ----------------------
 /interface pptp-server server
-set enabled=yes authentication=mschap2 default-profile={{ PPP_PROFILE_NAME }} \
+set enabled=yes authentication=mschap2 default-profile=hobe-fleet-default \
     keepalive-timeout=30
-{% else %}
-/interface pptp-server server
-set enabled=no
-# PPTP skipped: ``vpn_pptp`` role disabled on this node.
-{% endif %}
 
-{% if 'vpn_sstp' in ROLES %}
+
+
 # ---- 6. SSTP server (role: vpn_sstp; TLS 443) ----------------
-{# Cert-conditional: SSTP requires a TLS cert pre-imported on the CHR. We
-   skip the whole sub-section when no cert name is configured on the panel
-   — emitting `certificate=` empty would fail with "input does not match
-   any value of certificate". The «رابط RADIUS» SSTP for the customer NAS
-   to dial in shares this same listener; both end-users AND the customer
-   NAS authenticate via the RADIUS client above, distinguished by user. #}
-{% if SSTP_CERT_NAME %}
+
+
 /interface sstp-server server
 set enabled=yes port=443 authentication=mschap2 \
-    certificate={{ SSTP_CERT_NAME }} tls-version=only-1.2 \
-    default-profile={{ PPP_PROFILE_NAME }} verify-client-certificate=no
-{% else %}
-# SSTP skipped: no TLS certificate configured on the panel yet.
-# Set SSTP_CERT_NAME in /admin/fleet config (and pre-install the matching
-# /certificate row on each CHR) to enable the SSTP server block here.
-{% endif %}
-{% else %}
-/interface sstp-server server
-set enabled=no
-# SSTP skipped: ``vpn_sstp`` role disabled on this node.
-{% endif %}
+    certificate=hobe-sstp-cert tls-version=only-1.2 \
+    default-profile=hobe-fleet-default verify-client-certificate=no
 
-{% if 'vpn_ipsec' in ROLES %}
+
+
+
 # ---- 7. IPsec / IKEv2 server (role: vpn_ipsec) -----------
 # IPsec children reference parents by name — clean child→parent order on
 # remove, then parent→child on add.
@@ -349,35 +204,24 @@ add name=hobe-prop enc-algorithms=aes-256-cbc,aes-256-gcm pfs-group=modp2048
 /ip ipsec mode-config
 # Address ALSO via RADIUS for IKEv2 (no local pool); identity = vpn.hoberadius.com
 add name=hobe-mc responder=yes
-{% if IKE_CERT_NAME %}
+
 /ip ipsec peer
 add name=hobe-peer exchange-mode=ike2 profile=hobe-ike passive=yes
 /ip ipsec identity
 add auth-method=eap-radius generate-policy=port-strict mode-config=hobe-mc \
-    peer=hobe-peer certificate={{ IKE_CERT_NAME }}
-{% else %}
-# IPsec IKEv2 identity + peer skipped: no IKEv2 certificate configured.
-# Set IKE_CERT_NAME in /admin/fleet config to enable IKEv2.
-{% endif %}
+    peer=hobe-peer certificate=hobe-ike-cert
+
 
 # ---- 7b. L2TP/IPsec server (role: vpn_ipsec) ----------------
 # L2TP rides inside an IPsec transport. Enable L2TP and require the
 # IPsec PSK so a plain-L2TP client can't reach us. The PSK is the same
 # central CHR_SHARED_SECRET — the panel is the SINGLE source of truth.
 /interface l2tp-server server
-set enabled=yes authentication=mschap2 default-profile={{ PPP_PROFILE_NAME }} \
-    use-ipsec=required ipsec-secret="{{ CHR_SHARED_SECRET }}"
-{% else %}
-/ip ipsec identity
-remove [find peer="hobe-peer"]
-/ip ipsec peer
-remove [find name="hobe-peer"]
-/interface l2tp-server server
-set enabled=no
-# IPsec / L2TP skipped: ``vpn_ipsec`` role disabled on this node.
-{% endif %}
+set enabled=yes authentication=mschap2 default-profile=hobe-fleet-default \
+    use-ipsec=required ipsec-secret="PLACEHOLDER_central_shared_secret_from_panel"
 
-{% if 'vpn_wireguard' in ROLES %}
+
+
 # ---- 7c. WireGuard user server (role: vpn_wireguard) -------
 # A dedicated wg interface for end-user clients. RouterOS auto-generates
 # the private key on `add` (we deliberately do NOT pass private-key= so
@@ -394,23 +238,19 @@ remove [find interface="wg-users"]
 remove [find interface="wg-users"]
 /interface wireguard
 remove [find name="wg-users"]
-add name=wg-users listen-port={{ WG_USERS_PORT }} comment="hobe-fleet-users"
+add name=wg-users listen-port=51822 comment="hobe-fleet-users"
 /ip address
-add interface=wg-users address={{ WG_USERS_ADDR }} comment="hobe-fleet-users"
+add interface=wg-users address=10.51.0.1/24 comment="hobe-fleet-users"
 :log info ("hobe-fleet: wg-users public key (give to panel) = " . [/interface wireguard get [find name="wg-users"] public-key])
-{% else %}
-/interface wireguard
-remove [find name="wg-users"]
-# wg-users skipped: ``vpn_wireguard`` role disabled on this node.
-{% endif %}
+
 
 # ---- 8. NAT / masquerade to the internet ------------------
 # Client (RADIUS-assigned or pool-assigned) range egresses via this CHR's
 # public IP.
 /ip firewall nat
 remove [find comment="hobe-fleet-nat-egress"]
-add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
-    src-address={{ CLIENT_SUPERNET }} comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
+add chain=srcnat action=masquerade out-interface=ether1 \
+    src-address=10.0.0.0/8 comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
 
 # ============================================================
 # 9. SURGICAL FIREWALL (input chain) — see header comment for full spec.
@@ -434,50 +274,50 @@ add chain=input action=drop connection-state=invalid \
 # (c) MANAGEMENT FIRST — wg-mgmt accepts panel-only, before any drop.
 #     Scoped: in-interface=wg-mgmt AND src-address=PANEL_WG_ADDR/32.
 #     This is what keeps the connected admin alive across re-imports.
-add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
+add chain=input in-interface=wg-mgmt src-address=10.99.0.1/32 \
     action=accept comment="hobe-fleet-fw-mgmt"
 
-{% if 'radius_transport' in ROLES %}
+
 # (d) RADIUS over wg-data — auth/acct + CoA, scoped to the proxy IP.
-add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
+add chain=input in-interface=wg-data src-address=10.98.0.1/32 \
     protocol=udp dst-port=1812,1813 action=accept comment="hobe-fleet-fw-radius"
-add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
+add chain=input in-interface=wg-data src-address=10.98.0.1/32 \
     protocol=udp dst-port=3799 action=accept comment="hobe-fleet-fw-coa"
-{% endif %}
+
 
 # (e) WG handshake UDP on the WAN — required for either peer to come up.
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51820 \
+add chain=input in-interface=ether1 protocol=udp dst-port=51820 \
     action=accept comment="hobe-fleet-fw-wg-mgmt-udp"
-{% if 'radius_transport' in ROLES %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51821 \
+
+add chain=input in-interface=ether1 protocol=udp dst-port=51821 \
     action=accept comment="hobe-fleet-fw-wg-data-udp"
-{% endif %}
+
 
 # (f) VPN service ports — role-gated, cert-gated where the server needs a cert.
-{% if 'vpn_sstp' in ROLES and SSTP_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 \
+
+add chain=input in-interface=ether1 protocol=tcp dst-port=443 \
     action=accept comment="hobe-fleet-fw-sstp"
-{% endif %}
-{% if 'vpn_pptp' in ROLES %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 \
+
+
+add chain=input in-interface=ether1 protocol=tcp dst-port=1723 \
     action=accept comment="hobe-fleet-fw-pptp-ctrl"
-add chain=input in-interface={{ WAN_IFACE }} protocol=gre \
+add chain=input in-interface=ether1 protocol=gre \
     action=accept comment="hobe-fleet-fw-pptp-data"
-{% endif %}
-{% if 'vpn_ipsec' in ROLES %}
-{% if IKE_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 \
+
+
+
+add chain=input in-interface=ether1 protocol=udp dst-port=500,4500 \
     action=accept comment="hobe-fleet-fw-ike"
-{% endif %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=ipsec-esp \
+
+add chain=input in-interface=ether1 protocol=ipsec-esp \
     action=accept comment="hobe-fleet-fw-esp"
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=1701 \
+add chain=input in-interface=ether1 protocol=udp dst-port=1701 \
     action=accept comment="hobe-fleet-fw-l2tp"
-{% endif %}
-{% if 'vpn_wireguard' in ROLES %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port={{ WG_USERS_PORT }} \
+
+
+add chain=input in-interface=ether1 protocol=udp dst-port=51822 \
     action=accept comment="hobe-fleet-fw-wg-users"
-{% endif %}
+
 
 # (g) Sane ICMP — pings work but can't flood.
 add chain=input protocol=icmp action=accept limit=50,5:packet \
@@ -503,10 +343,10 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 # before itself» error some builds raise when the rule is already at
 # position 0 — desired order is in place, error is noise.
 :do { /ip firewall filter move [find comment="hobe-fleet-fw-mgmt"] destination=0 } on-error={}
-{% if 'radius_transport' in ROLES %}
+
 :do { /ip firewall filter move [find comment="hobe-fleet-fw-coa"] destination=0 } on-error={}
 :do { /ip firewall filter move [find comment="hobe-fleet-fw-radius"] destination=0 } on-error={}
-{% endif %}
+
 :do { /ip firewall filter move [find comment="hobe-fleet-fw-conntrack"] destination=0 } on-error={}
 
 # ---- 10. control-plane is NOT a data route ----------------
@@ -526,10 +366,10 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 #   2. CERTIFICATE: cert assigned so the TCP listener actually binds.
 #   3. ACL DIRECTION: source-IP ACL points at the PANEL's wg-mgmt IP,
 #      not the CHR's own — so the panel itself isn't blocked.
-{% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+
 /user
-remove [find name="{{ API_USER }}"]
-add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
+remove [find name="panel-poller"]
+add name="panel-poller" group=read password="metrics-password-from-vault" \
     comment="hobe-fleet-api-readonly"
 
 # Self-signed PKI for www-ssl: a tiny local CA + a leaf signed by it.
@@ -549,16 +389,16 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
 # www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL —
 # restrict to the PANEL's wg-mgmt IP (PANEL_WG_ADDR/32).
 /ip service
-set www-ssl disabled=no port={{ API_PORT|default(8443) }} \
-    certificate=hobe-fleet-api-cert address={{ PANEL_WG_ADDR }}/32
+set www-ssl disabled=no port=8443 \
+    certificate=hobe-fleet-api-cert address=10.99.0.1/32
 set api     disabled=yes  ;# binary API stays off (we use REST)
 set api-ssl disabled=yes  ;# binary-over-TLS stays off (we use REST/www-ssl)
 set www     disabled=yes  ;# plain HTTP stays off
 # SSH + WinBox restricted to the panel source-IP over wg-mgmt — the only
 # way an operator hand-touches a CHR is through the panel-controlled
 # management plane. Defence-in-depth on top of the surgical firewall.
-set ssh    address={{ PANEL_WG_ADDR }}/32 disabled=no
-set winbox address={{ PANEL_WG_ADDR }}/32 disabled=no
+set ssh    address=10.99.0.1/32 disabled=no
+set winbox address=10.99.0.1/32 disabled=no
 set telnet disabled=yes
 set ftp    disabled=yes
 
@@ -567,25 +407,20 @@ remove [find comment="hobe-fleet-fw-api-ssl"]
 # Place the API accept just BEFORE the drop-last rule so a re-import
 # always lands it above the deny — and the regex remove at §9 already
 # swept the prior copy.
-add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
-    protocol=tcp dst-port={{ API_PORT|default(8443) }} \
+add chain=input in-interface=wg-mgmt src-address=10.99.0.1/32 \
+    protocol=tcp dst-port=8443 \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-api-ssl"
-{% else %}
-# Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
-# the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
-# sessions / bandwidth until the operator configures these in
-# «إعدادات بنية الأسطول → بيانات اعتماد قراءة المقاييس».
-{% endif %}
 
-# CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
+
+# CHR_PUBLIC_IP for this node (egress identity, documented for ops): 178.105.244.112
 
 # ============================================================
 # 12. SELF-LOCKOUT GUARD — CANCEL (we made it through cleanly)
 # ============================================================
 # Last block of the script. If we get here, every section above ran
 # without halting, so the apply is good. Cancel the rollback scheduler
-# armed in §0a; without this line the CHR would auto-revert at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
+# armed in §0a; without this line the CHR would auto-revert at T+3m.
 :do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
 :do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
 :log info "hobe-fleet: rollback guard CANCELLED — apply complete"

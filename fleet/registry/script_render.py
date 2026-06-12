@@ -153,6 +153,29 @@ class RouterosTemplateConfig:
     api_password: str = ""
     api_port: int = 8443
 
+    # ── shared client pool + PPP profile (feat/chr-unified-provisioning-complete)
+    # Same name + ranges on every node so a subscriber roaming/failing-
+    # over between nodes keeps the same Framed-IP and the same profile.
+    # See docs/CUSTOMER_RADIUS_TUNNEL_DESIGN.md §10.2.
+    ip_pool_name: str = "hobe-fleet-pool"
+    ip_pool_ranges: str = "10.50.0.10-10.50.255.254"
+    ppp_profile_name: str = "hobe-fleet-default"
+
+    # ── user-WireGuard server (role: vpn_wireguard) ─────────────────────
+    # Listens on UDP for end-user dialers. The CHR auto-generates the
+    # private key on `add` (we deliberately do NOT push one — the panel
+    # reads the matching public key back via heartbeat). 51822 chosen so
+    # it doesn't collide with wg-mgmt (51820) or wg-data (51821).
+    wg_users_port: int = 51822
+    wg_users_addr: str = "10.51.0.1/24"
+
+    # ── self-lockout rollback window (§0a / §12) ────────────────────────
+    # Time after the rollback scheduler is armed before it fires.
+    # The script's last block CANCELS the scheduler — clean runs never
+    # see the rollback. If the admin loses connectivity mid-apply, the
+    # CHR boots back into the pre-apply snapshot after this delay.
+    safemode_rollback_delay: str = "3m"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Jinja environment
@@ -261,6 +284,10 @@ def build_bindings(
         default_port=_DEFAULT_ENDPOINT_PORTS["PROXY_WG_ENDPOINT"],
     )
 
+    # Per-node role set. Empty list ⇒ "all roles enabled" — the back-compat
+    # rule from app/services/node_roles.py. We resolve here so the template
+    # gets a concrete iterable (not a None) and StrictUndefined never trips.
+    roles_set = _resolve_node_roles(node)
     return {
         # ── per-CHR (PER_CHR_BINDINGS) ──────────────────────────────────────
         "WG_MGMT_PRIVKEY":  keys.mgmt_privkey,
@@ -271,6 +298,7 @@ def build_bindings(
         "ROUTER_IDENTITY":  node.name,
         "CHR_PUBLIC_IP":    node.public_ip,
         "WAN_IFACE":        keys.wan_iface,
+        "NODE_ROLES_SET":   roles_set,
         # ── fleet-constant (RouterosTemplateConfig) ─────────────────────────
         "PANEL_WG_PUBKEY":     template_cfg.panel_wg_pubkey,
         # Combined form kept for backwards-compat consumers (e.g. UI display);
@@ -294,7 +322,56 @@ def build_bindings(
         "API_USER":            template_cfg.api_user,
         "API_PASSWORD":        template_cfg.api_password,
         "API_PORT":            template_cfg.api_port,
+        # ── shared client pool + PPP profile (single source of truth) ──────
+        "IP_POOL_NAME":         template_cfg.ip_pool_name,
+        "IP_POOL_RANGES":       template_cfg.ip_pool_ranges,
+        "PPP_PROFILE_NAME":     template_cfg.ppp_profile_name,
+        # ── user-WireGuard server (role: vpn_wireguard) ────────────────────
+        "WG_USERS_PORT":        template_cfg.wg_users_port,
+        "WG_USERS_ADDR":        template_cfg.wg_users_addr,
+        # ── self-lockout rollback delay (§0a / §12) ────────────────────────
+        "SAFEMODE_ROLLBACK_DELAY": template_cfg.safemode_rollback_delay,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-node role resolution
+# ─────────────────────────────────────────────────────────────────────────────
+#: Full role vocabulary (mirrors app.services.node_roles.NODE_ROLES). Listed
+#: here so the renderer stays Flask-free for pure-Python tests — if the
+#: import-time resolver below fails, every role is assumed enabled.
+_ALL_ROLES: tuple[str, ...] = (
+    "radius_transport",
+    "vpn_sstp",
+    "vpn_pptp",
+    "vpn_ipsec",
+    "vpn_wireguard",
+)
+
+
+def _resolve_node_roles(node: "FleetChrNode") -> set[str]:
+    """Return the set of roles enabled on ``node``.
+
+    Tries ``app.services.node_roles.enabled_roles`` first (the single
+    source of truth) — that helper applies the back-compat rule ("empty
+    list ⇒ all roles") consistently with the rest of the panel. If the
+    import fails (tests that run the renderer outside the Flask app),
+    we fall back to reading ``roles_json`` directly with the same
+    semantics.
+    """
+    try:
+        from app.services.node_roles import enabled_roles  # type: ignore
+        return frozenset(enabled_roles(node))
+    except Exception:  # noqa: BLE001 — keep the renderer Flask-free
+        pass
+    import json as _json
+    raw = getattr(node, "roles_json", None) or "[]"
+    try:
+        loaded = _json.loads(raw) if isinstance(raw, str) else list(raw or [])
+    except (TypeError, ValueError):
+        loaded = []
+    enabled = {r for r in loaded if r in _ALL_ROLES}
+    return frozenset(enabled) if enabled else frozenset(_ALL_ROLES)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +445,18 @@ def render_from_bindings(bindings: dict[str, Any], *, env: Environment | None = 
             host, port = _split_endpoint(enriched[src], default_port=default_port)
             enriched.setdefault(host_key, host)
             enriched.setdefault(port_key, port)
+    # Back-compat defaults for the newer bindings (feat/chr-unified-
+    # provisioning-complete). Older test fixtures + ad-hoc callers don't
+    # pass these; we supply sensible defaults so StrictUndefined doesn't
+    # trip on a binding they have no reason to know about. Explicit
+    # values in the dict ALWAYS win.
+    enriched.setdefault("NODE_ROLES_SET", frozenset(_ALL_ROLES))
+    enriched.setdefault("IP_POOL_NAME", "hobe-fleet-pool")
+    enriched.setdefault("IP_POOL_RANGES", "10.50.0.10-10.50.255.254")
+    enriched.setdefault("PPP_PROFILE_NAME", "hobe-fleet-default")
+    enriched.setdefault("WG_USERS_PORT", 51822)
+    enriched.setdefault("WG_USERS_ADDR", "10.51.0.1/24")
+    enriched.setdefault("SAFEMODE_ROLLBACK_DELAY", "3m")
     _assert_no_reserved_subnet_collision(enriched)
     jinja_env = env if env is not None else _build_env()
     template = jinja_env.get_template(_TEMPLATE_NAME)

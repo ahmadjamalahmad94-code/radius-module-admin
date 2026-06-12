@@ -432,8 +432,20 @@ def test_script_provisions_api_user_when_bindings_present():
     assert not any(
         'set api-ssl' in l and 'disabled=no' in l for l in config_lines
     )
-    # Firewall rule still scoped to wg-mgmt interface only.
-    assert 'in-interface=wg-mgmt protocol=tcp dst-port=8443' in script
+    # Firewall rule still scoped to wg-mgmt interface only — the
+    # feat/chr-unified-provisioning-complete branch tightened the rule
+    # with an extra src-address=PANEL_WG_ADDR/32 ACL between the iface
+    # and the dst-port, so we look at the joined-continuation line.
+    flat = script.replace(" \\\n", " ")
+    api_rule = next(
+        (l for l in flat.splitlines()
+         if 'comment="hobe-fleet-fw-api-ssl"' in l and l.lstrip().startswith("add ")),
+        None,
+    )
+    assert api_rule, "api-ssl firewall rule missing from script"
+    assert "in-interface=wg-mgmt" in api_rule
+    assert "protocol=tcp" in api_rule
+    assert "dst-port=8443" in api_rule
 
 
 def test_script_skips_api_block_when_creds_blank():
