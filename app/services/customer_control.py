@@ -623,6 +623,128 @@ def service_tier_is_free(tier: str | None) -> bool:
     return clean_service_tier(tier) in (SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Per-customer HIDDEN flag (orthogonal to the tier).
+#
+# «مخفي» removes the service ENTIRELY from that customer's portal — even a
+# free/basic service — to declutter a beginner's view. It is a VIEW state:
+# hiding never suspends a working service (the runtime contract still
+# carries it, flagged ``hidden: true`` so the radius client can mirror the
+# hide in ITS UI). SUSPENDED (entitlement.status) is the functional stop —
+# independent and explicitly controlled. Stored as config["hidden"] so the
+# underlying tier survives un-hide.
+# ─────────────────────────────────────────────────────────────────────────
+
+def service_is_hidden(entitlement: CustomerServiceEntitlement | None) -> bool:
+    if entitlement is None:
+        return False
+    try:
+        return bool((entitlement.config or {}).get("hidden"))
+    except Exception:  # pragma: no cover — defensive against broken JSON
+        return False
+
+
+def set_service_hidden(entitlement: CustomerServiceEntitlement, hidden: bool) -> None:
+    config = dict(entitlement.config or {})
+    if hidden:
+        config["hidden"] = True
+    else:
+        config.pop("hidden", None)
+    entitlement.config = config
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Catalog-level default policy (feat/services-catalog-policy).
+#
+# The owner sets a GLOBAL default tier per service on the dedicated
+# «الخدمات» page: مجاني مطلق / مجاني محدود (+ basic quantities) / مدفوع غير
+# مفعّل. Stored inside ``ServiceCatalogItem.metadata_json`` (the existing
+# property-backed dict) — zero schema migration, fully idempotent. The
+# per-subscriber tier on ``CustomerServiceEntitlement.config["tier"]`` (the
+# /admin/customers/<id>/service-tiers page) is an OVERRIDE that always wins
+# when explicitly set; the catalog default fills the gap for everyone else.
+# ─────────────────────────────────────────────────────────────────────────
+
+_CATALOG_TIER_KEY = "default_tier"
+_CATALOG_LIMITS_KEY = "default_limits"
+
+
+def catalog_default_tier(item: "ServiceCatalogItem | None") -> str:
+    """The owner's catalog-level default tier for a service (paid when unset)."""
+    if item is None:
+        return SERVICE_TIER_DEFAULT
+    try:
+        return clean_service_tier(item.catalog_metadata.get(_CATALOG_TIER_KEY))
+    except Exception:  # pragma: no cover — defensive against broken JSON
+        return SERVICE_TIER_DEFAULT
+
+
+def catalog_default_limits(item: "ServiceCatalogItem | None") -> dict[str, Any]:
+    """Basic quantities for a catalog free-limited default ({} otherwise)."""
+    if item is None:
+        return {}
+    try:
+        raw = item.catalog_metadata.get(_CATALOG_LIMITS_KEY) or {}
+    except Exception:  # pragma: no cover
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): int(v)
+        for k, v in raw.items()
+        if _is_non_negative_int(v)
+    }
+
+
+def set_catalog_policy(item: "ServiceCatalogItem", tier: str, limits: dict[str, Any] | None = None) -> None:
+    """Persist the owner's catalog default policy onto the catalog item.
+
+    ``limits`` only meaningful for free_limited; stored verbatim (validated
+    ints) so the «ترقية» baseline is explicit. Paid default clears both keys
+    (paid is the implicit default — keeps metadata clean)."""
+    cleaned = clean_service_tier(tier)
+    data = item.catalog_metadata
+    if cleaned == SERVICE_TIER_DEFAULT:
+        data.pop(_CATALOG_TIER_KEY, None)
+        data.pop(_CATALOG_LIMITS_KEY, None)
+    else:
+        data[_CATALOG_TIER_KEY] = cleaned
+        if cleaned == SERVICE_TIER_FREE_LIMITED:
+            data[_CATALOG_LIMITS_KEY] = {
+                str(k): int(v)
+                for k, v in (limits or {}).items()
+                if _is_non_negative_int(v)
+            }
+        else:
+            data.pop(_CATALOG_LIMITS_KEY, None)
+    item.catalog_metadata = data
+
+
+def entitlement_has_explicit_tier(entitlement: CustomerServiceEntitlement | None) -> bool:
+    """True when the per-subscriber page explicitly set a tier (override)."""
+    if entitlement is None:
+        return False
+    try:
+        config = entitlement.config or {}
+    except Exception:  # pragma: no cover
+        return False
+    return "tier" in config
+
+
+def effective_service_tier(
+    entitlement: CustomerServiceEntitlement | None,
+    catalog_item: "ServiceCatalogItem | None",
+) -> tuple[str, str]:
+    """Resolve the tier that actually applies + its source.
+
+    Returns ``(tier, source)`` where source is ``"override"`` (explicit
+    per-subscriber choice) or ``"catalog"`` (the owner's global default).
+    """
+    if entitlement_has_explicit_tier(entitlement):
+        return service_tier_for_entitlement(entitlement), "override"
+    return catalog_default_tier(catalog_item), "catalog"
+
+
 SERVICE_LIMIT_FIELDS = {
     "subscribers": [("max_total", "أقصى عدد مشتركين", "عدد المشتركين المسموح إنشاؤهم.")],
     "backups": [("max_count", "أقصى عدد نسخ احتياطية محفوظة", "عند تجاوز العدد يُحذف الأقدم تلقائيًا (نسخ الريدياس وملف العميل). يُحدَّد حسب الإصدار والرسوم.")],
@@ -648,6 +770,89 @@ SERVICE_LIMIT_FIELDS = {
     "distributors": [("max_total", "أقصى عدد موزعين", "عدد الموزعين المسموح إدارتهم.")],
     "multi_tenant": [("max_total", "أقصى عدد مستأجرين", "عدد الشركات أو المستأجرين داخل النسخة.")],
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SMART per-type spec metadata (feat/services-catalog-policy).
+#
+# Enriches each service's spec fields with sensible defaults / bounds /
+# steps / units so the portal's «طلب تفعيل» and «ترقية» modals render
+# genuinely per-type intelligent forms (only relevant fields, sane ranges).
+# The radius-module client mirrors the same flow via the bridge — contract
+# in docs/SERVICE_SPEC_REQUEST_CONTRACT.md.
+# ─────────────────────────────────────────────────────────────────────────
+
+SERVICE_SPEC_META: dict[str, dict[str, dict[str, Any]]] = {
+    "subscribers": {"max_total": {"min": 10, "max": 100000, "step": 10, "default": 100, "unit": "مشترك"}},
+    "backups": {"max_count": {"min": 1, "max": 365, "step": 1, "default": 30, "unit": "نسخة"}},
+    "cards": {
+        "generate_per_batch": {"min": 10, "max": 10000, "step": 10, "default": 100, "unit": "كرت/دفعة"},
+        "monthly_generated": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "كرت/شهر"},
+    },
+    "nas": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 3, "unit": "جهاز"}},
+    "routers": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 3, "unit": "راوتر"}},
+    "profiles": {"max_total": {"min": 1, "max": 500, "step": 1, "default": 10, "unit": "باقة"}},
+    "print_templates": {"max_active": {"min": 1, "max": 100, "step": 1, "default": 5, "unit": "قالب"}},
+    "admins": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 3, "unit": "مدير"}},
+    "card_marketplace": {"max_sellers": {"min": 1, "max": 1000, "step": 1, "default": 5, "unit": "بائع"}},
+    "card_users": {"max_total": {"min": 10, "max": 100000, "step": 10, "default": 100, "unit": "مستخدم"}},
+    "cards_recharge": {"monthly_generated": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "بطاقة/شهر"}},
+    "ip_pools": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "نطاق"}},
+    "finance_center": {"max_wallets": {"min": 1, "max": 100, "step": 1, "default": 3, "unit": "محفظة"}},
+    "whatsapp_gateway": {
+        "max_messages_monthly": {"min": 100, "max": 100000, "step": 100, "default": 500, "unit": "رسالة/شهر"},
+        "max_messages_daily": {"min": 10, "max": 10000, "step": 10, "default": 100, "unit": "رسالة/يوم"},
+        "max_templates": {"min": 1, "max": 200, "step": 1, "default": 20, "unit": "قالب"},
+    },
+    "distributors": {"max_total": {"min": 1, "max": 1000, "step": 1, "default": 5, "unit": "موزع"}},
+    "multi_tenant": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "مستأجر"}},
+}
+
+# Request-only spec fields for service types whose specs are NOT entitlement
+# limit fields — e.g. bandwidth-flavoured services request per-direction
+# speed + quota. They travel in ``desired_limits`` like everything else;
+# enforcement stays with the service's own provisioning (VPN contract).
+SERVICE_REQUEST_EXTRA_FIELDS: dict[str, list[dict[str, Any]]] = {
+    "ip_change_vpn": [
+        {"key": "download_mbps", "label": "سرعة التحميل المطلوبة", "hint": "Mbps باتجاه التنزيل (لكل اتجاه سرعة مستقلة).",
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↓"},
+        {"key": "upload_mbps", "label": "سرعة الرفع المطلوبة", "hint": "Mbps باتجاه الرفع.",
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↑"},
+        {"key": "max_vpn_users", "label": "عدد مستخدمي VPN", "hint": "عدد المستخدمين المتزامنين على الخدمة.",
+         "min": 1, "max": 1000, "step": 1, "default": 5, "unit": "مستخدم"},
+        {"key": "quota_gb", "label": "حصة البيانات الشهرية", "hint": "اتركها فارغة لطلب حصة غير محدودة.",
+         "min": 1, "max": 100000, "step": 10, "default": None, "unit": "GB/شهر"},
+    ],
+}
+
+
+def service_spec_fields(service_key: str) -> list[dict[str, Any]]:
+    """The SMART spec-form schema for one service type.
+
+    Returns ``[{key,label,hint,min,max,step,default,unit}, …]`` — the
+    union of the service's entitlement limit fields (enriched with
+    ``SERVICE_SPEC_META`` bounds/defaults) and its request-only extras.
+    This is what the portal modals render and what the request endpoint
+    parses; the radius client mirrors the same schema via the bridge.
+    """
+    key = str(service_key or "")
+    meta_map = SERVICE_SPEC_META.get(key, {})
+    out: list[dict[str, Any]] = []
+    for field_key, field_label, field_hint in SERVICE_LIMIT_FIELDS.get(key, []):
+        meta = meta_map.get(field_key, {})
+        out.append({
+            "key": field_key,
+            "label": field_label,
+            "hint": field_hint,
+            "min": int(meta.get("min", 0)),
+            "max": meta.get("max"),
+            "step": int(meta.get("step", 1)),
+            "default": meta.get("default"),
+            "unit": str(meta.get("unit", "")),
+        })
+    out.extend(dict(extra) for extra in SERVICE_REQUEST_EXTRA_FIELDS.get(key, []))
+    return out
+
 
 ROLE_LABELS = {
     "owner": "مالك الحساب",
@@ -1336,7 +1541,6 @@ def _serialize_service(
     config: dict[str, Any] = {}
     expires_at = None
     plan_code = ""
-    tier = SERVICE_TIER_DEFAULT
 
     if entitlement:
         try:
@@ -1348,17 +1552,34 @@ def _serialize_service(
         config = entitlement.config
         expires_at = entitlement.expires_at
         plan_code = entitlement.plan_code or ""
-        tier = service_tier_for_entitlement(entitlement)
         if expires_at and expires_at < utcnow():
             enabled = False
             status = "expired"
 
+    # ── EFFECTIVE TIER (feat/services-catalog-policy) ──────────────────
+    # Explicit per-subscriber tier (the /service-tiers page) always wins;
+    # otherwise the owner's CATALOG default («الخدمات» page) applies. The
+    # catalog default for everything is paid until the owner says otherwise,
+    # so pre-existing behaviour is unchanged for untouched services.
+    tier, tier_source = effective_service_tier(entitlement, catalog_item)
+
+    # Free-limited basic quantities: an explicit per-subscriber limits dict
+    # wins; otherwise the catalog's basic quantities flow into the contract
+    # so the radius side enforces them and the portal can display them.
+    if tier == SERVICE_TIER_FREE_LIMITED and not limits:
+        catalog_limits = catalog_default_limits(catalog_item)
+        if catalog_limits:
+            limits = catalog_limits
+
     # ── FREE TIER OVERRIDE ─────────────────────────────────────────────
-    # When the owner has marked this service free for the subscriber, the
-    # service is available regardless of the entitlement.enabled flag — the
-    # admin's tier choice is the source of truth. (Paid tier keeps the old
-    # gating: the customer must request activation + pay.)
-    if service_tier_is_free(tier) and license_active:
+    # When this service is free for the subscriber (per-subscriber override
+    # OR catalog default), the service is available regardless of the
+    # entitlement.enabled flag — the owner's tier choice is the source of
+    # truth. (Paid tier keeps the old gating: the customer must request
+    # activation + pay.) An explicit SUSPENSION always beats the free tier:
+    # suspended is the functional stop and only the owner lifts it — a free
+    # tier must never silently resurrect a suspended service.
+    if service_tier_is_free(tier) and license_active and status != "suspended":
         if not (expires_at and expires_at < utcnow()):
             enabled = True
             status = "active"
@@ -1372,8 +1593,16 @@ def _serialize_service(
         "enabled": enabled,
         "status": status,
         "tier": tier,
+        "tier_source": tier_source,
         "tier_label": SERVICE_TIER_BADGE_LABELS.get(tier, SERVICE_TIER_BADGE_LABELS[SERVICE_TIER_DEFAULT]),
         "tier_tone": SERVICE_TIER_BADGE_TONE.get(tier, "violet"),
+        # free_limited is upgradable by design («قابلة للتطوير») — the portal
+        # shows a ترقية CTA; paid-disabled keeps the طلب تفعيل CTA.
+        "upgradable": tier == SERVICE_TIER_FREE_LIMITED,
+        # VIEW-only flag: the portal omits hidden services entirely; the
+        # radius client mirrors the hide in its own UI. Functionality is
+        # untouched — hidden ≠ suspended (orthogonal states by design).
+        "hidden": service_is_hidden(entitlement),
     }
     if plan_code:
         payload["plan_code"] = plan_code
@@ -1399,8 +1628,28 @@ def _limits_contract(lic: License | None, customer: Customer | None = None) -> d
     if not customer:
         return limits
     entitlement_map = customer_service_map(customer)
+    catalog_map = {item.service_key: item for item in service_catalog_items()}
     for service_key in SERVICE_LIMIT_FIELDS:
         entitlement = entitlement_map.get(service_key)
+        # Catalog free-limited default (feat/services-catalog-policy): when
+        # the owner made a service «مجاني محدود» globally and the subscriber
+        # has no explicit entitlement limits, the catalog's basic quantities
+        # are the enforced caps — carried in the contract exactly like
+        # entitlement limits so the radius side gates identically.
+        eff_tier, _src = effective_service_tier(entitlement, catalog_map.get(service_key))
+        if eff_tier == SERVICE_TIER_FREE_LIMITED:
+            catalog_caps = catalog_default_limits(catalog_map.get(service_key))
+            entitlement_limits = (entitlement.limits if entitlement else {}) or {}
+            merged = dict(catalog_caps)
+            merged.update({
+                key: int(value)
+                for key, value in entitlement_limits.items()
+                if _is_non_negative_int(value)
+            })
+            if merged:
+                limits.setdefault(service_key, {})
+                limits[service_key].update(merged)
+            continue
         if not entitlement or not entitlement.enabled or entitlement.status != "active":
             continue
         service_limits = entitlement.limits

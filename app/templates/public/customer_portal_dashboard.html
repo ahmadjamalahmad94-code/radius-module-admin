@@ -89,6 +89,9 @@
   .pp-spec-field .pp-current{ display:inline-flex; align-items:center; gap:6px; font-size:11px;
     font-weight:700; color:var(--pp-ink-3); background:#f1f5f9; border-radius:999px; padding:2px 8px;
     margin-inline-start:6px; }
+  .pp-spec-field .pp-unit{ display:inline-flex; align-items:center; font-size:10.5px;
+    font-weight:800; color:#0e7490; background:#cffafe; border-radius:999px; padding:2px 8px;
+    margin-inline-start:6px; direction:ltr; }
   .pp-spec-empty{ font-size:12.5px; color:var(--pp-ink-2); line-height:1.75; padding:14px;
     background:#f8fafc; border:1px dashed var(--pp-line-2); border-radius:11px; margin-bottom:12px; }
   .pp-spec-target{ display:flex; flex-direction:column; gap:11px; }
@@ -283,12 +286,11 @@
   {% elif st == 'expired' %}{% set state='off' %}{% set cls='pp-svc-status is-amber' %}{% set card='' %}{% set txt='منتهية' %}
   {% elif st == 'suspended' %}{% set state='off' %}{% set cls='pp-svc-status is-red' %}{% set card='' %}{% set txt='موقوفة' %}
   {% else %}{% set state='off' %}{% set cls='pp-svc-status is-off' %}{% set card='' %}{% set txt='غير مفعّلة' %}{% endif %}
-  {# JSON-encoded list of {key,label,hint} for the modal — Jinja's |tojson
-     keeps the order, escapes for HTML attribute embedding safely. #}
-  {% set _spec_fields = [] %}
-  {% for field_key, field_label, field_hint in service_limit_fields(item.service_key) %}
-    {% set _ = _spec_fields.append({"key": field_key, "label": field_label, "hint": field_hint}) %}
-  {% endfor %}
+  {# SMART per-type spec schema for the activate/upgrade modals —
+     {key,label,hint,min,max,step,default,unit} per field (entitlement limit
+     fields enriched with bounds + request-only extras like per-direction
+     speed). Jinja's |tojson escapes safely for the data-attribute. #}
+  {% set _spec_fields = service_spec_fields(item.service_key) %}
   <article class="pp-svc {{ card }} tier-{{ tier_tone }}" data-state="{{ state }}" data-tier="{{ tier }}"
            data-name="{{ (item.name_ar or item.name or item.service_key)|lower }} {{ item.service_key }}">
     <div class="pp-svc-top">
@@ -322,6 +324,20 @@
         {# Free tiers are admin-granted — no action needed. The customer sees a
            soft "متاحة في خطتك" indicator instead of a CTA button. #}
         <span class="pp-svc-free-tag"><i class="fa-solid fa-check-double"></i> ضمن خطتك</span>
+        {% if tier == 'free_limited' %}
+          {# Catalog policy «مجانية محدودة قابلة للتطوير»: the basic quantity
+             is granted, and the customer can request a RAISE — same upgrade
+             modal/flow the paid tier uses (design-system, no native UI). #}
+          <button type="button" class="pp-btn pp-btn--soft pp-btn--sm" data-pp-upgrade
+                  data-service-key="{{ item.service_key }}"
+                  data-service-name="{{ item.name_ar or item.name or item.service_key }}"
+                  data-icon="{{ icon }}"
+                  data-action="{{ url_for('public.customer_portal_service_request', service_key=item.service_key) }}"
+                  data-fields='{{ _spec_fields|tojson }}'
+                  data-current-limits='{{ (svc.limits or {})|tojson }}'>
+            <i class="fa-solid fa-arrow-up"></i> ترقية
+          </button>
+        {% endif %}
       {% elif is_on %}
         {# Paid + already active → upgrade modal asks «ترقّي لشو». #}
         <button type="button" class="pp-btn pp-btn--soft pp-btn--sm" data-pp-upgrade
@@ -528,9 +544,18 @@
         {# category chips (titles only) #}
         <div class="pp-cats" id="pp-cats">
           {% for pkey, plabel, picon, pitems in panes %}
-            {% set con = namespace(on=0) %}{% for item in pitems %}{% if contract.services.get(item.service_key, {}).enabled %}{% set con.on = con.on + 1 %}{% endif %}{% endfor %}
+            {# hidden services are invisible to THIS customer everywhere —
+               excluded from the enabled count AND the denominator. #}
+            {% set con = namespace(on=0, vis=0) %}
+            {% for item in pitems %}
+              {% set _svc = contract.services.get(item.service_key, {}) %}
+              {% if not _svc.hidden %}
+                {% set con.vis = con.vis + 1 %}
+                {% if _svc.enabled %}{% set con.on = con.on + 1 %}{% endif %}
+              {% endif %}
+            {% endfor %}
             <button type="button" class="pp-cat-chip {{ 'is-active' if loop.first else '' }}" data-pp-cat="{{ pkey }}">
-              <i class="fa-solid fa-{{ picon }}"></i> {{ plabel }} <span class="n">{{ con.on }}/{{ pitems|length }}</span>
+              <i class="fa-solid fa-{{ picon }}"></i> {{ plabel }} <span class="n">{{ con.on }}/{{ con.vis }}</span>
             </button>
           {% endfor %}
         </div>
@@ -546,7 +571,11 @@
             {% set free_items = [] %}{% set paid_items = [] %}
             {% for item in pitems %}
               {% set svc = contract.services.get(item.service_key, {}) %}
-              {% if svc.tier in ('free_unlimited', 'free_limited') %}
+              {# «مخفي» (per-customer hide) — the service is OMITTED from this
+                 customer's portal entirely, even when free/basic. View-only:
+                 functionality is untouched (hidden ≠ suspended). #}
+              {% if svc.hidden %}
+              {% elif svc.tier in ('free_unlimited', 'free_limited') %}
                 {% set _ = free_items.append(item) %}
               {% else %}
                 {% set _ = paid_items.append(item) %}
@@ -560,7 +589,9 @@
                     {% for item in grp %}
                       {% set svc = contract.services.get(item.service_key, {}) %}
                       {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
-                        {% set lt = 'تحميل ' ~ svc.download_mbps ~ ' · رفع ' ~ svc.upload_mbps ~ ' Mbps · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
+                        {# Per-direction symmetric display — never «إجمالي». Helper
+                           renders «X↓ / Y↑ ميجابت» and flags asymmetric explicitly. #}
+                        {% set lt = per_direction_label(svc.download_mbps, svc.upload_mbps) ~ ' · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
                       {% elif svc.limits %}{% set lt = service_limit_summary(svc.limits) %}{% else %}{% set lt = '' %}{% endif %}
                       {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), lt) }}
                     {% endfor %}
@@ -654,10 +685,13 @@
                 {% if wa_embedded_available %}
                 <button type="button" class="pp-btn pp-btn--ghost" data-wa-embedded-launch><i class="fa-solid fa-rotate-right"></i> إعادة الربط</button>
                 {% endif %}
-                <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" onsubmit="return confirm('فصل حساب واتساب؟ يمكنك إعادة الربط لاحقًا.');" style="display:inline">
+                <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="display:inline">
                   {{ csrf_input() }}
                   <input type="hidden" name="action" value="disconnect">
-                  <button type="submit" class="pp-btn wa-btn--danger"><i class="fa-solid fa-link-slash"></i> فصل الحساب</button>
+                  <button type="submit" class="pp-btn wa-btn--danger"
+                          data-confirm="فصل حساب واتساب؟ يمكنك إعادة الربط لاحقًا.">
+                    <i class="fa-solid fa-link-slash"></i> فصل الحساب
+                  </button>
                 </form>
               </div>
 

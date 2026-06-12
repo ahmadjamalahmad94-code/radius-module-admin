@@ -1141,6 +1141,22 @@
             <button type="button" class="fd-rowbtn fd-poll-metrics" data-node-id="{{ n.id }}" data-node-name="{{ n.name }}" data-url="{{ url_for('fleet_ui.fleet_chr_node_poll_metrics_now', node_id=n.id) }}" title="قراءة المقاييس من RouterOS الآن">
               <i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-spinner fa-spin"></i> مقاييس
             </button>
+            <a class="fd-rowbtn" href="{{ url_for('fleet_ui.chr_node_edit', node_id=n.id) }}" title="تعديل بيانات العقدة">
+              <i class="fa-solid fa-pen-to-square"></i> تعديل
+            </a>
+            <form method="post" action="{{ url_for('fleet_ui.chr_node_delete', node_id=n.id) }}"
+                  id="fd-del-form-{{ n.id }}" style="display:inline">
+              {{ csrf_input() }}
+              <button type="button" class="fd-rowbtn"
+                      style="color:#b91c1c;border-color:#fecaca"
+                      data-confirm-form="fd-del-form-{{ n.id }}"
+                      data-confirm-title="حذف عقدة CHR"
+                      data-confirm-msg="هل تريد حذف العقدة «{{ n.name }}» نهائيًّا؟ سيُمنع الحذف إذا كانت هناك تخصيصات خدمة نشطة، وستُنظَّف العقدة من قوائم العقد المسموحة في مسارات Realm."
+                      data-confirm-ok="حذف"
+                      data-confirm-variant="danger">
+                <i class="fa-solid fa-trash"></i> حذف
+              </button>
+            </form>
           </div>
         </footer>
       </article>

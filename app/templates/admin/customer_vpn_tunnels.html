@@ -50,14 +50,14 @@
         </select>
         <div class="hub-field-hint">اختر بروفايلًا جاهزًا، أو اتركه واملأ السرعة المخصّصة بالأسفل. <a href="{{ url_for('admin.chr_speed_profiles') }}">إدارة البروفايلات</a>.</div>
       </div>
-      <div class="hub-field">
-        <label>تنزيل مخصّص (Mbps)</label>
-        <input class="hub-input" name="download_mbps" type="number" min="1" max="100000" placeholder="يُتجاهَل إن اخترت بروفايلًا">
-      </div>
-      <div class="hub-field">
-        <label>رفع مخصّص (Mbps)</label>
-        <input class="hub-input" name="upload_mbps" type="number" min="1" max="100000" placeholder="يُتجاهَل إن اخترت بروفايلًا">
-        <div class="hub-field-hint">السرعة تُطبَّق على CHR كـ rate-limit على /ppp/profile (SSTP/PPTP/L2TP). IPsec: تُسجَّل فقط.</div>
+      <div class="hub-field full">
+        <label>السرعة المخصّصة (Mbps) — لكل اتجاه</label>
+        <input class="hub-input" name="speed_mbps" type="number" min="1" max="100000"
+               placeholder="مثال: 850 ⇒ 850↓ / 850↑ ميجابت">
+        <div class="hub-field-hint">
+          تُطبَّق على التنزيل والرفع بالتساوي. تُتجاهَل إن اخترت بروفايل سرعة.
+          ‏rate-limit على CHR = <span class="mono ltr">&lt;value&gt;M/&lt;value&gt;M</span> (rx=رفع، tx=تنزيل).
+        </div>
       </div>
       <div class="hub-field">
         <label>بروفايل PPP (متقدّم)</label>

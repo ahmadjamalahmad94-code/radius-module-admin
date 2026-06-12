@@ -9,18 +9,18 @@
 <section class="hub-section">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px">
     <div class="hub-kpi-card">
-      <div class="hub-kpi-label">السعة الكلية</div>
-      <div class="hub-kpi-value">{{ node.capacity_mbps }} <small>Mbps</small></div>
+      <div class="hub-kpi-label">السعة الكلية <small>(لكل اتجاه)</small></div>
+      <div class="hub-kpi-value">{{ node.capacity_mbps }} <small>Mbps↓↑</small></div>
     </div>
     <div class="hub-kpi-card">
-      <div class="hub-kpi-label">المحجوز</div>
+      <div class="hub-kpi-label">المحجوز <small>(لكل اتجاه)</small></div>
       <div class="hub-kpi-value {% if capacity_badge == 'full' %}text-danger{% elif capacity_badge == 'warning' %}text-warn{% endif %}">
-        {{ reserved_mbps }} <small>Mbps</small>
+        {{ reserved_mbps }} <small>Mbps↓↑</small>
       </div>
     </div>
     <div class="hub-kpi-card">
-      <div class="hub-kpi-label">المتاح</div>
-      <div class="hub-kpi-value">{{ available_mbps }} <small>Mbps</small></div>
+      <div class="hub-kpi-label">المتاح <small>(لكل اتجاه)</small></div>
+      <div class="hub-kpi-value">{{ available_mbps }} <small>Mbps↓↑</small></div>
     </div>
     <div class="hub-kpi-card">
       <div class="hub-kpi-label">التخصيصات النشطة</div>
@@ -41,7 +41,7 @@
   {% set pct = (reserved_mbps / node.max_reserved_mbps * 100)|round(1) if node.max_reserved_mbps else 0 %}
   <div style="margin-bottom:6px;font-size:13px;color:var(--hub-muted)">
     استخدام السعة المحجوزة: <strong>{{ pct }}%</strong>
-    ({{ reserved_mbps }} / {{ node.max_reserved_mbps }} Mbps)
+    (<span class="mono ltr">{{ reserved_mbps }} / {{ node.max_reserved_mbps }}</span> ميجابت — لكل اتجاه على حدة، لا مجموع)
   </div>
   <div style="height:10px;border-radius:6px;background:var(--hub-border);overflow:hidden">
     <div style="height:100%;width:{{ [pct,100]|min }}%;border-radius:6px;background:
@@ -107,9 +107,10 @@
         <input class="hub-input ltr" name="domain" value="{{ node.domain }}"></div>
       <div class="hub-field"><label>الموقع</label>
         <input class="hub-input" name="location" value="{{ node.location }}"></div>
-      <div class="hub-field"><label>السعة (Mbps)</label>
-        <input class="hub-input" name="capacity_mbps" type="number" value="{{ node.capacity_mbps }}"></div>
-      <div class="hub-field"><label>أقصى محجوز (Mbps)</label>
+      <div class="hub-field"><label>السعة (Mbps) — لكل اتجاه</label>
+        <input class="hub-input" name="capacity_mbps" type="number" value="{{ node.capacity_mbps }}">
+        <div class="hub-field-hint">سعة الـuplink مقاسة لكل اتجاه بمعزل (ليست مجموعًا).</div></div>
+      <div class="hub-field"><label>أقصى محجوز (Mbps) — لكل اتجاه</label>
         <input class="hub-input" name="max_reserved_mbps" type="number" value="{{ node.max_reserved_mbps }}"></div>
       <div class="hub-field"><label>أقصى جلسات</label>
         <input class="hub-input" name="max_active_sessions" type="number" value="{{ node.max_active_sessions or '' }}"></div>
@@ -173,7 +174,7 @@
         <tr>
           <td>{{ a.customer.company_name }}</td>
           <td><span class="badge badge-blue mono">{{ a.service_type }}</span></td>
-          <td>{{ a.speed_limit_mbps }} Mbps</td>
+          <td><span class="mono ltr">{{ a.speed_limit_mbps }}↓/{{ a.speed_limit_mbps }}↑</span> <small style="color:var(--hub-muted)">ميجابت</small></td>
           <td>{{ a.max_accounts }}</td>
           <td style="font-size:12px">{{ a.expires_at.strftime('%Y-%m-%d') if a.expires_at else '—' }}</td>
           <td>

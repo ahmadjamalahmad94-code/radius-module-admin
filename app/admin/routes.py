@@ -47,6 +47,8 @@ from ..services.customer_control import (
     add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
+    catalog_default_limits,
+    catalog_default_tier,
     clean_role_key,
     clean_service_request_status,
     clean_service_key,
@@ -63,10 +65,13 @@ from ..services.customer_control import (
     normalize_contact_phone,
     radius_admins_for_customer,
     service_catalog_items,
+    service_is_hidden,
     service_label,
     service_limit_fields,
     service_limit_summary,
     service_tier_for_entitlement,
+    set_catalog_policy,
+    set_service_hidden,
     set_service_tier_on_entitlement,
     validate_unique_customer_contact,
     validate_unique_customer_user_email,
@@ -337,10 +342,34 @@ def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expir
         apply_plan_defaults(vpn_entitlement, selected_plan)
 
     desired = service_request.desired_limits or {}
-    if request.form.get("download_mbps") or desired.get("download_mbps"):
-        vpn_entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps") or desired.get("download_mbps"), "download_mbps")
-    if request.form.get("upload_mbps") or desired.get("upload_mbps"):
-        vpn_entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps") or desired.get("upload_mbps"), "upload_mbps")
+    # «السرعة المتماثلة» (سياسة المالك): إن وصل أحد الاتجاهين فقط (`download_mbps` أو
+    # `upload_mbps`) سواءً من form الموافقة أو من `desired_limits` للعميل، نعتبره
+    # سرعة متماثلة لكل اتجاه ⇒ نُملِئ الاتجاه الآخر بنفس القيمة لا أن نسقط على
+    # الافتراضي 10 الذي يُنشئ سرعة غير متماثلة بصمت. الحقل المسمَّى `speed_mbps`
+    # في الـpath الإداري الجديد له نفس الأولوية. الأمثلة:
+    #   speed_mbps=850                    ⇒ down=850, up=850
+    #   download_mbps=850 (only)          ⇒ down=850, up=850
+    #   download_mbps=1000, upload_mbps=100 ⇒ down=1000, up=100 (غير متماثل صريحًا)
+    _sym = (request.form.get("speed_mbps") or "").strip() or desired.get("speed_mbps")
+    _down_raw = (
+        _sym
+        or request.form.get("download_mbps")
+        or desired.get("download_mbps")
+    )
+    _up_raw = (
+        _sym
+        or request.form.get("upload_mbps")
+        or desired.get("upload_mbps")
+    )
+    # تطبيع متماثل: إن أُعطي اتجاه واحد فقط، انسخه للاتجاه الآخر.
+    if _down_raw and not _up_raw:
+        _up_raw = _down_raw
+    if _up_raw and not _down_raw:
+        _down_raw = _up_raw
+    if _down_raw:
+        vpn_entitlement.download_mbps = validate_vpn_speed(_down_raw, "download_mbps")
+    if _up_raw:
+        vpn_entitlement.upload_mbps = validate_vpn_speed(_up_raw, "upload_mbps")
     if request.form.get("max_vpn_users") or desired.get("max_vpn_users"):
         vpn_entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users") or desired.get("max_vpn_users"), "max_vpn_users")
     if request.form.get("max_locations") or desired.get("max_locations"):
@@ -1287,16 +1316,24 @@ def _fill_customer_vpn_entitlement(customer: Customer, entitlement: CustomerVpnE
     entitlement.notes = (request.form.get("notes") or "").strip()[:2000]
     entitlement.updated_by_admin_id = session.get("admin_id")
 
+    # «السرعة المتماثلة» (سياسة المالك): قيمة واحدة ⇒ تنزيل = رفع. الواجهة الجديدة
+    # ترسل ``speed_mbps``؛ نحسب قيمتي التنزيل/الرفع من حقل واحد قبل أي تحقق كي لا
+    # تتسرَّب قيمة غير متماثلة بالخطأ. النموذج غير المتماثل (متقدّم) يترك
+    # ``speed_mbps`` فارغًا ويرسل القيمتين منفصلتين.
+    _speed_sym = (request.form.get("speed_mbps") or "").strip()
+    _down_raw = _speed_sym or request.form.get("download_mbps")
+    _up_raw = _speed_sym or request.form.get("upload_mbps")
+
     if selected_plan and _should_apply_vpn_plan_defaults():
         apply_plan_defaults(entitlement, selected_plan)
     elif will_be_active:
-        entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
-        entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.download_mbps = validate_vpn_speed(_down_raw, "download_mbps")
+        entitlement.upload_mbps = validate_vpn_speed(_up_raw, "upload_mbps")
         entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
         entitlement.max_locations = validate_positive_limit(request.form.get("max_locations") or 1, "max_locations")
     else:
-        entitlement.download_mbps = parse_optional_positive_int(request.form.get("download_mbps"), "download_mbps")
-        entitlement.upload_mbps = parse_optional_positive_int(request.form.get("upload_mbps"), "upload_mbps")
+        entitlement.download_mbps = parse_optional_positive_int(_down_raw, "download_mbps")
+        entitlement.upload_mbps = parse_optional_positive_int(_up_raw, "upload_mbps")
         entitlement.max_vpn_users = parse_optional_positive_int(request.form.get("max_vpn_users"), "max_vpn_users")
         entitlement.max_locations = parse_optional_positive_int(request.form.get("max_locations"), "max_locations") or 1
 
@@ -1346,6 +1383,10 @@ def customer_vpn_tunnel_create(customer_id: int):
         speed_profile_id = int(request.form.get("speed_profile_id") or 0) or None
     except (TypeError, ValueError):
         speed_profile_id = None
+    # «السرعة المتماثلة»: قيمة واحدة في ``speed_mbps`` ⇒ تنزيل = رفع لنفس النفق.
+    _sym_speed = (request.form.get("speed_mbps") or "").strip()
+    _down_raw = _sym_speed or request.form.get("download_mbps")
+    _up_raw = _sym_speed or request.form.get("upload_mbps")
     try:
         tunnel = vt.provision_tunnel(
             customer,
@@ -1354,8 +1395,8 @@ def customer_vpn_tunnel_create(customer_id: int):
             profile=request.form.get("profile") or "",
             max_connections=max_connections,
             speed_profile_id=speed_profile_id,
-            download_mbps=request.form.get("download_mbps") or None,
-            upload_mbps=request.form.get("upload_mbps") or None,
+            download_mbps=_down_raw or None,
+            upload_mbps=_up_raw or None,
             monthly_quota_gb=request.form.get("monthly_quota_gb") or None,
             throttle_down_mbps=request.form.get("throttle_down_mbps") or None,
             throttle_up_mbps=request.form.get("throttle_up_mbps") or None,
@@ -1477,6 +1518,7 @@ def chr_speed_profiles():
         "admin/chr_speed_profiles.html",
         profiles=sp.list_profiles(),
         rate_limit_string=sp.rate_limit_string,
+        per_direction_label=sp.per_direction_label,
         chr_enabled=bool(fleet_nodes),
     )
 
@@ -1896,11 +1938,52 @@ def vpn_service_enable(vpn_plan_id: int):
     return redirect(url_for("admin.vpn_services_list"))
 
 
+@bp.post("/vpn-services/<int:vpn_plan_id>/delete")
+@super_admin_required
+def vpn_service_delete(vpn_plan_id: int):
+    """Hard-delete a VPN service plan.
+
+    Blocked when ANY active or pending customer entitlement still references
+    this plan — a hard delete would orphan those customer rows' speed/quota
+    snapshot. Operator should disable the plan + migrate customers first.
+    Closed entitlements are tolerated (their plan_id link just goes null).
+    """
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    blocking = (
+        CustomerVpnEntitlement.query
+        .filter_by(vpn_plan_id=vpn_plan_id)
+        .filter(CustomerVpnEntitlement.status.in_(["active", "pending"]))
+        .count()
+    )
+    if blocking:
+        flash(
+            f"لا يمكن حذف باقة «{vpn_plan.code}»: لا تزال مرتبطة بـ {blocking} اشتراك عميل نشط/معلّق. "
+            "قم بتعطيل الاشتراكات أو ترحيلها لباقة أخرى أولًا.",
+            "error",
+        )
+        return redirect(url_for("admin.vpn_services_list"))
+    code_snapshot = vpn_plan.code
+    db.session.delete(vpn_plan)
+    audit(
+        "vpn_service_plan_deleted", "vpn_service_plan", str(vpn_plan_id),
+        f"حذف باقة الشبكة الخاصة {code_snapshot}",
+    )
+    db.session.commit()
+    flash(f"تم حذف باقة «{code_snapshot}».", "success")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
 def _fill_vpn_plan(vpn_plan: VpnServicePlan) -> None:
     vpn_plan.name = (request.form.get("name") or "").strip()
     vpn_plan.description = (request.form.get("description") or "").strip()[:2000]
-    vpn_plan.download_mbps = validate_vpn_speed(request.form.get("download_mbps"), "download_mbps")
-    vpn_plan.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps"), "upload_mbps")
+    # «السرعة المتماثلة»: قيمة واحدة ⇒ تنزيل = رفع. النموذج الافتراضي الجديد يرسل
+    # ``speed_mbps`` (انظر vpn_service_form.html)؛ نُملِئ الحقلين منها قبل أي تحقق
+    # كي لا يحدث اختلاف بالخطأ. النموذج غير المتماثل (متقدّم) يرسل القيمتين منفصلتين.
+    _speed_sym = (request.form.get("speed_mbps") or "").strip()
+    _down = _speed_sym or request.form.get("download_mbps")
+    _up = _speed_sym or request.form.get("upload_mbps")
+    vpn_plan.download_mbps = validate_vpn_speed(_down, "download_mbps")
+    vpn_plan.upload_mbps = validate_vpn_speed(_up, "upload_mbps")
     raw_code = (request.form.get("code") or "").strip() or f"vpn_{vpn_plan.download_mbps}m"
     vpn_plan.code = clean_vpn_plan_code(raw_code)
     vpn_plan.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users"), "max_vpn_users")
@@ -4124,6 +4207,11 @@ def customer_service_tiers(customer_id: int):
             "tier": service_tier_for_entitlement(ent),
             "limit_fields": service_limit_fields(item.service_key),
             "limits": (ent.limits if ent else {}) or {},
+            # Orthogonal per-customer states (hide ≠ suspend by design):
+            # hidden = removed from THIS customer's portal view only;
+            # suspended = functionally stopped until the owner resumes it.
+            "hidden": service_is_hidden(ent),
+            "suspended": bool(ent and ent.status == "suspended"),
         })
     return render_template(
         "admin/customer_service_tiers.html",
@@ -4149,6 +4237,9 @@ def customer_service_tiers_save(customer_id: int):
             tier = clean_service_tier(raw_tier)
             entitlement = get_or_create_service_entitlement(customer, key)
             previous = service_tier_for_entitlement(entitlement)
+            # Snapshot BEFORE the free-tier auto-activate below mutates status
+            # — the suspend toggle compares against the user's real prior state.
+            was_suspended = entitlement.status == "suspended"
             set_service_tier_on_entitlement(entitlement, tier)
             # When the row is "free_limited" we save the limit-cap inputs onto
             # the entitlement's limits dict (reusing the existing per-service
@@ -4179,6 +4270,31 @@ def customer_service_tiers_save(customer_id: int):
                 entitlement.enabled = True
                 if entitlement.status != "active":
                     entitlement.status = "active"
+
+            # ── «مخفي» — per-customer VIEW hide (orthogonal to the tier) ──
+            # Hiding removes the service from THIS customer's portal entirely
+            # (even a free/basic one) without touching its function.
+            want_hidden = request.form.get(f"hidden_{key}") == "on"
+            if service_is_hidden(entitlement) != want_hidden:
+                set_service_hidden(entitlement, want_hidden)
+                changed += 1
+
+            # ── «موقوفة» — explicit functional SUSPEND (beats everything) ──
+            # Applied AFTER the free-tier auto-activate above so a suspended
+            # service stays suspended even when its tier is free; resuming
+            # restores active (free tiers re-enable via the contract override,
+            # paid stays gated until activation completes).
+            want_suspended = request.form.get(f"suspended_{key}") == "on"
+            if want_suspended:
+                entitlement.status = "suspended"
+                entitlement.enabled = False
+                if not was_suspended:
+                    changed += 1
+            elif was_suspended:
+                entitlement.status = "active"
+                entitlement.enabled = tier in ("free_unlimited", "free_limited")
+                changed += 1
+
             entitlement.updated_by_admin_id = session.get("admin_id")
             if previous != tier:
                 changed += 1
@@ -4203,3 +4319,89 @@ def customer_service_tiers_save(customer_id: int):
         "success" if changed else "info",
     )
     return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# «الخدمات» — catalog-level default policy (feat/services-catalog-policy)
+#
+# The owner's GLOBAL tier per service: مجاني مطلق / مجاني محدود (+ الكميات
+# الأساسية) / مدفوع غير مفعّل. Complements the PER-SUBSCRIBER page
+# (/customers/<id>/service-tiers) which stays an explicit override that wins.
+# Stored in ServiceCatalogItem.metadata_json (no schema change, idempotent).
+# ═════════════════════════════════════════════════════════════════════════
+
+
+@bp.get("/services")
+@login_required
+def services_catalog_policy():
+    catalog = service_catalog_items()
+    rows = []
+    for item in catalog:
+        rows.append({
+            "item": item,
+            "tier": catalog_default_tier(item),
+            "limit_fields": service_limit_fields(item.service_key),
+            "limits": catalog_default_limits(item),
+        })
+    return render_template(
+        "admin/services_catalog.html",
+        rows=rows,
+        tier_labels=SERVICE_TIER_LABELS,
+        tier_values=SERVICE_TIER_VALUES,
+    )
+
+
+@bp.post("/services/policy")
+@login_required
+def services_catalog_policy_save():
+    """Save the catalog default policy for every posted service row."""
+    catalog = service_catalog_items()
+    changed = 0
+    for item in catalog:
+        key = item.service_key
+        raw_tier = request.form.get(f"tier_{key}")
+        if raw_tier is None:
+            continue  # not posted (defensive — the page posts all rows)
+        try:
+            tier = clean_service_tier(raw_tier)
+            previous_tier = catalog_default_tier(item)
+            previous_limits = catalog_default_limits(item)
+            limits: dict[str, int] = {}
+            if tier == "free_limited":
+                for field_key, _label, _hint in service_limit_fields(key):
+                    raw = (request.form.get(f"limit_{key}_{field_key}") or "").strip()
+                    if not raw:
+                        continue
+                    try:
+                        value = int(raw)
+                    except ValueError as exc:
+                        raise CustomerControlValidationError(
+                            f"الكمية الأساسية «{field_key}» للخدمة {item.name_ar or key} يجب أن تكون رقمًا صحيحًا."
+                        ) from exc
+                    if value < 0:
+                        raise CustomerControlValidationError(
+                            f"الكمية الأساسية «{field_key}» للخدمة {item.name_ar or key} لا يمكن أن تكون سالبة."
+                        )
+                    limits[field_key] = value
+            set_catalog_policy(item, tier, limits)
+            db.session.add(item)
+            if previous_tier != tier or (tier == "free_limited" and previous_limits != limits):
+                changed += 1
+        except CustomerControlValidationError as exc:
+            db.session.rollback()
+            flash(str(exc), "error")
+            return redirect(url_for("admin.services_catalog_policy"))
+
+    if changed:
+        audit(
+            "service_catalog_policy_updated", "service_catalog", "global",
+            f"تحديث السياسة الافتراضية لكتالوج الخدمات ({changed} خدمة)",
+            {"services_changed": changed},
+        )
+    db.session.commit()
+    flash(
+        "تم حفظ سياسة الخدمات الافتراضية. تسري فورًا على كل عميل بلا تخصيص خاص."
+        if changed else "لا توجد تغييرات لحفظها.",
+        "success" if changed else "info",
+    )
+    return redirect(url_for("admin.services_catalog_policy"))

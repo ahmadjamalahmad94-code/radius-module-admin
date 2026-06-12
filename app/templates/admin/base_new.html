@@ -185,6 +185,10 @@
             {{ _('خطط الاشتراك') }}
           </a>
           {% endif %}
+          <a href="{{ url_for('admin.services_catalog_policy') }}"
+             class="adm-link {% if ep in ['admin.services_catalog_policy'] %}is-active{% endif %}">
+            {{ _('الخدمات') }}
+          </a>
           <a href="{{ url_for('admin.payment_review_queue') }}"
              class="adm-link {% if ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}is-active{% endif %}">
             {{ _('مراجعة المدفوعات') }}
@@ -590,6 +594,8 @@
 {# ── JavaScript ──────────────────────────────────────────────────────────── #}
 <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/admin_design_sweep.js') }}" defer></script>
+{# Per-direction symmetric speed UX — opt-in via [data-sym-form] on a form. #}
+<script src="{{ url_for('static', filename='js/sym_speed.js') }}" defer></script>
 {# feat/panel-live-data-5s — shared live-data poller. Idle on pages without
    data-live-endpoint. SSR-first: every page still renders without JS. #}
 <script src="{{ url_for('static', filename='js/live_poll.js') }}" defer></script>

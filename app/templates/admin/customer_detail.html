@@ -408,8 +408,16 @@
     {% set vpn = contract.services.ip_change_vpn %}
     <div class="hub-detail-list">
       <div><span>{{ _('الحالة') }}</span><strong><span class="badge {{ vpn.status|badge_class }}">{{ vpn.status|status_label }}</span></strong></div>
-      <div><span>سرعة التحميل</span><strong class="num">{{ vpn.download_mbps|default('—') }} ميجابت/ثانية</strong></div>
-      <div><span>سرعة الرفع</span><strong class="num">{{ vpn.upload_mbps|default('—') }} ميجابت/ثانية</strong></div>
+      <div>
+        <span>السرعة (لكل اتجاه)</span>
+        <strong class="num mono ltr">
+          {{ vpn.download_mbps|default('—') }}↓ / {{ vpn.upload_mbps|default('—') }}↑
+        </strong>
+        <small style="color:var(--hub-muted)">ميجابت/ثانية</small>
+        {% if vpn.download_mbps and vpn.upload_mbps and vpn.download_mbps != vpn.upload_mbps %}
+          <span class="badge badge-amber" title="غير متماثل">غير متماثل</span>
+        {% endif %}
+      </div>
       <div><span>عدد مستخدمي الشبكة الخاصة</span><strong class="num">{{ vpn.max_vpn_users|default('—') }}</strong></div>
     </div>
   {% endcall %}
