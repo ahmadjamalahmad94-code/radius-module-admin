@@ -27,7 +27,7 @@
   <div class="hub-section-head"><h2>حدود التخصيص</h2></div>
   <div style="display:flex;flex-wrap:wrap;gap:0">
     {% for label, val in [
-      ('السرعة', alloc.speed_limit_mbps|string + ' Mbps'),
+      ('السرعة (لكل اتجاه)', alloc.speed_limit_mbps|string + '↓ / ' + alloc.speed_limit_mbps|string + '↑ ميجابت'),
       ('أقصى حسابات', alloc.max_accounts or '—'),
       ('أقصى Peers', alloc.max_peers or '—'),
       ('حد النقل', ((alloc.transfer_limit_bytes // (1024**3))|string + ' GB') if alloc.transfer_limit_bytes else 'بلا حد'),

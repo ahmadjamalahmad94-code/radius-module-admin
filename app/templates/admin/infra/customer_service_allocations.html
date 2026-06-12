@@ -58,7 +58,7 @@
           <option value="{{ n.id }}"
             {% if badge == 'full' %}disabled{% endif %}>
             {{ n.name }}{% if n.public_ip %} — {{ n.public_ip }}{% endif %}
-            {% if cap > 0 %}(متاح: {{ remaining }} Mbps){% endif %}
+            {% if cap > 0 %}(متاح: {{ remaining }} ميجابت لكل اتجاه){% endif %}
             {% if badge == 'full' %} ⛔ ممتلئ{% elif badge == 'warning' %} ⚠️ تحذير{% endif %}
           </option>
           {% endfor %}
@@ -69,9 +69,13 @@
       </div>
 
       <div class="hub-field">
-        <label>سرعة الخدمة (Mbps) <span class="hub-required">*</span></label>
+        <label>سرعة الخدمة (Mbps) — لكل اتجاه <span class="hub-required">*</span></label>
         <input class="hub-input" name="speed_limit_mbps" type="number" min="1" required
                placeholder="مثال: 200">
+        <div class="hub-field-hint">
+          القيمة تُطبَّق على التنزيل والرفع بالتساوي — 200 ⇒
+          <span class="mono ltr">200↓ / 200↑ ميجابت</span> (ليست مجموعًا).
+        </div>
       </div>
 
       <div class="hub-field">
@@ -154,7 +158,10 @@
     </div>
 
     <div class="alloc-card__body">
-      <div class="alloc-kv"><span>السرعة</span><strong>{{ a.speed_limit_mbps }} Mbps</strong></div>
+      <div class="alloc-kv"><span>السرعة</span>
+        <strong class="mono ltr">{{ a.speed_limit_mbps }}↓ / {{ a.speed_limit_mbps }}↑</strong>
+        <span style="font-size:11.5px;color:var(--hub-muted)">ميجابت/لكل اتجاه</span>
+      </div>
       <div class="alloc-kv"><span>الحسابات</span><strong>{{ a.max_accounts or '—' }}</strong></div>
       <div class="alloc-kv"><span>Peers</span><strong>{{ a.max_peers or '—' }}</strong></div>
       <div class="alloc-kv"><span>النقل</span>
@@ -278,8 +285,9 @@
       {{ csrf_input() }}
       <div class="hub-form-grid" style="padding:12px 14px">
         <div class="hub-field">
-          <label>السرعة (Mbps)</label>
+          <label>السرعة (Mbps) — لكل اتجاه</label>
           <input class="hub-input" name="speed_limit_mbps" type="number" value="{{ a.speed_limit_mbps }}">
+          <div class="hub-field-hint">القيمة تُطبَّق على التنزيل والرفع بالتساوي.</div>
         </div>
         <div class="hub-field">
           <label>أقصى حسابات</label>

@@ -181,6 +181,100 @@ def radius_instance_for_customer(customer_id: int):
     )
 
 
+@bp.post("/radius-instances/<int:instance_id>/rotate-secret")
+@super_admin_required
+def radius_instance_rotate_secret(instance_id: int):
+    """Mint a fresh RADIUS shared secret for the customer's instance.
+
+    Reuses the auto-provision plumbing so the value lands in the same
+    Fernet-backed Setting slot the bridge mints into on first link. The
+    plaintext is returned in a flash message ONE TIME so the operator
+    can paste it into the customer's RADIUS server; after the redirect
+    the panel never echoes it again. The ProxyRealmRoute's
+    ``secret_vault_ref`` is refreshed in tandem so the routing-table
+    publisher hands the new ciphertext to the proxy on its next pull.
+    """
+    from ..services.radius_auto_provision import (
+        _VAULT_REF_PREFIX,
+        _alnum_secret,
+        _setting_key_for,
+        _write_secret_setting,
+    )
+
+    instance = CustomerRadiusInstance.query.get_or_404(instance_id)
+    customer = instance.customer
+    new_plaintext = _alnum_secret()
+    setting_key = _setting_key_for(customer.id)
+    _write_secret_setting(setting_key, new_plaintext)
+    new_ref = _VAULT_REF_PREFIX + setting_key
+    instance.secret_vault_ref = new_ref
+    if instance.proxy_realm_route is not None:
+        instance.proxy_realm_route.secret_vault_ref = new_ref
+    audit(
+        "radius_instance_rotate_secret", "customer_radius_instance", instance.id,
+        f"تدوير سر RADIUS للعميل {customer.company_name if customer else '?'} (@{instance.realm})",
+        {"customer_id": customer.id if customer else None, "vault_ref": new_ref},
+    )
+    db.session.commit()
+    flash(
+        f"تم توليد سرّ جديد لـ @{instance.realm}: {new_plaintext} — انسخه الآن، لن يُعرض مجددًا.",
+        "warning",
+    )
+    return redirect(url_for("admin_infra.radius_instances_list"))
+
+
+@bp.post("/radius-instances/<int:instance_id>/delete")
+@super_admin_required
+def radius_instance_delete(instance_id: int):
+    """Delete a customer's RADIUS instance record.
+
+    FK behavior:
+      * ``ProxyRealmRoute`` (1:1) cascades automatically via the
+        ``cascade="all, delete-orphan"`` declaration on the relationship.
+      * ``ServiceAllocation`` (1:many) has nullable FK with no cascade.
+        We BLOCK delete when any allocation is still ``active`` / ``pending``
+        — the operator must terminate those first. Closed/archived
+        allocations simply lose the radius_instance_id link.
+
+    The auto-provision flow (provision_on_link) recreates a clean instance
+    + route on the next bridge heartbeat, so deletion is the right reset
+    move for an experimental customer.
+    """
+    instance = CustomerRadiusInstance.query.get_or_404(instance_id)
+    customer = instance.customer
+    blocking = (
+        ServiceAllocation.query
+        .filter_by(radius_instance_id=instance_id)
+        .filter(ServiceAllocation.status.in_(["active", "pending"]))
+        .count()
+    )
+    if blocking:
+        flash(
+            f"لا يمكن حذف النسخة: يوجد {blocking} تخصيص خدمة نشط أو معلّق مرتبط بها. "
+            "قم بإنهاء التخصيصات أولًا.",
+            "error",
+        )
+        return redirect(url_for("admin_infra.radius_instances_list"))
+
+    realm_snapshot = instance.realm
+    customer_name = customer.company_name if customer else ""
+    db.session.delete(instance)
+    audit(
+        "radius_instance_delete", "customer_radius_instance", instance_id,
+        f"حذف نسخة RADIUS @{realm_snapshot} للعميل {customer_name}",
+        {
+            "customer_id": customer.id if customer else None,
+            "realm": realm_snapshot,
+        },
+    )
+    db.session.commit()
+    flash(
+        f"تم حذف نسخة RADIUS @{realm_snapshot}.",
+        "success",
+    )
+    return redirect(url_for("admin_infra.radius_instances_list"))
+
+
 @bp.post("/radius-instances/customer/<int:customer_id>/save")
 @super_admin_required
 def radius_instance_save(customer_id: int):
@@ -494,6 +588,160 @@ def proxy_route_set_status(route_id: int):
     audit("proxy_route_status", "proxy_realm_route", route.id, f"\u062a\u063a\u064a\u064a\u0631 \u062d\u0627\u0644\u0629 \u0645\u0633\u0627\u0631 {route.realm} \u0625\u0644\u0649 {new_status}", {})
     db.session.commit()
     flash("\u062a\u0645 \u062a\u062d\u062f\u064a\u062b \u0627\u0644\u062d\u0627\u0644\u0629.", "success")
+    return redirect(url_for("admin_infra.proxy_routes_list"))
+
+
+@bp.get("/proxy-routes/<int:route_id>/edit")
+@super_admin_required
+def proxy_route_edit(route_id: int):
+    """Render the edit form for a proxy realm route."""
+    route = ProxyRealmRoute.query.get_or_404(route_id)
+    instances = CustomerRadiusInstance.query.order_by(CustomerRadiusInstance.realm).all()
+    fleet_chr_nodes = _fleet_nodes_for_admin()
+    return render_template(
+        "admin/infra/proxy_route_edit.html",
+        route=route,
+        instances=instances,
+        fleet_chr_nodes=fleet_chr_nodes,
+        selected_node_ids=set(route.allowed_fleet_chr_node_ids or []),
+    )
+
+
+@bp.post("/proxy-routes/<int:route_id>/edit")
+@super_admin_required
+def proxy_route_edit_save(route_id: int):
+    """Persist edits to a proxy realm route: realm / instance / target IP /
+    ports / secret-vault-ref / status / fleet allow-list."""
+    route = ProxyRealmRoute.query.get_or_404(route_id)
+    new_realm = _str(request.form.get("realm"), 80).lower()
+    new_instance_id = _int(request.form.get("radius_instance_id"), route.radius_instance_id)
+    if not new_realm or not new_instance_id:
+        flash("\u0627\u0644\u0640 Realm \u0648\u0646\u0633\u062e\u0629 RADIUS \u0645\u0637\u0644\u0648\u0628\u0627\u0646.", "error")
+        return redirect(url_for("admin_infra.proxy_route_edit", route_id=route_id))
+    collide = ProxyRealmRoute.query.filter(
+        ProxyRealmRoute.realm == new_realm,
+        ProxyRealmRoute.id != route_id,
+    ).first()
+    if collide is not None:
+        flash(
+            f"\u0645\u0633\u0627\u0631 \u0627\u0644\u0640 Realm \u00ab{new_realm}\u00bb \u0645\u0648\u062c\u0648\u062f \u0645\u0633\u0628\u0642\u064b\u0627.",
+            "error",
+        )
+        return redirect(url_for("admin_infra.proxy_route_edit", route_id=route_id))
+    instance = CustomerRadiusInstance.query.get_or_404(new_instance_id)
+    new_status_raw = _str(request.form.get("status"), 20) or route.status
+    new_status = new_status_raw if new_status_raw in _PROXY_ROUTE_STATUSES else route.status
+    allowed_fleet_ids = [_int(x) for x in request.form.getlist("allowed_fleet_chr_node_ids") if _int(x)]
+
+    before = {
+        "realm": route.realm,
+        "radius_instance_id": route.radius_instance_id,
+        "target_radius_ip": route.target_radius_ip,
+        "target_auth_port": route.target_auth_port,
+        "target_acct_port": route.target_acct_port,
+        "secret_vault_ref": route.secret_vault_ref,
+        "status": route.status,
+        "allowed_fleet_chr_node_ids": list(route.allowed_fleet_chr_node_ids or []),
+    }
+
+    route.realm = new_realm
+    route.customer_id = instance.customer_id
+    route.radius_instance_id = instance.id
+    route.target_radius_ip = _str(request.form.get("target_radius_ip"), 64) or instance.radius_auth_ip
+    route.target_auth_port = _int(request.form.get("target_auth_port"), instance.radius_auth_port or 1812)
+    route.target_acct_port = _int(request.form.get("target_acct_port"), instance.radius_acct_port or 1813)
+    route.secret_vault_ref = _str(request.form.get("secret_vault_ref"), 120)
+    route.status = new_status
+    route.allowed_fleet_chr_node_ids = allowed_fleet_ids
+
+    audit(
+        "proxy_route_edit", "proxy_realm_route", route.id,
+        f"\u062a\u0639\u062f\u064a\u0644 \u0645\u0633\u0627\u0631 Proxy \u0644\u0644\u0640 Realm: {new_realm}",
+        {
+            "before": before,
+            "after": {
+                "realm": route.realm,
+                "radius_instance_id": route.radius_instance_id,
+                "target_radius_ip": route.target_radius_ip,
+                "target_auth_port": route.target_auth_port,
+                "target_acct_port": route.target_acct_port,
+                "secret_vault_ref": route.secret_vault_ref,
+                "status": route.status,
+                "allowed_fleet_chr_node_ids": list(route.allowed_fleet_chr_node_ids or []),
+            },
+        },
+    )
+    db.session.commit()
+    flash(
+        f"\u062a\u0645 \u062d\u0641\u0638 \u0645\u0633\u0627\u0631 \u00ab{new_realm}\u00bb.",
+        "success",
+    )
+    return redirect(url_for("admin_infra.proxy_routes_list"))
+
+
+@bp.post("/proxy-routes/<int:route_id>/delete")
+@super_admin_required
+def proxy_route_delete(route_id: int):
+    """Delete a proxy realm route. The proxy stops routing the realm on
+    its next pull (the routing-table filter already drops non-active rows;
+    a deleted row is simply absent on the next read)."""
+    route = ProxyRealmRoute.query.get_or_404(route_id)
+    realm_name = route.realm
+    payload = {
+        "realm": realm_name,
+        "customer_id": route.customer_id,
+        "radius_instance_id": route.radius_instance_id,
+        "status": route.status,
+    }
+    db.session.delete(route)
+    audit(
+        "proxy_route_delete", "proxy_realm_route", route_id,
+        f"\u062d\u0630\u0641 \u0645\u0633\u0627\u0631 Proxy \u00ab{realm_name}\u00bb",
+        payload,
+    )
+    db.session.commit()
+    flash(
+        f"\u062a\u0645 \u062d\u0630\u0641 \u0645\u0633\u0627\u0631 \u00ab{realm_name}\u00bb.",
+        "success",
+    )
+    return redirect(url_for("admin_infra.proxy_routes_list"))
+
+
+@bp.post("/proxy-routes/reload")
+@super_admin_required
+def proxy_routes_reload():
+    """Reload-config marker for the pull-based proxy (zero-central).
+
+    The proxy polls /api/proxy/routing-table on a fixed interval and never
+    receives a push from the panel. The legacy template's button POSTed to
+    a non-existent endpoint; the safe-url-for shim in app/__init__.py
+    rewrote it to "#"; the form then re-POSTed to the GET-only list URL,
+    and Flask returned **405 Method Not Allowed** -- the live bug.
+
+    This handler writes an audit row + an explicit refresh-marker into
+    Setting so the next poll observes a fresh "operator asked for a refresh"
+    timestamp; the proxy itself needs no code change because the table it
+    reads is already authoritative.
+    """
+    from ..models import Setting
+    key = "proxy_routes_refresh_marker"
+    row = db.session.get(Setting, key)
+    marker = utcnow().replace(microsecond=0).isoformat() + "Z"
+    if row is None:
+        row = Setting(key=key, value=marker)
+        db.session.add(row)
+    else:
+        row.value = marker
+    audit(
+        "proxy_routes_reload", "platform", None,
+        "\u0637\u0644\u0628 \u062a\u062d\u062f\u064a\u062b \u062a\u0643\u0648\u064a\u0646 \u0627\u0644\u0648\u0643\u064a\u0644 \u064a\u062f\u0648\u064a\u064b\u0627",
+        {"marker": marker},
+    )
+    db.session.commit()
+    flash(
+        "\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0637\u0644\u0628 \u0627\u0644\u062a\u062d\u062f\u064a\u062b. \u0627\u0644\u0648\u0643\u064a\u0644 \u064a\u062a\u0632\u0627\u0645\u0646 \u0622\u0644\u064a\u0651\u064b\u0627 \u0639\u0644\u0649 \u0641\u062a\u0631\u0627\u062a \u0645\u0646\u062a\u0638\u0645\u0629.",
+        "success",
+    )
     return redirect(url_for("admin_infra.proxy_routes_list"))
 
 # ──────────────────────────────────────────────────────────────────────────────

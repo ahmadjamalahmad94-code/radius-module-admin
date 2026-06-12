@@ -10,8 +10,14 @@
 {% endif %}
 
 {% call hub.section("إضافة بروفايل سرعة", icon="gauge-high") %}
-  <form method="post" action="{{ url_for('admin.chr_speed_profile_create') }}">
+  <form method="post" action="{{ url_for('admin.chr_speed_profile_create') }}" data-sym-form>
     {{ csrf_input() }}
+    <div class="hub-flash hub-flash--info" style="margin-bottom:14px">
+      <i class="fa-solid fa-circle-info"></i>
+      السرعة <strong>لكل اتجاه على حدة</strong>: اختيارك «850» يعني
+      <span class="mono ltr">850↓ تنزيل + 850↑ رفع</span> متزامنين، ويُترجَم إلى
+      <span class="mono ltr">rate-limit = 850M/850M</span> على CHR — وليس 850 إجمالاً.
+    </div>
     <div class="hub-form-grid">
       <div class="hub-field">
         <label>الاسم</label>
@@ -22,13 +28,24 @@
         <input class="hub-input mono ltr" name="code" placeholder="50m (يُشتق من الاسم إن تُرك فارغًا)">
         <div class="hub-field-hint">يُستعمل في اسم بروفايل CHR: <span class="mono ltr">hob-&lt;code&gt;</span>.</div>
       </div>
-      <div class="hub-field">
-        <label>سرعة التنزيل (Mbps)</label>
-        <input class="hub-input" name="download_mbps" type="number" min="1" max="100000" required>
+      <div class="hub-field full" data-sym-row>
+        <label>السرعة (Mbps) — لكل اتجاه</label>
+        <input class="hub-input" name="speed_mbps" type="number" min="1" max="100000"
+               required data-sym-input>
+        <div class="hub-field-hint">
+          القيمة تُطبَّق على التنزيل والرفع بالتساوي — مثال: <span class="mono ltr">850</span>
+          ⇒ <span class="mono ltr">850↓ / 850↑ ميجابت</span> ⇒
+          <span class="mono ltr">rate-limit = 850M/850M</span>.
+          <a href="#" data-sym-advanced-toggle>سرعة غير متماثلة (متقدّم)</a>
+        </div>
       </div>
-      <div class="hub-field">
+      <div class="hub-field" data-sym-advanced hidden>
+        <label>سرعة التنزيل (Mbps)</label>
+        <input class="hub-input" name="download_mbps" type="number" min="1" max="100000" data-sym-down>
+      </div>
+      <div class="hub-field" data-sym-advanced hidden>
         <label>سرعة الرفع (Mbps)</label>
-        <input class="hub-input" name="upload_mbps" type="number" min="1" max="100000" required>
+        <input class="hub-input" name="upload_mbps" type="number" min="1" max="100000" data-sym-up>
       </div>
       <div class="hub-field">
         <label>حدّ الجلسات (اختياري)</label>
@@ -43,7 +60,9 @@
       <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-plus"></i> إضافة البروفايل</button>
     </div>
     <p class="hub-field-hint" style="margin-top:10px">
-      السرعة تُترجَم إلى <span class="mono ltr">rate-limit = upload/download</span> على CHR (منظور الراوتر rx/tx).
+      <i class="fa-solid fa-shield-halved"></i>
+      السرعة تُترجَم على CHR إلى <span class="mono ltr">rate-limit = &lt;upload&gt;M/&lt;download&gt;M</span>
+      (rx=رفع، tx=تنزيل). نضمن المتماثل افتراضيًا كي لا يلتبس على المالك.
     </p>
   </form>
 {% endcall %}
@@ -53,7 +72,7 @@
     <table class="hub-table">
       <thead>
         <tr>
-          <th>الاسم</th><th>الرمز</th><th>تنزيل</th><th>رفع</th>
+          <th>الاسم</th><th>الرمز</th><th>السرعة (لكل اتجاه)</th>
           <th class="mono">rate-limit</th><th class="mono">بروفايل CHR</th><th>الحالة</th><th></th>
         </tr>
       </thead>
@@ -62,8 +81,12 @@
         <tr>
           <td>{{ p.name }}</td>
           <td class="mono">{{ p.code }}</td>
-          <td>{{ p.download_mbps }} Mbps</td>
-          <td>{{ p.upload_mbps }} Mbps</td>
+          <td>
+            <span class="mono ltr">{{ p.download_mbps }}↓ / {{ p.upload_mbps }}↑</span> ميجابت
+            {% if p.download_mbps != p.upload_mbps %}
+              <span class="badge badge-amber" title="غير متماثل — نادر">غير متماثل</span>
+            {% endif %}
+          </td>
           <td class="mono ltr">{{ rate_limit_string(p.download_mbps, p.upload_mbps) }}</td>
           <td class="mono ltr">{{ p.effective_chr_profile_name }}</td>
           <td>{% if p.active %}<span class="badge badge-green">مفعّل</span>{% else %}<span class="badge badge-gray">معطّل</span>{% endif %}</td>
@@ -84,14 +107,34 @@
                       data-confirm-msg="سيُحذف البروفايل (أو يُعطَّل إن كان مستخدمًا في أنفاق). متابعة؟"
                       data-confirm-ok="حذف"><i class="fa-solid fa-trash"></i></button>
             </div>
-            {# نموذج التعديل المخفي #}
+            {# نموذج التعديل المخفي — نموذج السرعة المتماثلة افتراضًا #}
             <form method="post" action="{{ url_for('admin.chr_speed_profile_edit', profile_id=p.id) }}"
-                  id="edit-profile-{{ p.id }}" hidden style="margin-top:10px;padding:10px;border:1px dashed #cbd5e1;border-radius:8px">
+                  id="edit-profile-{{ p.id }}" hidden style="margin-top:10px;padding:10px;border:1px dashed #cbd5e1;border-radius:8px"
+                  data-sym-form>
               {{ csrf_input() }}
               <div class="hub-form-grid">
                 <div class="hub-field"><label>الاسم</label><input class="hub-input" name="name" value="{{ p.name }}" required></div>
-                <div class="hub-field"><label>تنزيل (Mbps)</label><input class="hub-input" name="download_mbps" type="number" min="1" value="{{ p.download_mbps }}" required></div>
-                <div class="hub-field"><label>رفع (Mbps)</label><input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ p.upload_mbps }}" required></div>
+                {% set _sym = (p.download_mbps == p.upload_mbps) %}
+                <div class="hub-field" data-sym-row>
+                  <label>السرعة (Mbps) — لكل اتجاه</label>
+                  <input class="hub-input" name="speed_mbps" type="number" min="1"
+                         value="{{ p.download_mbps if _sym else '' }}" data-sym-input
+                         {% if _sym %}required{% endif %}>
+                  <div class="hub-field-hint">
+                    تُطبَّق على التنزيل والرفع بالتساوي.
+                    <a href="#" data-sym-advanced-toggle>سرعة غير متماثلة (متقدّم)</a>
+                  </div>
+                </div>
+                <div class="hub-field" data-sym-advanced {% if _sym %}hidden{% endif %}>
+                  <label>تنزيل (Mbps)</label>
+                  <input class="hub-input" name="download_mbps" type="number" min="1" value="{{ p.download_mbps }}" data-sym-down
+                         {% if not _sym %}required{% endif %}>
+                </div>
+                <div class="hub-field" data-sym-advanced {% if _sym %}hidden{% endif %}>
+                  <label>رفع (Mbps)</label>
+                  <input class="hub-input" name="upload_mbps" type="number" min="1" value="{{ p.upload_mbps }}" data-sym-up
+                         {% if not _sym %}required{% endif %}>
+                </div>
                 <div class="hub-field"><label>حدّ الجلسات</label><input class="hub-input" name="max_sessions" type="number" min="1" value="{{ p.max_sessions or '' }}"></div>
                 <div class="hub-field"><label>اسم بروفايل CHR (اختياري)</label><input class="hub-input mono ltr" name="chr_profile_name" value="{{ p.chr_profile_name }}" placeholder="hob-{{ p.code }}"></div>
                 <div class="hub-field"><label class="hub-check-item"><input type="checkbox" name="active" value="1" {% if p.active %}checked{% endif %}><span>مفعّل</span></label></div>

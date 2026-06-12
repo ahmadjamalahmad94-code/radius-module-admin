@@ -1127,6 +1127,19 @@ def _install_csrf(app: Flask) -> None:
 
 
 def _install_template_helpers(app: Flask) -> None:
+    # Per-direction-symmetric speed helpers — wired as Jinja globals so every
+    # template that shows a Mbps value can render it as «X↓ / Y↑ ميجابت» without
+    # the route having to pass the helper in by hand. See
+    # app/services/speed_profiles.py for the per-direction contract.
+    from .services.speed_profiles import (
+        per_direction_label as _per_direction_label,
+        rate_limit_string as _rate_limit_string,
+        symmetric_rate_limit as _symmetric_rate_limit,
+    )
+    app.jinja_env.globals["per_direction_label"] = _per_direction_label
+    app.jinja_env.globals["rate_limit_string"] = _rate_limit_string
+    app.jinja_env.globals["symmetric_rate_limit"] = _symmetric_rate_limit
+
     @app.template_filter("dt")
     def dt_filter(value):
         if not value:

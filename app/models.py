@@ -558,6 +558,13 @@ class ChrSpeedProfile(TimestampMixin, db.Model):
     جوهر المنتج هو التحكّم بالسرعة: لكل بروفايل سرعةُ تنزيل/رفع (Mbps) تُترجَم إلى
     ``rate-limit`` على بروفايل PPP على CHR (idempotent). يختار المدير عند إنشاء النفق
     بروفايلًا جاهزًا أو يُدخل سرعة مخصّصة. هذه إعدادات مركزية لا تُرسَل لأي لوحة عميل.
+
+    **العقد المركزي (per-direction symmetric):** ``download_mbps`` و``upload_mbps``
+    قِيَم **مستقلة** بالـMbps — كلٌّ منهما يصف اتجاهًا واحدًا، ولا تُجمَع أبدًا.
+    البروفايلات المُنشَأة من الواجهة الافتراضية الجديدة تكون متماثلة (نفس الرقم
+    على الجانبين، أي 850 ⇒ rate-limit "850M/850M"). السلوك غير المتماثل ممكن لكنه
+    يُعرَض صراحةً في الواجهة كي لا يلتبس بمتماثل (انظر
+    ``app.services.speed_profiles.per_direction_label``).
     """
     __tablename__ = "chr_speed_profiles"
     __table_args__ = (
@@ -1624,7 +1631,10 @@ class ServiceAllocation(TimestampMixin, db.Model):
     fleet_chr_node_id = db.Column(
         db.Integer, db.ForeignKey("fleet_chr_nodes.id"), nullable=True, index=True,
     )
-    # Speed and quota
+    # Speed (per-direction symmetric — see speed_profiles.symmetric_rate_limit).
+    # speed_limit_mbps يصف سرعة كل اتجاه على حدة بالـMbps: 850 ⇒ 850↓ + 850↑.
+    # لا تُجمَع كقيمة كلية. حسابات السعة المحجوزة (``_fleet_reserved_mbps``)
+    # تستخدم هذا العمود مرّةً واحدة كي لا يُحسَب الاتجاهان مزدوجَين.
     speed_limit_mbps = db.Column(db.Integer, nullable=False)
     transfer_limit_bytes = db.Column(db.BigInteger, nullable=True)   # NULL = unlimited
     # Account/peer caps

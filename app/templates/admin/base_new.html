@@ -23,6 +23,14 @@
      with admin_design_sweep.js (deferred at the bottom). #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_design_sweep.css') }}">
 
+  {# Visual polish + animation + contrast layer. Loaded LAST so it sits
+     above the design sweep without altering any earlier file. Companion
+     JS: admin_polish.js (deferred at the bottom). Progressive
+     enhancement: count-ups, animated bars, sheen, shimmer, hover lifts
+     and entrance cascades — every page picks them up without template
+     changes. Reduced-motion-safe. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_polish.css') }}">
+
   <style>
     /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
     .adm-lang-form{display:inline-flex;align-items:center;gap:6px;margin-inline-end:8px;}
@@ -566,6 +574,12 @@
 {# ── JavaScript ──────────────────────────────────────────────────────────── #}
 <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/admin_design_sweep.js') }}" defer></script>
+{# Polish + animation companion (see admin_polish.css). Auto-detects count-
+   ups, animated bars, reveals; binds shimmer to form submitters. Reduced-
+   motion-safe. Exposes window.AdminPolish.rescan() for AJAX-heavy pages. #}
+<script src="{{ url_for('static', filename='js/admin_polish.js') }}" defer></script>
+{# Per-direction symmetric speed UX — opt-in via [data-sym-form] on a form. #}
+<script src="{{ url_for('static', filename='js/sym_speed.js') }}" defer></script>
 
 <script>
 (function () {
