@@ -1092,7 +1092,7 @@
         </span>
       </div>
       <form method="post" action="/logout">
-        <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+        <input type="hidden" name="_csrf_token" value="8AozsH0bmGBmm6WgVBE-ZMjaxb7txqYc4kaogfspqWI">
         <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
           <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
         </button>
@@ -1123,7 +1123,7 @@
         
         <form method="post" action="/i18n/set"
               class="adm-lang-form" aria-label="اللغة">
-          <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+          <input type="hidden" name="_csrf_token" value="8AozsH0bmGBmm6WgVBE-ZMjaxb7txqYc4kaogfspqWI">
           <input type="hidden" name="next" value="/admin/customers/1">
           <label for="adm-lang" class="adm-lang-label">
             <i class="fa-solid fa-language" aria-hidden="true"></i>
@@ -1164,7 +1164,7 @@
           </span>
         </div>
         <form method="post" action="/logout">
-          <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+          <input type="hidden" name="_csrf_token" value="8AozsH0bmGBmm6WgVBE-ZMjaxb7txqYc4kaogfspqWI">
           <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
           </button>
@@ -1413,7 +1413,7 @@
           <div class="cd-info-row">
             <span class="cd-info-key">تاريخ الانضمام</span>
             <span class="cd-info-val">
-              2026-06-12 19:05
+              2026-06-12 19:17
             </span>
           </div>
           <div class="cd-info-row">
@@ -1427,7 +1427,7 @@
           <div class="cd-info-row">
             <span class="cd-info-key">آخر تعديل</span>
             <span class="cd-info-val">
-              2026-06-12 19:05
+              2026-06-12 19:17
             </span>
           </div>
         </div>
@@ -1584,8 +1584,10 @@
         </div>
         <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
           ينقل العميل إلى عقدة CHR أخرى — IP العام يتغيّر إلى IP العقدة الهدف.
-          يكتب التوجيه الجديد ثم يُرسل CoA-Disconnect ليُعيد اتصال الجلسات الحيّة
-          على العقدة الجديدة فورًا.
+          التوجيه يُحدَّث فورًا؛ يُضاف أمر CoA-Disconnect إلى قائمة الانتظار
+          ليلتقطه الوكيل خلال ≤60 ثانية (دورة استطلاع التوجيه) فيُسقط الجلسات
+          الحيّة وتُعاد على العقدة الجديدة. ستظهر النتيجة في سجلّ التدقيق
+          فور وصول تأكيد الوكيل.
         </p>
 
         <div class="cd-cred-box" style="margin-bottom:var(--cc-sp-5)">
@@ -1599,7 +1601,7 @@
           <form id="cd-chrmove-form" method="post"
                 action="/admin/customers/1/move-chr"
                 style="display:flex;flex-direction:column;gap:var(--cc-sp-4);max-width:560px">
-            <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+            <input type="hidden" name="_csrf_token" value="8AozsH0bmGBmm6WgVBE-ZMjaxb7txqYc4kaogfspqWI">
             <label for="cd-chrmove-target" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">العقدة الهدف</label>
             <select id="cd-chrmove-target" name="target_node_id" required
                     style="height:36px;padding:0 var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small)">
@@ -1660,9 +1662,10 @@
               newIp.textContent = ip;
               btn.disabled = false;
               btn.setAttribute('data-confirm-msg',
-                'سيتم تحديث التوجيه ليستخدم العقدة «' + name + '» — IP العام: '
-                + currentIp + ' ← ' + ip + '. ثم سيُرسل CoA-Disconnect لإسقاط '
-                + 'الجلسات الحيّة وإعادة الاتصال على العقدة الجديدة. تابع؟');
+                'سيتم تحديث التوجيه فورًا ليستخدم العقدة «' + name + '» — '
+                + 'IP العام: ' + currentIp + ' ← ' + ip + '. ثم سيُضاف أمر '
+                + 'CoA-Disconnect إلى قائمة الانتظار ليلتقطه الوكيل خلال ≤60 '
+                + 'ثانية ويُسقط الجلسات الحيّة. تابع؟');
             });
           })();
           </script>

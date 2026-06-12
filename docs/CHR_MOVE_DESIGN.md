@@ -49,34 +49,96 @@ Per customer the change is two writes inside a single transaction:
 The panel never touches the CHR directly — the central proxy is the
 single source of truth + the single emission point.
 
-## §4. Reconnect mechanism — chosen path + rejected alternatives
+## §4. Reconnect mechanism — POLL-BASED queue (the proxy is outbound-only)
+
+The proxy has **NO inbound HTTP server** — it polls
+`GET /api/proxy/routing-table` ≤60 s and POSTs back telemetry +
+heartbeat + (new) `POST /api/proxy/coa-result`. That outbound-only
+shape is enforced by `test_proxy_not_in_license_path`. So we publish
+CoA commands and the proxy executes them between polls.
 
 | Option | What it does | Verdict |
 |---|---|---|
-| **A. Panel → Proxy (signed HTTP) → CHR (RADIUS CoA UDP 3799)** | Proxy already speaks CoA to CHRs and tracks live (realm, NAS) state. Panel emits one signed POST. | **Selected.** |
-| B. Panel → CHR directly (RADIUS CoA UDP 3799) | Panel would need each NAS-IP + the central CHR shared secret — leaks central credentials, violates `chr-creds-must-stay-central`. | Rejected. |
-| C. Panel → Bridge → customer's local RADIUS → NAS Disconnect-Request | Customer-controlled link; reconnect intent shouldn't depend on the customer's bridge being up. | Rejected. |
+| ~~A. Panel → Proxy (signed HTTP) → CHR (RADIUS CoA UDP 3799)~~ | ~~Proxy speaks CoA + tracks live state.~~ | **Rejected — proxy has no HTTP listener.** |
+| B. Panel → CHR directly (RADIUS CoA UDP 3799) | Panel would need each NAS-IP + the central CHR shared secret — leaks central credentials. | Rejected. |
+| C. Panel → Bridge → customer's local RADIUS → NAS Disconnect-Request | Customer-controlled link; reconnect shouldn't depend on the bridge. | Rejected. |
+| **D. Panel enqueues → proxy picks up via routing-table poll → proxy POSTs `/api/proxy/coa-result`** | Matches the outbound-only proxy. ≤60 s end-to-end (one poll cycle). | **Selected.** |
 
-**Panel-side contract** (built in this branch):
+### §4.1. Queue contract (proxy + panel coordinate on these shapes)
 
-```http
-POST <proxy>/api/proxy/coa/disconnect
-X-Proxy-Token: <ts>:<nonce>:<hmac>
-Content-Type: application/json
+**Enqueue (panel-internal).** A `PendingCoaCommand` row with:
 
-{ "realm": "client5",
-  "reason": "panel:chr-move",
-  "target_node_id": 12 }
+```
+command_id      uuid hex                — stable id; the proxy echoes it back
+realm           "client5"               — the customer's realm
+action          "disconnect"            — vocab: disconnect (CoA-Request)
+target_node_id  12 | null               — which CHR the move re-homed to
+reason          "panel:chr-move"        — audit-only
+customer_id     <id>                    — for audit join
+status          pending|sent|done|failed|expired
+created_at      utcnow                  — TTL anchor (default 5 min)
+picked_up_at    nullable                — stamped on first publish
+completed_at    nullable                — stamped on result
+coa_code        41 (ACK) | 42 (NAK)     — RFC 5176; nullable
+detail          "<short text>"
 ```
 
-The proxy-side handler is a **build-deferred surface** owned by the
-proxy repo. Until it ships, the panel:
-- emits the call best-effort,
-- records the attempt in audit + result,
-- returns `coa_status="pending_proxy_endpoint"` so the UI says
-  «موجَّه — في انتظار قبول الوكيل» rather than a misleading green check.
+**Publish (proxy-side: `GET /api/proxy/routing-table`).** Top-level
+new field; only commands with status `pending|sent` and not expired:
 
-The routing update is durable independent of the CoA outcome.
+```json
+{
+  "ok": true,
+  "routes": [...],
+  "chr_nodes": [...],
+  "pending_coa": [
+    { "id": "<uuid>", "realm": "<realm>",
+      "action": "disconnect",
+      "target_node_id": 12,
+      "reason": "panel:chr-move" }
+  ]
+}
+```
+
+Side-effect: every row included in this response that was `pending` is
+transitioned to `sent` + stamped `picked_up_at = now`. This is what
+lets the panel UI tell «بانتظار الاستلام» from «أُرسل».
+
+**Result (proxy → panel: `POST /api/proxy/coa-result`).** Same
+`X-Proxy-Token` HMAC the other `/api/proxy/*` inbound calls verify:
+
+```json
+{ "id": "<uuid>",
+  "status": "done" | "failed",
+  "coa_code": 41 | 42,
+  "detail": "<short text>" }
+```
+
+Panel marks the row, stops publishing it, audits the result on the
+customer (`chr_move_coa_result`). **Idempotent**: re-reporting a
+terminal command is a no-op + still returns `ok=true` so the proxy can
+retry the POST. Unknown ids silently 200 — a publish wiped before the
+proxy heard back isn't the proxy's fault.
+
+### §4.2. TTL + lifecycle
+
+- Default TTL = **300 s** (5 minutes — covers ~5 retries at 60 s poll).
+- After TTL with no result the row transitions to `expired` and is
+  dropped from `pending_coa`. The panel UI shows «انتهى وقت الانتظار»
+  and the move button re-arms.
+
+### §4.3. UI status mapping
+
+| Status | What the user sees | What it means |
+|---|---|---|
+| `pending` | «أُدرج الأمر في قائمة CoA — سيلتقطه الوكيل خلال ≤60 ثانية» | Just enqueued; waiting for next routing-table poll |
+| `sent` | «أُرسل إلى الوكيل — بانتظار تأكيد التنفيذ» | Included in a routing-table response |
+| `done` | «تمّ — كود CoA 41 (ACK)» | Proxy ACKed via `/api/proxy/coa-result` |
+| `failed` | «فشل — كود CoA 42 (NAK)» | Proxy NAKed |
+| `expired` | «انتهى وقت الانتظار» | TTL elapsed; re-arm the button |
+
+The routing-table change stays **immediate + durable** in all cases.
+Only the live-session reconnect is async via the queue.
 
 ## §5. Idempotency + safety
 

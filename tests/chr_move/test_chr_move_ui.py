@@ -125,6 +125,10 @@ def test_move_card_renders_with_current_ip_and_eligible_targets(app, client):
     # The button uses the design-system confirm modal, NOT a native alert.
     assert 'data-confirm-form="cd-chrmove-form"' in body
     assert "alert(" not in body  # belt-and-braces
+    # The page copy + the JS confirm-msg both reference the ≤60s queue
+    # cycle so the operator knows the reconnect is async, not instant.
+    assert "≤60 ثانية" in body
+    assert "قائمة الانتظار" in body
 
     # Snapshot for the owner — write the rendered page so the
     # «بدي صورة» request has an artefact to open offline.

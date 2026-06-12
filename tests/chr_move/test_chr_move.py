@@ -33,11 +33,10 @@ from app.services.chr_move import (
 )
 from app.services.coa_disconnect import (
     CoaResult,
+    STATUS_DONE,
     STATUS_FAILED,
-    STATUS_NO_ENDPOINT,
-    STATUS_NO_SECRET,
-    STATUS_OK,
-    STATUS_PENDING_PROXY_ENDPOINT,
+    STATUS_PENDING,
+    STATUS_SENT,
 )
 from fleet.registry.models_chr import FleetChrNode, FleetProvider
 
@@ -132,14 +131,20 @@ def make_customer(app):
 
 @pytest.fixture()
 def mock_coa():
-    """A test-double emitter that records every call + lets the test
-    return any ``CoaResult``. Pass it as ``coa_emitter=mock_coa.factory``."""
+    """A test-double enqueuer that records every call + lets the test
+    return any ``CoaResult``. Pass it as ``coa_emitter=mock_coa.factory``.
+
+    Default behaviour: returns ``status=pending`` with a deterministic
+    command_id — matches the production queue-enqueue path."""
 
     class _Recorder:
         def __init__(self):
             self.calls: list[dict] = []
-            self.return_value = CoaResult(status=STATUS_OK, http_status=200,
-                                          message="ok", request_id="req-1")
+            self.return_value = CoaResult(
+                status=STATUS_PENDING,
+                message="أُدرج الأمر في قائمة CoA — ≤60 ثانية",
+                command_id="cmd-test-1",
+            )
 
         def factory(self, **kwargs):
             self.calls.append(kwargs)
@@ -286,9 +291,9 @@ class TestPublicIpSurface:
 # ════════════════════════════════════════════════════════════════════════
 # CoA emission — signed payload + correct call args
 # ════════════════════════════════════════════════════════════════════════
-class TestCoaEmission:
+class TestCoaEnqueue:
 
-    def test_coa_called_with_realm_reason_target(self, app, make_customer, make_node, mock_coa):
+    def test_coa_enqueued_with_realm_reason_target_customer(self, app, make_customer, make_node, mock_coa):
         node_a = make_node(public_ip="9.0.0.1")
         node_b = make_node(public_ip="9.0.0.2")
         cust, inst, _ = make_customer(allowed_node_ids=[node_a.id])
@@ -300,62 +305,84 @@ class TestCoaEmission:
         assert call["realm"] == inst.realm
         assert call["target_node_id"] == node_b.id
         assert call["reason"] == "panel:chr-move"
+        # The queue model also routes the customer_id through so the
+        # later /api/proxy/coa-result can audit against the right row.
+        assert call["customer_id"] == cust.id
 
-    def test_coa_called_even_on_same_chr_noop(self, app, make_customer, make_node, mock_coa):
-        """Same-target move = routing-no-op, but CoA still fires so the
-        operator can force-reconnect on the same node from the same button."""
+    def test_coa_enqueued_even_on_same_chr_noop(self, app, make_customer, make_node, mock_coa):
+        """Same-target move = routing-no-op, but the command still gets
+        enqueued so the operator can force-reconnect on the same node
+        from the same button (the «خلّيه يعيد الاتصال» case)."""
         node = make_node()
         cust, _, _ = make_customer(allowed_node_ids=[node.id])
         result = move_customer_to_chr(cust, node, coa_emitter=mock_coa.factory)
         assert result.routing_changed is False
         assert len(mock_coa.calls) == 1
 
-    def test_result_carries_coa_outcome(self, app, make_customer, make_node, mock_coa):
+    def test_result_carries_enqueue_outcome(self, app, make_customer, make_node, mock_coa):
+        """In the QUEUE model the result carries the pending status +
+        the command_id the proxy will echo back via coa-result."""
         node = make_node()
         cust, _, _ = make_customer()
         mock_coa.return_value = CoaResult(
-            status=STATUS_OK, http_status=200,
-            message="تمّ", request_id="req-test-42",
+            status=STATUS_PENDING,
+            message="أُدرج",
+            command_id="cmd-test-42",
         )
         result = move_customer_to_chr(cust, node, coa_emitter=mock_coa.factory)
-        assert result.coa_status == STATUS_OK
-        assert result.coa_http_status == 200
-        assert result.coa_request_id == "req-test-42"
+        assert result.coa_status == STATUS_PENDING
+        assert result.coa_request_id == "cmd-test-42"
+
+
+class TestQueueIntegration:
+    """End-to-end against the real ``enqueue_coa_disconnect`` (no mock)
+    — proves the move service writes an actual PendingCoaCommand row
+    the routing-table endpoint will publish."""
+
+    def test_real_enqueue_creates_pending_row(self, app, make_customer, make_node):
+        from app.models import PendingCoaCommand
+        node = make_node(public_ip="9.9.9.99")
+        cust, inst, _ = make_customer()
+
+        result = move_customer_to_chr(cust, node)
+
+        rows = (
+            PendingCoaCommand.query
+            .filter_by(realm=inst.realm)
+            .all()
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.command_id == result.coa_request_id
+        assert row.status == STATUS_PENDING
+        assert row.target_node_id == node.id
+        assert row.reason == "panel:chr-move"
+        assert row.customer_id == cust.id
 
 
 # ════════════════════════════════════════════════════════════════════════
 # CoA failure does NOT roll back the routing change
 # ════════════════════════════════════════════════════════════════════════
-class TestDurabilityOnCoaFailure:
+class TestDurabilityOnEnqueueFailure:
 
-    def test_routing_persists_when_coa_returns_failed(self, app, make_customer, make_node, mock_coa):
+    def test_routing_persists_when_enqueue_raises(self, app, make_customer, make_node):
+        """In the queue model the enqueue is a normal DB write — if it
+        somehow raises (disk full, etc.), the routing change is already
+        committed and stays durable. We simulate by injecting a raising
+        emitter and asserting the route is still rewritten."""
         node_a = make_node(public_ip="9.0.0.5")
         node_b = make_node(public_ip="9.0.0.6")
         cust, _, route = make_customer(allowed_node_ids=[node_a.id])
 
-        mock_coa.return_value = CoaResult(
-            status=STATUS_FAILED, http_status=502,
-            message="proxy 502", request_id="r1",
-        )
-        result = move_customer_to_chr(cust, node_b, coa_emitter=mock_coa.factory)
+        def boom(**kwargs):
+            raise RuntimeError("disk full")
 
+        with pytest.raises(RuntimeError):
+            move_customer_to_chr(cust, node_b, coa_emitter=boom)
+
+        # Routing change persisted even though the enqueuer raised.
         db.session.refresh(route)
-        # Routing changed even though CoA failed.
         assert route.allowed_fleet_chr_node_ids == [node_b.id]
-        assert result.routing_changed is True
-        assert result.coa_status == STATUS_FAILED
-
-    def test_pending_proxy_endpoint_surfaces_distinctly(self, app, make_customer, make_node, mock_coa):
-        """The proxy doesn't yet implement the CoA endpoint → status
-        ``pending_proxy_endpoint`` (NOT failed) so the UI says «بانتظار»."""
-        node = make_node()
-        cust, _, _ = make_customer()
-        mock_coa.return_value = CoaResult(
-            status=STATUS_PENDING_PROXY_ENDPOINT, http_status=501,
-            message="not yet", request_id="r2",
-        )
-        result = move_customer_to_chr(cust, node, coa_emitter=mock_coa.factory)
-        assert result.coa_status == STATUS_PENDING_PROXY_ENDPOINT
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -410,115 +437,361 @@ class TestAudit:
         assert meta.get("to_node_id") == node_b.id
         assert meta.get("to_public_ip") == "5.6.7.8"
         assert meta.get("from_public_ips") == ["1.2.3.4"]
-        assert meta.get("coa_status") == STATUS_OK
+        assert meta.get("coa_status") == STATUS_PENDING
         assert meta.get("actor") == "ops-tester"
         assert meta.get("routing_changed") is True
 
 
 # ════════════════════════════════════════════════════════════════════════
-# CoA emitter — signature + URL build + status mapping (no live HTTP)
+# Queue helpers — enqueue + alive_commands + serialize + apply_coa_result
 # ════════════════════════════════════════════════════════════════════════
-class TestCoaEmitterStandalone:
-    """The chr_move tests above mock the emitter wholesale. These tests
-    pin the emitter's own contract: it constructs the signed request the
-    proxy will validate, and maps HTTP outcomes to the right status."""
+class TestCoaQueue:
+    """Direct tests on the queue layer — independent of chr_move so the
+    queue contract can be verified without the routing-update path."""
 
-    def test_emit_returns_no_secret_when_unset(self, app):
-        from app.services.coa_disconnect import emit_coa_disconnect
-        result = emit_coa_disconnect(
-            realm="client1", target_node_id=1,
-            proxy_base_url="https://proxy.test", shared_secret="",
+    def test_enqueue_creates_pending_row(self, app):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import enqueue_coa_disconnect
+
+        result = enqueue_coa_disconnect(
+            realm="client9", target_node_id=99, customer_id=1,
         )
-        assert result.status == STATUS_NO_SECRET
+        row = PendingCoaCommand.query.filter_by(command_id=result.command_id).one()
+        assert row.status == STATUS_PENDING
+        assert row.realm == "client9"
+        assert row.target_node_id == 99
+        assert row.customer_id == 1
+        assert row.coa_code is None
+        assert row.completed_at is None
 
-    def test_emit_returns_no_endpoint_when_unset(self, app):
-        from app.services.coa_disconnect import emit_coa_disconnect
-        result = emit_coa_disconnect(
-            realm="client1", target_node_id=1,
-            proxy_base_url="", shared_secret="some-secret",
+    def test_alive_commands_excludes_terminal(self, app):
+        from app.services.coa_disconnect import (
+            alive_commands, apply_coa_result, enqueue_coa_disconnect,
         )
-        assert result.status == STATUS_NO_ENDPOINT
+        c1 = enqueue_coa_disconnect(realm="r1", target_node_id=1)
+        c2 = enqueue_coa_disconnect(realm="r2", target_node_id=2)
+        apply_coa_result(command_id=c1.command_id, status="done", coa_code=41)
 
-    def test_emit_builds_signed_request(self, app, monkeypatch):
-        """The emitter must:
-          (a) POST to <base>/api/proxy/coa/disconnect,
-          (b) carry an X-Proxy-Token: <ts>:<nonce>:<hmac> header,
-          (c) JSON-body with realm, reason, target_node_id, request_id.
-        """
-        import hashlib
-        import hmac as _hmac
-        from app.services import coa_disconnect as cd
+        alive_ids = {r.command_id for r in alive_commands()}
+        assert c1.command_id not in alive_ids
+        assert c2.command_id in alive_ids
 
-        captured: dict = {}
-
-        def fake_post(url, payload, headers, *, timeout=5.0):
-            captured["url"] = url
-            captured["payload"] = payload
-            captured["headers"] = headers
-            return 200, '{"ok":true}'
-
-        monkeypatch.setattr(cd, "_http_post_json", fake_post)
-
-        secret = "test-shared-secret-xx"
-        result = cd.emit_coa_disconnect(
-            realm="client42",
-            target_node_id=7,
-            proxy_base_url="https://proxy.example.com:8443",
-            shared_secret=secret,
+    def test_serialize_for_routing_table_marks_sent(self, app):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            alive_commands, enqueue_coa_disconnect, serialize_for_routing_table,
         )
-        assert result.status == STATUS_OK
-        assert captured["url"] == "https://proxy.example.com:8443/api/proxy/coa/disconnect"
-        assert captured["payload"]["realm"] == "client42"
-        assert captured["payload"]["target_node_id"] == 7
-        assert captured["payload"]["reason"] == "panel:chr-move"
-        assert "panel_request_id" in captured["payload"]
+        c = enqueue_coa_disconnect(realm="r3", target_node_id=3)
+        serialized = serialize_for_routing_table(alive_commands(), mark_sent=True)
+        assert any(s["id"] == c.command_id for s in serialized)
 
-        # Header shape <ts>:<nonce>:<hmac>; HMAC verifies against the secret.
-        token = captured["headers"]["X-Proxy-Token"]
-        ts, nonce, mac = token.split(":", 2)
-        expected = _hmac.new(secret.encode(), f"{ts}:{nonce}".encode(),
-                             hashlib.sha256).hexdigest()
-        assert mac == expected
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_SENT
+        assert row.picked_up_at is not None
 
-    def test_emit_maps_404_to_pending_proxy_endpoint(self, app, monkeypatch):
-        from app.services import coa_disconnect as cd
+        # Second publish: still alive, still serialized — sent is not
+        # terminal, the proxy may need to retry over multiple polls.
+        again = serialize_for_routing_table(alive_commands(), mark_sent=True)
+        assert any(s["id"] == c.command_id for s in again)
 
-        monkeypatch.setattr(
-            cd, "_http_post_json",
-            lambda url, payload, headers, *, timeout=5.0: (404, "not found"),
+    def test_serialize_payload_shape(self, app):
+        """Exact contract the proxy parses — every key + the publish
+        envelope ordering."""
+        from app.services.coa_disconnect import (
+            alive_commands, enqueue_coa_disconnect, serialize_for_routing_table,
         )
-        result = cd.emit_coa_disconnect(
-            realm="x", target_node_id=1,
-            proxy_base_url="https://p", shared_secret="s",
+        c = enqueue_coa_disconnect(
+            realm="client42", target_node_id=7, reason="panel:chr-move",
         )
-        assert result.status == STATUS_PENDING_PROXY_ENDPOINT
-        assert result.http_status == 404
+        row = serialize_for_routing_table(alive_commands(), mark_sent=False)[0]
+        assert set(row.keys()) == {"id", "realm", "action", "target_node_id", "reason"}
+        assert row["id"] == c.command_id
+        assert row["realm"] == "client42"
+        assert row["action"] == "disconnect"
+        assert row["target_node_id"] == 7
+        assert row["reason"] == "panel:chr-move"
 
-    def test_emit_maps_5xx_to_failed(self, app, monkeypatch):
-        from app.services import coa_disconnect as cd
-
-        monkeypatch.setattr(
-            cd, "_http_post_json",
-            lambda url, payload, headers, *, timeout=5.0: (503, "down"),
+    def test_apply_coa_result_marks_done(self, app):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            apply_coa_result, enqueue_coa_disconnect,
         )
-        result = cd.emit_coa_disconnect(
-            realm="x", target_node_id=1,
-            proxy_base_url="https://p", shared_secret="s",
+        c = enqueue_coa_disconnect(realm="r4", target_node_id=4)
+
+        with app.test_request_context("/api/proxy/coa-result", method="POST"):
+            outcome = apply_coa_result(
+                command_id=c.command_id, status="done",
+                detail="ACK received", coa_code=41,
+            )
+        assert outcome.found is True
+        assert outcome.already_terminal is False
+        assert outcome.new_status == STATUS_DONE
+
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_DONE
+        assert row.coa_code == 41
+        assert "ACK received" in row.detail
+        assert row.completed_at is not None
+
+    def test_apply_coa_result_marks_failed_with_nak_code(self, app):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            apply_coa_result, enqueue_coa_disconnect,
         )
-        assert result.status == STATUS_FAILED
-        assert result.http_status == 503
+        c = enqueue_coa_disconnect(realm="r5", target_node_id=5)
+        with app.test_request_context("/api/proxy/coa-result", method="POST"):
+            apply_coa_result(
+                command_id=c.command_id, status="failed",
+                detail="NAS unreachable", coa_code=42,
+            )
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_FAILED
+        assert row.coa_code == 42
 
-    def test_emit_maps_network_error_to_failed(self, app, monkeypatch):
-        import urllib.error
-        from app.services import coa_disconnect as cd
-
-        def boom(url, payload, headers, *, timeout=5.0):
-            raise urllib.error.URLError("connection refused")
-
-        monkeypatch.setattr(cd, "_http_post_json", boom)
-        result = cd.emit_coa_disconnect(
-            realm="x", target_node_id=1,
-            proxy_base_url="https://p", shared_secret="s",
+    def test_apply_coa_result_is_idempotent_on_terminal(self, app):
+        """The proxy may re-post the same result on retry. Re-applying a
+        terminal state must NOT toggle it and must NOT raise."""
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            apply_coa_result, enqueue_coa_disconnect,
         )
-        assert result.status == STATUS_FAILED
-        assert result.http_status == 0
+        c = enqueue_coa_disconnect(realm="r6", target_node_id=6)
+        with app.test_request_context("/api/proxy/coa-result", method="POST"):
+            apply_coa_result(command_id=c.command_id, status="done", coa_code=41)
+            r2 = apply_coa_result(
+                command_id=c.command_id, status="failed",
+                detail="trying to flip", coa_code=42,
+            )
+        assert r2.found is True
+        assert r2.already_terminal is True
+        # Status preserved as the first terminal write.
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_DONE
+        assert row.coa_code == 41
+
+    def test_apply_coa_result_unknown_id_silently_acks(self, app):
+        from app.services.coa_disconnect import apply_coa_result
+        outcome = apply_coa_result(command_id="not-a-real-id", status="done")
+        assert outcome.found is False
+
+    def test_alive_commands_expires_old_rows(self, app):
+        """TTL elapsed → row transitions to expired + drops out of the
+        alive list. We force the row's created_at into the past."""
+        from datetime import datetime, timedelta
+        from app.extensions import db as _db
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            STATUS_EXPIRED, alive_commands, enqueue_coa_disconnect,
+        )
+        c = enqueue_coa_disconnect(realm="r-old", target_node_id=1)
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        row.created_at = datetime.utcnow() - timedelta(seconds=10_000)
+        _db.session.add(row); _db.session.commit()
+
+        alive = alive_commands(ttl_seconds=300)
+        assert all(r.command_id != c.command_id for r in alive)
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_EXPIRED
+
+
+# ════════════════════════════════════════════════════════════════════════
+# POST /api/proxy/coa-result — HTTP-level contract the proxy speaks
+# ════════════════════════════════════════════════════════════════════════
+class TestCoaResultEndpoint:
+    """Hits the real Flask route with a signed X-Proxy-Token, asserting
+    the wire contract proxy-side code will integrate against."""
+
+    SECRET = "coa-result-test-secret-xxxxxxxxxxxxxx"
+
+    def _sign(self) -> dict:
+        import hashlib, hmac as _hmac, time, uuid as _uuid
+        ts = int(time.time())
+        nonce = _uuid.uuid4().hex
+        mac = _hmac.new(
+            self.SECRET.encode(), f"{ts}:{nonce}".encode(), hashlib.sha256,
+        ).hexdigest()
+        return {"X-Proxy-Token": f"{ts}:{nonce}:{mac}"}
+
+    @pytest.fixture()
+    def proxy_app(self, app):
+        app.config["RADIUS_PROXY_SHARED_SECRET"] = self.SECRET
+        app.config["RADIUS_PROXY_TOKEN_TTL"] = 60
+        from app.api import proxy_api
+        proxy_api._NONCE_CACHE.clear()
+        return app
+
+    def test_unauthorized_without_token(self, proxy_app, client):
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": "x", "status": "done"},
+        )
+        assert resp.status_code == 401
+
+    def test_done_marks_row(self, proxy_app, client):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            STATUS_DONE, enqueue_coa_disconnect,
+        )
+        c = enqueue_coa_disconnect(realm="r-h1", target_node_id=1)
+
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": c.command_id, "status": "done", "coa_code": 41,
+                  "detail": "Disconnect-ACK"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["found"] is True
+        assert body["already_terminal"] is False
+        assert body["status"] == STATUS_DONE
+
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_DONE
+        assert row.coa_code == 41
+
+    def test_failed_marks_row(self, proxy_app, client):
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import (
+            STATUS_FAILED, enqueue_coa_disconnect,
+        )
+        c = enqueue_coa_disconnect(realm="r-h2", target_node_id=2)
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": c.command_id, "status": "failed", "coa_code": 42,
+                  "detail": "NAK"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["status"] == STATUS_FAILED
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.coa_code == 42
+
+    def test_unknown_id_silently_acks(self, proxy_app, client):
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": "doesnt-exist", "status": "done"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["found"] is False
+
+    def test_bad_status_rejected(self, proxy_app, client):
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": "abc", "status": "weird"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 400
+
+    def test_missing_id_rejected(self, proxy_app, client):
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"status": "done"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 400
+
+    def test_re_report_terminal_is_idempotent(self, proxy_app, client):
+        """The proxy retries POSTs on transient network errors. Re-
+        reporting a row already done must NOT flip + must return 200."""
+        from app.services.coa_disconnect import enqueue_coa_disconnect
+        c = enqueue_coa_disconnect(realm="r-h3", target_node_id=3)
+        client.post(
+            "/api/proxy/coa-result",
+            json={"id": c.command_id, "status": "done", "coa_code": 41},
+            headers=self._sign(),
+        )
+        resp = client.post(
+            "/api/proxy/coa-result",
+            json={"id": c.command_id, "status": "failed", "coa_code": 42,
+                  "detail": "retry"},
+            headers=self._sign(),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["found"] is True
+        assert body["already_terminal"] is True
+
+
+# ════════════════════════════════════════════════════════════════════════
+# GET /api/proxy/routing-table — pending_coa publish envelope
+# ════════════════════════════════════════════════════════════════════════
+class TestRoutingTablePendingCoa:
+    """The routing-table response now carries a top-level pending_coa
+    array. Mirrors the customer-radius-tunnel proxy_app fixture so the
+    HMAC verifier passes."""
+
+    SECRET = "routing-table-test-secret-xxxxxxxxxxxx"
+
+    def _sign(self) -> dict:
+        import hashlib, hmac as _hmac, time, uuid as _uuid
+        ts = int(time.time())
+        nonce = _uuid.uuid4().hex
+        mac = _hmac.new(
+            self.SECRET.encode(), f"{ts}:{nonce}".encode(), hashlib.sha256,
+        ).hexdigest()
+        return {"X-Proxy-Token": f"{ts}:{nonce}:{mac}"}
+
+    @pytest.fixture()
+    def proxy_app(self, app):
+        app.config["RADIUS_PROXY_SHARED_SECRET"] = self.SECRET
+        app.config["RADIUS_PROXY_TOKEN_TTL"] = 60
+        from app.api import proxy_api
+        proxy_api._NONCE_CACHE.clear()
+        return app
+
+    def test_pending_coa_top_level_envelope_present(self, proxy_app, client):
+        """Even with an empty queue the field MUST be present so the
+        proxy can rely on a stable contract."""
+        resp = client.get("/api/proxy/routing-table", headers=self._sign())
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "pending_coa" in body
+        assert body["pending_coa"] == []
+
+    def test_pending_coa_lists_enqueued_command(self, proxy_app, client):
+        from app.services.coa_disconnect import enqueue_coa_disconnect
+        c = enqueue_coa_disconnect(
+            realm="client50", target_node_id=50, reason="panel:chr-move",
+        )
+        resp = client.get("/api/proxy/routing-table", headers=self._sign())
+        body = resp.get_json()
+        ids = [row["id"] for row in body["pending_coa"]]
+        assert c.command_id in ids
+        row = next(r for r in body["pending_coa"] if r["id"] == c.command_id)
+        assert row["realm"] == "client50"
+        assert row["action"] == "disconnect"
+        assert row["target_node_id"] == 50
+        assert row["reason"] == "panel:chr-move"
+
+    def test_pending_coa_transitions_pending_to_sent_on_publish(self, proxy_app, client):
+        """The side-effect that lets the UI tell «بانتظار الاستلام»
+        from «أُرسل، بانتظار التنفيذ»."""
+        from app.models import PendingCoaCommand
+        from app.services.coa_disconnect import enqueue_coa_disconnect
+
+        c = enqueue_coa_disconnect(realm="client51", target_node_id=51)
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_PENDING
+
+        client.get("/api/proxy/routing-table", headers=self._sign())
+
+        row = PendingCoaCommand.query.filter_by(command_id=c.command_id).one()
+        assert row.status == STATUS_SENT
+        assert row.picked_up_at is not None
+
+    def test_pending_coa_drops_done_command(self, proxy_app, client):
+        from app.services.coa_disconnect import (
+            apply_coa_result, enqueue_coa_disconnect,
+        )
+        c = enqueue_coa_disconnect(realm="client52", target_node_id=52)
+        apply_coa_result(command_id=c.command_id, status="done", coa_code=41)
+
+        resp = client.get("/api/proxy/routing-table", headers=self._sign())
+        ids = [row["id"] for row in resp.get_json()["pending_coa"]]
+        assert c.command_id not in ids

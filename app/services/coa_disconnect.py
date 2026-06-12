@@ -1,308 +1,314 @@
-"""Panel-side CoA-Disconnect emitter.
+"""Panel-side CoA-Disconnect queue — proxy is outbound-only, so we publish.
 
-Signed best-effort outbound POST to the central proxy that asks it to
-send RFC 5176 ``Disconnect-Request`` to every CHR currently hosting a
-session for the given realm. The proxy already knows each CHR's secret
-+ NAS IP — the panel just forwards the intent.
+The proxy has NO inbound HTTP server (enforced by
+``test_proxy_not_in_license_path``). It **polls**
+``GET /api/proxy/routing-table`` ≤60 seconds and POSTs back telemetry +
+heartbeat + this module's NEW result endpoint. So the panel can't push
+a CoA-Disconnect over HTTP — it has to publish.
 
-Auth model — reuses the SAME shared secret + HMAC scheme as inbound
-``/api/proxy/*`` requests (see ``app/api/proxy_api._verify_proxy_token``).
-The panel signs `<timestamp>:<nonce>` with HMAC-SHA256 over the shared
-secret and sends it as ``X-Proxy-Token: ts:nonce:hmac``. The proxy
-(when its corresponding handler ships) validates the same way.
+Mechanism
+---------
+1. Panel enqueues a ``PendingCoaCommand`` row (UUID, realm, action,
+   target_node_id, reason, status=``pending``).
+2. The next ``GET /api/proxy/routing-table`` response includes a
+   top-level ``pending_coa`` array listing every command still alive
+   (not done/failed/expired). We mark each included row ``sent`` +
+   stamp ``picked_up_at`` lazily on read so the panel UI can show
+   «أُرسل» vs «بانتظار الاستلام».
+3. Proxy sends RFC 5176 Disconnect-Request UDP 3799 to the CHR.
+4. Proxy POSTs ``/api/proxy/coa-result`` with
+   ``{id, status: "done"|"failed", coa_code: 41|42, detail}``. Panel
+   marks the row, stops publishing it, audits the result against the
+   chr-move row.
 
-Endpoint surface (proxy-side, build-deferred):
+TTL
+---
+Commands without a result are considered ``expired`` after
+``DEFAULT_TTL_SECONDS`` (5 minutes by default). Expired rows are not
+republished — the operator's UI shows «انتهى وقت الانتظار» and the
+button re-arms.
 
-    POST <proxy_base>/api/proxy/coa/disconnect
-    Content-Type: application/json
-    X-Proxy-Token: <ts>:<nonce>:<hmac>
-
-    { "realm": "client5",
-      "reason": "panel:chr-move",
-      "target_node_id": 12,
-      "panel_request_id": "<uuid>" }
-
-Response (when implemented):
-    200 { "ok": true,  "sessions_kicked": <int>, "nodes": [<id>, ...] }
-    501 { "ok": false, "error": "not_implemented" }     ← until the
-            proxy ships the handler. We surface this as
-            ``coa_status="pending_proxy_endpoint"`` to the panel UI.
-
-Architecture notes
-------------------
-* **Best-effort.** The caller (chr_move) treats a failed CoA as a
-  warning — the routing change is durable on its own. The customer's
-  next reconnect will land on the new CHR regardless of whether CoA
-  fired; CoA just shortens the disconnect window.
-* **Mockable.** The whole thing is one ``emit_coa_disconnect`` function
-  that tests monkeypatch. We deliberately do NOT use a requests-mock
-  fixture — keeping the seam at the top of our own module means tests
-  pin the panel's contract, not the HTTP plumbing.
-* **No secret in logs.** The signature is constructed locally; the
-  shared secret never appears in audit or log lines.
+Idempotency
+-----------
+* ``enqueue_coa_disconnect`` returns a new row each call; the proxy may
+  re-fetch the same row across multiple polls without side-effects.
+* ``apply_coa_result`` dedups by ``command_id``: re-applying a terminal
+  state is a no-op + still returns ``ok=True`` so the proxy can retry
+  the POST freely.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json as _json
 import logging
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Iterable, Optional
+
+from app.extensions import db
+from app.models import PendingCoaCommand
 
 
 logger = logging.getLogger(__name__)
 
 
-# CoA outcome strings the UI distinguishes. Keep stable — the customer
-# detail template + the audit row both encode these verbatim.
-CoaStatus = str
-
-#: Proxy accepted the request and returned 2xx.
-STATUS_OK = "ok"
-
-#: Proxy is reachable but the CoA endpoint isn't deployed yet
-#: (HTTP 404/501 etc.). This is expected before the proxy-side handler
-#: ships; the panel still surfaces a useful message.
-STATUS_PENDING_PROXY_ENDPOINT = "pending_proxy_endpoint"
-
-#: Network/HTTP failure — proxy unreachable or returned 5xx. The move
-#: itself is still durable; the owner can re-trigger CoA from the same
-#: button.
+# ─── Status vocabulary — the chr_move result struct + UI surface this ──
+STATUS_PENDING = "pending"
+STATUS_SENT = "sent"
+STATUS_DONE = "done"
 STATUS_FAILED = "failed"
+STATUS_EXPIRED = "expired"
 
-#: Panel can't sign the request — no shared secret configured. The
-#: caller would have already failed inbound traffic; we surface a
-#: dedicated string so the UI message is precise.
-STATUS_NO_SECRET = "no_secret"
+#: Statuses the panel still publishes in ``pending_coa``. ``done`` /
+#: ``failed`` / ``expired`` are terminal and dropped from the list.
+ALIVE_STATUSES: frozenset[str] = frozenset({STATUS_PENDING, STATUS_SENT})
 
-#: Panel doesn't know where the proxy lives (no PROXY_WG_ENDPOINT /
-#: PROXY_HTTP_URL setting). Same intent as no_secret — distinct so the
-#: operator knows which knob is missing.
-STATUS_NO_ENDPOINT = "no_endpoint"
+#: How long a command is held in ``pending_coa`` before it expires.
+#: The proxy polls ≤60 s so 5 minutes covers ~5 retries comfortably; the
+#: number is exposed as a constant so tests can override.
+DEFAULT_TTL_SECONDS: int = 300
 
 
 @dataclass(frozen=True)
 class CoaResult:
-    """What the emitter reports back to ``chr_move``.
+    """What the move service reports back to the UI after the enqueue.
 
-    ``http_status`` is the real HTTP status code (or 0 if the request
-    never made it onto the wire). ``message`` is short, operator-facing
-    Arabic — surfaced verbatim in the result toast.
+    For the QUEUE model the result is always optimistic: routing change
+    was committed + a command was enqueued. ``status`` is always
+    ``"pending"`` here — the final outcome arrives asynchronously via
+    ``/api/proxy/coa-result`` and is recorded in the audit log of the
+    same customer.
     """
 
-    status: CoaStatus
-    http_status: int = 0
-    message: str = ""
-    request_id: str = ""
+    status: str
+    message: str
+    command_id: str
 
     @property
     def ok(self) -> bool:
-        return self.status == STATUS_OK
+        return self.status in ALIVE_STATUSES
+
+    @property
+    def http_status(self) -> int:
+        """Back-compat shim for the chr_move result struct — the queue
+        model has no HTTP status; we always return 0."""
+        return 0
+
+    @property
+    def request_id(self) -> str:
+        """Back-compat: chr_move's MoveResult names this field
+        ``coa_request_id``; we map it to the command's UUID."""
+        return self.command_id
 
     def as_dict(self) -> dict:
         return {
             "status": self.status,
-            "http_status": self.http_status,
             "message": self.message,
-            "request_id": self.request_id,
-            "ok": self.ok,
+            "command_id": self.command_id,
         }
 
 
-def _resolve_proxy_secret() -> str:
-    """Same chain as ``app.api.proxy_api._verify_proxy_token``: DB →
-    app config. Returns ``""`` if neither has it (caller maps to
-    ``STATUS_NO_SECRET``)."""
-    try:
-        from . import platform_settings as ps
-        secret = (ps.get_secret("RADIUS_PROXY_SHARED_SECRET") or "").strip()
-    except Exception:  # noqa: BLE001 — never break the panel on a settings probe
-        secret = ""
-    if secret:
-        return secret
-    try:
-        from flask import current_app
-        return str(current_app.config.get("RADIUS_PROXY_SHARED_SECRET") or "").strip()
-    except Exception:  # noqa: BLE001
-        return ""
-
-
-def _resolve_proxy_base_url() -> str:
-    """Where does the proxy live? Order:
-      1. ``Setting`` row ``proxy.http_base_url`` (operator-set; takes
-         a full ``https://proxy.example.com:8443`` shape);
-      2. ``PROXY_WG_ENDPOINT`` from the existing infra-settings module
-         (host:port — wrap with ``https://``);
-      3. Empty (caller maps to ``STATUS_NO_ENDPOINT``).
-    """
-    try:
-        from app.extensions import db
-        from app.models import Setting
-        row = db.session.get(Setting, "proxy.http_base_url")
-        if row and row.value:
-            return row.value.strip().rstrip("/")
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        from fleet.registry.infra_settings import get_fleet_const
-        endpoint = (get_fleet_const("PROXY_WG_ENDPOINT") or "").strip()
-        if endpoint:
-            # Strip any port suffix and use https on the default port.
-            # The proxy presents the same wg-data endpoint hostname as
-            # its REST surface in the canonical deployment.
-            host = endpoint.split(":")[0]
-            return f"https://{host}"
-    except Exception:  # noqa: BLE001
-        pass
-    return ""
-
-
-def _sign(secret: str, ts: int, nonce: str) -> str:
-    """The same scheme inbound `/api/proxy/*` verifies — see
-    ``app.api.proxy_api._verify_proxy_token``."""
-    msg = f"{ts}:{nonce}".encode("utf-8")
-    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
-
-
-def _http_post_json(url: str, payload: dict, headers: dict, *, timeout: float = 5.0):
-    """Stdlib POST so the module stays dependency-free + monkey-patchable.
-
-    Returns ``(http_status, body_text)``. Network errors raise
-    ``urllib.error.URLError``; the caller wraps that as ``STATUS_FAILED``.
-    """
-    body = _json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json", **headers},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        return exc.code, (exc.read().decode("utf-8", errors="replace") if exc.fp else "")
-
-
-def emit_coa_disconnect(
+# ════════════════════════════════════════════════════════════════════════
+# Enqueue
+# ════════════════════════════════════════════════════════════════════════
+def enqueue_coa_disconnect(
     *,
     realm: str,
-    target_node_id: int,
+    target_node_id: Optional[int] = None,
     reason: str = "panel:chr-move",
-    request_id: Optional[str] = None,
-    proxy_base_url: Optional[str] = None,
-    shared_secret: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    command_id: Optional[str] = None,
 ) -> CoaResult:
-    """Sign and POST a CoA-Disconnect intent to the proxy.
+    """Create a new ``PendingCoaCommand`` row, return a CoaResult the
+    caller folds into its own response struct.
 
-    The ``proxy_base_url`` + ``shared_secret`` args are injection seams
-    for tests (production callers pass neither and resolve from the
-    panel's normal config chain).
-
-    Failure modes are mapped to stable ``CoaStatus`` strings the UI
-    surfaces verbatim — see module docstring.
+    ``command_id`` is exposed as an argument so tests can pin a known
+    UUID; production callers pass nothing and we mint a fresh one.
     """
-    rid = request_id or uuid.uuid4().hex
-    secret = (shared_secret or _resolve_proxy_secret()).strip()
-    if not secret:
-        logger.warning(
-            "coa_disconnect: no RADIUS_PROXY_SHARED_SECRET configured — "
-            "cannot sign the CoA emission for realm=%s", realm,
-        )
-        return CoaResult(
-            status=STATUS_NO_SECRET,
-            message=(
-                "لم يُعدّ السر المشترك (RADIUS_PROXY_SHARED_SECRET) "
-                "بعد — اضبطه من «إعدادات المنصّة» ثم أعد المحاولة."
-            ),
-            request_id=rid,
-        )
-    base = (proxy_base_url if proxy_base_url is not None else _resolve_proxy_base_url()).rstrip("/")
-    if not base:
-        logger.warning(
-            "coa_disconnect: no proxy base URL configured (proxy.http_base_url "
-            "or PROXY_WG_ENDPOINT) — cannot route CoA emission for realm=%s",
-            realm,
-        )
-        return CoaResult(
-            status=STATUS_NO_ENDPOINT,
-            message=(
-                "لم تُعدّ نقطة وصول الوكيل بعد — اضبطها من «إعدادات بنية "
-                "الأسطول» ثم أعد المحاولة."
-            ),
-            request_id=rid,
-        )
-
-    ts = int(time.time())
-    nonce = uuid.uuid4().hex
-    header_token = f"{ts}:{nonce}:{_sign(secret, ts, nonce)}"
-
-    url = f"{base}/api/proxy/coa/disconnect"
-    payload = {
-        "realm": realm,
-        "reason": reason,
-        "target_node_id": int(target_node_id),
-        "panel_request_id": rid,
-    }
-    try:
-        http_status, _ = _http_post_json(
-            url, payload,
-            headers={"X-Proxy-Token": header_token},
-        )
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        logger.warning(
-            "coa_disconnect: emit failed realm=%s err=%s", realm, exc,
-        )
-        return CoaResult(
-            status=STATUS_FAILED, http_status=0,
-            message=(
-                "تعذّر الوصول إلى الوكيل لإرسال CoA — التحويل تمّ على "
-                "خرائط التوجيه، اضغط «إعادة فصل» لاحقًا حين يعود الوكيل."
-            ),
-            request_id=rid,
-        )
-
-    if 200 <= http_status < 300:
-        return CoaResult(
-            status=STATUS_OK, http_status=http_status,
-            message="تمّ إرسال CoA-Disconnect إلى الوكيل بنجاح.",
-            request_id=rid,
-        )
-    if http_status in (404, 405, 501):
-        # The proxy doesn't (yet) implement the endpoint. The owner's
-        # routing change has still landed; surface a clear «بانتظار»
-        # state instead of a misleading «فشل».
-        return CoaResult(
-            status=STATUS_PENDING_PROXY_ENDPOINT, http_status=http_status,
-            message=(
-                "تمّ تحديث التوجيه، لكن نقطة CoA على الوكيل غير مُفعَّلة "
-                "بعد — ستفعّل تلقائيًا حين يُحدَّث الوكيل."
-            ),
-            request_id=rid,
-        )
-    return CoaResult(
-        status=STATUS_FAILED, http_status=http_status,
-        message=(
-            f"رفض الوكيل طلب CoA (HTTP {http_status}). التوجيه محدَّث؛ "
-            "أعد المحاولة من نفس الزر."
-        ),
-        request_id=rid,
+    cid = command_id or uuid.uuid4().hex
+    row = PendingCoaCommand(
+        command_id=cid,
+        realm=realm,
+        action="disconnect",
+        target_node_id=int(target_node_id) if target_node_id is not None else None,
+        reason=reason,
+        customer_id=int(customer_id) if customer_id is not None else None,
+        status=STATUS_PENDING,
     )
+    db.session.add(row)
+    db.session.commit()
+    logger.info(
+        "coa_queue: enqueued command_id=%s realm=%s target=%s reason=%s",
+        cid, realm, target_node_id, reason,
+    )
+    return CoaResult(
+        status=STATUS_PENDING,
+        message=(
+            "أُدرج الأمر في قائمة CoA — سيلتقطه الوكيل خلال ≤60 ثانية "
+            "ويسقط الجلسات الحيّة. ستتحدّث الحالة تلقائيًا حين يصل التأكيد."
+        ),
+        command_id=cid,
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Publish — used by GET /api/proxy/routing-table
+# ════════════════════════════════════════════════════════════════════════
+def alive_commands(*, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> list[PendingCoaCommand]:
+    """Every CoA command still alive — pending OR sent, not yet expired.
+
+    Expires commands older than ``ttl_seconds`` lazily on each call:
+    a row that has been waiting too long is transitioned to
+    ``expired`` so the next routing-table response no longer publishes
+    it. We do NOT delete — the audit chain stays intact.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=ttl_seconds)
+    rows = (
+        PendingCoaCommand.query
+        .filter(PendingCoaCommand.status.in_(ALIVE_STATUSES))
+        .order_by(PendingCoaCommand.created_at.asc())
+        .all()
+    )
+    fresh: list[PendingCoaCommand] = []
+    expired_any = False
+    for r in rows:
+        created = r.created_at
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created is None or created < cutoff:
+            r.status = STATUS_EXPIRED
+            r.detail = (r.detail or "") + " | TTL elapsed without result"
+            db.session.add(r)
+            expired_any = True
+            continue
+        fresh.append(r)
+    if expired_any:
+        db.session.commit()
+    return fresh
+
+
+def serialize_for_routing_table(
+    rows: Iterable[PendingCoaCommand], *, mark_sent: bool = True,
+) -> list[dict]:
+    """Encode the alive rows for inclusion in the routing-table response.
+
+    Side-effect when ``mark_sent`` is True: every row still in
+    ``pending`` is transitioned to ``sent`` with a fresh
+    ``picked_up_at`` stamp. The status is what lets the panel UI
+    distinguish «بانتظار الاستلام» from «أُرسل، بانتظار التنفيذ».
+    """
+    now = datetime.now(timezone.utc)
+    out: list[dict] = []
+    dirty = False
+    for r in rows:
+        out.append({
+            "id": r.command_id,
+            "realm": r.realm,
+            "action": r.action,
+            "target_node_id": r.target_node_id,
+            "reason": r.reason,
+        })
+        if mark_sent and r.status == STATUS_PENDING:
+            r.status = STATUS_SENT
+            r.picked_up_at = now
+            db.session.add(r)
+            dirty = True
+    if dirty:
+        db.session.commit()
+    return out
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Apply result — used by POST /api/proxy/coa-result
+# ════════════════════════════════════════════════════════════════════════
+@dataclass(frozen=True)
+class ApplyResult:
+    """Outcome of applying a proxy-reported result. ``found`` is False
+    when the id is unknown (we still 200 the proxy — silent-ack-unknown
+    is more forgiving than 404 in a polling loop)."""
+
+    found: bool
+    already_terminal: bool
+    new_status: str
+    command_id: str
+
+
+def apply_coa_result(
+    *,
+    command_id: str,
+    status: str,
+    detail: str = "",
+    coa_code: Optional[int] = None,
+) -> ApplyResult:
+    """Mark the command done/failed; idempotent on a row already in a
+    terminal state (the proxy retries are not punished)."""
+    if status not in (STATUS_DONE, STATUS_FAILED):
+        raise ValueError(
+            f"apply_coa_result: status must be 'done' or 'failed', got {status!r}",
+        )
+    row = PendingCoaCommand.query.filter_by(command_id=command_id).first()
+    if row is None:
+        return ApplyResult(False, False, status, command_id)
+
+    already_terminal = row.status in (STATUS_DONE, STATUS_FAILED, STATUS_EXPIRED)
+    if not already_terminal:
+        row.status = status
+        row.completed_at = datetime.now(timezone.utc)
+        if detail:
+            row.detail = (row.detail + " | " + detail).strip(" |") if row.detail else detail
+        if coa_code is not None:
+            try:
+                row.coa_code = int(coa_code)
+            except (TypeError, ValueError):
+                pass
+        db.session.add(row)
+        db.session.commit()
+        _audit_result(row)
+    return ApplyResult(True, already_terminal, row.status, command_id)
+
+
+def _audit_result(row: PendingCoaCommand) -> None:
+    """Audit the result against the customer (when the row carries one)
+    so the operator's customer detail page audit-log shows the lifecycle
+    end-to-end: chr_move_executed → chr_move_coa_result."""
+    try:
+        from app.auth.routes import audit
+        audit(
+            "chr_move_coa_result",
+            "customer",
+            str(row.customer_id) if row.customer_id else "",
+            (
+                f"نتيجة CoA للأمر {row.command_id}: {row.status}"
+                + (f" (RFC 5176 code {row.coa_code})" if row.coa_code else "")
+                + (f" — {row.detail}" if row.detail else "")
+            ),
+            {
+                "command_id": row.command_id,
+                "realm": row.realm,
+                "target_node_id": row.target_node_id,
+                "coa_status": row.status,
+                "coa_code": row.coa_code,
+                "detail": row.detail,
+            },
+        )
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — never fail the proxy POST on audit
+        logger.exception("coa_queue: audit write failed for command_id=%s", row.command_id)
 
 
 __all__ = [
-    "CoaResult",
-    "STATUS_OK",
-    "STATUS_PENDING_PROXY_ENDPOINT",
+    "STATUS_PENDING",
+    "STATUS_SENT",
+    "STATUS_DONE",
     "STATUS_FAILED",
-    "STATUS_NO_SECRET",
-    "STATUS_NO_ENDPOINT",
-    "emit_coa_disconnect",
+    "STATUS_EXPIRED",
+    "ALIVE_STATUSES",
+    "DEFAULT_TTL_SECONDS",
+    "CoaResult",
+    "ApplyResult",
+    "enqueue_coa_disconnect",
+    "alive_commands",
+    "serialize_for_routing_table",
+    "apply_coa_result",
 ]

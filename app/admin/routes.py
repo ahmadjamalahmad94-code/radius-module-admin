@@ -720,10 +720,11 @@ def move_customer_chr(customer_id: int):
             f"العميل مرتبط بالفعل بـ«{result.target_node_name}» "
             f"({result.target_public_ip}) — لم يتغيّر التوجيه."
         )
-    if result.coa_status == "ok":
+    # CoA is queue-based now — the routing change already landed, the
+    # CoA-Disconnect lives in pending_coa until the proxy's next poll
+    # (≤60 s). We surface a single Arabic line covering both.
+    if result.coa_status == "pending":
         flash(f"{head} {result.coa_message}", "success")
-    elif result.coa_status == "pending_proxy_endpoint":
-        flash(f"{head} {result.coa_message}", "warning")
     else:
         flash(f"{head} {result.coa_message}", "warning")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")

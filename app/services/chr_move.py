@@ -279,15 +279,20 @@ def move_customer_to_chr(
 
     db.session.commit()
 
-    # Emit CoA-Disconnect best-effort POST-commit. We do this AFTER the
-    # commit so a CoA failure doesn't lose the routing change.
+    # Enqueue the CoA-Disconnect command for the proxy to pick up on its
+    # next routing-table poll. The proxy is OUTBOUND-ONLY (no HTTP
+    # listener; enforced by ``test_proxy_not_in_license_path``), so the
+    # publish-and-poll queue is the only correct mechanism — see
+    # ``docs/CHR_MOVE_DESIGN.md`` §4 for the architecture decision and
+    # ``app/services/coa_disconnect.py`` for the queue contract.
     if coa_emitter is None:
-        from app.services.coa_disconnect import emit_coa_disconnect
-        coa_emitter = emit_coa_disconnect
+        from app.services.coa_disconnect import enqueue_coa_disconnect
+        coa_emitter = enqueue_coa_disconnect
     coa = coa_emitter(
         realm=instance.realm,
         target_node_id=target_id,
         reason="panel:chr-move",
+        customer_id=int(customer.id),
     )
 
     # Audit. ``audit`` is the canonical helper used by every admin
