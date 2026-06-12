@@ -75,6 +75,16 @@ class Customer(TimestampMixin, db.Model):
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
     portal_config_json = db.Column(db.Text, default="{}", nullable=False)
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §11 — per-customer FQDN. Auto-assigned
+    # on customer create as "client<id>.<fleet.tls.zone_base>" (default
+    # hoberadius.com). The wildcard cert covers every subdomain; the
+    # customer-side SSTP/IPsec listener binds this CN. Operators can
+    # override per row when a customer needs a vanity name.
+    subdomain = db.Column(db.String(120), default="", nullable=False)
+    # §12 — panel-locked per-connection speed. 0 = inherit from plan;
+    # the resolver collapses zero to the LOCKED floor (5 Mbps). Owner
+    # bumps this to 10 / 50 / 100 to unlock the customer.
+    speed_unlock_mbps = db.Column(db.Integer, default=0, nullable=False)
 
     @property
     def portal_config(self) -> dict:
@@ -467,6 +477,13 @@ class Plan(TimestampMixin, db.Model):
     max_devices = db.Column(db.Integer, default=1, nullable=False)
     features_json = db.Column(db.Text, default="{}", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §12.1 — per-plan default unlock
+    # (Mbps, per-direction symmetric). 0 = no plan-level unlock, falls
+    # back to the hard-coded LOCKED floor (5). Customer override
+    # (``Customer.speed_unlock_mbps``) wins when set; the §9 type policy
+    # is still the ceiling — see ``resolve_speed_for`` in
+    # ``app/services/customer_speed_enforcement.py``.
+    speed_unlock_mbps = db.Column(db.Integer, default=0, nullable=False)
 
     licenses = db.relationship("License", back_populates="plan", lazy="dynamic")
 

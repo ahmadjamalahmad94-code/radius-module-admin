@@ -619,3 +619,192 @@ VPN role on the same box. No high-speed VPS sits idle.
 This keeps tonight's PR small + verifiable: the data + the policy + the
 emission seam land green; the two UI/enforcement clones plug into the same
 helpers without touching the foundation again.
+
+---
+
+## 11. Per-customer subdomain + TLS cert (SSTP/IPsec clients validate hostname)
+
+**Owner requirement:** every customer node gets a subdomain
+(`client<id>.hoberadius.com`) and a valid TLS cert auto-provisioned, so
+SSTP/IPsec clients present a hostname-matching cert and validate cleanly.
+
+This is SEPARATE from the per-CHR self-signed `www-ssl` certificate that
+the metrics endpoint already uses (§3.6 of the unified script); that cert
+authenticates the panel→CHR REST channel only. The subdomain + cert here
+faces the END USER on `tcp/443` (SSTP) and `udp/500+4500` (IKE).
+
+### 11.1 Chosen path: wildcard `*.hoberadius.com` (one cert covers all)
+
+**Decision — wildcard cert.** Phased per-subdomain ACME is the alternative
+(§11.4) but a wildcard sweeps the entire customer-onboarding problem under
+one ops step: provision the wildcard ONCE on the panel, replicate it onto
+every CHR + the proxy at deploy time, and `client<id>.hoberadius.com`
+resolves + validates for every customer with zero per-customer cert flow.
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Cert shape | `*.hoberadius.com` wildcard (single cert, single chain) | One ACME flow at the panel, no per-customer ACME on the CHR. |
+| Renewal | Panel runs `certbot renew --dns-…` against the same DNS provider that holds the wildcard `_acme-challenge` record. | One cron, one place. |
+| Distribution | Panel uploads the new chain to every CHR on rotation via the existing wg-mgmt channel + the unified-script renderer. | Reuses the deployment seam the §6.3 wg-keys leg already uses. |
+| Per-customer subdomain | `client<customer_id>.hoberadius.com` is **panel-minted** on customer create + persisted on ``customers.subdomain``. Operators can override per row. | Deterministic + matches the existing `client<id>` realm convention. |
+| DNS | Owner adds ONE wildcard A/AAAA record `*.hoberadius.com → <panel-public-ip-or-front-door>` once. Every `client<id>.hoberadius.com` resolves under it. | One DNS row → infinite customers. |
+
+The cert + the wildcard A record are **operator/ops responsibilities**
+(documented in `DEPLOY_PANEL.md` → new §"Wildcard TLS + DNS"); the panel
+piece is purely: (a) mint + persist the subdomain on customer create,
+(b) surface `customer_fqdn(customer)` to the bridge/runtime contract +
+the CHR script renderer, (c) audit the assignment.
+
+### 11.2 What the panel stores + emits
+
+* **`customers.subdomain`** — new column (String(120), default ""),
+  populated on create by `assign_subdomain(customer)`. Idempotent: the
+  helper returns the existing value once set, never re-mints.
+* **`Setting key fleet.tls.zone_base`** — owner-editable default
+  `"hoberadius.com"`; emitted as `<subdomain>.<zone_base>` so the same
+  panel can drive a staging zone alongside production.
+* **Bridge runtime contract addition** — every runtime-contract /
+  heartbeat response carries `fqdn: "client5.hoberadius.com"` so the
+  customer side bakes it into local FreeRADIUS/SSTP listeners as the
+  cert CN it's listening as.
+* **CHR script renderer surface** — the per-CHR unified script consumes
+  the customer's FQDN where SSTP / IKE need a `certificate-common-name`
+  binding. Today the existing `SSTP_CERT_NAME` / `IKE_CERT_NAME` binders
+  emit the per-CHR self-signed cert; under §11 they switch to the
+  wildcard once `customer_fqdn(customer)` is populated.
+
+### 11.3 Sequencing
+
+1. Tonight (this branch) — `customers.subdomain` column + heal +
+   assigner + `customer_fqdn(customer)` helper + tests.
+2. Next PR (deploy/ops branch) — `DEPLOY_PANEL.md` §"Wildcard TLS + DNS"
+   + `certbot --dns-…` automation + cert-rotation push to CHRs.
+3. Next PR (CHR renderer) — switch `{{SSTP_CERT_NAME}}` /
+   `{{IKE_CERT_NAME}}` from the per-CHR cert to the wildcard chain
+   the panel pushed; cert-CN binding reads `customer_fqdn(...)`.
+
+### 11.4 Alternative considered: per-subdomain ACME (NOT chosen)
+
+Per-customer Let's-Encrypt would let every CHR mint + renew its own
+`client<id>.hoberadius.com` cert via `--dns-` plugin. Strictly stronger
+isolation (compromise of one cert doesn't expose the others) but adds:
+ACME runner on every CHR, per-customer DNS-01 row coordination, rate-
+limit exposure (50 certs/week/registered domain), and harder bring-up
+when wg-mgmt is offline. **We accept the shared-cert risk for the
+one-cert-one-DNS-row simplicity.** Future hardening: when an individual
+customer requests cert isolation (regulatory ask), promote that customer
+alone to the per-subdomain ACME path — the data model is forward-
+compatible since `customers.subdomain` already exists.
+
+---
+
+## 12. Panel-enforced per-connection speed (business model: free creation, locked speed)
+
+**Owner requirement (THE monetization control):** the subscriber is FREE
+to generate unlimited connections / link unlimited NAS, but is NOT free
+to set the speed. **Default 5 Mbps per connection** (per-direction,
+`5M/5M`). When the owner agrees / gets paid, the owner UNLOCKS the
+customer to 10 / 50 / 100 Mbps from the panel; the new cap rides the
+RADIUS `Mikrotik-Rate-Limit` attribute on the next Access-Accept;
+applied **immediately** on next auth. The subscriber CANNOT override
+this from their MikroTik because the rate-limit is on the
+Access-Accept itself — local config does not see it.
+
+### 12.1 Where the unlock lives
+
+Two layers, customer wins over plan:
+
+| Layer | Column | Default | Editable by |
+|---|---|---|---|
+| Per-customer override | `customers.speed_unlock_mbps` | `0` ⇒ inherit from plan | Owner (super-admin only) |
+| Per-plan default | `plans.speed_unlock_mbps` | `0` ⇒ falls back to floor `5` | Owner (super-admin only) |
+| Floor (every unauthorised connection) | hard-coded `5` | — | not editable; this IS the locked-speed default |
+
+`0` everywhere is the back-compat sentinel meaning "no explicit
+unlock"; the resolver collapses it to the floor 5 Mbps. The owner sets
+**one number** to open a customer: `speed_unlock_mbps = 50` →
+50M/50M everywhere.
+
+### 12.2 Resolution rule (the one source the emitter uses)
+
+```python
+def resolve_speed_for(customer, connection_type) -> (download, upload):
+    if connection_type == "radius_transport":
+        # RADIUS plane is ALWAYS the §9 policy cap (5M default), never
+        # the customer unlock — the unlock is about user-traffic speed.
+        return policy_for("radius_transport").download_mbps, .upload_mbps
+
+    unlock_mbps = customer.speed_unlock_mbps or _plan_unlock(customer) or LOCKED_DEFAULT_MBPS  # 5
+    type_policy = policy_for(connection_type)   # e.g. vpn_sstp = 100/100
+    # Ceiling binds: a customer unlock of 200 against a 100-capped vpn_sstp
+    # emits 100. Floor binds: an unlock of 5 emits 5.
+    down = min(unlock_mbps, type_policy.download_mbps)
+    up   = min(unlock_mbps, type_policy.upload_mbps)
+    return down, up
+```
+
+Composing two layers protects the operator:
+* The fleet **type policy** (§9.1) is the absolute upper bound — even an
+  owner who fat-fingered a customer to 1000 Mbps still serves at most
+  the per-type cap (100 for SSTP/wg, 50 for PPTP/IPsec).
+* The **customer unlock** is the per-deal lever the owner moves when
+  they get paid.
+
+### 12.3 RADIUS emission (where the panel-locked speed becomes wire bytes)
+
+`mikrotik_rate_limit_for(customer, connection_type)` returns the
+`Mikrotik-Rate-Limit` attribute string for the Access-Accept:
+
+```python
+down, up = resolve_speed_for(customer, connection_type)
+return rate_limit_string(down, up)   # → "<up>M/<down>M"
+```
+
+The shared `rate_limit_string` helper is the SAME one
+`feat/bandwidth-per-direction` shipped — 850 ⇒ `850M/850M`,
+asymmetric pairs emit as `<upload>M/<download>M`. No duplicate
+formatter; the per-direction rule the sibling branch owns is the rule
+this layer honours.
+
+Every existing call-site that builds RADIUS Access-Accept attributes
+for SSTP/PPTP/IPsec/wg sessions runs through this resolver. Specifically:
+
+1. The auto-provision layer (`radius_auto_provision.provision_on_link`)
+   no longer writes a `radius_secret`-only payload — it now ALSO sets
+   the per-customer rate-limit so first connection inherits the floor.
+2. The «اتصالات الوصول» SSTP/PPTP/IPsec/wg provisioner consults the
+   resolver when it builds the per-tunnel rate-limit string, replacing
+   the previous "policy default" call.
+3. CoA: when the owner bumps `speed_unlock_mbps`, the panel queues a
+   `Mikrotik-Rate-Limit` CoA via the existing proxy CoA path so live
+   sessions get the new cap without a reconnect (forwards-compatible —
+   landed in Phase-7).
+
+### 12.4 UI
+
+* **Customer page** — single «سرعة الاتصالات المُفعّلة» dropdown next
+  to the existing speed picker. Values: `قفل (5)` / `10` / `50` / `100`
+  / `مخصّص…`. Super-admin only; non-super sees a read-only chip.
+* **Plan form** — same field on the plan; resolver falls back here when
+  the customer row says 0.
+* **«اتصالات الوصول» tunnel row** — small chip «السرعة الفعّالة: 5M/5M»
+  (or whatever the resolver returns) so the operator can see at a glance
+  what the customer is being served.
+
+### 12.5 What ships now vs design-only
+
+| Layer | Tonight | Follow-up |
+|---|---|---|
+| `customers.subdomain` column + heal + `assign_subdomain` + `customer_fqdn` helpers | **built** | — |
+| `customers.speed_unlock_mbps` + `plans.speed_unlock_mbps` columns + heal | **built** | — |
+| `app/services/customer_speed_enforcement.py` — `resolve_speed_for(...)` + `mikrotik_rate_limit_for(...)` | **built** | — |
+| Tests pinning default 5M / customer overrides / plan fallback / ceiling binds / `radius_transport` exemption | **built** | — |
+| Wildcard cert + DNS automation (ops/deploy) | **design-only (§11.3)** | `DEPLOY_PANEL.md` §"Wildcard TLS + DNS" + certbot DNS-01 cron |
+| CHR script renderer switch to the wildcard | **design-only (§11.3)** | per-CHR unified-script template patch + cert push |
+| Owner-set unlock UI on customer page + plan form | **design-only (§12.4)** | mechanical clone of existing speed pickers; `serialize_for_ui()`-style hook ready |
+| CoA on speed-unlock change | **design-only (§12.3 step 3)** | one-line emit through the existing Phase-7 proxy CoA path |
+
+The foundation locked in (§12.1 + §12.2 + §12.3 emission, all tested)
+makes every UI/ops follow-up additive. The monetization control —
+default 5M, owner unlocks 10/50/100 — IS the wire path now; UI is the
+final mile.

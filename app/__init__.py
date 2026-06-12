@@ -506,6 +506,20 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("fleet_chr_nodes", {
             "roles_json": "TEXT NOT NULL DEFAULT '[]'",
         })
+    # §11 (subdomain) + §12 (panel-locked speed) — per-customer columns
+    # land on existing rows via the same additive heal. Defaults match
+    # the column defaults so existing customers keep working unchanged:
+    # subdomain='' until assign_subdomain() runs, speed_unlock_mbps=0
+    # which the resolver collapses to the locked 5M floor.
+    if "customers" in tables:
+        _add_columns_if_missing("customers", {
+            "subdomain": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "speed_unlock_mbps": "INTEGER NOT NULL DEFAULT 0",
+        })
+    if "plans" in tables:
+        _add_columns_if_missing("plans", {
+            "speed_unlock_mbps": "INTEGER NOT NULL DEFAULT 0",
+        })
     # Customer RADIUS↔proxy wg-radius tunnel (CUSTOMER_RADIUS_TUNNEL_DESIGN
     # §3.1 + §6.4). The customer side reports its wg-radius pubkey on every
     # bridge heartbeat; the panel stores it + the last-handshake age and
