@@ -1,108 +1,102 @@
-<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>طلب حساب عميل</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-  <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
-</head>
-<body class="hub-auth-body">
-  <main class="hub-login" style="max-width:1040px">
-    <aside class="hub-login-brand">
-      <div class="hub-login-mark">HBR</div>
-      <div class="hub-login-headline">
-        <h2>طلب حساب عميل</h2>
-        <p>أنشئ حسابًا أوليًا. الإدارة تراجع الطلب والدفع والخدمات قبل التفعيل ومزامنة الريدياس.</p>
-      </div>
-      <ul class="hub-login-features">
-        <li><i class="fa-solid fa-clipboard-check"></i> الحساب يبقى pending حتى الموافقة</li>
-        <li><i class="fa-solid fa-lock"></i> الدخول لا يعمل قبل التفعيل الإداري</li>
-        <li><i class="fa-solid fa-handshake"></i> الإدارة تتواصل معك لإكمال التجهيز</li>
-        <li><i class="fa-solid fa-shield-halved"></i> كل ما تكتبه هنا يستخدم لإعداد ترخيصك</li>
-      </ul>
-    </aside>
+{# Customer Portal — signup.
+   Same auth shell as login (.pp-auth-shell), wider card to fit the
+   full registration form. Two-column grid for the data fields. #}
+{% extends "_partials/portal_base.html" %}
+{% block title %}طلب حساب عميل{% endblock %}
+{% block body_class %}pp-auth-shell pp-auth-shell--wide{% endblock %}
+{% block sidebar %}{% endblock %}
+{% block topbar %}{% endblock %}
 
-    <section class="hub-login-form">
-      <h1>سجّل بياناتك</h1>
-      <p class="sub">املأ التفاصيل التالية، وسنتواصل معك لإكمال الموافقة.</p>
+{% block head_extra %}
+<style>
+  /* Wider auth card to fit the signup grid */
+  .adm-body.pp-auth-shell--wide .adm-main { width: min(720px, 100%); }
+  .pp-signup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--cc-sp-7);
+  }
+  @media (max-width: 640px) { .pp-signup-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
 
-      {% include "_partials/_flash.html" %}
+{% block content %}
+<div class="pp-auth-brand">
+  <div class="pp-auth-brand-mark" aria-hidden="true">HR</div>
+  <h1>طلب حساب عميل</h1>
+  <p>أنشئ حسابًا أوّليًا. الإدارة تراجع الطلب وتفعّل الترخيص قبل الدخول.</p>
+</div>
 
-      <form method="post" action="{{ url_for('public.customer_portal_signup_post') }}" style="display:grid; gap:12px">
-        {{ csrf_input() }}
+<form method="post"
+      action="{{ url_for('public.customer_portal_signup_post') }}"
+      class="pp-auth-form"
+      autocomplete="off">
+  {{ csrf_input() }}
 
-        <div class="hub-field">
-          <label>اسم الشركة أو الشبكة <span class="req">*</span></label>
-          <input class="hub-input" name="company_name" value="{{ form.company_name if form is defined else '' }}" required>
-        </div>
+  <div class="pp-auth-field">
+    <label for="pp-company">اسم الشركة أو الشبكة *</label>
+    <input id="pp-company" name="company_name" type="text"
+           value="{{ form.company_name if form is defined else '' }}" required>
+  </div>
 
-        <div class="hub-form-grid">
-          <div class="hub-field">
-            <label>الاسم الكامل <span class="req">*</span></label>
-            <input class="hub-input" name="full_name" value="{{ form.full_name if form is defined else '' }}" required>
-          </div>
-          <div class="hub-field">
-            <label>اسم المستخدم <span class="req">*</span></label>
-            <input class="hub-input mono" name="username" value="{{ form.username if form is defined else '' }}" autocomplete="username" required>
-          </div>
-          <div class="hub-field">
-            <label>البريد الإلكتروني <span class="req">*</span></label>
-            <input class="hub-input" name="email" type="email" value="{{ form.email if form is defined else '' }}" autocomplete="email" required>
-          </div>
-          <div class="hub-field">
-            <label>الهاتف</label>
-            <input class="hub-input" name="phone" value="{{ form.phone if form is defined else '' }}">
-          </div>
-          <div class="hub-field">
-            <label>الدولة</label>
-            <input class="hub-input" name="country" value="{{ form.country if form is defined else '' }}">
-          </div>
-          <div class="hub-field">
-            <label>المدينة</label>
-            <input class="hub-input" name="city" value="{{ form.city if form is defined else '' }}">
-          </div>
-        </div>
+  <div class="pp-signup-grid">
+    <div class="pp-auth-field">
+      <label for="pp-fullname">الاسم الكامل *</label>
+      <input id="pp-fullname" name="full_name" type="text"
+             value="{{ form.full_name if form is defined else '' }}" required>
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-username">اسم المستخدم *</label>
+      <input id="pp-username" name="username" type="text"
+             value="{{ form.username if form is defined else '' }}"
+             autocomplete="username" required>
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-email">البريد الإلكتروني *</label>
+      <input id="pp-email" name="email" type="email"
+             value="{{ form.email if form is defined else '' }}"
+             autocomplete="email" required>
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-phone">الهاتف</label>
+      <input id="pp-phone" name="phone" type="tel"
+             value="{{ form.phone if form is defined else '' }}">
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-country">الدولة</label>
+      <input id="pp-country" name="country" type="text"
+             value="{{ form.country if form is defined else '' }}">
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-city">المدينة</label>
+      <input id="pp-city" name="city" type="text"
+             value="{{ form.city if form is defined else '' }}">
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-pwd">كلمة المرور *</label>
+      <input id="pp-pwd" name="password" type="password"
+             minlength="8" autocomplete="new-password" required>
+    </div>
+    <div class="pp-auth-field">
+      <label for="pp-pwd2">تأكيد كلمة المرور *</label>
+      <input id="pp-pwd2" name="password_confirm" type="password"
+             minlength="8" autocomplete="new-password" required>
+    </div>
+  </div>
 
-        <div class="hub-form-grid">
-          <div class="hub-field">
-            <label>كلمة المرور <span class="req">*</span></label>
-            <div class="hub-input-icon">
-              <i class="fa-solid fa-lock"></i>
-              <input class="hub-input" id="su-pwd" name="password" type="password" autocomplete="new-password" minlength="8" required>
-              <button type="button" class="pwd-toggle" data-pwd-toggle="#su-pwd"><i class="fa-solid fa-eye"></i></button>
-            </div>
-          </div>
-          <div class="hub-field">
-            <label>تأكيد كلمة المرور <span class="req">*</span></label>
-            <div class="hub-input-icon">
-              <i class="fa-solid fa-lock"></i>
-              <input class="hub-input" id="su-pwd2" name="password_confirm" type="password" autocomplete="new-password" minlength="8" required>
-              <button type="button" class="pwd-toggle" data-pwd-toggle="#su-pwd2"><i class="fa-solid fa-eye"></i></button>
-            </div>
-          </div>
-        </div>
+  <button class="pp-auth-submit" type="submit">
+    <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+    إرسال طلب الحساب
+  </button>
 
-        <button class="hub-btn hub-btn--primary hub-btn--lg" type="submit" style="margin-top:6px">
-          <i class="fa-solid fa-paper-plane"></i> إرسال طلب الحساب
-        </button>
+  <div class="hub-flash hub-flash--info"
+       style="margin-block-start: var(--cc-sp-7); font-size: var(--cc-fs-tiny); line-height: var(--cc-lh-default)">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    الحساب يكون <strong>pending</strong>. الدخول والمزامنة مع الريدياس لا يعملان إلا بعد موافقة الإدارة.
+  </div>
+</form>
 
-        <div class="hub-flash hub-flash--info">
-          <i class="fa-solid fa-circle-info"></i>
-          الحساب يكون <strong>pending</strong>. الدخول والمزامنة مع الريدياس لا يعملان إلا بعد موافقة الإدارة وتفعيل العميل والخدمات.
-        </div>
-
-        <p class="hub-field-hint" style="text-align:center">
-          <a href="{{ url_for('public.customer_portal_login') }}" style="color:var(--hub-violet-d); font-weight:700">
-            <i class="fa-solid fa-arrow-right"></i> العودة إلى تسجيل الدخول
-          </a>
-        </p>
-      </form>
-    </section>
-  </main>
-</body>
-</html>
+<div class="pp-auth-meta">
+  لديك حساب بالفعل؟ <a href="{{ url_for('public.customer_portal_login') }}">العودة لتسجيل الدخول</a>
+</div>
+{% endblock %}

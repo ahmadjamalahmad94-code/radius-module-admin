@@ -683,10 +683,13 @@
                 {% if wa_embedded_available %}
                 <button type="button" class="pp-btn pp-btn--ghost" data-wa-embedded-launch><i class="fa-solid fa-rotate-right"></i> إعادة الربط</button>
                 {% endif %}
-                <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" onsubmit="return confirm('فصل حساب واتساب؟ يمكنك إعادة الربط لاحقًا.');" style="display:inline">
+                <form method="post" action="{{ url_for('public.customer_portal_whatsapp_post') }}" style="display:inline">
                   {{ csrf_input() }}
                   <input type="hidden" name="action" value="disconnect">
-                  <button type="submit" class="pp-btn wa-btn--danger"><i class="fa-solid fa-link-slash"></i> فصل الحساب</button>
+                  <button type="submit" class="pp-btn wa-btn--danger"
+                          data-confirm="فصل حساب واتساب؟ يمكنك إعادة الربط لاحقًا.">
+                    <i class="fa-solid fa-link-slash"></i> فصل الحساب
+                  </button>
                 </form>
               </div>
 
