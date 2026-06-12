@@ -351,6 +351,24 @@ def routing_table():
     except Exception:  # noqa: BLE001
         pass
 
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §6.1 — publish the CHR↔proxy RADIUS
+    # secret in the authenticated routing-table response so the proxy
+    # reads it per-packet instead of trusting a hand-edited env. The
+    # value is the decrypted Setting CHR_SHARED_SECRET — the SAME value
+    # the unified RouterOS template bakes into every CHR script — so
+    # the two sides are equal by construction, not by operator
+    # diligence. Empty string when the owner has not minted one yet
+    # (proxy treats "" as "use my bootstrap env fallback"). NEVER log
+    # the value: dlog below intentionally excludes it.
+    chr_shared_secret = ""
+    try:
+        from fleet.registry.infra_settings import get_chr_shared_secret_plaintext
+        chr_shared_secret = get_chr_shared_secret_plaintext()
+    except Exception:  # noqa: BLE001 — degrade to empty on a partial deploy
+        current_app.logger.exception(
+            "routing-table: chr_shared_secret resolution degraded to empty",
+        )
+
     return jsonify({
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -360,6 +378,8 @@ def routing_table():
         "live_apply_enabled": live_apply_enabled,
         "movable_users": movable_users,
         "realms_status": realms_status,
+        # §6.1 — single source-of-truth secret. Authenticated channel only.
+        "chr_shared_secret": chr_shared_secret,
     })
 
 
@@ -408,6 +428,18 @@ def heartbeat():
             .update({"last_seen_at": now, "status": "online"}, synchronize_session=False)
         )
         db.session.commit()
+
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §6.4 — the proxy reports a
+    # config_fingerprint over (chr_shared_secret + peer-set hash). The
+    # panel persists it in the proxy heartbeat trace (here logged; a
+    # later admin badge reads the same field). NEVER persist or log the
+    # secret behind the fingerprint — only the digest.
+    proxy_fingerprint = str(body.get("config_fingerprint") or "")[:80].strip()
+    if proxy_fingerprint:
+        current_app.logger.info(
+            "radius-proxy fingerprint | id=%s fp=%s",
+            body.get("proxy_id", "?"), proxy_fingerprint,
+        )
 
     # Flag realms the proxy couldn't find — useful for misconfiguration alerts
     unknown = body.get("realms_not_found") or []
@@ -532,6 +564,85 @@ def wg_peers():
         "panel_wg_pubkey": panel_pubkey,
         "interface": "wg-data",
         "listen_port": 51821,
+        "peer_count": len(peers_out),
+        "peers": peers_out,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# wg-radius peers — CUSTOMER_RADIUS_TUNNEL_DESIGN §4.1
+# ──────────────────────────────────────────────────────────────────────────────
+
+@bp.get("/radius-peers")
+def radius_peers():
+    """Publish the desired wg-radius peer set for the proxy reconciler.
+
+    A peer is one customer's RADIUS server (10.200.<customer_id>.2/32).
+    Every customer who has reported a wg-radius public key on their
+    bridge heartbeat AND whose instance is not ``disabled`` is included
+    here; the proxy diffs against ``wg show wg-radius dump`` and applies
+    the deltas, the same way ``wg-peers`` already drives ``wg-data``.
+
+    Shape — top-level ``peers`` list (matching the §1421c16 wg-peers fix):
+
+    .. code-block:: json
+
+        {
+          "ok": true,
+          "generated_at": "...Z",
+          "interface": "wg-radius",
+          "listen_port": 51822,
+          "panel_wg_pubkey": "...",
+          "peer_count": 1,
+          "peers": [
+            {
+              "name": "client5-radius",
+              "public_key": "...",
+              "allowed_ips": ["10.200.5.2/32"],
+              "endpoint": null
+            }
+          ]
+        }
+
+    ``endpoint`` is always null: customers DIAL the proxy (they're behind
+    NAT in the general case), so the proxy never dials out. The
+    ``panel_wg_pubkey`` echoes the stable wg-radius public key — minted
+    on first call via the same key-stability pattern that holds
+    ``PANEL_WG_PUBKEY`` — so the bootstrap deploy can copy it into the
+    proxy's ``/etc/wireguard/wg-radius.conf`` once and never again.
+    """
+    denied = _auth_required()
+    if denied:
+        return denied
+    try:
+        from app.services.customer_radius_tunnel import build_radius_peers_payload
+        peers_out = build_radius_peers_payload()
+    except Exception as exc:  # noqa: BLE001 - never 5xx the publisher
+        current_app.logger.exception(
+            "radius-peers: build_radius_peers_payload failed: %s", exc,
+        )
+        peers_out = []
+
+    # Mint the stable panel-radius pubkey on first ever call (and a
+    # no-op thereafter — the doc's "stable slot, never implicitly
+    # regenerated" invariant).
+    panel_pubkey = ""
+    try:
+        from fleet.registry.infra_settings import ensure_panel_radius_keypair
+        panel_pubkey = ensure_panel_radius_keypair().get("public_key", "") or ""
+    except Exception:  # noqa: BLE001 — degrade gracefully on missing crypto
+        try:
+            from fleet.registry.infra_settings import panel_radius_pubkey as _read
+            panel_pubkey = _read() or ""
+        except Exception:  # noqa: BLE001
+            panel_pubkey = ""
+
+    return jsonify({
+        "ok": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "interface": "wg-radius",
+        "listen_port": 51822,
+        "panel_wg_pubkey": panel_pubkey,
         "peer_count": len(peers_out),
         "peers": peers_out,
     })

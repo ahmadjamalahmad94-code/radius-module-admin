@@ -166,6 +166,14 @@ class FleetChrNode(TimestampMixin, db.Model):
     weight = db.Column(db.Numeric(5, 2), nullable=False, default=1.0)  # manual preference multiplier
     enabled = db.Column(db.Boolean, nullable=False, default=True)      # admin on/off (drains, not deletes)
     drain = db.Column(db.Boolean, nullable=False, default=False)       # accept no new sessions
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §10 — node ROLES are a SET, not a
+    # single value. A 1-Gbps VPS used only for RADIUS-transport (~5 M)
+    # wastes capacity, so a single node may simultaneously host both
+    # ``radius_transport`` AND one or more ``vpn_*`` roles. An empty
+    # list means "all roles enabled" (back-compat with existing fleets);
+    # narrowing the list is the operator's opt-in once §9 + §10 land
+    # the dashboard's spare-capacity readout.
+    roles_json = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
 
     # ── live denormalized snapshot (updated by the metrics loop) ──────────────
     status = db.Column(db.String(16), nullable=False, default="provisioning")

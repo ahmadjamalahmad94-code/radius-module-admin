@@ -75,6 +75,18 @@ _INFRA_KEYS = (
     "CHR_SHARED_SECRET",
     "SSTP_CERT_NAME",
     "IKE_CERT_NAME",
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §2 — the wg-radius plane (customer ↔ proxy).
+    # Three slots the owner pastes once at proxy deploy and the panel then
+    # serves to every customer over the bridge heartbeat.
+    "PROXY_RADIUS_WG_PUBKEY",
+    "PROXY_RADIUS_WG_ENDPOINT",
+    "PROXY_RADIUS_WG_TUNNEL_IP",
+    # Stable panel-side wg-radius pubkey (mirror of PANEL_WG_PUBKEY for the
+    # radius plane). The private side lives in an out-of-band slot —
+    # _PANEL_RADIUS_PRIVKEY_SLOT below — so the wg-radius daemon can pick
+    # it up without rotation. Reusing PANEL_WG_PUBKEY would have conflated
+    # the wg-mgmt and wg-radius keys.
+    "PANEL_RADIUS_WG_PUBKEY",
 )
 
 #: Subset whose stored value is a Fernet ciphertext that must be decrypted
@@ -86,6 +98,12 @@ _SECRET_KEYS = frozenset({"CHR_SHARED_SECRET"})
 #: PUBLIC key goes into the script. We store the private key here so a
 #: future "bring up wg-mgmt" daemon can consume it without rotating.
 _PANEL_PRIVKEY_SLOT = _PREFIX + "PANEL_WG_PRIVKEY"
+
+#: Out-of-band slot for the panel's wg-radius PRIVATE key — same pattern
+#: as ``_PANEL_PRIVKEY_SLOT`` but for the wg-radius plane (customer ↔
+#: proxy). Kept separate so a rotation on one plane never disturbs the
+#: other.
+_PANEL_RADIUS_PRIVKEY_SLOT = _PREFIX + "PANEL_RADIUS_WG_PRIVKEY"
 
 #: Subset of UI-managed keys that the validator considers REQUIRED
 #: (mirrors ``fleet.registry.script_bindings_check`` order). The two cert
@@ -526,6 +544,120 @@ def get_panel_wg_private_key_decrypted() -> str:
     return decrypt_secret(raw)
 
 
+# ── wg-radius plane (customer ↔ proxy) — design §2 + §6.3 ─────────────
+
+
+def get_chr_shared_secret_plaintext() -> str:
+    """Return the decrypted CHR↔proxy RADIUS secret, or ``""`` when unset.
+
+    This is the SAME plaintext that the unified RouterOS template bakes
+    into every CHR script. The routing-table publisher (design §6.1)
+    embeds it in the authenticated response so the proxy reads the
+    current value per-packet instead of trusting a hand-edited env, and
+    the two sides can never drift again. NEVER log the return value —
+    callers stage it directly into the response payload.
+    """
+    raw = _raw_get("CHR_SHARED_SECRET")
+    if not raw:
+        return ""
+    try:
+        return decrypt_secret(raw)
+    except Exception:  # noqa: BLE001 — degrade to "" on a missing master key
+        return ""
+
+
+def get_proxy_radius_tunnel() -> dict[str, str]:
+    """Return the three operator-pasted PROXY_RADIUS_WG_* values.
+
+    Shape::
+
+        {"public_key": str, "endpoint": str, "tunnel_ip": str}
+
+    Empty strings when the owner has not configured the proxy side yet —
+    callers (heartbeat-response builder, radius-peers publisher) treat
+    empty values as "tunnel disabled at the panel" and surface a clear
+    state to the customer instead of returning a half-baked config.
+    """
+    return {
+        "public_key": _raw_get("PROXY_RADIUS_WG_PUBKEY"),
+        "endpoint":   _raw_get("PROXY_RADIUS_WG_ENDPOINT"),
+        "tunnel_ip":  _raw_get("PROXY_RADIUS_WG_TUNNEL_IP"),
+    }
+
+
+def set_proxy_radius_pubkey(value: str) -> None:
+    clean = _validate_pubkey(value, "مفتاح وكيل الراديوس (wg-radius)")
+    _raw_set("PROXY_RADIUS_WG_PUBKEY", clean)
+    db.session.commit()
+
+
+def set_proxy_radius_endpoint(value: str) -> None:
+    clean = _validate_host_port(value, "نقطة وصول وكيل الراديوس (wg-radius)",
+                                template_var="PROXY_RADIUS_WG_ENDPOINT")
+    _raw_set("PROXY_RADIUS_WG_ENDPOINT", clean)
+    db.session.commit()
+
+
+def set_proxy_radius_tunnel_ip(value: str) -> None:
+    raw = (value or "").strip()
+    if not raw:
+        _raw_set("PROXY_RADIUS_WG_TUNNEL_IP", "")
+        db.session.commit()
+        return
+    # Accept either a bare IP or CIDR — strip mask if present.
+    if "/" in raw:
+        raw = raw.split("/", 1)[0]
+    import ipaddress as _ip
+    try:
+        _ip.ip_address(raw)
+    except ValueError as exc:
+        raise InfraSettingsError("عنوان IP غير صالح لنقطة الوصول الداخلية.") from exc
+    _raw_set("PROXY_RADIUS_WG_TUNNEL_IP", raw)
+    db.session.commit()
+
+
+def ensure_panel_radius_keypair() -> dict[str, str]:
+    """Idempotent stable-key bringup for the panel's wg-radius side.
+
+    Mints a wg keypair on the FIRST call (encrypted private side stored
+    under ``_PANEL_RADIUS_PRIVKEY_SLOT``, public side under
+    ``PANEL_RADIUS_WG_PUBKEY``) and is a no-op afterwards — the same
+    "stable slot, never regenerate implicitly" invariant the wg-mgmt
+    key follows. Returns ``{"public_key": <str>, "minted": <bool>}``
+    so the caller knows whether to audit-log the bringup.
+
+    Why a separate plane: PANEL_WG_PUBKEY is the wg-mgmt control plane;
+    this is wg-radius (customer ↔ proxy). Reusing one key for both
+    would couple their lifetimes (rotate one → break the other).
+    """
+    from fleet.registry.wg_keys import generate_keypair
+    existing = _raw_get("PANEL_RADIUS_WG_PUBKEY")
+    if existing:
+        return {"public_key": existing, "minted": False}
+    _require_crypto()
+    kp = generate_keypair()
+    ciphertext = encrypt_secret(kp.private_key)
+    priv_row = db.session.get(Setting, _PANEL_RADIUS_PRIVKEY_SLOT)
+    if priv_row is None:
+        priv_row = Setting(key=_PANEL_RADIUS_PRIVKEY_SLOT, value=ciphertext)
+        db.session.add(priv_row)
+    else:
+        priv_row.value = ciphertext
+    _raw_set("PANEL_RADIUS_WG_PUBKEY", kp.public_key)
+    db.session.commit()
+    return {"public_key": kp.public_key, "minted": True}
+
+
+def panel_radius_pubkey() -> str:
+    """Read-only accessor for the panel's wg-radius public key.
+
+    Returns ``""`` if no key has been minted yet — callers should bring
+    one up via :func:`ensure_panel_radius_keypair` on the first publish
+    pass so the response is never empty under normal operation.
+    """
+    return _raw_get("PANEL_RADIUS_WG_PUBKEY")
+
+
 __all__ = [
     "FleetConstStatus",
     "InfraSettingsError",
@@ -548,4 +680,12 @@ __all__ = [
     "panel_pubkey_for_display",
     "panel_privkey_is_on_server",
     "get_panel_wg_private_key_decrypted",
+    # wg-radius plane (customer ↔ proxy)
+    "get_chr_shared_secret_plaintext",
+    "get_proxy_radius_tunnel",
+    "set_proxy_radius_pubkey",
+    "set_proxy_radius_endpoint",
+    "set_proxy_radius_tunnel_ip",
+    "ensure_panel_radius_keypair",
+    "panel_radius_pubkey",
 ]

@@ -923,15 +923,49 @@ def hoberadius_instance_heartbeat():
         hostname=str(body.get("hostname") or "")[:255],
         fingerprint=str(body.get("server_fingerprint") or "")[:255],
     )
+
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §3 — receive ``wg_radius`` report +
+    # respond with ``radius_tunnel``. Idempotent: the response is the
+    # full desired state every heartbeat; the customer side only
+    # rewrites local config when its stored ``config_fingerprint``
+    # disagrees with ours. Drift bookkeeping for §6.4 lives in the
+    # service module — never log the per-customer secret here.
+    radius_tunnel_payload = None
+    try:
+        from ..models import CustomerRadiusInstance as _Inst
+        from ..services.customer_radius_tunnel import (
+            build_tunnel_config as _build_tc,
+            ingest_wg_radius_report as _ingest_wg,
+        )
+        instance = (
+            _Inst.query.filter_by(customer_id=result.license.customer_id).first()
+            if result.license and result.license.customer_id else None
+        )
+        if instance is not None:
+            tc = _build_tc(instance)
+            radius_tunnel_payload = tc.as_payload()
+            _ingest_wg(
+                instance,
+                body.get("wg_radius") if isinstance(body.get("wg_radius"), dict) else None,
+                published_fingerprint=tc.fingerprint,
+            )
+    except Exception:  # noqa: BLE001 — degrade gracefully, never break the heartbeat
+        current_app.logger.exception(
+            "instance-heartbeat: radius_tunnel block degraded to no-op",
+        )
+
     db.session.commit()
 
-    return jsonify({
+    response_body: dict = {
         "ok": True,
         "status": "recorded",
         "license_status": result.status,
         "instance_found": True,
         "provision": provision,
-    })
+    }
+    if radius_tunnel_payload is not None:
+        response_body["radius_tunnel"] = radius_tunnel_payload
+    return jsonify(response_body)
 
 
 @bp.post("/integration/hoberadius/usage-snapshot/push")
