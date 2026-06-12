@@ -157,6 +157,10 @@
             {{ _('خطط الاشتراك') }}
           </a>
           {% endif %}
+          <a href="{{ url_for('admin.services_catalog_policy') }}"
+             class="adm-link {% if ep in ['admin.services_catalog_policy'] %}is-active{% endif %}">
+            {{ _('الخدمات') }}
+          </a>
           <a href="{{ url_for('admin.payment_review_queue') }}"
              class="adm-link {% if ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}is-active{% endif %}">
             {{ _('مراجعة المدفوعات') }}

@@ -263,21 +263,36 @@
       return;
     }
     var html = "";
+    var isUpgrade = !!currentLimits;
     fields.forEach(function (f) {
       var key = (f && f.key) || "";
       if (!key) return;
       var label = escText(f.label || key);
       var hint = escText(f.hint || "");
+      var unit = escText(f.unit || "");
       var cur = (currentLimits && currentLimits[key] != null) ? currentLimits[key] : "";
+      // SMART bounds per service type: the schema carries min/max/step/default.
+      // For an UPGRADE the floor is the CURRENT value (upgrades only go up);
+      // for an ACTIVATION the sensible per-type default pre-fills the field.
+      var minV = (f.min != null) ? Number(f.min) : 0;
+      if (isUpgrade && cur !== "" && Number(cur) > minV) minV = Number(cur);
+      var maxV = (f.max != null) ? Number(f.max) : null;
+      var stepV = (f.step != null) ? Number(f.step) : 1;
+      var defV = (f["default"] != null) ? f["default"] : "";
+      var preset = cur !== "" ? cur : defV;
       var curBadge = (cur !== "" && cur !== null && cur !== undefined)
-        ? ' <span class="pp-current">الحالي: ' + escText(cur) + "</span>" : "";
+        ? ' <span class="pp-current">الحالي: ' + escText(cur) + (unit ? " " + unit : "") + "</span>" : "";
+      var unitBadge = unit ? ' <span class="pp-unit">' + unit + "</span>" : "";
       html += '<div class="pp-spec-field">'
-        + '<label for="' + namePrefix + "-" + escAttr(key) + '">' + label + curBadge + "</label>"
-        + '<input type="number" min="0" '
+        + '<label for="' + namePrefix + "-" + escAttr(key) + '">' + label + unitBadge + curBadge + "</label>"
+        + '<input type="number" '
+          + 'min="' + escAttr(minV) + '" '
+          + (maxV != null ? 'max="' + escAttr(maxV) + '" ' : "")
+          + 'step="' + escAttr(stepV) + '" '
           + 'id="' + namePrefix + "-" + escAttr(key) + '" '
           + 'name="spec_' + escAttr(key) + '" '
-          + 'placeholder="' + escAttr(cur !== "" ? cur : "—") + '" '
-          + 'value="' + (cur !== "" ? escAttr(cur) : "") + '">'
+          + 'placeholder="' + escAttr(preset !== "" ? preset : "—") + '" '
+          + 'value="' + (preset !== "" ? escAttr(preset) : "") + '">'
         + (hint ? '<div class="pp-hint">' + hint + "</div>" : "")
         + "</div>";
     });

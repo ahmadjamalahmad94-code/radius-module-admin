@@ -1,0 +1,138 @@
+{% extends "admin/base_new.html" %}
+{% block title %}تعديل مسار Realm — @{{ route.realm }}{% endblock %}
+{% block page_title %}تعديل مسار @{{ route.realm }}{% endblock %}
+
+{% block content %}
+
+<div class="pr-explain-card">
+  <div class="pr-explain-card__icon">
+    <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+  </div>
+  <div>
+    <div class="pr-explain-card__title">تعديل مسار @{{ route.realm }}</div>
+    <p class="pr-explain-card__text">
+      هذه القيم يقرأها الوكيل المركزي عند كل عملية مزامنة لجدول التوجيه.
+      تعديل الـ Realm أو الـ Instance يعني أن الطلبات الواردة تحت اللاحقة
+      الجديدة تذهب إلى خادم RADIUS مختلف فور المزامنة التالية.
+    </p>
+  </div>
+</div>
+
+<div class="pr-card">
+  <form method="post"
+        action="{{ url_for('admin_infra.proxy_route_edit_save', route_id=route.id) }}"
+        style="padding:var(--cc-sp-9)">
+    {{ csrf_input() }}
+
+    <div class="pr-form-grid">
+
+      {# Realm #}
+      <div class="pr-field pr-field--full">
+        <label class="pr-label" for="r-realm">
+          الـ Realm <span class="pr-required" aria-hidden="true">*</span>
+        </label>
+        <input class="pr-input pr-mono pr-ltr" id="r-realm" name="realm"
+               value="{{ route.realm }}" required autocomplete="off">
+        <p class="pr-hint">اللاحقة في <span class="pr-mono pr-ltr">username@realm</span>.</p>
+      </div>
+
+      {# RADIUS Instance #}
+      <div class="pr-field pr-field--full">
+        <label class="pr-label" for="r-inst">
+          RADIUS Instance <span class="pr-required" aria-hidden="true">*</span>
+        </label>
+        <select class="pr-input" id="r-inst" name="radius_instance_id" required>
+          {% for inst in instances %}
+          <option value="{{ inst.id }}"
+                  {% if inst.id == route.radius_instance_id %}selected{% endif %}>
+            {{ inst.customer.company_name }}
+            (@{{ inst.realm }}) — {{ inst.radius_auth_ip or 'IP غير محدد' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# Target IP #}
+      <div class="pr-field">
+        <label class="pr-label" for="r-tip">Target RADIUS IP</label>
+        <input class="pr-input pr-mono pr-ltr" id="r-tip" name="target_radius_ip"
+               value="{{ route.target_radius_ip or '' }}"
+               placeholder="فارغ = استخدام IP الـ Instance">
+      </div>
+
+      {# Auth Port #}
+      <div class="pr-field">
+        <label class="pr-label" for="r-aport">Auth Port</label>
+        <input class="pr-input" id="r-aport" name="target_auth_port"
+               type="number" value="{{ route.target_auth_port or 1812 }}">
+      </div>
+
+      {# Acct Port #}
+      <div class="pr-field">
+        <label class="pr-label" for="r-cport">Acct Port</label>
+        <input class="pr-input" id="r-cport" name="target_acct_port"
+               type="number" value="{{ route.target_acct_port or 1813 }}">
+      </div>
+
+      {# Vault Ref #}
+      <div class="pr-field">
+        <label class="pr-label" for="r-vault">Vault Ref (سر الـ Proxy)</label>
+        <input class="pr-input pr-mono pr-ltr" id="r-vault" name="secret_vault_ref"
+               value="{{ route.secret_vault_ref or '' }}"
+               placeholder="vault://...">
+        <p class="pr-hint">المرجع فقط — السر نفسه لا يُعرض هنا أبدًا.</p>
+      </div>
+
+      {# عقد CHR المسموحة #}
+      <div class="pr-field pr-field--full">
+        <label class="pr-label">عقد أسطول CHR المسموح لها</label>
+        <div class="pr-checkgroup">
+          {% for n in fleet_chr_nodes %}
+          <label class="pr-check">
+            <input type="checkbox" name="allowed_fleet_chr_node_ids" value="{{ n.id }}"
+                   {% if n.id in selected_node_ids %}checked{% endif %}>
+            <span class="pr-mono">{{ n.name }}</span>
+            <span class="pr-check__sub">{{ n.public_ip or '—' }} · {{ n.status }}</span>
+          </label>
+          {% else %}
+          <span style="color:var(--cc-text-mute);font-size:var(--cc-fs-body-s)">
+            لا توجد عقد في الأسطول.
+          </span>
+          {% endfor %}
+        </div>
+        <p class="pr-hint">اتركها كلها فارغة لقبول كل عقد الأسطول.</p>
+      </div>
+
+      {# الحالة #}
+      <div class="pr-field pr-field--full">
+        <label class="pr-label">الحالة</label>
+        <div class="pr-checkgroup" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+          {% for st, lbl, hint in [
+            ('active','نشط','يُنشر فورًا في جدول التوجيه'),
+            ('draft','مسودة','لا يُنشر — للمراجعة فقط'),
+            ('suspended','موقوف','مُعطّل مؤقتًا')
+          ] %}
+          <label class="pr-check">
+            <input type="radio" name="status" value="{{ st }}"
+                   {% if route.status == st %}checked{% endif %}>
+            <span class="pr-mono">{{ lbl }}</span>
+            <span class="pr-check__sub">{{ hint }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>{# /pr-form-grid #}
+
+    <div style="display:flex;gap:var(--cc-sp-3);margin-top:var(--cc-sp-9)">
+      <button type="submit" class="pr-btn pr-btn--primary">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+        حفظ التعديلات
+      </button>
+      <a class="pr-btn pr-btn--ghost"
+         href="{{ url_for('admin_infra.proxy_routes_list') }}">إلغاء</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

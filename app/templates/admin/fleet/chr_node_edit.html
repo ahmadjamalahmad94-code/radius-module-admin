@@ -1,0 +1,139 @@
+{% extends "admin/base_new.html" %}
+{% block title %}تعديل عقدة CHR — {{ node.name }}{% endblock %}
+{% block page_title %}تعديل عقدة {{ node.name }}{% endblock %}
+{% block page_subtitle %}الحقول التي يمكن للمالك تعديلها على عقدة الأسطول{% endblock %}
+
+{% block content %}
+
+<section class="hub-section">
+  <form method="post" action="{{ url_for('fleet_ui.chr_node_edit_save', node_id=node.id) }}">
+    {{ csrf_input() }}
+
+    <div class="hub-card" style="padding:18px 22px;margin-bottom:18px">
+      <h3 style="margin:0 0 14px;font-size:15px">
+        <i class="fa-solid fa-id-card-clip"></i> الهوية + الشبكة
+      </h3>
+      <div class="hub-grid hub-grid--2">
+        <div>
+          <label class="hub-label">الاسم</label>
+          <input class="hub-input" name="name" value="{{ node.name }}" required>
+        </div>
+        <div>
+          <label class="hub-label">المزود</label>
+          <input class="hub-input" value="{{ node.provider_id }}" disabled
+                 title="المزود يُغيَّر من معالج الترحيل فقط">
+          <p class="hub-help">المزود لا يُغيَّر من هنا — استخدم أداة الترحيل المخصصة.</p>
+        </div>
+        <div>
+          <label class="hub-label">Public IP</label>
+          <input class="hub-input mono ltr" name="public_ip"
+                 value="{{ node.public_ip }}" required>
+        </div>
+        <div>
+          <label class="hub-label">wg-mgmt IP</label>
+          <input class="hub-input mono ltr" name="wg_mgmt_ip"
+                 value="{{ node.wg_mgmt_ip }}" required>
+        </div>
+        <div class="full">
+          <label class="hub-label">wg-mgmt Public Key</label>
+          <input class="hub-input mono ltr" name="wg_mgmt_pubkey"
+                 value="{{ node.wg_mgmt_pubkey }}">
+          <p class="hub-help" style="color:#d97706">
+            تغيير المفتاح يجعل السكربت الموجود على CHR قديمًا — يجب إعادة تطبيق
+            السكربت من معالج الترحيل بعد الحفظ.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="hub-card" style="padding:18px 22px;margin-bottom:18px">
+      <h3 style="margin:0 0 14px;font-size:15px">
+        <i class="fa-solid fa-gauge-high"></i> السعة + الأوزان
+      </h3>
+      <div class="hub-grid hub-grid--3">
+        <div>
+          <label class="hub-label">أقصى جلسات (max_sessions)</label>
+          <input class="hub-input" type="number" min="0" name="max_sessions"
+                 value="{{ node.max_sessions }}">
+        </div>
+        <div>
+          <label class="hub-label">سرعة الرابط (Mbps)</label>
+          <input class="hub-input" type="number" min="1" name="link_speed_mbps"
+                 value="{{ node.link_speed_mbps }}">
+        </div>
+        <div>
+          <label class="hub-label">الوزن (weight)</label>
+          <input class="hub-input" type="number" step="0.01" min="0" name="weight"
+                 value="{{ node.weight }}">
+        </div>
+        <div>
+          <label class="hub-label">سقف باندويث الدورة (TB)</label>
+          <input class="hub-input" type="number" step="0.001" min="0"
+                 name="bandwidth_cap_tb"
+                 value="{{ node.bandwidth_cap_tb if node.bandwidth_cap_tb is not none else '' }}"
+                 placeholder="فارغ = وراثة">
+        </div>
+        <div>
+          <label class="hub-label">نموذج التكلفة</label>
+          <select class="hub-input" name="cost_model">
+            {% for m in cost_models %}
+            <option value="{{ m }}" {% if m == node.cost_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="hub-label">سعر الـ TB</label>
+          <input class="hub-input" type="number" step="0.01" min="0"
+                 name="price_per_tb"
+                 value="{{ node.price_per_tb if node.price_per_tb is not none else '' }}"
+                 placeholder="فارغ = وراثة">
+        </div>
+        <div>
+          <label class="hub-label">
+            <input type="checkbox" name="overage_allowed" value="1"
+                   {% if node.overage_allowed %}checked{% endif %}>
+            السماح بتجاوز السقف (overage)
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="hub-card" style="padding:18px 22px;margin-bottom:18px">
+      <h3 style="margin:0 0 14px;font-size:15px">
+        <i class="fa-solid fa-plug-circle-check"></i> منافذ + بيانات اعتماد RouterOS
+      </h3>
+      <div class="hub-grid hub-grid--3">
+        <div>
+          <label class="hub-label">RouterOS API Port</label>
+          <input class="hub-input" type="number" min="1" max="65535"
+                 name="routeros_api_port"
+                 value="{{ node.routeros_api_port }}">
+        </div>
+        <div>
+          <label class="hub-label">CoA Port</label>
+          <input class="hub-input" type="number" min="1" max="65535"
+                 name="coa_port"
+                 value="{{ node.coa_port }}">
+        </div>
+        <div>
+          <label class="hub-label">RouterOS API User</label>
+          <input class="hub-input" name="routeros_api_user"
+                 value="{{ node.routeros_api_user }}">
+          <p class="hub-help">
+            كلمة المرور تُدار من بيانات اعتماد الميتركس — لا تظهر هنا.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:18px">
+      <button type="submit" class="hub-btn hub-btn--primary">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ التعديلات
+      </button>
+      <a class="hub-btn hub-btn--secondary"
+         href="{{ url_for('fleet_ui.fleet_dashboard') }}">إلغاء</a>
+    </div>
+  </form>
+</section>
+
+{% endblock %}

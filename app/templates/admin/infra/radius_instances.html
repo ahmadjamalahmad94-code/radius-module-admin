@@ -63,10 +63,42 @@
             {{ inst.last_seen_at.strftime('%Y-%m-%d %H:%M') if inst.last_seen_at else '—' }}
           </td>
           <td>
-            <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=inst.customer_id) }}"
-               class="hub-btn hub-btn--secondary hub-btn--sm">
-              <i class="fa-solid fa-pen"></i> تعديل
-            </a>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=inst.customer_id) }}"
+                 class="hub-btn hub-btn--secondary hub-btn--sm">
+                <i class="fa-solid fa-pen"></i> تعديل
+              </a>
+              <form method="post"
+                    action="{{ url_for('admin_infra.radius_instance_rotate_secret', instance_id=inst.id) }}"
+                    id="ri-rot-form-{{ inst.id }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button type="button" class="hub-btn hub-btn--secondary hub-btn--sm"
+                        data-confirm-form="ri-rot-form-{{ inst.id }}"
+                        data-confirm-title="تدوير سرّ RADIUS"
+                        data-confirm-msg="سيُولَّد سرّ RADIUS جديد لـ @{{ inst.realm }}. سيظهر مرة واحدة فقط — انسخه فورًا واستبدله في RADIUS العميل."
+                        data-confirm-ok="توليد"
+                        data-confirm-variant="primary"
+                        title="توليد سرّ RADIUS جديد">
+                  <i class="fa-solid fa-key"></i> تدوير السر
+                </button>
+              </form>
+              <form method="post"
+                    action="{{ url_for('admin_infra.radius_instance_delete', instance_id=inst.id) }}"
+                    id="ri-del-form-{{ inst.id }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button type="button"
+                        class="hub-btn hub-btn--danger hub-btn--sm"
+                        data-confirm-form="ri-del-form-{{ inst.id }}"
+                        data-confirm-title="حذف نسخة RADIUS"
+                        data-confirm-msg="هل تريد حذف نسخة RADIUS @{{ inst.realm }} للعميل {{ inst.customer.company_name }}؟ سيُحذف مسار الـ Realm المرتبط تلقائيًا. سيُعاد إنشاؤها تلقائيًا عند أول ربط ناجح للريديوس."
+                        data-confirm-ok="حذف"
+                        data-confirm-variant="danger">
+                  <i class="fa-solid fa-trash"></i> حذف
+                </button>
+              </form>
+            </div>
           </td>
         </tr>
       {% endfor %}
