@@ -228,3 +228,124 @@ class TestRenderedScriptShape:
         svc.generate_keys(job)
         _, script = svc.render_script(job)
         assert "this CHR wg-mgmt pubkey (give to panel)" in script
+
+
+# ════════════════════════════════════════════════════════════════════════
+# (5) Reserved-username substitution — LIVE INCIDENT root cause
+# ════════════════════════════════════════════════════════════════════════
+class TestReservedUsernameSubstitution:
+    """Live incident: owner saved username ``admin`` on the infra page.
+    The script's ``/user remove [find name="admin"]`` was a no-op
+    (RouterOS protects the last full-group user) and the following
+    ``add`` errored with «user with such name already exists». The
+    built-in admin then kept its ORIGINAL password — mismatch with
+    the panel's saved one. The renderer now substitutes reserved names
+    with ``HARD_DEFAULT_USER`` ("hobe-panel") and persists the
+    substitution to the node row so the poller stays in sync."""
+
+    @pytest.mark.parametrize("reserved", ["admin", "root", "support", "operator"])
+    def test_reserved_username_substituted(self, provider_app, reserved):
+        from fleet.health.routeros_creds import set_default_password, set_default_user
+        set_default_user(reserved)
+        set_default_password("operator-set-password-123")
+        db.session.commit()
+
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+
+        # Script provisions HARD_DEFAULT_USER, NOT the reserved name.
+        assert f'add name="{HARD_DEFAULT_USER}" group=read' in script
+        assert f'add name="{reserved}" group=read' not in script
+
+    def test_node_row_carries_substituted_user(self, provider_app):
+        """The panel poller reads creds via ``credentials_for(node)`` —
+        it must dial with the SAME name the script provisioned."""
+        from fleet.health.routeros_creds import set_default_password, set_default_user
+        set_default_user("admin")
+        set_default_password("operator-set-password-123")
+        db.session.commit()
+
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        svc.render_script(job)  # the substitution happens during _build_bindings
+
+        node = db.session.get(FleetChrNode, job.chr_id)
+        assert node.routeros_api_user == HARD_DEFAULT_USER
+        # Password preserved — the substitution only changes the username.
+        assert decrypt_password(node.routeros_api_password_enc) == "operator-set-password-123"
+
+    def test_non_reserved_username_preserved(self, provider_app):
+        """A safe operator-chosen username must NOT be rewritten."""
+        from fleet.health.routeros_creds import set_default_password, set_default_user
+        set_default_user("ops-poller")
+        set_default_password("operator-set-password-123")
+        db.session.commit()
+
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+        assert 'add name="ops-poller" group=read' in script
+        assert f'add name="{HARD_DEFAULT_USER}" group=read' not in script
+
+
+# ════════════════════════════════════════════════════════════════════════
+# (6) Cert poll-wait — robust www-ssl bring-up on slow CHRs
+# ════════════════════════════════════════════════════════════════════════
+class TestCertReadyPollWait:
+    """Live incident: 2s cert-sign delay was too short on a slow CHR
+    (1-vCPU contabo VPS under §0a-backup + §9-firewall CPU load).
+    ``set www-ssl certificate=...`` fired while the cert was still
+    being signed → set errored silently → www-ssl stayed disabled →
+    panel TCP refused → wizard stuck.
+
+    Fix: 2s → 5s on each sign, AND a poll-wait that retries up to 15s
+    for the cert's ``invalid-after`` field to land before assigning."""
+
+    def test_sign_delays_bumped_to_five_seconds(self, provider_app):
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+        # Each sign is followed by `:delay 5s` (not 2s anymore).
+        # We check the count of `:delay 5s` lines is ≥ 2 (one per sign).
+        assert script.count(":delay 5s") >= 2
+
+    def test_poll_wait_loop_present_before_www_ssl_set(self, provider_app):
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+        # The poll-wait loop checks `invalid-after` before assigning to www-ssl.
+        assert ":local certReady false" in script
+        assert ':for i from=1 to=15 do=' in script
+        assert "invalid-after" in script
+        # Order: poll-wait MUST precede the www-ssl set line.
+        poll_idx = script.index(":local certReady false")
+        wwwssl_idx = script.index("set www-ssl disabled=no")
+        assert poll_idx < wwwssl_idx, "poll-wait must precede www-ssl assignment"
+
+    def test_poll_wait_logs_error_on_timeout(self, provider_app):
+        """If the cert never readies, the script must log an explicit
+        error so the operator sees WHY www-ssl is down on re-poll."""
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+        assert "hobe-fleet-api-cert not ready after 15s" in script
+
+    def test_user_add_is_idempotent_against_builtin(self, provider_app):
+        """The new template wraps the `add` in an idempotency check so
+        re-imports + collisions with built-in users don't error mid-script.
+        We assert the idempotency guard renders."""
+        svc = OnboardingService(config=dict(_BASE_CFG))
+        job = svc.create_draft(_form(), auto_advance=False)
+        svc.generate_keys(job)
+        _, script = svc.render_script(job)
+        # The script checks `[:len [/user find name="..."]] = 0` before add
+        # so it doesn't clobber a built-in / existing user.
+        assert ':if ([:len [/user find name=' in script
+        assert "refusing to clobber a built-in user" in script
