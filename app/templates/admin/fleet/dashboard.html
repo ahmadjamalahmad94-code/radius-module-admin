@@ -441,8 +441,26 @@
 
 {% block content %}
 
+{# feat/panel-live-data-5s — auto-refreshes KPI strip + per-node rows + status
+   counts every 5 seconds. SSR-first: every value below renders from the
+   Jinja context on first load, so the page is fully usable without JS. The
+   live_poll.js util only keeps already-rendered values fresh in place. #}
+<div data-live-endpoint="{{ url_for('fleet_ui.fleet_dashboard_live') }}"
+     data-live-interval="5"
+     data-live-indicator>
+
 {# Top-of-page CSRF (also used by the JS for X-CSRFToken) #}
 <form id="fd-csrf-form" style="display:none">{{ csrf_input() }}</form>
+
+{# Live indicator — appears top-right of the content area. #}
+<div style="display:flex;justify-content:flex-end;margin-block-end:8px">
+  <span class="live-indicator" title="هذه الصفحة تُحدَّث تلقائياً">
+    <span class="live-dot live-dot--ok" data-live-indicator-dot></span>
+    <span>مباشر</span>
+    <span style="opacity:.6">·</span>
+    <span data-live-indicator-text>الآن</span>
+  </span>
+</div>
 
 {# ── Singleton↔Fleet cross-reference notice ──
    When the «CHR الواحد» credentials at /admin/settings#chr point at the SAME
@@ -523,35 +541,38 @@
 <div class="fd-kpis">
   <div class="fd-kpi fd-kpi--total">
     <div class="fd-kpi-icon"><i class="fa-solid fa-network-wired"></i></div>
-    <div><div class="fd-kpi-num">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="totals.nodes">{{ total_nodes }}</div><div class="fd-kpi-label">إجمالي العقد</div></div>
   </div>
   <div class="fd-kpi fd-kpi--up">
     <div class="fd-kpi-icon fd-kpi-icon--up"><i class="fa-solid fa-circle-check"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-up">{{ by_health.get('up', 0) }}</div><div class="fd-kpi-label">متّصلة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-up" data-live-bind="by_health.up">{{ by_health.get('up', 0) }}</div><div class="fd-kpi-label">متّصلة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--deg">
     <div class="fd-kpi-icon fd-kpi-icon--deg"><i class="fa-solid fa-triangle-exclamation"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-deg">{{ by_health.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-deg" data-live-bind="by_health.degraded">{{ by_health.get('degraded', 0) }}</div><div class="fd-kpi-label">متدهورة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--down">
     <div class="fd-kpi-icon fd-kpi-icon--down"><i class="fa-solid fa-circle-xmark"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-down">{{ by_health.get('down', 0) }}</div><div class="fd-kpi-label">مفصولة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-down" data-live-bind="by_health.down">{{ by_health.get('down', 0) }}</div><div class="fd-kpi-label">مفصولة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--unk">
     <div class="fd-kpi-icon fd-kpi-icon--unk"><i class="fa-solid fa-circle-question"></i></div>
-    <div><div class="fd-kpi-num" id="kpi-health-unk">{{ by_health.get('unknown', 0) }}</div><div class="fd-kpi-label">غير معروفة</div></div>
+    <div><div class="fd-kpi-num" id="kpi-health-unk" data-live-bind="by_health.unknown">{{ by_health.get('unknown', 0) }}</div><div class="fd-kpi-label">غير معروفة</div></div>
   </div>
   <div class="fd-kpi fd-kpi--elig">
     <div class="fd-kpi-icon fd-kpi-icon--elig"><i class="fa-solid fa-bolt"></i></div>
-    <div><div class="fd-kpi-num">{{ overview_stats.eligible }}</div><div class="fd-kpi-label">مؤهّلة للجلسات</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="overview.eligible">{{ overview_stats.eligible }}</div><div class="fd-kpi-label">مؤهّلة للجلسات</div></div>
   </div>
   <div class="fd-kpi fd-kpi--off">
     <div class="fd-kpi-icon fd-kpi-icon--off"><i class="fa-solid fa-power-off"></i></div>
-    <div><div class="fd-kpi-num">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
+    {# Bound to a derived key the payload composes: by_status.disabled + by_status.provisioning.
+       Two separate bindings sum visually via tabular-nums; the JS picks one slot, so we
+       expose the pre-summed value at totals.off_or_prov server-side instead. #}
+    <div><div class="fd-kpi-num" data-live-bind="overview.off_or_prov">{{ by_status.get('disabled', 0) + by_status.get('provisioning', 0) }}</div><div class="fd-kpi-label">مُعطّلة / تجهّز</div></div>
   </div>
   <div class="fd-kpi fd-kpi--pend">
     <div class="fd-kpi-icon fd-kpi-icon--pend"><i class="fa-solid fa-spinner"></i></div>
-    <div><div class="fd-kpi-num">{{ pending_jobs_count }}</div><div class="fd-kpi-label">إضافات قيد التنفيذ</div></div>
+    <div><div class="fd-kpi-num" data-live-bind="totals.pending_jobs">{{ pending_jobs_count }}</div><div class="fd-kpi-label">إضافات قيد التنفيذ</div></div>
   </div>
 </div>
 
@@ -564,7 +585,8 @@
       <div class="fd-card-title"><i class="fa-solid fa-heart-pulse"></i> توزيع صحّة الأسطول</div>
       <div class="fd-card-spacer"></div>
       <span class="fb-source" style="background:#e7f8ef;color:#15803d" title="نسبة العقد المتّصلة الآن">
-        <i class="fa-solid fa-wifi"></i> {{ overview_stats.online_pct }}% متّصلة
+        <i class="fa-solid fa-wifi"></i>
+        <span data-live-bind="overview.online_pct" data-live-suffix="% متّصلة">{{ overview_stats.online_pct }}% متّصلة</span>
       </span>
     </div>
     <p class="ov-sub">نظرة بصرية على حالة كل عقد الأسطول — يتحدّث الشريط مع كل دورة فحص.</p>
@@ -594,22 +616,22 @@
       <div class="fd-card-title"><i class="fa-solid fa-gauge-high"></i> السعة والجلسات</div>
     </div>
     <div class="ov-util">
-      <span class="ov-util-num">{{ overview_stats.sessions }}</span>
-      <span class="ov-util-pct">/ {{ overview_stats.capacity }}</span>
-      <span class="ov-util-cap">{{ overview_stats.util_pct }}% من السعة</span>
+      <span class="ov-util-num" data-live-bind="overview.sessions">{{ overview_stats.sessions }}</span>
+      <span class="ov-util-pct">/ <span data-live-bind="overview.capacity">{{ overview_stats.capacity }}</span></span>
+      <span class="ov-util-cap"><span data-live-bind="overview.util_pct">{{ overview_stats.util_pct }}</span>% من السعة</span>
     </div>
-    <div class="ov-bar"><span style="width:{{ overview_stats.util_pct if overview_stats.util_pct <= 100 else 100 }}%"></span></div>
+    <div class="ov-bar"><span data-live-pct="overview.util_pct" style="width:{{ overview_stats.util_pct if overview_stats.util_pct <= 100 else 100 }}%"></span></div>
 
     <div class="ov-stats">
       <div class="ov-stat">
         <span class="ov-stat-ic"><i class="fa-solid fa-users"></i></span>
         <span class="ov-stat-label">الجلسات النشطة عبر الأسطول</span>
-        <b>{{ overview_stats.sessions }}</b>
+        <b data-live-bind="overview.sessions">{{ overview_stats.sessions }}</b>
       </div>
       <div class="ov-stat">
         <span class="ov-stat-ic" style="background:#e0f2fe;color:#0369a1"><i class="fa-solid fa-bolt"></i></span>
         <span class="ov-stat-label">عقد مؤهّلة لاستقبال جلسات جديدة</span>
-        <b>{{ overview_stats.eligible }} / {{ total_nodes }}</b>
+        <b><span data-live-bind="overview.eligible">{{ overview_stats.eligible }}</span> / <span data-live-bind="totals.nodes">{{ total_nodes }}</span></b>
       </div>
     </div>
 
@@ -1048,11 +1070,18 @@
     </label>
   </div>
 
-  {# ══ NODE CARD GRID — replaces the old dense table ══ #}
-  <div class="node-grid" id="fd-nodes-grid">
+  {# ══ NODE CARD GRID — replaces the old dense table ══
+     feat/panel-live-data-5s: data-live-rows="nodes" data-live-row-key="id"
+     tells the poller to look up payload.nodes[], key by id, and resolve
+     each row's inner data-live-bind/pct/class against its own record. #}
+  <div class="node-grid" id="fd-nodes-grid"
+       data-live-rows="nodes" data-live-row-key="id">
     {% for v in node_views %}
       {% set n = v.node %}{% set h = v.health %}{% set m = v.metric %}
       <article class="node-card node-card--{{ h.state }}"
+               data-live-row-id="{{ n.id }}"
+               data-live-class="state"
+               data-live-class-map='{"up":"node-card--up","degraded":"node-card--degraded","down":"node-card--down","unknown":"node-card--unknown"}'
                data-node-id="{{ n.id }}" data-node-name="{{ n.name }}">
 
         {# ── header: identity + health ── #}
@@ -1075,34 +1104,39 @@
           </div>
         </header>
 
-        {# ── metric tiles ── #}
+        {# ── metric tiles ──
+           feat/panel-live-data-5s: each numeric is data-live-bind'd to the
+           per-row record so the poller updates them every 5s in place. The
+           SSR fallback (the Jinja text) renders on first load when JS is
+           off — same number, same formatting. #}
         <div class="nc-metrics">
           <div class="nc-tile">
             <div class="nc-tile-label"><i class="fa-solid fa-microchip"></i> المعالج</div>
             <div class="nc-tile-val" data-cell="metric-cpu">
-              {% if m.cpu_pct is not none %}<span class="fd-num-emph num">{{ '%.1f'|format(m.cpu_pct) }}%</span>{% if m.mem_pct is not none %}<div class="fd-mini">ذاكرة: <span class="num">{{ '%.0f'|format(m.mem_pct) }}%</span></div>{% endif %}{% else %}<span class="nc-na">—</span>{% endif %}
+              <span class="fd-num-emph num"><span data-live-bind="cpu_pct" data-live-suffix="%">{% if m.cpu_pct is not none %}{{ '%.1f'|format(m.cpu_pct) }}{% else %}—{% endif %}</span>{% if m.cpu_pct is not none %}%{% endif %}</span>
+              <div class="fd-mini">ذاكرة: <span class="num"><span data-live-bind="mem_pct" data-live-suffix="%">{% if m.mem_pct is not none %}{{ '%.0f'|format(m.mem_pct) }}{% else %}—{% endif %}</span>{% if m.mem_pct is not none %}%{% endif %}</span></div>
             </div>
           </div>
           <div class="nc-tile">
             <div class="nc-tile-label"><i class="fa-solid fa-users"></i> الجلسات</div>
             <div class="nc-tile-val" data-cell="metric-sessions">
               {% set s = m.active_sessions if m.active_sessions is not none else (n.active_sessions or 0) %}
-              <span class="fd-num-emph num">{{ s }}</span><span class="nc-na"> / </span><span class="num">{{ n.max_sessions }}</span>
+              <span class="fd-num-emph num" data-live-bind="sessions">{{ s }}</span><span class="nc-na"> / </span><span class="num" data-live-bind="max_sessions">{{ n.max_sessions }}</span>
               {% set cap = n.max_sessions or 1 %}{% set pct = (s * 100 / cap) if cap else 0 %}
-              <div class="fd-mini num">{{ '%.0f'|format(pct) }}% من السعة</div>
+              <div class="fd-mini num"><span data-live-bind="sessions_cap_pct">{{ '%.0f'|format(pct) }}</span>% من السعة</div>
             </div>
           </div>
           <div class="nc-tile">
             <div class="nc-tile-label"><i class="fa-solid fa-stopwatch"></i> الاستجابة</div>
             <div class="nc-tile-val" data-cell="metric-rtt">
-              {% if m.ping_rtt_ms is not none %}<span class="fd-num-emph num">{{ '%.1f'|format(m.ping_rtt_ms) }} ms</span>{% else %}<span class="nc-na">— لا يوجد —</span>{% endif %}
+              <span class="fd-num-emph num"><span data-live-bind="rtt_ms" data-live-suffix=" ms" data-live-empty="—">{% if m.ping_rtt_ms is not none %}{{ '%.1f'|format(m.ping_rtt_ms) }} ms{% else %}—{% endif %}</span></span>
             </div>
           </div>
           <div class="nc-tile">
             <div class="nc-tile-label"><i class="fa-solid fa-arrows-up-down"></i> النطاق</div>
             <div class="nc-tile-val">
-              <div data-cell="metric-rx" class="num">↓ {% if m.rx_bytes is not none %}{{ (m.rx_bytes / 1073741824)|round(2) }} GB{% else %}—{% endif %}</div>
-              <div data-cell="metric-tx" class="fd-mini num">↑ {% if m.tx_bytes is not none %}{{ (m.tx_bytes / 1073741824)|round(2) }} GB{% else %}—{% endif %}</div>
+              <div data-cell="metric-rx" class="num">↓ <span data-live-bind="rx_gb" data-live-suffix=" GB" data-live-empty="—">{% if m.rx_bytes is not none %}{{ (m.rx_bytes / 1073741824)|round(2) }} GB{% else %}—{% endif %}</span></div>
+              <div data-cell="metric-tx" class="fd-mini num">↑ <span data-live-bind="tx_gb" data-live-suffix=" GB" data-live-empty="—">{% if m.tx_bytes is not none %}{{ (m.tx_bytes / 1073741824)|round(2) }} GB{% else %}—{% endif %}</span></div>
             </div>
           </div>
         </div>
@@ -1249,5 +1283,8 @@
   render();
 })();
 </script>
+
+{# /feat/panel-live-data-5s wrapper opened at the top of {% block content %} #}
+</div>
 
 {% endblock %}

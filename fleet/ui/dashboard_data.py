@@ -277,6 +277,161 @@ def _metric_to_view(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def build_dashboard_payload() -> dict:
+    """JSON-safe snapshot of the fleet dashboard for live polling.
+
+    Shape (stable contract consumed by ``app/static/js/live_poll.js`` and the
+    template's ``data-live-bind="..."`` attributes — see
+    ``feat/panel-live-data-5s``):
+
+        {
+          "ok": true,
+          "ts": ISO8601 UTC,
+          "totals":    {"nodes": int, "providers": int, "pending_jobs": int},
+          "by_status": {"up": int, "degraded": int, "down": int,
+                        "disabled": int, "provisioning": int},
+          "by_health": {"up": int, "degraded": int, "down": int, "unknown": int},
+          "overview": {"sessions": int, "capacity": int, "util_pct": int,
+                       "eligible": int, "online_pct": int},
+          "best_node": {"id": int, "name": str, "score": int} | None,
+          "nodes": [
+            {"id": int, "name": str, "state": str,
+             "cpu_pct": float|None, "mem_pct": float|None,
+             "sessions": int|None, "max_sessions": int,
+             "rtt_ms": float|None, "loss_pct": float|None,
+             "rx_bytes": int|None, "tx_bytes": int|None,
+             "last_seen_iso": str|None}
+          ]
+        }
+
+    Centralised here (rather than inline in the route) so tests can exercise
+    the shape without hitting Flask, and any callsite — including a future
+    SSE/websocket consumer — gets the same view.
+    """
+    from fleet.registry.models_chr import FleetProvider
+    from fleet.registry.models_onboarding import OnboardingJob
+
+    nodes = (
+        FleetChrNode.query
+        .order_by(FleetChrNode.status.asc(), FleetChrNode.name.asc())
+        .limit(50)
+        .all()
+    )
+    views = build_node_views(nodes)
+    by_health = health_state_counts(views)
+
+    by_status: dict[str, int] = {
+        s: 0 for s in ("up", "degraded", "down", "disabled", "provisioning")
+    }
+    for n in nodes:
+        by_status[n.status] = by_status.get(n.status, 0) + 1
+
+    ov_sessions = 0
+    ov_capacity = 0
+    for v in views:
+        s = v.metric.active_sessions
+        if s is None:
+            s = v.node.active_sessions or 0
+        ov_sessions += int(s or 0)
+        ov_capacity += int(v.node.max_sessions or 0)
+    ov_views = len(views)
+
+    # Best node = highest-ranked + eligible — same logic the SSR
+    # ``fleet_dashboard`` route computes, but encoded JSON-side so the live
+    # tile can update without a page reload.
+    try:
+        from fleet.ui.brain_view import ranked_view_for  # noqa: WPS433 (local)
+        ranking, _src = ranked_view_for(views)
+        best = ranking[0] if ranking and ranking[0].eligible else None
+        best_node = (
+            {
+                "id":    int(getattr(best.node, "id", 0)) if best else None,
+                "name":  best.node.name if best else None,
+                "score": int(round(float(getattr(best, "score_display", 0) or 0))),
+            }
+            if best
+            else None
+        )
+        eligible_count = sum(1 for r in ranking if r.eligible)
+    except Exception:
+        best_node = None
+        eligible_count = 0
+
+    pending_count = (
+        OnboardingJob.query
+        .filter(OnboardingJob.status.in_((
+            "draft", "keys_generated", "script_generated",
+            "pushed", "verifying", "failed",
+        )))
+        .count()
+    )
+
+    nodes_payload: list[dict] = []
+    for v in views:
+        last_seen = v.last_seen_at
+        sessions = (
+            v.metric.active_sessions if v.metric.active_sessions is not None
+            else (v.node.active_sessions or 0)
+        )
+        max_sessions = int(v.node.max_sessions or 0)
+        cap_pct = round(sessions * 100 / max_sessions) if max_sessions else 0
+        rx_gb = round(v.metric.rx_bytes / 1073741824, 2) if v.metric.rx_bytes is not None else None
+        tx_gb = round(v.metric.tx_bytes / 1073741824, 2) if v.metric.tx_bytes is not None else None
+        nodes_payload.append({
+            "id":           int(v.node.id),
+            "name":         v.node.name,
+            "state":        v.health.state,
+            "status":       v.node.status,
+            "cpu_pct":      None if v.metric.cpu_pct is None else round(float(v.metric.cpu_pct), 1),
+            "mem_pct":      None if v.metric.mem_pct is None else round(float(v.metric.mem_pct), 1),
+            "sessions":     sessions,
+            "max_sessions": max_sessions,
+            # Derived fields the dashboard per-row tiles bind to — so the
+            # template stays declarative (no arithmetic in Jinja).
+            "sessions_cap_pct": cap_pct,
+            "rx_gb":        rx_gb,
+            "tx_gb":        tx_gb,
+            "rtt_ms":       None if v.metric.ping_rtt_ms  is None else round(float(v.metric.ping_rtt_ms), 1),
+            "loss_pct":     None if v.metric.ping_loss_pct is None else round(float(v.metric.ping_loss_pct), 1),
+            "rx_bytes":     v.metric.rx_bytes,
+            "tx_bytes":     v.metric.tx_bytes,
+            "last_seen_iso": last_seen.isoformat() if last_seen else None,
+            "last_transition": v.health.last_transition,
+            "consecutive_fail": int(v.health.consecutive_fail or 0),
+            "consecutive_ok":   int(v.health.consecutive_ok or 0),
+        })
+
+    return {
+        "ok": True,
+        "ts": _utcnow().isoformat(),
+        "totals": {
+            "nodes":        FleetChrNode.query.count(),
+            "providers":    FleetProvider.query.count(),
+            "pending_jobs": pending_count,
+        },
+        "by_status": by_status,
+        "by_health": by_health,
+        "overview": {
+            "sessions":   ov_sessions,
+            "capacity":   ov_capacity,
+            "util_pct":   round(ov_sessions * 100 / ov_capacity) if ov_capacity else 0,
+            "eligible":   eligible_count,
+            "online_pct": round(by_health.get("up", 0) * 100 / ov_views) if ov_views else 0,
+            # Convenience sum the dashboard's «مُعطّلة / تجهّز» KPI displays.
+            "off_or_prov": by_status.get("disabled", 0) + by_status.get("provisioning", 0),
+        },
+        "best_node": best_node,
+        "nodes": nodes_payload,
+    }
+
+
+def _utcnow():
+    """Local alias of ``app.models.utcnow`` so this module stays pluggable in
+    unit tests that don't wire the full Flask app."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
 def health_state_counts(views: Iterable[NodeView]) -> dict[str, int]:
     """Aggregate health states across the fleet for the KPI strip.
 

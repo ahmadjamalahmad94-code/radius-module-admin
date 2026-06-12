@@ -236,6 +236,13 @@
 
 {% block content %}
 
+{# feat/panel-live-data-5s — every 5 seconds the CPU/RAM/Disk bars, DB ping
+   ms, fleet poller age all update IN PLACE; the rest of the page (which is
+   structural chrome) renders once via SSR. #}
+<div data-live-endpoint="{{ url_for('infra_admin.system_health_live') }}"
+     data-live-interval="5"
+     data-live-indicator>
+
 {# ── Hero ─────────────────────────────────────────────────────────── #}
 <div class="hl-hero">
   <div class="hl-hero-icon" aria-hidden="true"><i class="fa-solid fa-heart-pulse"></i></div>
@@ -245,6 +252,14 @@
     <div class="hl-hero-ts" aria-live="polite">
       آخر تحديث: <span id="hl-ts" dir="ltr">{{ now | dt if now else 'جارٍ التحميل...' }}</span>
     </div>
+  </div>
+  <div style="margin-inline-start:auto">
+    <span class="live-indicator" title="هذه الصفحة تُحدَّث تلقائياً">
+      <span class="live-dot live-dot--ok" data-live-indicator-dot></span>
+      <span>مباشر</span>
+      <span style="opacity:.6">·</span>
+      <span data-live-indicator-text>الآن</span>
+    </span>
   </div>
 </div>
 
@@ -296,13 +311,15 @@
     {% set _poller = sv.get('poller_status', 'unknown') %}
     {% set _poller_age = sv.get('poller_age_s', '—') %}
     <div class="hl-pulse-row" role="status" aria-label="حالة جامع مقاييس الأسطول" style="margin-top:8px">
-      <div class="hl-pulse {{ _poller }}" aria-hidden="true"></div>
+      <div class="hl-pulse {{ _poller }}" aria-hidden="true"
+           data-live-class="poller_status"
+           data-live-class-map='{"ok":"ok","warn":"warn","error":"error","unknown":"unknown"}'></div>
       <span class="hl-pulse-label {{ _poller }}">
         جامع مقاييس الأسطول —
-        {% if _poller == 'ok' %}يعمل بانتظام (آخر تحديث منذ {{ _poller_age }} ث)
-        {% elif _poller == 'warn' %}تأخّر (منذ {{ _poller_age }} ث)
-        {% elif _poller == 'error' %}متوقف (منذ {{ _poller_age }} ث)
-        {% else %}لا توجد قراءات بعد{% endif %}
+        {% if _poller == 'ok' %}يعمل بانتظام (آخر تحديث منذ <span data-live-bind="poller_age_s">{{ _poller_age }}</span> ث)
+        {% elif _poller == 'warn' %}تأخّر (منذ <span data-live-bind="poller_age_s">{{ _poller_age }}</span> ث)
+        {% elif _poller == 'error' %}متوقف (منذ <span data-live-bind="poller_age_s">{{ _poller_age }}</span> ث)
+        {% else %}<span data-live-bind="poller_age_s">{{ _poller_age }}</span> ث — لا توجد قراءات بعد{% endif %}
       </span>
     </div>
   </div>
@@ -328,7 +345,7 @@
     </div>
     <div class="hl-svc-metrics">
       <div class="hl-svc-m-item">
-        <div class="hl-svc-m-val">{{ db.get('response_ms', '—') }} <span style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-medium)">ms</span></div>
+        <div class="hl-svc-m-val"><span data-live-bind="db_ms">{{ db.get('response_ms', '—') }}</span> <span style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-medium)">ms</span></div>
         <div class="hl-svc-m-label">زمن الاستجابة</div>
       </div>
       <div class="hl-svc-m-item">
@@ -440,16 +457,16 @@
     <div class="hl-chart-head">
       <div class="hl-chart-icon purple"><i class="fa-solid fa-microchip" aria-hidden="true"></i></div>
       <span class="hl-chart-title">المعالج (CPU)</span>
-      <span class="hl-chart-val" aria-label="استهلاك المعالج {{ cpu_pct }}%">{{ cpu_pct }}%</span>
+      <span class="hl-chart-val" aria-label="استهلاك المعالج {{ cpu_pct }}%"><span data-live-bind="cpu_pct" data-live-suffix="%">{{ cpu_pct }}</span>%</span>
     </div>
     <div class="hl-chart-body">
       <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ cpu_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="استهلاك المعالج">
         <div class="hl-bar-header">
           <span class="hl-bar-label">الاستهلاك الحالي</span>
-          <span class="hl-bar-pct">{{ cpu_pct }}%</span>
+          <span class="hl-bar-pct"><span data-live-bind="cpu_pct" data-live-suffix="%">{{ cpu_pct }}</span>%</span>
         </div>
         <div class="hl-bar-track">
-          <div class="hl-bar-fill {{ cpu_cls }}" style="width:{{ cpu_pct }}%" aria-hidden="true"></div>
+          <div class="hl-bar-fill {{ cpu_cls }}" data-live-pct="cpu_pct" style="width:{{ cpu_pct }}%" aria-hidden="true"></div>
         </div>
       </div>
 
@@ -503,16 +520,16 @@
     <div class="hl-chart-head">
       <div class="hl-chart-icon blue"><i class="fa-solid fa-memory" aria-hidden="true"></i></div>
       <span class="hl-chart-title">الذاكرة (RAM)</span>
-      <span class="hl-chart-val" aria-label="استهلاك الذاكرة {{ mem_pct }}%">{{ mem_pct }}%</span>
+      <span class="hl-chart-val" aria-label="استهلاك الذاكرة {{ mem_pct }}%"><span data-live-bind="mem_pct" data-live-suffix="%">{{ mem_pct }}</span>%</span>
     </div>
     <div class="hl-chart-body">
       <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ mem_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="استهلاك الذاكرة">
         <div class="hl-bar-header">
           <span class="hl-bar-label">الاستهلاك الحالي</span>
-          <span class="hl-bar-pct">{{ mem_pct }}%</span>
+          <span class="hl-bar-pct"><span data-live-bind="mem_pct" data-live-suffix="%">{{ mem_pct }}</span>%</span>
         </div>
         <div class="hl-bar-track">
-          <div class="hl-bar-fill {{ mem_cls }}" style="width:{{ mem_pct }}%" aria-hidden="true"></div>
+          <div class="hl-bar-fill {{ mem_cls }}" data-live-pct="mem_pct" style="width:{{ mem_pct }}%" aria-hidden="true"></div>
         </div>
       </div>
 
@@ -565,16 +582,16 @@
     <div class="hl-chart-head">
       <div class="hl-chart-icon green"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i></div>
       <span class="hl-chart-title">مساحة القرص</span>
-      <span class="hl-chart-val" aria-label="استخدام القرص {{ disk_pct }}%">{{ disk_pct }}%</span>
+      <span class="hl-chart-val" aria-label="استخدام القرص {{ disk_pct }}%"><span data-live-bind="disk_pct" data-live-suffix="%">{{ disk_pct }}</span>%</span>
     </div>
     <div class="hl-chart-body">
       <div class="hl-bar-wrap" role="meter" aria-valuenow="{{ disk_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="مساحة القرص">
         <div class="hl-bar-header">
           <span class="hl-bar-label">الاستخدام الحالي</span>
-          <span class="hl-bar-pct">{{ disk_pct }}%</span>
+          <span class="hl-bar-pct"><span data-live-bind="disk_pct" data-live-suffix="%">{{ disk_pct }}</span>%</span>
         </div>
         <div class="hl-bar-track">
-          <div class="hl-bar-fill {{ disk_cls }}" style="width:{{ disk_pct }}%" aria-hidden="true"></div>
+          <div class="hl-bar-fill {{ disk_cls }}" data-live-pct="disk_pct" style="width:{{ disk_pct }}%" aria-hidden="true"></div>
         </div>
       </div>
       <div class="hl-svc-metrics" style="margin-block-start:var(--cc-sp-6)">
@@ -633,6 +650,9 @@
     </li>
     {% endfor %}
   </ul>
+</div>
+
+{# /feat/panel-live-data-5s — close wrapper opened at top of block content #}
 </div>
 
 {% endblock %}
