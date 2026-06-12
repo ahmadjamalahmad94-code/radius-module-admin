@@ -1901,6 +1901,41 @@ def vpn_service_enable(vpn_plan_id: int):
     return redirect(url_for("admin.vpn_services_list"))
 
 
+@bp.post("/vpn-services/<int:vpn_plan_id>/delete")
+@super_admin_required
+def vpn_service_delete(vpn_plan_id: int):
+    """Hard-delete a VPN service plan.
+
+    Blocked when ANY active or pending customer entitlement still references
+    this plan — a hard delete would orphan those customer rows' speed/quota
+    snapshot. Operator should disable the plan + migrate customers first.
+    Closed entitlements are tolerated (their plan_id link just goes null).
+    """
+    vpn_plan = db.get_or_404(VpnServicePlan, vpn_plan_id)
+    blocking = (
+        CustomerVpnEntitlement.query
+        .filter_by(vpn_plan_id=vpn_plan_id)
+        .filter(CustomerVpnEntitlement.status.in_(["active", "pending"]))
+        .count()
+    )
+    if blocking:
+        flash(
+            f"لا يمكن حذف باقة «{vpn_plan.code}»: لا تزال مرتبطة بـ {blocking} اشتراك عميل نشط/معلّق. "
+            "قم بتعطيل الاشتراكات أو ترحيلها لباقة أخرى أولًا.",
+            "error",
+        )
+        return redirect(url_for("admin.vpn_services_list"))
+    code_snapshot = vpn_plan.code
+    db.session.delete(vpn_plan)
+    audit(
+        "vpn_service_plan_deleted", "vpn_service_plan", str(vpn_plan_id),
+        f"حذف باقة الشبكة الخاصة {code_snapshot}",
+    )
+    db.session.commit()
+    flash(f"تم حذف باقة «{code_snapshot}».", "success")
+    return redirect(url_for("admin.vpn_services_list"))
+
+
 def _fill_vpn_plan(vpn_plan: VpnServicePlan) -> None:
     vpn_plan.name = (request.form.get("name") or "").strip()
     vpn_plan.description = (request.form.get("description") or "").strip()[:2000]

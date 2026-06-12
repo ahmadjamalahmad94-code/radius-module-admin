@@ -19,7 +19,10 @@ machine endpoint owned by the sibling agent
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.routes import audit, login_required, super_admin_required
 from app.extensions import db
@@ -268,6 +271,229 @@ def _onboarding_job_view(job) -> dict:
 # (``fleet.health.monitor.check_now`` once Phase-4 A/B lands) and falls back
 # to a deterministic re-evaluation against the latest metric row.
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def _node_str(val, max_len=255) -> str:
+    return (str(val or "").strip())[:max_len]
+
+
+def _node_int(val, default=None):
+    try:
+        return int(str(val).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _node_dec(val, default=None):
+    try:
+        return Decimal(str(val).strip())
+    except (TypeError, ValueError, InvalidOperation):
+        return default
+
+
+@bp.get("/chr-nodes/<int:node_id>/edit")
+@super_admin_required
+def chr_node_edit(node_id: int):
+    """Render the HTML edit form for a single fleet CHR node.
+
+    Operator-tunable fields only — the wg pubkey / ip pair is set during
+    onboarding and changes to those would invalidate the script the CHR
+    is already running. Live snapshot fields (status / cpu_pct / score /
+    last_seen_at) belong to the metrics loop and are not editable here.
+    """
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        flash("العقدة غير موجودة.", "error")
+        return redirect(url_for("fleet_ui.fleet_dashboard"))
+    providers = FleetProvider.query.order_by(FleetProvider.name.asc()).all()
+    return render_template(
+        "admin/fleet/chr_node_edit.html",
+        node=node,
+        providers=providers,
+        cost_models=NODE_COST_MODELS,
+    )
+
+
+@bp.post("/chr-nodes/<int:node_id>/edit")
+@super_admin_required
+def chr_node_edit_save(node_id: int):
+    """Persist edits to a fleet CHR node.
+
+    Network identity (public_ip / wg_mgmt_ip / wg_mgmt_pubkey) is EDITABLE
+    here because the owner specifically asked for it — if a provider
+    rotates an IP, the panel must be able to follow without a full
+    re-onboarding. Be aware: changing wg_mgmt_pubkey marks the script the
+    CHR is running as stale and the zero-touch sync will set
+    ``needs_reimport`` on the next mismatch detection. We don't flip the
+    flag eagerly here — the dedicated wg-verify path owns that signal.
+    """
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        flash("العقدة غير موجودة.", "error")
+        return redirect(url_for("fleet_ui.fleet_dashboard"))
+
+    before = {
+        "name": node.name,
+        "public_ip": node.public_ip,
+        "wg_mgmt_ip": node.wg_mgmt_ip,
+        "wg_mgmt_pubkey": node.wg_mgmt_pubkey,
+        "max_sessions": node.max_sessions,
+        "link_speed_mbps": node.link_speed_mbps,
+        "weight": str(node.weight),
+        "routeros_api_port": node.routeros_api_port,
+        "routeros_api_user": node.routeros_api_user,
+        "coa_port": node.coa_port,
+        "cost_model": node.cost_model,
+    }
+
+    # Required string fields — keep existing on blank submission so a
+    # half-empty form never wipes critical identity.
+    name = _node_str(request.form.get("name"), 120)
+    if name:
+        node.name = name
+    public_ip = _node_str(request.form.get("public_ip"), 45)
+    if public_ip:
+        node.public_ip = public_ip
+    wg_mgmt_ip = _node_str(request.form.get("wg_mgmt_ip"), 45)
+    if wg_mgmt_ip:
+        node.wg_mgmt_ip = wg_mgmt_ip
+    wg_mgmt_pubkey = _node_str(request.form.get("wg_mgmt_pubkey"), 200)
+    if wg_mgmt_pubkey:
+        node.wg_mgmt_pubkey = wg_mgmt_pubkey
+
+    # Numeric — accept "" as "leave alone".
+    max_sess = _node_int(request.form.get("max_sessions"))
+    if max_sess is not None and max_sess >= 0:
+        node.max_sessions = max_sess
+    link_speed = _node_int(request.form.get("link_speed_mbps"))
+    if link_speed is not None and link_speed > 0:
+        node.link_speed_mbps = link_speed
+    weight = _node_dec(request.form.get("weight"))
+    if weight is not None and weight >= 0:
+        node.weight = weight
+    api_port = _node_int(request.form.get("routeros_api_port"))
+    if api_port is not None and 1 <= api_port <= 65535:
+        node.routeros_api_port = api_port
+    coa_port = _node_int(request.form.get("coa_port"))
+    if coa_port is not None and 1 <= coa_port <= 65535:
+        node.coa_port = coa_port
+    node.routeros_api_user = _node_str(request.form.get("routeros_api_user"), 80)
+
+    # Cost model + numeric overrides.
+    cost_model = _node_str(request.form.get("cost_model"), 16)
+    if cost_model in NODE_COST_MODELS:
+        node.cost_model = cost_model
+    price_raw = (request.form.get("price_per_tb") or "").strip()
+    if price_raw == "":
+        node.price_per_tb = None
+    else:
+        p = _node_dec(price_raw)
+        if p is not None and p >= 0:
+            node.price_per_tb = p
+    bw_raw = (request.form.get("bandwidth_cap_tb") or "").strip()
+    if bw_raw == "":
+        node.bandwidth_cap_tb = None
+    else:
+        b = _node_dec(bw_raw)
+        if b is not None and b >= 0:
+            node.bandwidth_cap_tb = b
+
+    overage = request.form.get("overage_allowed")
+    if overage in ("1", "true", "on"):
+        node.overage_allowed = True
+    elif overage in ("0", "false", "off"):
+        node.overage_allowed = False
+
+    try:
+        db.session.flush()
+    except IntegrityError as exc:
+        db.session.rollback()
+        flash(f"تعارض في القيم: {exc.orig}", "error")
+        return redirect(url_for("fleet_ui.chr_node_edit", node_id=node_id))
+
+    audit(
+        "fleet_chr_node_edit",
+        "fleet_chr_node",
+        str(node.id),
+        f"تعديل عقدة CHR {node.name}",
+        {"before": before},
+    )
+    db.session.commit()
+    flash(f"تم حفظ تعديلات العقدة «{node.name}».", "success")
+    return redirect(url_for("fleet_ui.fleet_dashboard"))
+
+
+@bp.post("/chr-nodes/<int:node_id>/delete")
+@super_admin_required
+def chr_node_delete(node_id: int):
+    """Hard-delete a fleet CHR node with FK safety.
+
+    Safety matrix (owner asked for real delete on experimental nodes;
+    soft-delete is already covered by the disable/drain button):
+
+    * ``service_allocations.fleet_chr_node_id`` — FK with no cascade.
+      We BLOCK delete when any allocation is still ``active`` or
+      ``pending`` on this node. Closed/expired allocations just lose
+      the link (FK is nullable).
+    * ``proxy_realm_routes.allowed_fleet_chr_node_ids_json`` — soft
+      reference (JSON list of ints). We SCRUB stale ids from every route
+      that listed this node so the routing-table publisher doesn't
+      include a phantom allowlist entry on its next read.
+    * ``fleet_chr_metrics`` / ``fleet_chr_health`` — FK with cascade,
+      DB handles the delete cleanly.
+
+    The disable/drain endpoint stays as the soft option; this is the
+    explicit hard path the owner asked for.
+    """
+    from app.models import ProxyRealmRoute, ServiceAllocation
+
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        flash("العقدة غير موجودة.", "error")
+        return redirect(url_for("fleet_ui.fleet_dashboard"))
+
+    blocking = (
+        ServiceAllocation.query
+        .filter_by(fleet_chr_node_id=node_id)
+        .filter(ServiceAllocation.status.in_(["active", "pending"]))
+        .count()
+    )
+    if blocking:
+        flash(
+            f"لا يمكن حذف العقدة «{node.name}»: يوجد {blocking} تخصيص خدمة نشط أو معلّق عليها. "
+            "قم بإنهاء التخصيصات أولًا أو استخدم «تعطيل (drain)».",
+            "error",
+        )
+        return redirect(url_for("fleet_ui.fleet_dashboard"))
+
+    # Scrub soft refs from proxy routes' allow-lists.
+    scrubbed_routes = 0
+    for r in ProxyRealmRoute.query.all():
+        ids = list(r.allowed_fleet_chr_node_ids or [])
+        if node_id in ids:
+            ids.remove(node_id)
+            r.allowed_fleet_chr_node_ids = ids
+            scrubbed_routes += 1
+
+    name_snapshot = node.name
+    db.session.delete(node)
+    audit(
+        "fleet_chr_node_delete",
+        "fleet_chr_node",
+        str(node_id),
+        f"حذف عقدة CHR {name_snapshot}",
+        {"scrubbed_proxy_routes": scrubbed_routes},
+    )
+    db.session.commit()
+    if scrubbed_routes:
+        flash(
+            f"تم حذف العقدة «{name_snapshot}». "
+            f"تم تنظيف {scrubbed_routes} مسار من قائمة العقد المسموحة.",
+            "success",
+        )
+    else:
+        flash(f"تم حذف العقدة «{name_snapshot}».", "success")
+    return redirect(url_for("fleet_ui.fleet_dashboard"))
 
 
 @bp.post("/chr-nodes/<int:node_id>/check-now")

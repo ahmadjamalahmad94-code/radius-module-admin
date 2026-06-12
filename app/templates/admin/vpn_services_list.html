@@ -56,6 +56,20 @@
                   <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-play"></i> {{ _('تفعيل') }}</button>
                 </form>
               {% endif %}
+              <form method="post"
+                    action="{{ url_for('admin.vpn_service_delete', vpn_plan_id=vpn_plan.id) }}"
+                    id="vpn-del-form-{{ vpn_plan.id }}"
+                    style="display:inline">
+                {{ csrf_input() }}
+                <button type="button" class="hub-btn hub-btn--danger hub-btn--sm"
+                        data-confirm-form="vpn-del-form-{{ vpn_plan.id }}"
+                        data-confirm-title="حذف باقة شبكة خاصة"
+                        data-confirm-msg="هل تريد حذف باقة «{{ vpn_plan.code }}»؟ سيُمنع الحذف إذا كانت لا تزال مرتبطة باشتراك عميل نشط أو معلّق."
+                        data-confirm-ok="حذف"
+                        data-confirm-variant="danger">
+                  <i class="fa-solid fa-trash"></i> حذف
+                </button>
+              </form>
             </div>
           </td>
         </tr>
