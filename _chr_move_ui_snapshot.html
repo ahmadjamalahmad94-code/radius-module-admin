@@ -1,15 +1,74 @@
-{% extends "admin/base_new.html" %}
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Test SaaS Inc — Customer 360 — HobeRadius</title>
 
-{% block title %}{{ customer.company_name }} — Customer 360{% endblock %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer">
 
-{% block crumbs %}
-  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
-  <a href="{{ url_for('admin.customers_list') }}" class="ar-breadcrumb-item">{{ _('العملاء') }}</a>
-{% endblock %}
-{% block page_breadcrumb %}{{ customer.company_name }}{% endblock %}
+  <link rel="stylesheet" href="/static/css/app.css?v=1781279410">
+  
+  <style>
+    .live-indicator {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 4px 10px; border-radius: 999px;
+      background: #f1f5f9; color: #334155;
+      font-size: 12px; font-weight: 600; line-height: 1;
+      border: 1px solid #e2e8f0;
+      font-variant-numeric: tabular-nums;
+    }
+    .live-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #94a3b8;
+      box-shadow: 0 0 0 0 rgba(34,197,94,0);
+    }
+    .live-dot--ok {
+      background: #22c55e;
+      animation: livePulse 2s ease-out infinite;
+    }
+    .live-dot--err    { background: #ef4444; }
+    .live-dot--paused { background: #94a3b8; }
+    @keyframes livePulse {
+      0%   { box-shadow: 0 0 0 0   rgba(34,197,94,.55); }
+      70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0);   }
+      100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1781279410">
+  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781279410">
+  <link rel="stylesheet" href="/static/css/admin_components.css?v=1781279410">
+  
+  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781279410">
 
-{# ─── الأنماط الخاصة بالصفحة ─── #}
-{% block head_extra %}
+  
+  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781279410">
+
+  <style>
+    /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
+    .adm-lang-form{display:inline-flex;align-items:center;gap:6px;margin-inline-end:8px;}
+    .adm-lang-label{display:inline-flex;align-items:center;color:var(--cc-text-mute);font-size:14px;}
+    .adm-lang-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+    .adm-lang-select{
+      appearance:none;background:var(--cc-tint-bg);color:var(--cc-text);
+      border:1px solid var(--cc-border);border-radius:8px;
+      padding:5px 26px 5px 10px;font-size:13px;font-weight:700;cursor:pointer;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:left 8px center;outline:none;
+    }
+    .adm-lang-select:focus{border-color:var(--cc-brand);box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+    .adm-lang-submit{display:none;}
+    [dir=ltr] .adm-lang-select{padding:5px 10px 5px 26px;background-position:right 8px center;}
+  </style>
+
+  
 <style>
   /* ======================================================
      Hero Profile Header
@@ -651,72 +710,536 @@
   .cd-empty i { font-size: 28px; color: var(--cc-text-faint); }
 
 </style>
-{% endblock %}
 
-{% block page_header %}{% endblock %}
+</head>
 
-{% block content %}
+<body class="adm-body">
 
-{# ── Hero ── #}
+
+<div class="adm-side-overlay" id="adm-overlay" aria-hidden="true"></div>
+
+
+<div class="adm-shell">
+
+  
+  <aside class="adm-side" id="adm-side" role="navigation" aria-label="القائمة الرئيسية">
+
+    
+    <div class="adm-brand">
+      <div class="adm-brand-mark" aria-hidden="true">HR</div>
+      <div>
+        <div class="adm-brand-name">HobeRadius</div>
+        <div class="adm-brand-sub">لوحة الإدارة</div>
+      </div>
+    </div>
+
+    
+    <nav class="adm-nav" id="adm-nav">
+      
+
+      
+      <a href="/admin/dashboard"
+         class="adm-solo "
+         aria-current="false">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-gauge-high"></i>
+        </span>
+        <span class="adm-solo-label">لوحة التحكم</span>
+      </a>
+
+      
+      
+      
+      <div class="adm-group is-active is-open" data-group="customers">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="true"
+                aria-controls="grp-customers">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-users"></i>
+          </span>
+          <span class="adm-group-label">العملاء</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-customers">
+          
+          <a href="/admin/customers"
+             class="adm-link is-active">
+            قائمة العملاء
+          </a>
+          
+          
+          
+          
+          <a href="/admin/customers/1/users"
+             class="adm-link adm-link--sub ">
+            مستخدمو العميل
+          </a>
+          
+          <a href="/admin/service-requests"
+             class="adm-link ">
+            طلبات الخدمات
+          </a>
+          <a href="/admin/whatsapp-gateway"
+             class="adm-link ">
+            بوابة واتساب
+          </a>
+          <a href="/admin/whatsapp-gateway/messages"
+             class="adm-link adm-link--sub ">
+            سجل الرسائل
+          </a>
+          <a href="/admin/whatsapp-gateway/webhooks"
+             class="adm-link adm-link--sub ">
+            أحداث Webhook
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="licenses">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-licenses">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-key"></i>
+          </span>
+          <span class="adm-group-label">التراخيص والاشتراكات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-licenses">
+          
+          <a href="/admin/licenses"
+             class="adm-link ">
+            التراخيص
+          </a>
+          
+          
+          <a href="/admin/plans"
+             class="adm-link ">
+            خطط الاشتراك
+          </a>
+          
+          <a href="/admin/services"
+             class="adm-link ">
+            الخدمات
+          </a>
+          <a href="/admin/payments/review-queue"
+             class="adm-link ">
+            مراجعة المدفوعات
+          </a>
+          <a href="/admin/payments/reports"
+             class="adm-link ">
+            تقارير الدفع
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="vpn">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-vpn">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-shield-halved"></i>
+          </span>
+          <span class="adm-group-label">خدمات VPN</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-vpn">
+          <a href="/admin/access-connections"
+             class="adm-link ">
+            <i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>
+            اتصالات الوصول
+          </a>
+          
+          <a href="/admin/vpn-services"
+             class="adm-link ">
+            باقات الخدمة
+          </a>
+          
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="infra">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-infra">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-server"></i>
+          </span>
+          <span class="adm-group-label">البنية التحتية</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-infra">
+          <a href="/admin/infra/system-health"
+             class="adm-link ">
+            صحة الخدمات
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="fleet">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-fleet">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-diagram-project"></i>
+          </span>
+          <span class="adm-group-label">أسطول CHR</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-fleet">
+          <a href="/admin/fleet/"
+             class="adm-link ">
+            لوحة الأسطول
+          </a>
+          <a href="/admin/fleet/onboarding/new"
+             class="adm-link ">
+            معالج إضافة CHR
+          </a>
+          
+          <a href="/admin/chr/console"
+             class="adm-link ">
+            تحكم RouterOS
+            <span class="adm-badge adm-badge--lock" aria-label="للمسؤول العام فقط">
+              <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            </span>
+          </a>
+          
+          <a href="/admin/chr/speed-profiles"
+             class="adm-link ">
+            بروفايلات السرعة
+          </a>
+          <a href="/admin/infra/radius-instances"
+             class="adm-link ">
+            نسخ RADIUS
+          </a>
+          <a href="/admin/infra/service-allocations"
+             class="adm-link ">
+            تخصيصات الخدمة
+          </a>
+          <a href="/admin/infra/proxy-routes"
+             class="adm-link ">
+            وكيل RADIUS
+          </a>
+          <a href="/admin/fleet/dns/"
+             class="adm-link ">
+            الباب الأمامي (DNS)
+          </a>
+          <a href="/admin/fleet/infrastructure"
+             class="adm-link ">
+            إعدادات البنية
+          </a>
+          <a href="/admin/fleet/p7/"
+             class="adm-link ">
+            التطبيق الحي والتحريك
+          </a>
+          <a href="/admin/fleet/p8/"
+             class="adm-link ">
+            إعادة التوازن والإخلاء
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="logs">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-logs">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-clipboard-list"></i>
+          </span>
+          <span class="adm-group-label">السجلات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-logs">
+          <a href="/admin/checks"
+             class="adm-link ">
+            سجل الفحوصات
+          </a>
+          <a href="/admin/renewals"
+             class="adm-link ">
+            التجديدات
+          </a>
+          <a href="/admin/audit-logs"
+             class="adm-link ">
+            سجل التدقيق
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      <div class="adm-group " data-group="landing">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-landing">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-window-maximize"></i>
+          </span>
+          <span class="adm-group-label">محتوى الموقع</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-landing">
+          <a href="/admin/landing/"
+             class="adm-link ">
+            نظرة عامة
+          </a>
+          <a href="/admin/landing/preview"
+             class="adm-link ">
+            معاينة الصفحة
+          </a>
+          <a href="/admin/landing/social-links"
+             class="adm-link ">
+            روابط التواصل
+          </a>
+          <a href="/admin/landing/contact-methods"
+             class="adm-link ">
+            طرق التواصل
+          </a>
+        </div>
+      </div>
+
+      
+      
+      
+      <div class="adm-group " data-group="settings">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-settings">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-gear"></i>
+          </span>
+          <span class="adm-group-label">الإعدادات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-settings">
+          
+          <a href="/admin/settings"
+             class="adm-link ">
+            الإعدادات العامة
+          </a>
+          <a href="/admin/settings/platform"
+             class="adm-link ">
+            <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
+            إعدادات المنصة
+          </a>
+          
+          
+          <a href="/admin/settings/admins"
+             class="adm-link ">
+            إدارة المشرفين
+          </a>
+          
+          
+          <a href="/admin/settings/whatsapp"
+             class="adm-link ">
+            إعدادات واتساب
+          </a>
+          
+          
+          <a href="/admin/messaging/settings"
+             class="adm-link ">
+            <i class="fa-solid fa-paper-plane fa-xs" aria-hidden="true"></i>
+            قنوات التواصل والإشعارات
+          </a>
+          
+          <a href="/admin/settings/sections"
+             class="adm-link ">
+            <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
+            تخصيص الأقسام
+          </a>
+        </div>
+      </div>
+      
+
+    </nav>
+
+    
+    <div class="adm-side-foot">
+      <div class="adm-user-pill">
+        <span class="adm-user-avatar" aria-hidden="true">
+          <i class="fa-solid fa-user-shield"></i>
+        </span>
+        <span class="adm-user-name">
+          
+          مدير النظام
+        </span>
+      </div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+        <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
+          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+        </button>
+      </form>
+    </div>
+
+  </aside>
+
+  
+  <main class="adm-main" id="adm-main" role="main">
+
+    
+    <header class="adm-topbar" role="banner">
+      <button class="adm-menu-btn"
+              id="adm-menu-btn"
+              type="button"
+              aria-label="فتح القائمة الجانبية"
+              aria-expanded="false"
+              aria-controls="adm-side">
+        <i class="fa-solid fa-bars" aria-hidden="true"></i>
+      </button>
+
+      <div class="adm-topbar-page-title">
+        لوحة التحكم
+      </div>
+
+      <div class="adm-topbar-actions">
+        
+        <form method="post" action="/i18n/set"
+              class="adm-lang-form" aria-label="اللغة">
+          <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+          <input type="hidden" name="next" value="/admin/customers/1">
+          <label for="adm-lang" class="adm-lang-label">
+            <i class="fa-solid fa-language" aria-hidden="true"></i>
+            <span class="adm-lang-sr">اللغة</span>
+          </label>
+          <select id="adm-lang" name="locale" class="adm-lang-select"
+                  onchange="this.form.submit()">
+            
+            <option value="ar" selected>
+              🇸🇦 العربية
+            </option>
+            
+            <option value="en" >
+              🇬🇧 English
+            </option>
+            
+            <option value="fr" >
+              🇫🇷 Français
+            </option>
+            
+            <option value="tr" >
+              🇹🇷 Türkçe
+            </option>
+            
+          </select>
+          <noscript>
+            <button type="submit" class="adm-lang-submit">تطبيق</button>
+          </noscript>
+        </form>
+
+        <div class="adm-topbar-user" aria-label="المستخدم الحالي">
+          <span class="adm-topbar-avatar" aria-hidden="true">
+            <i class="fa-solid fa-user-shield"></i>
+          </span>
+          <span>
+            
+            مدير النظام
+          </span>
+        </div>
+        <form method="post" action="/logout">
+          <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
+          <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
+            <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
+        </form>
+      </div>
+    </header>
+
+    
+    <div class="adm-page">
+
+      
+      
+
+      
+      
+
+  
+    <div class="hub-flash-stack">
+      
+        <div class="hub-flash hub-flash--success">تم تسجيل الدخول بنجاح.</div>
+      
+    </div>
+  
+
+
+      
+      
+
+      
+      
+
+
 <div class="cd-hero">
   <div class="cd-hero-avatar" aria-hidden="true">
-    {{ customer.company_name[0]|upper if customer.company_name else '؟' }}
+    T
   </div>
   <div class="cd-hero-body">
-    <h1 class="cd-hero-name">{{ customer.company_name }}</h1>
+    <h1 class="cd-hero-name">Test SaaS Inc</h1>
     <div class="cd-hero-meta">
-      {% if customer.contact_name %}
-        <span><i class="fa-solid fa-user" aria-hidden="true"></i> {{ customer.contact_name }}</span>
-      {% endif %}
-      {% if customer.email %}
+      
+      
         <span><i class="fa-solid fa-envelope" aria-hidden="true"></i>
-          <span style="direction:ltr;unicode-bidi:embed">{{ customer.email }}</span>
+          <span style="direction:ltr;unicode-bidi:embed">ops@testsaas.example</span>
         </span>
-      {% endif %}
-      {% if customer.city or customer.country %}
-        <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {{ customer.city }} {{ customer.country }}</span>
-      {% endif %}
+      
+      
       <span class="cd-status-pill">
-        {% set s = customer.status or 'inactive' %}
-        {% if s == 'active' %}✅ نشط
-        {% elif s == 'inactive' %}⬜ غير نشط
-        {% elif s == 'blocked' %}🚫 موقوف
-        {% elif s == 'pending' %}⏳ في الانتظار
-        {% elif s == 'trial' %}🔵 تجريبي
-        {% else %}{{ s }}
-        {% endif %}
+        
+        ✅ نشط
+        
       </span>
     </div>
   </div>
   <div class="cd-hero-actions">
-    {% if customer.status == 'pending' %}
-      <form method="post" action="{{ url_for('admin.customer_approve', customer_id=customer.id) }}" style="display:inline">
-        {{ csrf_input() }}
-        <button type="submit" class="cd-hero-btn cd-hero-btn--approve">
-          <i class="fa-solid fa-circle-check" aria-hidden="true"></i> موافقة وتفعيل
-        </button>
-      </form>
-    {% endif %}
-    <a href="{{ url_for('admin.customer_edit', customer_id=customer.id) }}" class="cd-hero-btn">
+    
+    <a href="/admin/customers/1/edit" class="cd-hero-btn">
       <i class="fa-solid fa-pen" aria-hidden="true"></i> تعديل البيانات
     </a>
-    <a href="{{ url_for('admin.customer_users', customer_id=customer.id) }}" class="cd-hero-btn"
+    <a href="/admin/customers/1/users" class="cd-hero-btn"
        title="صفحة مستقلة لمستخدمي العميل (بوابة + هويات الراديوس)">
-      <i class="fa-solid fa-users-gear" aria-hidden="true"></i> {{ _('مستخدمو العميل') }}
+      <i class="fa-solid fa-users-gear" aria-hidden="true"></i> مستخدمو العميل
     </a>
-    <a href="{{ url_for('admin.customer_service_tiers', customer_id=customer.id) }}" class="cd-hero-btn"
+    <a href="/admin/customers/1/service-tiers" class="cd-hero-btn"
        title="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة لهذا المشترك">
       <i class="fa-solid fa-layer-group" aria-hidden="true"></i> تعرفة الخدمات
     </a>
-    {% if is_super_admin %}
-      <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" class="cd-hero-btn">
+    
+      <a href="/admin/customers/1/vault" class="cd-hero-btn">
         <i class="fa-solid fa-vault" aria-hidden="true"></i> الخزنة
       </a>
-    {% endif %}
+    
   </div>
 </div>
 
-{# ── KPI Strip ── #}
+
 <div class="cd-kpi-strip">
 
   <div class="cd-kpi">
@@ -724,7 +1247,7 @@
       <i class="fa-solid fa-key" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ licenses|length }}</div>
+      <div class="cd-kpi-num">0</div>
       <div class="cd-kpi-label">الترخيص / الاشتراكات</div>
     </div>
   </div>
@@ -734,8 +1257,8 @@
       <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ customer_users|length }}</div>
-      <div class="cd-kpi-label">{{ _('مستخدمو العميل') }}</div>
+      <div class="cd-kpi-num">0</div>
+      <div class="cd-kpi-label">مستخدمو العميل</div>
     </div>
   </div>
 
@@ -744,7 +1267,7 @@
       <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ payment_requests|length }}</div>
+      <div class="cd-kpi-num">0</div>
       <div class="cd-kpi-label">طلبات الدفع</div>
     </div>
   </div>
@@ -754,7 +1277,7 @@
       <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ nas_devices|length if nas_devices is defined else '—' }}</div>
+      <div class="cd-kpi-num">0</div>
       <div class="cd-kpi-label">أجهزة NAS</div>
     </div>
   </div>
@@ -764,14 +1287,14 @@
       <i class="fa-solid fa-rotate" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ users_version or '—' }}</div>
+      <div class="cd-kpi-num">—</div>
       <div class="cd-kpi-label">إصدار الدخول</div>
     </div>
   </div>
 
 </div>
 
-{# ── Tabs ── #}
+
 <div class="cd-tabs-nav" role="tablist" aria-label="أقسام ملف العميل">
 
   <button class="cd-tab-btn is-active" role="tab" aria-selected="true"
@@ -784,7 +1307,7 @@
           aria-controls="tab-licenses" id="tbtn-licenses" onclick="cdSwitchTab('licenses')">
     <i class="fa-solid fa-key" aria-hidden="true"></i>
     التراخيص والاشتراكات
-    <span class="cd-tab-count" aria-hidden="true">{{ licenses|length }}</span>
+    <span class="cd-tab-count" aria-hidden="true">0</span>
   </button>
 
   <button class="cd-tab-btn" role="tab" aria-selected="false"
@@ -797,9 +1320,7 @@
           aria-controls="tab-payments" id="tbtn-payments" onclick="cdSwitchTab('payments')">
     <i class="fa-solid fa-receipt" aria-hidden="true"></i>
     المدفوعات
-    {% if payment_requests %}
-      <span class="cd-tab-count" aria-hidden="true">{{ payment_requests|length }}</span>
-    {% endif %}
+    
   </button>
 
   <button class="cd-tab-btn" role="tab" aria-selected="false"
@@ -812,9 +1333,7 @@
 
 <div class="cd-tabs-content">
 
-  {# =========================================================
-     TAB 1 — المعلومات الأساسية
-     ========================================================= #}
+  
   <div class="cd-tab-panel is-active" id="tab-info" role="tabpanel" aria-labelledby="tbtn-info">
 
     <h2 class="cd-panel-heading"><i class="fa-solid fa-id-card" aria-hidden="true"></i> المعلومات الأساسية</h2>
@@ -829,7 +1348,7 @@
 
     <div class="cd-grid">
 
-      {# بيانات الشركة #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-building" aria-hidden="true"></i>
@@ -837,37 +1356,37 @@
         </div>
         <div class="cd-info-card">
           <div class="cd-info-row">
-            <span class="cd-info-key">{{ _('اسم الشركة') }}</span>
-            <span class="cd-info-val">{{ customer.company_name or '—' }}</span>
+            <span class="cd-info-key">اسم الشركة</span>
+            <span class="cd-info-val">Test SaaS Inc</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">المسؤول المرتبط</span>
-            <span class="cd-info-val">{{ customer.contact_name or '—' }}</span>
+            <span class="cd-info-val">—</span>
           </div>
           <div class="cd-info-row">
-            <span class="cd-info-key">{{ _('البريد الإلكتروني') }}</span>
-            <span class="cd-info-val mono">{{ customer.email or '—' }}</span>
+            <span class="cd-info-key">البريد الإلكتروني</span>
+            <span class="cd-info-val mono">ops@testsaas.example</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">رقم الهاتف</span>
-            <span class="cd-info-val mono">{{ customer.phone or '—' }}</span>
+            <span class="cd-info-val mono">—</span>
           </div>
           <div class="cd-info-row">
-            <span class="cd-info-key">{{ _('المدينة') }}</span>
-            <span class="cd-info-val">{{ customer.city or '—' }}</span>
+            <span class="cd-info-key">المدينة</span>
+            <span class="cd-info-val">—</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">الدولة</span>
-            <span class="cd-info-val">{{ customer.country or '—' }}</span>
+            <span class="cd-info-val">—</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">عملة الفوترة</span>
-            <span class="cd-info-val">{{ customer.currency or 'USD' }}</span>
+            <span class="cd-info-val">USD</span>
           </div>
         </div>
       </div>
 
-      {# حالة الحساب والباقة #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
@@ -877,111 +1396,77 @@
           <div class="cd-info-row">
             <span class="cd-info-key">الحالة الحالية</span>
             <span class="cd-info-val">
-              {% set s = customer.status or 'inactive' %}
-              <span class="cd-pill cd-pill--{{ s }}">
+              
+              <span class="cd-pill cd-pill--active">
                 <span class="dot" aria-hidden="true"></span>
-                {% if s == 'active' %}نشط
-                {% elif s == 'inactive' %}غير نشط
-                {% elif s == 'blocked' %}موقوف
-                {% elif s == 'pending' %}في الانتظار
-                {% elif s == 'trial' %}تجريبي
-                {% else %}{{ s }}{% endif %}
+                نشط
+                
               </span>
             </span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">الترخيص الفعال</span>
             <span class="cd-info-val mono">
-              {{ current_license.license_key[:20] ~ '…' if current_license else '—' }}
+              —
             </span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">تاريخ الانضمام</span>
             <span class="cd-info-val">
-              {{ customer.created_at|datetimeformat if customer.created_at is defined else (customer.created_at or '—') }}
+              2026-06-12 19:05
             </span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">رابط خادم RADIUS</span>
-            <span class="cd-info-val mono">{{ customer.runtime_url or '—' }}</span>
+            <span class="cd-info-val mono">—</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">إصدار الدخول</span>
-            <span class="cd-info-val">{{ users_version or '—' }}</span>
+            <span class="cd-info-val">—</span>
           </div>
           <div class="cd-info-row">
             <span class="cd-info-key">آخر تعديل</span>
             <span class="cd-info-val">
-              {{ customer.updated_at|datetimeformat if customer.updated_at is defined else (customer.updated_at or '—') }}
+              2026-06-12 19:05
             </span>
           </div>
         </div>
 
-        {# المستخدمون المرتبطون #}
+        
         <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
           <i class="fa-solid fa-users" aria-hidden="true"></i>
-          {{ _('مستخدمو العميل') }}
+          مستخدمو العميل
           <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
             — الحسابات التي يملكها هذا العميل للدخول على البوابة
           </span>
         </div>
 
         <div style="margin-block:var(--cc-sp-6) var(--cc-sp-8);display:flex;gap:var(--cc-sp-4);flex-wrap:wrap;align-items:center">
-          <a href="{{ url_for('admin.customer_user_new', customer_id=customer.id) }}"
+          <a href="/admin/customers/1/users/new"
              style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:36px;padding-inline:var(--cc-sp-9);border-radius:var(--cc-btn-radius);background:var(--cc-brand);color:#fff;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);text-decoration:none">
             <i class="fa-solid fa-user-plus" aria-hidden="true"></i> إضافة مستخدم (باسوورد للبوابة والريديوس)
           </a>
-          <a href="{{ url_for('admin.customer_users', customer_id=customer.id) }}"
+          <a href="/admin/customers/1/users"
              style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:36px;padding-inline:var(--cc-sp-9);border-radius:var(--cc-btn-radius);background:#fff;color:var(--cc-brand);border:1.5px solid var(--cc-brand);font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);text-decoration:none">
             <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> صفحة مستخدمي العميل
           </a>
         </div>
 
-        {% if customer_users %}
-          <div class="cd-inner-table-wrap">
-            <table class="cd-inner-table">
-              <thead>
-                <tr>
-                  <th>{{ _('اسم المستخدم') }}</th>
-                  <th>البريد</th>
-                  <th>{{ _('الدور') }}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for u in customer_users %}
-                  <tr>
-                    <td>{{ u.username }}</td>
-                    <td><span style="direction:ltr;unicode-bidi:embed">{{ u.email or '—' }}</span></td>
-                    <td>{{ u.role or '—' }}</td>
-                    <td style="text-align:end">
-                      <a href="{{ url_for('admin.customer_user_edit', customer_id=customer.id, user_id=u.id) }}"
-                         style="color:var(--cc-brand);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);text-decoration:none">
-                        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> تعديل / تغيير الباسوورد
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
+        
           <div class="cd-empty">
             <i class="fa-solid fa-user-slash" aria-hidden="true"></i>
             لا يوجد مستخدمون مرتبطون بهذا العميل حتى الآن
           </div>
-        {% endif %}
+        
       </div>
 
     </div>
   </div>
 
-  {# =========================================================
-     TAB 2 — التراخيص والاشتراكات
-     ========================================================= #}
+  
   <div class="cd-tab-panel" id="tab-licenses" role="tabpanel" aria-labelledby="tbtn-licenses">
 
-    <h2 class="cd-panel-heading"><i class="fa-solid fa-key" aria-hidden="true"></i> التراخيص والاشتراكات<span class="cd-tab-count">{{ licenses|length }}</span></h2>
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-key" aria-hidden="true"></i> التراخيص والاشتراكات<span class="cd-tab-count">0</span></h2>
 
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -991,110 +1476,24 @@
       </span>
     </div>
 
-    {% if licenses %}
-      {% for lic in licenses %}
-        <div class="cd-license-card">
-          <div class="cd-license-header">
-            <div>
-              <div class="cd-license-key" title="مفتاح الترخيص الكامل: {{ lic.license_key }}">
-                {{ lic.license_key }}
-              </div>
-              <div style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);margin-block-start:var(--cc-sp-2)">
-                أُضيف بتاريخ {{ lic.created_at or '—' }}
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:var(--cc-sp-5)">
-              {% set ls = lic.status or 'inactive' %}
-              <span class="cd-pill cd-pill--{{ ls }}">
-                <span class="dot" aria-hidden="true"></span>
-                {% if ls == 'active' %}نشط{% elif ls == 'inactive' %}غير نشط{% elif ls == 'expired' %}منتهي{% else %}{{ ls }}{% endif %}
-              </span>
-              <a href="{{ url_for('admin.license_detail', license_id=lic.id) }}"
-                 style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-bold);color:var(--cc-brand)">
-                تفاصيل كاملة <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px"></i>
-              </a>
-            </div>
-          </div>
-
-          <div class="cd-grid cd-grid-3">
-
-            {# تاريخ التجديد #}
-            <div class="cd-info-card">
-              <div class="cd-info-row">
-                <span class="cd-info-key">تاريخ البداية</span>
-                <span class="cd-info-val">{{ lic.start_date or '—' }}</span>
-              </div>
-              <div class="cd-info-row">
-                <span class="cd-info-key">{{ _('تاريخ الانتهاء') }}</span>
-                <span class="cd-info-val">{{ lic.end_date or '—' }}</span>
-              </div>
-              <div class="cd-info-row">
-                <span class="cd-info-key">موعد التجديد</span>
-                <span class="cd-info-val">{{ lic.renewal_date or lic.end_date or '—' }}</span>
-              </div>
-              <div class="cd-info-row">
-                <span class="cd-info-key">دورة الفوترة</span>
-                <span class="cd-info-val">{{ lic.billing_cycle or 'شهري' }}</span>
-              </div>
-            </div>
-
-            {# حدود الاستخدام #}
-            <div>
-              <div style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-heavy);color:var(--cc-text-mute);
-                          text-transform:uppercase;letter-spacing:0.4px;margin-block-end:var(--cc-sp-6)">
-                حدود الاستخدام
-              </div>
-              {% set max_sub = contract.limits.subscribers.max_total if contract and contract.limits and contract.limits.subscribers else 0 %}
-              {% set cur_sub = customer_users|length %}
-              {% set sub_pct = ((cur_sub / max_sub * 100) | int) if max_sub > 0 else 0 %}
-              <div class="cd-usage-bar-wrap">
-                <div class="cd-usage-bar-header">
-                  <span class="cd-usage-bar-label">المشتركون</span>
-                  <span class="cd-usage-bar-val">{{ cur_sub }} / {{ max_sub or '∞' }}</span>
-                </div>
-                <div class="cd-usage-track">
-                  <div class="cd-usage-fill {% if sub_pct >= 90 %}cd-usage-fill--danger{% elif sub_pct >= 70 %}cd-usage-fill--warn{% endif %}"
-                       style="width:{{ [sub_pct, 100]|min }}%"></div>
-                </div>
-              </div>
-              {% set max_nas = contract.limits.nas.max_total if contract and contract.limits and contract.limits.nas else 0 %}
-              {% set cur_nas = nas_devices|length if nas_devices is defined else 0 %}
-              {% set nas_pct = ((cur_nas / max_nas * 100) | int) if max_nas > 0 else 0 %}
-              <div class="cd-usage-bar-wrap">
-                <div class="cd-usage-bar-header">
-                  <span class="cd-usage-bar-label">أجهزة NAS</span>
-                  <span class="cd-usage-bar-val">{{ cur_nas }} / {{ max_nas or '∞' }}</span>
-                </div>
-                <div class="cd-usage-track">
-                  <div class="cd-usage-fill {% if nas_pct >= 90 %}cd-usage-fill--danger{% elif nas_pct >= 70 %}cd-usage-fill--warn{% endif %}"
-                       style="width:{{ [nas_pct, 100]|min }}%"></div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
+    
       <div class="cd-empty">
         <i class="fa-solid fa-key-skeleton" aria-hidden="true"></i>
         لا يوجد أي ترخيص مرتبط بهذا العميل
-        <a href="{{ url_for('admin.license_new') }}" class="clist-btn clist-btn--primary"
+        <a href="/admin/licenses/new" class="clist-btn clist-btn--primary"
            style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);
                   display:inline-flex;align-items:center;gap:var(--cc-sp-3);font-size:var(--cc-fs-body-s);
                   font-weight:var(--cc-fw-bold);background:var(--cc-brand);color:#fff;text-decoration:none;
                   margin-block-start:var(--cc-sp-5)">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
-          {{ _('إضافة ترخيص') }}
+          إضافة ترخيص
         </a>
       </div>
-    {% endif %}
+    
 
   </div>
 
-  {# =========================================================
-     TAB 3 — إعدادات الشبكة
-     ========================================================= #}
+  
   <div class="cd-tab-panel" id="tab-network" role="tabpanel" aria-labelledby="tbtn-network">
 
     <h2 class="cd-panel-heading"><i class="fa-solid fa-network-wired" aria-hidden="true"></i> إعدادات الشبكة</h2>
@@ -1109,9 +1508,7 @@
 
     <div class="cd-grid cd-grid-stack">
 
-      {# ── ربط الريدياس — الربط المبسّط: مفتاح الترخيص وحده (SIMPLE_LINK_CONTRACT §4).
-           هذا هو المكان الرسمي الذي يأخذ منه المشغّل مفتاح الربط — كان «السر»
-           سابقًا يظهر فقط في بوابة العميل، وهذا ما أربك التشغيل. ── #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-link" aria-hidden="true"></i>
@@ -1122,98 +1519,14 @@
           يربط صفحته، ويرفع النسخ الاحتياطية. بدون سر إضافي ولا كود تفعيل.
         </p>
 
-        {% if current_license %}
-          <div class="cd-cred-box">
-            <span class="cd-cred-label">مفتاح الترخيص</span>
-            {% if is_super_admin %}
-              <span class="cd-cred-val mono ltr" id="cd-license-key-val" style="filter:blur(4px);user-select:none">{{ current_license.license_key }}</span>
-              <button type="button" class="cd-cred-copy" onclick="cdRevealKey()" title="إظهار / إخفاء" aria-label="إظهار أو إخفاء مفتاح الترخيص">
-                <i class="fa-solid fa-eye" aria-hidden="true" id="cd-license-key-eye"></i>
-              </button>
-              <button type="button" class="cd-cred-copy" onclick="cdCopy('{{ current_license.license_key }}')" title="{{ _('نسخ') }}" aria-label="نسخ مفتاح الترخيص">
-                <i class="fa-solid fa-copy" aria-hidden="true"></i>
-              </button>
-            {% else %}
-              <span class="cd-cred-val mono ltr">{{ masked_license_key }}</span>
-            {% endif %}
-          </div>
-
-          {% if is_super_admin %}
-            <form id="cd-regen-key-form" method="post"
-                  action="{{ url_for('admin.regenerate_license_key', customer_id=customer.id) }}"
-                  style="display:none">{{ csrf_input() }}</form>
-            <button type="button"
-                    data-confirm-form="cd-regen-key-form"
-                    data-confirm-title="إعادة توليد مفتاح الترخيص"
-                    data-confirm-msg="سيتوقّف المفتاح الحالي فورًا وستحتاج للصق المفتاح الجديد في ريدياس العميل. هل أنت متأكد؟"
-                    data-confirm-ok="إعادة التوليد"
-                    data-confirm-variant="danger"
-                    style="height:34px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4);margin-top:var(--cc-sp-4)">
-              <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> إعادة توليد المفتاح
-            </button>
-          {% endif %}
-
-          {# الأجهزة المرصودة — آخر فحص لكل بصمة (البصمة اختيارية في الوضع المبسّط) #}
-          <div class="cd-section-title" style="margin-block-start:var(--cc-sp-8);font-size:var(--cc-fs-body)">
-            <i class="fa-solid fa-server" aria-hidden="true"></i>
-            الأجهزة المرصودة
-          </div>
-          {% if observed_devices %}
-            <div style="overflow-x:auto">
-              <table style="width:100%;border-collapse:collapse;font-size:var(--cc-fs-small)">
-                <thead>
-                  <tr style="color:var(--cc-text-mute);text-align:right">
-                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">البصمة</th>
-                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">المضيف</th>
-                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">IP</th>
-                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">آخر فحص</th>
-                    <th style="padding:var(--cc-sp-3) var(--cc-sp-4)">النتيجة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for d in observed_devices %}
-                  <tr style="border-top:1px solid var(--cc-border)">
-                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ d.fingerprint }}">{{ d.fingerprint[:18] }}{% if d.fingerprint|length > 18 %}…{% endif %}</td>
-                    <td style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.hostname }}</td>
-                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.ip_address }}</td>
-                    <td class="mono" dir="ltr" style="padding:var(--cc-sp-3) var(--cc-sp-4)">{{ d.checked_at.strftime('%Y-%m-%d %H:%M') if d.checked_at else '—' }}</td>
-                    <td style="padding:var(--cc-sp-3) var(--cc-sp-4)">
-                      {% if d.result == 'active' %}<span style="color:#15803d;font-weight:700">نشط</span>
-                      {% elif d.result == 'grace' %}<span style="color:#b45309;font-weight:700">سماح</span>
-                      {% else %}<span style="color:#b91c1c;font-weight:700">{{ d.result }}</span>{% endif %}
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <p style="font-size:var(--cc-fs-small);color:var(--cc-text-mute);margin:0">
-              لم يتواصل أي ريدياس بهذا المفتاح بعد — يظهر الجهاز هنا مع أول فحص.
-            </p>
-          {% endif %}
-
-          {% if is_super_admin %}
-          <script>
-          function cdRevealKey() {
-            var el = document.getElementById('cd-license-key-val');
-            var eye = document.getElementById('cd-license-key-eye');
-            if (!el) return;
-            var hidden = el.style.filter !== 'none';
-            el.style.filter = hidden ? 'none' : 'blur(4px)';
-            el.style.userSelect = hidden ? 'text' : 'none';
-            if (eye) eye.className = hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
-          }
-          </script>
-          {% endif %}
-        {% else %}
+        
           <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);padding:var(--cc-sp-5) 0">
             لا يوجد ترخيص لهذا العميل بعد — أنشئ ترخيصًا أولًا ليظهر مفتاح الربط.
           </p>
-        {% endif %}
+        
       </div>
 
-      {# RADIUS Credentials #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-key" aria-hidden="true"></i>
@@ -1221,49 +1534,17 @@
         </div>
         <div class="cd-cred-box">
           <span class="cd-cred-label">رابط الخادم (URL)</span>
-          <span class="cd-cred-val">{{ customer.runtime_url or '—' }}</span>
-          {% if customer.runtime_url %}
-            <button class="cd-cred-copy" onclick="cdCopy('{{ customer.runtime_url }}')" title="{{ _('نسخ') }}" aria-label="نسخ رابط الخادم">
-              <i class="fa-solid fa-copy" aria-hidden="true"></i>
-            </button>
-          {% endif %}
+          <span class="cd-cred-val">—</span>
+          
         </div>
 
-        {% if contract %}
-          {% if contract.radius_secret is defined %}
-            <div class="cd-cred-box">
-              <span class="cd-cred-label">RADIUS Secret</span>
-              <span class="cd-cred-val" id="radius-secret-val" style="filter:blur(4px);user-select:none">
-                {{ contract.radius_secret or '—' }}
-              </span>
-              <button class="cd-cred-copy" onclick="cdRevealSecret()" title="إظهار / إخفاء" aria-label="إظهار أو إخفاء الـ Secret">
-                <i class="fa-solid fa-eye" aria-hidden="true" id="radius-secret-eye"></i>
-              </button>
-            </div>
-          {% endif %}
-          {% if contract.realm is defined %}
-            <div class="cd-cred-box">
-              <span class="cd-cred-label">Realm</span>
-              <span class="cd-cred-val">{{ contract.realm or '—' }}</span>
-              {% if contract.realm %}
-                <button class="cd-cred-copy" onclick="cdCopy('{{ contract.realm }}')" title="{{ _('نسخ') }}" aria-label="نسخ الـ Realm">
-                  <i class="fa-solid fa-copy" aria-hidden="true"></i>
-                </button>
-              {% endif %}
-            </div>
-          {% endif %}
-        {% else %}
-          <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);padding:var(--cc-sp-5) 0">
-            لا توجد بيانات RADIUS مرتبطة — تحقق من الترخيص أولاً.
-          </p>
-        {% endif %}
+        
+          
+          
+        
       </div>
 
-      {# تسجيل نسخة RADIUS — manual fallback to the auto-provision on link.
-         The owner's path is: customer pastes the license key on the radius
-         side → the panel's bridge auto-creates this row + a ProxyRealmRoute.
-         This button is for operators who want to pre-register (or fix up
-         after a manual deploy) before the first link arrives. #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-database" aria-hidden="true"></i>
@@ -1274,62 +1555,28 @@
           (يُنشَأ معها مسار Realm في وكيل RADIUS). الزر هنا للتسجيل اليدوي
           المسبق أو لتعديل القيم بعد التسجيل التلقائي.
         </p>
-        <a href="{{ url_for('admin_infra.radius_instance_for_customer', customer_id=customer.id) }}"
+        <a href="/admin/infra/radius-instances/customer/1"
            style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-brand);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-body-s);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4);text-decoration:none">
           <i class="fa-solid fa-plus" aria-hidden="true"></i> تسجيل / تعديل نسخة RADIUS
         </a>
       </div>
 
-      {# أجهزة NAS #}
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-router" aria-hidden="true"></i>
           أجهزة الشبكة (NAS)
         </div>
-        {% if nas_devices is defined and nas_devices %}
-          <div class="cd-inner-table-wrap">
-            <table class="cd-inner-table">
-              <thead>
-                <tr>
-                  <th>اسم الجهاز</th>
-                  <th>عنوان IP</th>
-                  <th>{{ _('النوع') }}</th>
-                  <th>{{ _('الحالة') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for nas in nas_devices %}
-                  <tr>
-                    <td>{{ nas.name or nas.shortname or '—' }}</td>
-                    <td><span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">{{ nas.nasname or nas.ip or '—' }}</span></td>
-                    <td>{{ nas.type or '—' }}</td>
-                    <td>
-                      {% set ns = nas.status or 'active' %}
-                      <span class="cd-pill cd-pill--{{ ns }}">
-                        <span class="dot" aria-hidden="true"></span>
-                        {% if ns == 'active' %}نشط{% else %}غير نشط{% endif %}
-                      </span>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
+        
           <div class="cd-empty">
             <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
             لا توجد أجهزة NAS مرتبطة بهذا العميل
           </div>
-        {% endif %}
+        
       </div>
 
-      {# =========================================================
-         «نقل الـCHR / تغيير الـIP العام» — feat/panel-chr-move-public-ip.
-         Each CHR has its own public IP; moving the customer to a different
-         CHR gives them a new public IP without provisioning multiple IPs
-         on one box. See docs/CHR_MOVE_DESIGN.md for the design.
-         ========================================================= #}
-      {% if is_super_admin and customer.radius_instance %}
+      
+      
       <div>
         <div class="cd-section-title">
           <i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i>
@@ -1344,30 +1591,35 @@
         <div class="cd-cred-box" style="margin-bottom:var(--cc-sp-5)">
           <span class="cd-cred-label">IP العام الحالي</span>
           <span class="cd-cred-val mono ltr" id="cd-chrmove-current-ip">
-            {% if chr_move_current_ips %}{{ chr_move_current_ips|join('، ') }}{% else %}— (لم يُعيَّن بعد){% endif %}
+            203.0.113.10
           </span>
         </div>
 
-        {% if chr_move_targets %}
+        
           <form id="cd-chrmove-form" method="post"
-                action="{{ url_for('admin.move_customer_chr', customer_id=customer.id) }}"
+                action="/admin/customers/1/move-chr"
                 style="display:flex;flex-direction:column;gap:var(--cc-sp-4);max-width:560px">
-            {{ csrf_input() }}
+            <input type="hidden" name="_csrf_token" value="hDCnVdUrXU4jvgG78yWw8l3D3x8CoM8eyIgSgcSmBEQ">
             <label for="cd-chrmove-target" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">العقدة الهدف</label>
             <select id="cd-chrmove-target" name="target_node_id" required
                     style="height:36px;padding:0 var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small)">
               <option value="">— اختر عقدة —</option>
-              {% for n in chr_move_targets %}
-                <option value="{{ n.id }}"
-                        data-name="{{ n.name }}"
-                        data-public-ip="{{ n.public_ip or '' }}">
-                  {{ n.name }} — IP: {{ n.public_ip or '—' }}
+              
+                <option value="2"
+                        data-name="chr-new-fi02"
+                        data-public-ip="203.0.113.20">
+                  chr-new-fi02 — IP: 203.0.113.20
                 </option>
-              {% endfor %}
+              
+                <option value="1"
+                        data-name="chr-old-de01"
+                        data-public-ip="203.0.113.10">
+                  chr-old-de01 — IP: 203.0.113.10
+                </option>
+              
             </select>
 
-            {# Live preview of the «old → new» line; populated by the JS
-               below as soon as a target is picked. #}
+            
             <div class="cd-cred-box" id="cd-chrmove-preview" style="display:none">
               <span class="cd-cred-label">سيتغيّر IP العام إلى</span>
               <span class="cd-cred-val mono ltr" id="cd-chrmove-new-ip">—</span>
@@ -1414,26 +1666,18 @@
             });
           })();
           </script>
-        {% else %}
-          <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0">
-            لا توجد عقد CHR مؤهَّلة للاستقبال الآن (تحقَّق من «بنية الأسطول» —
-            العقدة المؤهَّلة: <code>enabled</code>، ليست <code>drain</code>،
-            ولديها دور VPN واحد على الأقل).
-          </p>
-        {% endif %}
+        
       </div>
-      {% endif %}
+      
 
     </div>
 
   </div>
 
-  {# =========================================================
-     TAB 4 — المدفوعات
-     ========================================================= #}
+  
   <div class="cd-tab-panel" id="tab-payments" role="tabpanel" aria-labelledby="tbtn-payments">
 
-    <h2 class="cd-panel-heading"><i class="fa-solid fa-receipt" aria-hidden="true"></i> المدفوعات{% if payment_requests %}<span class="cd-tab-count">{{ payment_requests|length }}</span>{% endif %}</h2>
+    <h2 class="cd-panel-heading"><i class="fa-solid fa-receipt" aria-hidden="true"></i> المدفوعات</h2>
 
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -1443,18 +1687,18 @@
       </span>
     </div>
 
-    {# ملخص مالي #}
+    
     <div class="cd-kpi-strip" style="margin-block-end:var(--cc-sp-11)">
-      {% set paid_count    = payment_requests|selectattr('status','equalto','approved')|list|length %}
-      {% set pending_count = payment_requests|selectattr('status','equalto','pending')|list|length %}
-      {% set total_paid    = payment_requests|selectattr('status','equalto','approved')|sum(attribute='amount') if payment_requests else 0 %}
+      
+      
+      
 
       <div class="cd-kpi">
         <div class="cd-kpi-icon" style="background:var(--tile-green-bg);color:var(--tile-green-fg)">
           <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
         </div>
         <div class="cd-kpi-body">
-          <div class="cd-kpi-num">{{ paid_count }}</div>
+          <div class="cd-kpi-num">0</div>
           <div class="cd-kpi-label">مدفوعة ومؤكدة</div>
         </div>
       </div>
@@ -1464,7 +1708,7 @@
           <i class="fa-solid fa-clock" aria-hidden="true"></i>
         </div>
         <div class="cd-kpi-body">
-          <div class="cd-kpi-num">{{ pending_count }}</div>
+          <div class="cd-kpi-num">0</div>
           <div class="cd-kpi-label">في الانتظار</div>
         </div>
       </div>
@@ -1474,68 +1718,23 @@
           <i class="fa-solid fa-coins" aria-hidden="true"></i>
         </div>
         <div class="cd-kpi-body">
-          <div class="cd-kpi-num">{{ total_paid | round(2) }}</div>
-          <div class="cd-kpi-label">إجمالي المدفوع ({{ customer.currency or 'USD' }})</div>
+          <div class="cd-kpi-num">0</div>
+          <div class="cd-kpi-label">إجمالي المدفوع (USD)</div>
         </div>
       </div>
     </div>
 
-    {# جدول الفواتير #}
-    {% if payment_requests %}
-      <div class="cd-inner-table-wrap">
-        <table class="cd-inner-table">
-          <thead>
-            <tr>
-              <th>رقم الطلب</th>
-              <th>{{ _('المبلغ') }}</th>
-              <th>{{ _('العملة') }}</th>
-              <th>طريقة الدفع</th>
-              <th>{{ _('الحالة') }}</th>
-              <th>تاريخ الطلب</th>
-              <th style="text-align:center">{{ _('تفاصيل') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for pr in payment_requests %}
-              <tr>
-                <td><span style="font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">#{{ pr.id }}</span></td>
-                <td><strong>{{ pr.amount }}</strong></td>
-                <td>{{ pr.currency or customer.currency or 'USD' }}</td>
-                <td>{{ pr.payment_method or '—' }}</td>
-                <td>
-                  {% set ps = pr.status or 'pending' %}
-                  <span class="cd-pill cd-pill--{{ 'active' if ps == 'approved' else ('pending' if ps == 'pending' else 'blocked') }}">
-                    <span class="dot" aria-hidden="true"></span>
-                    {% if ps == 'approved' %}مؤكدة
-                    {% elif ps == 'pending' %}في الانتظار
-                    {% elif ps == 'rejected' %}مرفوضة
-                    {% else %}{{ ps }}{% endif %}
-                  </span>
-                </td>
-                <td>{{ pr.created_at or '—' }}</td>
-                <td style="text-align:center">
-                  <a href="{{ url_for('admin.payment_request_detail', request_id=pr.id) }}"
-                     style="font-size:var(--cc-fs-tiny);font-weight:var(--cc-fw-bold);color:var(--cc-brand)">
-                    {{ _('عرض') }} <i class="fa-solid fa-chevron-left" style="font-size:9px" aria-hidden="true"></i>
-                  </a>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
+    
+    
       <div class="cd-empty">
         <i class="fa-solid fa-receipt" aria-hidden="true"></i>
         لا توجد طلبات دفع لهذا العميل حتى الآن
       </div>
-    {% endif %}
+    
 
   </div>
 
-  {# =========================================================
-     TAB 5 — السجل والنشاط
-     ========================================================= #}
+  
   <div class="cd-tab-panel" id="tab-activity" role="tabpanel" aria-labelledby="tbtn-activity">
 
     <h2 class="cd-panel-heading"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> السجل والنشاط</h2>
@@ -1548,41 +1747,9 @@
       </span>
     </div>
 
-    {% set audit_entries = audit_logs if audit_logs is defined else [] %}
+    
 
-    {% if audit_entries %}
-      <div class="cd-timeline" role="feed" aria-label="سجل النشاط">
-        {% for entry in audit_entries %}
-          <div class="cd-log-item" role="article">
-            <div class="cd-log-dot
-                {% if entry.severity == 'warning' %}cd-log-dot--warn
-                {% elif entry.severity == 'error' %}cd-log-dot--err
-                {% elif entry.action_type in ['view','read'] %}cd-log-dot--grey
-                {% endif %}"
-                 aria-hidden="true"></div>
-            <div class="cd-log-body">
-              <div class="cd-log-action">{{ entry.description or entry.action_type or 'عملية غير محددة' }}</div>
-              <div class="cd-log-meta">
-                {% if entry.created_at %}
-                  <span><i class="fa-solid fa-clock" style="font-size:9px" aria-hidden="true"></i> {{ entry.created_at }}</span>
-                {% endif %}
-                {% if entry.actor %}
-                  <span><i class="fa-solid fa-user" style="font-size:9px" aria-hidden="true"></i> {{ entry.actor }}</span>
-                {% endif %}
-                {% if entry.ip_address %}
-                  <span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono)">
-                    <i class="fa-solid fa-globe" style="font-size:9px" aria-hidden="true"></i> {{ entry.ip_address }}
-                  </span>
-                {% endif %}
-                {% if entry.resource %}
-                  <span><i class="fa-solid fa-tag" style="font-size:9px" aria-hidden="true"></i> {{ entry.resource }}</span>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
+    
       <div class="cd-empty">
         <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
         لا يوجد سجل نشاط لهذا العميل بعد
@@ -1590,15 +1757,176 @@
           ستظهر هنا كل العمليات التي تجري على الحساب
         </span>
       </div>
-    {% endif %}
+    
 
   </div>
 
-</div>{# /.cd-tabs-content #}
+</div>
 
-{% endblock %}
 
-{% block scripts %}
+
+    </div>
+
+  </main>
+
+</div>
+
+
+
+<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="hub-modal-card">
+    <div class="hub-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h3 class="hub-modal-title" id="hub-confirm-title">تأكيد العملية</h3>
+    <p class="hub-modal-msg" id="hub-confirm-msg">هل أنت متأكد من المتابعة؟</p>
+    <div class="hub-modal-actions">
+      <button type="button" class="hub-btn hub-btn--ghost" id="hub-confirm-cancel">إلغاء</button>
+      <button type="button" class="hub-btn hub-btn--danger" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
+  <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
+    <div class="hub-confirm-message" id="hub-confirm-message">—</div>
+    <div class="hub-confirm-actions">
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-overlay-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-overlay-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+<div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
+
+
+<script src="/static/js/hub.js?v=1781279410" defer></script>
+<script src="/static/js/admin_design_sweep.js?v=1781279410" defer></script>
+
+<script src="/static/js/admin_polish.js?v=1781279410" defer></script>
+
+<script src="/static/js/sym_speed.js?v=1781279410" defer></script>
+
+<script src="/static/js/live_poll.js?v=1781279410" defer></script>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'adm_open_groups_v2';
+
+  function getOpen() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(_) { return []; }
+  }
+  function saveOpen() {
+    var list = [];
+    document.querySelectorAll('.adm-group.is-open').forEach(function(g) {
+      var k = g.getAttribute('data-group'); if (k) list.push(k);
+    });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(_) {}
+  }
+
+  function openGroup(g) {
+    /* أكوردين: أغلق أي مجموعة أخرى مفتوحة — مجموعة واحدة مفتوحة فقط (تقليل الازدحام) */
+    document.querySelectorAll('.adm-group.is-open').forEach(function (o) {
+      if (o !== g) closeGroup(o);
+    });
+    g.classList.add('is-open');
+    var btn = g.querySelector('.adm-group-head');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  }
+  function closeGroup(g) {
+    g.classList.remove('is-open');
+    var btn = g.querySelector('.adm-group-head');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleGroup(g) {
+    g.classList.contains('is-open') ? closeGroup(g) : openGroup(g);
+    saveOpen();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var saved = getOpen();
+    var active = null, savedG = null;
+
+    document.querySelectorAll('.adm-group').forEach(function (g) {
+      var key = g.getAttribute('data-group');
+      var btn = g.querySelector('.adm-group-head');
+      if (!btn) return;
+
+      closeGroup(g);
+      btn.addEventListener('click', function () { toggleGroup(g); });
+
+      /* المرشّحون لمجموعة واحدة مفتوحة: النشطة لها الأولوية ثم أول محفوظة */
+      if (g.classList.contains('is-active') && !active) active = g;
+      if (key && saved.indexOf(key) !== -1 && !savedG) savedG = g;
+    });
+
+    var target = active || savedG;
+    if (target) openGroup(target);
+
+    /* drawer mobile */
+    var toggle  = document.getElementById('adm-menu-btn');
+    var side    = document.getElementById('adm-side');
+    var overlay = document.getElementById('adm-overlay');
+    if (toggle && side) toggle.addEventListener('click', function () {
+      var open = side.classList.toggle('is-drawer-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (overlay) overlay.classList.toggle('is-visible', open);
+    });
+    if (overlay) overlay.addEventListener('click', function () {
+      if (side) side.classList.remove('is-drawer-open');
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      overlay.classList.remove('is-visible');
+    });
+
+    /* flash auto-close */
+    document.querySelectorAll('.adm-flash[data-auto-close]').forEach(function (el) {
+      setTimeout(function () {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity .4s';
+        setTimeout(function () { el.remove(); }, 420);
+      }, 6000);
+    });
+
+    /* table sort */
+    document.querySelectorAll('.cc-th-sort').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var table = th.closest('table'); if (!table) return;
+        var col = Array.from(th.parentElement.children).indexOf(th);
+        var dir = th.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+        th.parentElement.querySelectorAll('.cc-th-sort').forEach(function(t){ t.removeAttribute('data-sort-dir'); });
+        th.setAttribute('data-sort-dir', dir);
+        var tbody = table.querySelector('tbody'); if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort(function (a, b) {
+          var aT = (a.children[col]||{}).textContent||'';
+          var bT = (b.children[col]||{}).textContent||'';
+          aT = aT.trim(); bT = bT.trim();
+          var aN = parseFloat(aT.replace(/[^\d.-]/g,'')), bN = parseFloat(bT.replace(/[^\d.-]/g,''));
+          if (!isNaN(aN) && !isNaN(bN)) return dir==='asc' ? aN-bN : bN-aN;
+          return dir==='asc' ? aT.localeCompare(bT,'ar') : bT.localeCompare(aT,'ar');
+        });
+        rows.forEach(function(r){ tbody.appendChild(r); });
+      });
+    });
+
+    /* rows per page */
+    document.querySelectorAll('.cc-per-page').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var n = parseInt(sel.value, 10);
+        var table = (sel.closest('.cc-table-wrapper')||document).querySelector('table');
+        if (!table) return;
+        table.querySelectorAll('tbody tr').forEach(function(r,i){
+          r.style.display = (!n || i < n) ? '' : 'none';
+        });
+      });
+    });
+  });
+
+})();
+</script>
+
+
 <script>
 (function () {
   'use strict';
@@ -1689,4 +2017,8 @@
 
 }());
 </script>
-{% endblock %}
+
+
+
+</body>
+</html>

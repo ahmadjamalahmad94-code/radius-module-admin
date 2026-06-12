@@ -565,6 +565,17 @@ def customer_detail(customer_id: int):
     _pending_count = sum(1 for pr in _payment_requests if getattr(pr, "status", "") in ("pending", "proof_submitted"))
     _total_paid = sum(getattr(pr, "amount", 0) or 0 for pr in _payment_requests if getattr(pr, "status", "") == "paid")
     observed_devices = _observed_devices_for_license(current_license)
+    # Customer↔CHR move surface — list of eligible targets + the
+    # customer's CURRENT egress IP set (for the «كان X.X → صار Y.Y» line
+    # in the modal). Defensive: any import / DB error keeps the page
+    # alive with an empty surface.
+    try:
+        from ..services.chr_move import current_public_ips_for_customer, eligible_targets
+        _chr_move_targets = eligible_targets()
+        _chr_move_current_ips = current_public_ips_for_customer(customer)
+    except Exception:  # noqa: BLE001 — never break the page on a fleet probe
+        _chr_move_targets = []
+        _chr_move_current_ips = []
     return render_template(
         "admin/customers/detail_new.html",
         customer=customer,
@@ -593,6 +604,8 @@ def customer_detail(customer_id: int):
         total_paid=_total_paid,
         observed_devices=observed_devices,
         masked_license_key=_mask_key(current_license.license_key) if current_license else "",
+        chr_move_targets=_chr_move_targets,
+        chr_move_current_ips=_chr_move_current_ips,
     )
 
 
@@ -655,6 +668,64 @@ def regenerate_license_key(customer_id: int):
     )
     db.session.commit()
     flash("تم توليد مفتاح ترخيص جديد. حدّث المفتاح في ريدياس العميل — المفتاح القديم توقّف فورًا.", "warning")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
+
+
+@bp.post("/customers/<int:customer_id>/move-chr")
+@super_admin_required
+def move_customer_chr(customer_id: int):
+    """«نقل الـCHR / تغيير الـIP العام» — re-home the customer's RADIUS
+    realm + its live sessions to a different CHR (new public egress IP).
+
+    See ``docs/CHR_MOVE_DESIGN.md`` for the full design. Owner-only;
+    CSRF-protected; idempotent on same-CHR re-runs.
+    """
+    from ..services.chr_move import ChrMoveError, move_customer_to_chr
+    from fleet.registry.models_chr import FleetChrNode
+
+    customer = db.get_or_404(Customer, customer_id)
+    raw_target = (request.form.get("target_node_id") or "").strip()
+    if not raw_target.isdigit():
+        flash("اختر العقدة الهدف من القائمة أولًا.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
+
+    target_node = db.session.get(FleetChrNode, int(raw_target))
+    if target_node is None:
+        flash("العقدة الهدف غير موجودة في الأسطول.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
+
+    actor = ""
+    try:
+        admin = current_admin()
+        actor = getattr(admin, "username", "") or getattr(admin, "email", "") or ""
+    except Exception:  # noqa: BLE001
+        actor = ""
+
+    try:
+        result = move_customer_to_chr(customer, target_node, actor=actor)
+    except ChrMoveError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
+
+    # Surface the old → new IPs + CoA outcome in a single flash line so
+    # the operator gets the full picture without opening the audit log.
+    old_label = "، ".join(result.old_public_ips) if result.old_public_ips else "—"
+    if result.routing_changed:
+        head = (
+            f"تم نقل العميل إلى «{result.target_node_name}» — "
+            f"IP العام: {old_label} ← {result.target_public_ip}."
+        )
+    else:
+        head = (
+            f"العميل مرتبط بالفعل بـ«{result.target_node_name}» "
+            f"({result.target_public_ip}) — لم يتغيّر التوجيه."
+        )
+    if result.coa_status == "ok":
+        flash(f"{head} {result.coa_message}", "success")
+    elif result.coa_status == "pending_proxy_endpoint":
+        flash(f"{head} {result.coa_message}", "warning")
+    else:
+        flash(f"{head} {result.coa_message}", "warning")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#tab-network")
 
 
