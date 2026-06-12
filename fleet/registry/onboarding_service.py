@@ -545,6 +545,38 @@ class OnboardingService:
         db.session.add(node)
         db.session.flush()  # assign node.id for the FK below
 
+        # fix/chr-unified-wg-mgmt-key-bootstrap — auto-mint REST credentials
+        # when neither the per-node row nor the fleet-default carries any.
+        #
+        # Background: the unified script's §11 (REST API + cert + user +
+        # firewall accept on wg-mgmt :8443) is gated on ``API_USER`` AND
+        # ``API_PASSWORD``. A fresh node with no fleet-default password
+        # produced a script that ran cleanly on the CHR but left www-ssl
+        # DISABLED and no firewall accept for the metrics port — the
+        # panel REST poll then returned ``connect_failed`` and
+        # ``wg_verify`` reported ``rest_failed`` → the wizard stayed
+        # stuck at the «سكربت» step forever, even though wg-mgmt and
+        # wg-data were both healthy.
+        #
+        # Same bootstrap pattern as the wg keys: panel mints + panel
+        # knows + panel uses. The password is stored Fernet-encrypted
+        # on the node row so the live-metrics poller decrypts it on
+        # read AND the script renderer pulls plaintext just-in-time
+        # in :meth:`_build_bindings`.
+        try:
+            import secrets as _secrets
+            from fleet.health.routeros_creds import (
+                HARD_DEFAULT_USER, credentials_for, set_credentials,
+            )
+            if credentials_for(node) is None:
+                set_credentials(
+                    node,
+                    username=HARD_DEFAULT_USER,
+                    password=_secrets.token_urlsafe(24),
+                )
+        except Exception:  # noqa: BLE001 — never block onboarding on a creds probe
+            pass
+
         job.chr_id = node.id
         # Store vault REFERENCES (never the private keys) + the non-secret pubkeys.
         job.wg_keypair_ref = json.dumps({
