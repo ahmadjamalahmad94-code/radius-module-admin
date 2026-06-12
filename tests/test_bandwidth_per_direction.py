@@ -12,6 +12,10 @@
     4. تطبيع نماذج الإدخال: ``speed_mbps`` يُملِئ التنزيل والرفع معًا.
     5. حسابات السعة المحجوزة لا تحسب الاتجاهين كقيمتين مزدوجَتين.
     6. القيم غير المتماثلة (نادر) تُعرَض صراحةً كي لا تلتبس.
+    7. الموافقة على طلب الخدمة تطبّق سياسة المتماثل (إن وصل اتجاه واحد فقط
+       من ``desired_limits``، يُنسَخ للاتجاه الآخر بدل سقوطه على الافتراضي 10).
+    8. نقطة الإصدار لـ RouterOS واحدة مشتركة — ``rate_limit_string`` —
+       لا توجد نسخة ثانية في customer_control.
 """
 from __future__ import annotations
 
@@ -253,6 +257,126 @@ def test_speed_profiles_page_renders_per_direction_label(app, client):
     assert "200M/200M" in body
     # شرح «لكل اتجاه» يظهر فوق نموذج الإدخال.
     assert "لكل اتجاه" in body
+
+
+# ─────── (7) services-agent approve handler respects symmetric policy ───────
+
+
+def test_vpn_request_approve_with_only_one_direction_mirrors_to_both(app):
+    """طلب العميل يحوي ``download_mbps=850`` فقط (دون upload). الموافقة يجب أن
+    تُملِئ الاتجاهين بـ850، لا أن تترك upload على الافتراضي 10 (سرعة غير
+    متماثلة بصمت — سياسة المالك تمنع ذلك).
+
+    هذا ضمان أن الطريق المشترك بين services-catalog والـ panel admin يحترم
+    العقد المتماثل: قيمة واحدة ⇒ تنزيل = رفع.
+    """
+    from app.admin.routes import _apply_vpn_service_request
+    from app.models import (
+        Customer,
+        CustomerServiceRequest,
+        CustomerVpnEntitlement,
+        License,
+        Plan,
+        utcnow,
+    )
+
+    with app.app_context():
+        plan = Plan.query.filter_by(slug="pro").first()
+        cust = Customer(company_name="Sym-Mirror ISP", status="active")
+        db.session.add(cust); db.session.flush()
+        lic = License(
+            customer_id=cust.id, plan_id=plan.id,
+            license_key="HBR-SYM-MIRROR-0001", status="active",
+            starts_at=utcnow(), expires_at=utcnow() + timedelta(days=30),
+            max_fingerprints=3,
+        )
+        db.session.add(lic); db.session.commit()
+        # Customer requested ONLY download_mbps=850 (no upload).
+        sr = CustomerServiceRequest(
+            customer_id=cust.id,
+            service_key="ip_change_vpn",
+            request_type="activation",
+            status="pending",
+        )
+        sr.desired_limits = {"download_mbps": 850, "max_vpn_users": 5}
+        db.session.add(sr); db.session.commit()
+
+        # Approve flow runs inside a Flask request context (form is read).
+        with app.test_request_context("/admin/customers/1/service-requests/1/approve", method="POST", data={}):
+            _apply_vpn_service_request(sr)
+
+        ent = CustomerVpnEntitlement.query.filter_by(customer_id=cust.id).first()
+        assert ent is not None
+        assert ent.download_mbps == 850, (
+            f"requested download_mbps=850 must be applied verbatim; got {ent.download_mbps}"
+        )
+        assert ent.upload_mbps == 850, (
+            "with no upload supplied the symmetric policy must mirror download → upload; "
+            f"got upload_mbps={ent.upload_mbps} (would be silent asymmetric 850↓/10↑ before this fix)"
+        )
+
+
+def test_vpn_request_approve_with_speed_mbps_alias_fills_both(app):
+    """طلب يحمل ``speed_mbps=200`` (الاسم المشترك الجديد) في ``desired_limits``
+    أو في form الموافقة يُملِئ الاتجاهين معًا — يستعمل نفس shared-helper."""
+    from app.admin.routes import _apply_vpn_service_request
+    from app.models import (
+        Customer,
+        CustomerServiceRequest,
+        CustomerVpnEntitlement,
+        License,
+        Plan,
+        utcnow,
+    )
+
+    with app.app_context():
+        plan = Plan.query.filter_by(slug="pro").first()
+        cust = Customer(company_name="Sym-Alias ISP", status="active")
+        db.session.add(cust); db.session.flush()
+        lic = License(
+            customer_id=cust.id, plan_id=plan.id,
+            license_key="HBR-SYM-ALIAS-0001", status="active",
+            starts_at=utcnow(), expires_at=utcnow() + timedelta(days=30),
+            max_fingerprints=3,
+        )
+        db.session.add(lic); db.session.commit()
+        sr = CustomerServiceRequest(
+            customer_id=cust.id,
+            service_key="ip_change_vpn",
+            request_type="activation",
+            status="pending",
+        )
+        sr.desired_limits = {"speed_mbps": 200, "max_vpn_users": 5}
+        db.session.add(sr); db.session.commit()
+
+        with app.test_request_context("/admin/customers/1/service-requests/1/approve", method="POST", data={}):
+            _apply_vpn_service_request(sr)
+
+        ent = CustomerVpnEntitlement.query.filter_by(customer_id=cust.id).first()
+        assert ent.download_mbps == 200
+        assert ent.upload_mbps == 200
+
+
+# ─────── (8) single shared rate-limit emission helper — no duplicate ───────
+
+
+def test_no_duplicate_rate_limit_helper_in_customer_control():
+    """نقطة الإصدار لـ RouterOS واحدة فقط: ``app.services.speed_profiles``.
+    customer_control لا يكرّر بناء سلسلة ``rate-limit`` — فلا يخرج تنسيقان
+    مختلفان لنفس السرعة. لو مستقبلًا أراد أحد إصدار rate-limit من نقطة أخرى
+    يجب أن يستورد ``symmetric_rate_limit`` لا أن يُنشئ نسخته."""
+    import inspect
+    from app.services import customer_control, speed_profiles
+
+    src = inspect.getsource(customer_control)
+    # No formatted "<n>M/<n>M" patterns built locally.
+    assert "M/" not in src or "rate_limit_string" in src or "symmetric_rate_limit" in src, (
+        "customer_control appears to format a rate-limit string locally — "
+        "use speed_profiles.symmetric_rate_limit() instead so emission stays unified."
+    )
+    # The canonical helpers live in ONE module.
+    assert callable(speed_profiles.rate_limit_string)
+    assert callable(speed_profiles.symmetric_rate_limit)
 
 
 # ───────────────────────── helpers ─────────────────────────

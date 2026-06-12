@@ -589,7 +589,9 @@
                     {% for item in grp %}
                       {% set svc = contract.services.get(item.service_key, {}) %}
                       {% if item.service_key == 'ip_change_vpn' and svc.enabled %}
-                        {% set lt = 'تحميل ' ~ svc.download_mbps ~ ' · رفع ' ~ svc.upload_mbps ~ ' Mbps · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
+                        {# Per-direction symmetric display — never «إجمالي». Helper
+                           renders «X↓ / Y↑ ميجابت» and flags asymmetric explicitly. #}
+                        {% set lt = per_direction_label(svc.download_mbps, svc.upload_mbps) ~ ' · ' ~ svc.max_vpn_users ~ ' مستخدم VPN' %}
                       {% elif svc.limits %}{% set lt = service_limit_summary(svc.limits) %}{% else %}{% set lt = '' %}{% endif %}
                       {{ svc_card(item, svc, service_icons.get(item.service_key, 'cube'), lt) }}
                     {% endfor %}

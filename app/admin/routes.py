@@ -342,10 +342,34 @@ def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expir
         apply_plan_defaults(vpn_entitlement, selected_plan)
 
     desired = service_request.desired_limits or {}
-    if request.form.get("download_mbps") or desired.get("download_mbps"):
-        vpn_entitlement.download_mbps = validate_vpn_speed(request.form.get("download_mbps") or desired.get("download_mbps"), "download_mbps")
-    if request.form.get("upload_mbps") or desired.get("upload_mbps"):
-        vpn_entitlement.upload_mbps = validate_vpn_speed(request.form.get("upload_mbps") or desired.get("upload_mbps"), "upload_mbps")
+    # «السرعة المتماثلة» (سياسة المالك): إن وصل أحد الاتجاهين فقط (`download_mbps` أو
+    # `upload_mbps`) سواءً من form الموافقة أو من `desired_limits` للعميل، نعتبره
+    # سرعة متماثلة لكل اتجاه ⇒ نُملِئ الاتجاه الآخر بنفس القيمة لا أن نسقط على
+    # الافتراضي 10 الذي يُنشئ سرعة غير متماثلة بصمت. الحقل المسمَّى `speed_mbps`
+    # في الـpath الإداري الجديد له نفس الأولوية. الأمثلة:
+    #   speed_mbps=850                    ⇒ down=850, up=850
+    #   download_mbps=850 (only)          ⇒ down=850, up=850
+    #   download_mbps=1000, upload_mbps=100 ⇒ down=1000, up=100 (غير متماثل صريحًا)
+    _sym = (request.form.get("speed_mbps") or "").strip() or desired.get("speed_mbps")
+    _down_raw = (
+        _sym
+        or request.form.get("download_mbps")
+        or desired.get("download_mbps")
+    )
+    _up_raw = (
+        _sym
+        or request.form.get("upload_mbps")
+        or desired.get("upload_mbps")
+    )
+    # تطبيع متماثل: إن أُعطي اتجاه واحد فقط، انسخه للاتجاه الآخر.
+    if _down_raw and not _up_raw:
+        _up_raw = _down_raw
+    if _up_raw and not _down_raw:
+        _down_raw = _up_raw
+    if _down_raw:
+        vpn_entitlement.download_mbps = validate_vpn_speed(_down_raw, "download_mbps")
+    if _up_raw:
+        vpn_entitlement.upload_mbps = validate_vpn_speed(_up_raw, "upload_mbps")
     if request.form.get("max_vpn_users") or desired.get("max_vpn_users"):
         vpn_entitlement.max_vpn_users = validate_positive_limit(request.form.get("max_vpn_users") or desired.get("max_vpn_users"), "max_vpn_users")
     if request.form.get("max_locations") or desired.get("max_locations"):
