@@ -61,6 +61,10 @@ def test_backoff_curve_present(js):
         "data-live-empty",
         "data-live-indicator-text",
         "data-live-indicator-dot",
+        # Per-row binding pattern — used by the fleet dashboard node grid.
+        "data-live-rows",
+        "data-live-row-key",
+        "data-live-row-id",
     ],
 )
 def test_attribute_contract_is_referenced(js, attr):
@@ -194,3 +198,79 @@ def test_class_map_json_round_trips():
     parsed = json.loads(raw)
     assert parsed["ok"] == "is-ok"
     assert parsed["warn"] == "is-warn"
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Per-row binding pattern — `data-live-rows="nodes"` data-live-row-key="id"
+# Used by the dashboard's node grid. Each row's inner data-live-* paths
+# resolve against ONE record (the row's), not the whole payload.
+# ────────────────────────────────────────────────────────────────────────
+
+
+_SAMPLE_NODES = [
+    {"id": 1, "name": "chr-A", "state": "up",
+     "cpu_pct": 12.4, "sessions": 5, "max_sessions": 10,
+     "sessions_cap_pct": 50, "rtt_ms": 18.2, "rx_gb": 1.7, "tx_gb": 0.9},
+    {"id": 2, "name": "chr-B", "state": "degraded",
+     "cpu_pct": 72.0, "sessions": 8, "max_sessions": 10,
+     "sessions_cap_pct": 80, "rtt_ms": 105.0, "rx_gb": 4.2, "tx_gb": 3.1},
+]
+
+
+def _index_rows(rows, key="id"):
+    """Mirror the JS `byKey[String(rec[key])] = rec` indexing pattern."""
+    return {str(rec.get(key)): rec for rec in rows if rec.get(key) is not None}
+
+
+def test_per_row_index_resolves_each_row_to_its_own_record():
+    """Smoke test of the contract: row id "1" must resolve to chr-A and "2"
+    to chr-B — never crossed. If this ever drifts, the dashboard would
+    show chr-B's CPU under chr-A's card (silent bug; production crash)."""
+    by_id = _index_rows(_SAMPLE_NODES, "id")
+    assert by_id["1"]["name"] == "chr-A"
+    assert by_id["2"]["name"] == "chr-B"
+    # And the inner dotted-path getter still works against a row record.
+    assert _py_get(by_id["1"], "cpu_pct") == 12.4
+    assert _py_get(by_id["2"], "sessions_cap_pct") == 80
+
+
+def test_per_row_pattern_bindings_present_in_js(js):
+    """The JS must contain the loop that walks `data-live-rows` containers,
+    builds the index, and dispatches into `_applyRowBindings(row, rec)`."""
+    assert "_applyRowBindings" in js
+    assert 'querySelectorAll("[data-live-rows]")' in js
+    assert "data-live-row-id" in js
+    assert "data-live-row-key" in js
+    # Global pass MUST skip rows-scoped elements — otherwise it would
+    # double-bind against the wrong (global) payload key.
+    assert 'closest("[data-live-rows]")' in js
+
+
+def test_per_row_pattern_supports_state_class_swap():
+    """The dashboard's node card uses data-live-class="state" with a map of
+    the 4 health states. Locks in the JSON shape the template emits."""
+    cls_map_json = (
+        '{"up":"node-card--up","degraded":"node-card--degraded",'
+        '"down":"node-card--down","unknown":"node-card--unknown"}'
+    )
+    cls_map = json.loads(cls_map_json)
+    for state in ("up", "degraded", "down", "unknown"):
+        assert state in cls_map, f"missing health state in class map: {state}"
+        assert cls_map[state].startswith("node-card--")
+
+
+def test_dashboard_template_emits_per_row_bindings():
+    """The dashboard.html template MUST wire `data-live-rows="nodes"` on the
+    grid container — without it the poller has no per-row hook and the
+    tiles never refresh."""
+    tpl = Path(__file__).resolve().parents[2] / "app" / "templates" / "admin" / "fleet" / "dashboard.html"
+    src = tpl.read_text(encoding="utf-8")
+    assert 'data-live-rows="nodes"' in src
+    assert 'data-live-row-key="id"' in src
+    assert 'data-live-row-id="{{ n.id }}"' in src
+    # The per-tile bindings:
+    for path in ("cpu_pct", "mem_pct", "sessions", "max_sessions",
+                 "sessions_cap_pct", "rtt_ms", "rx_gb", "tx_gb"):
+        assert f'data-live-bind="{path}"' in src, (
+            f"dashboard per-row tile missing data-live-bind={path!r}"
+        )

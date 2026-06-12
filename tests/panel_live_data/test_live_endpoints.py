@@ -29,19 +29,24 @@ def _login(client) -> None:
 
 
 def _seed_a_node(name: str = "chr-live-1") -> FleetChrNode:
-    """Create the minimal CHR row the dashboard payload needs."""
+    """Create the minimal CHR row the dashboard payload needs.
+
+    Allocates the next free `wg_mgmt_ip` in 10.99.0.0/24 so multiple nodes
+    can be seeded in one test without colliding on the UNIQUE constraint.
+    """
     prov = FleetProvider.query.first()
     if prov is None:
         prov = FleetProvider(name="hetzner", cost_model="metered",
                              price_per_tb=5, monthly_cap_tb=20,
                              overage_allowed=False)
         db.session.add(prov); db.session.flush()
-    # FleetChrNode has NOT NULL wg_mgmt_pubkey — fill with a placeholder
-    # base64-shaped string so the row is valid for the dashboard payload.
+    n = FleetChrNode.query.count()
+    next_octet = 11 + n
     node = FleetChrNode(
-        name=name, provider_id=prov.id, public_ip="1.2.3.4",
+        name=name, provider_id=prov.id, public_ip=f"203.0.113.{10 + n}",
         max_sessions=10, link_speed_mbps=1000, status="up",
-        wg_mgmt_ip="10.99.0.11",
+        wg_mgmt_ip=f"10.99.0.{next_octet}",
+        # FleetChrNode has NOT NULL wg_mgmt_pubkey — fill with placeholder.
         wg_mgmt_pubkey="A" * 43 + "=",
     )
     db.session.add(node); db.session.commit()
@@ -98,7 +103,8 @@ def test_fleet_live_json_returns_stable_shape(app, client):
 
 
 def test_fleet_live_json_node_rows_match_payload_contract(app, client):
-    """Per-node row shape — used by data-live-html / future row diffing."""
+    """Per-node row shape — used by `data-live-rows="nodes"` + per-tile
+    `data-live-bind` resolution against each record."""
     with app.app_context():
         _seed_a_node("chr-live-A")
         _login(client)
@@ -106,14 +112,39 @@ def test_fleet_live_json_node_rows_match_payload_contract(app, client):
     j = r.get_json()
     assert len(j["nodes"]) == 1
     n = j["nodes"][0]
-    for k in (
-        "id", "name", "state", "status", "cpu_pct", "mem_pct",
-        "sessions", "max_sessions", "rtt_ms", "loss_pct",
-        "rx_bytes", "tx_bytes", "last_seen_iso",
-    ):
+    # Every field the dashboard's per-row tiles bind to.
+    REQUIRED = (
+        "id", "name", "state", "status",
+        "cpu_pct", "mem_pct",
+        "sessions", "max_sessions", "sessions_cap_pct",
+        "rtt_ms", "loss_pct",
+        "rx_bytes", "tx_bytes", "rx_gb", "tx_gb",
+        "last_seen_iso",
+        "last_transition", "consecutive_fail", "consecutive_ok",
+    )
+    for k in REQUIRED:
         assert k in n, f"node payload missing {k}"
     assert n["name"] == "chr-live-A"
     assert n["max_sessions"] == 10
+    # `sessions_cap_pct` must be a number — the poller binds it directly as
+    # the «N% من السعة» footer on each node tile.
+    assert isinstance(n["sessions_cap_pct"], (int, float))
+
+
+def test_fleet_live_json_node_rows_are_keyed_by_id(app, client):
+    """`data-live-row-key="id"` looks up each row in the payload by id.
+    If two nodes shared an id (or the key were missing), the poller would
+    silently bind the wrong record to the wrong card. Lock in the contract."""
+    with app.app_context():
+        _seed_a_node("chr-A")
+        _seed_a_node("chr-B")
+        _login(client)
+    r = client.get("/admin/fleet/live.json")
+    j = r.get_json()
+    ids = [n["id"] for n in j["nodes"]]
+    assert len(ids) == len(set(ids)), "node ids must be unique in payload"
+    for n in j["nodes"]:
+        assert isinstance(n["id"], int), f"id must be int, got {type(n['id'])}"
 
 
 def test_fleet_live_json_empty_fleet_is_well_formed(app, client):

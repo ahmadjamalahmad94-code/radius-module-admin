@@ -369,6 +369,14 @@ def build_dashboard_payload() -> dict:
     nodes_payload: list[dict] = []
     for v in views:
         last_seen = v.last_seen_at
+        sessions = (
+            v.metric.active_sessions if v.metric.active_sessions is not None
+            else (v.node.active_sessions or 0)
+        )
+        max_sessions = int(v.node.max_sessions or 0)
+        cap_pct = round(sessions * 100 / max_sessions) if max_sessions else 0
+        rx_gb = round(v.metric.rx_bytes / 1073741824, 2) if v.metric.rx_bytes is not None else None
+        tx_gb = round(v.metric.tx_bytes / 1073741824, 2) if v.metric.tx_bytes is not None else None
         nodes_payload.append({
             "id":           int(v.node.id),
             "name":         v.node.name,
@@ -376,14 +384,21 @@ def build_dashboard_payload() -> dict:
             "status":       v.node.status,
             "cpu_pct":      None if v.metric.cpu_pct is None else round(float(v.metric.cpu_pct), 1),
             "mem_pct":      None if v.metric.mem_pct is None else round(float(v.metric.mem_pct), 1),
-            "sessions":     v.metric.active_sessions if v.metric.active_sessions is not None
-                            else (v.node.active_sessions or 0),
-            "max_sessions": int(v.node.max_sessions or 0),
+            "sessions":     sessions,
+            "max_sessions": max_sessions,
+            # Derived fields the dashboard per-row tiles bind to — so the
+            # template stays declarative (no arithmetic in Jinja).
+            "sessions_cap_pct": cap_pct,
+            "rx_gb":        rx_gb,
+            "tx_gb":        tx_gb,
             "rtt_ms":       None if v.metric.ping_rtt_ms  is None else round(float(v.metric.ping_rtt_ms), 1),
             "loss_pct":     None if v.metric.ping_loss_pct is None else round(float(v.metric.ping_loss_pct), 1),
             "rx_bytes":     v.metric.rx_bytes,
             "tx_bytes":     v.metric.tx_bytes,
             "last_seen_iso": last_seen.isoformat() if last_seen else None,
+            "last_transition": v.health.last_transition,
+            "consecutive_fail": int(v.health.consecutive_fail or 0),
+            "consecutive_ok":   int(v.health.consecutive_ok or 0),
         })
 
     return {
