@@ -527,24 +527,76 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 #   3. ACL DIRECTION: source-IP ACL points at the PANEL's wg-mgmt IP,
 #      not the CHR's own — so the panel itself isn't blocked.
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+# LIVE INCIDENT (fix/chr-unified-wg-mgmt-key-bootstrap):
+# Provisioning a user that conflicts with a RouterOS built-in user
+# (``admin``, ``root``, ``support``, ``operator``) is a no-op:
+# ``/user remove [find name="admin"]`` is BLOCKED on most v7 builds
+# (last full-group member), and the subsequent ``add`` then errors
+# with «user with such name already exists». The script keeps running,
+# but the built-in admin retains its ORIGINAL password — not the one
+# the panel saved on /admin/fleet/infrastructure. Panel REST polls
+# then fail with auth_failed → wg_verify reports rest_failed → wizard
+# stuck. The renderer normalises ``API_USER`` to ``hobe-panel`` BEFORE
+# this template is rendered when a reserved name is detected; this
+# block is the second line of defence.
 /user
-remove [find name="{{ API_USER }}"]
-add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
-    comment="hobe-fleet-api-readonly"
+remove [find name="{{ API_USER }}" group=read comment="hobe-fleet-api-readonly"]
+:if ([:len [/user find name="{{ API_USER }}"]] = 0) do={
+    /user add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
+        comment="hobe-fleet-api-readonly"
+} else={
+    :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber a built-in user. Set a non-reserved username on the panel's «إعدادات بنية الأسطول» page.")
+}
 
 # Self-signed PKI for www-ssl: a tiny local CA + a leaf signed by it.
+#
+# LIVE INCIDENT (fix/chr-unified-wg-mgmt-key-bootstrap):
+# 2s delay between sign + service-assign was too short on slower CHRs
+# (1-vCPU contabo VPS under §0a-backup + §9-firewall CPU load).
+# ``/ip service set www-ssl certificate=hobe-fleet-api-cert`` fired
+# while the cert was still being signed → set errored silently → www-ssl
+# stayed DISABLED → panel TCP to :8443 was refused → connect_failed →
+# wg_verify reported rest_failed → wizard stuck.
+#
+# Fix: bumped each delay 2s → 5s AND added an explicit poll-wait that
+# checks the cert's ``invalid-after`` field (signed certs carry an
+# expiry; unsigned ones don't). The :for retries 10 × 1s before
+# giving up + logging — even on a saturated CHR the cert is ready
+# within 10 s.
 /certificate
 remove [find name="hobe-fleet-api-cert"]
 remove [find name="hobe-fleet-ca"]
 add name=hobe-fleet-ca common-name=hobe-fleet-ca \
     days-valid=3650 key-usage=key-cert-sign,crl-sign
 sign hobe-fleet-ca
-:delay 2s
+:delay 5s
 /certificate
 add name=hobe-fleet-api-cert common-name=hobe-fleet-api \
     days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server
 sign hobe-fleet-api-cert ca=hobe-fleet-ca
-:delay 2s
+:delay 5s
+
+# Poll-wait: ensure the leaf cert is fully signed (has invalid-after)
+# before we assign it to www-ssl. The set-line that follows errors
+# silently when the cert isn't ready yet, leaving www-ssl disabled —
+# the on-CHR cause of `connect_failed` on slow CHRs.
+:local certReady false
+:for i from=1 to=15 do={
+    :do {
+        :local cert [/certificate find name="hobe-fleet-api-cert"]
+        :if ([:len $cert] > 0) do={
+            :local exp [/certificate get $cert invalid-after]
+            :if ([:typeof $exp] != "nothing" && [:tostr $exp] != "") do={
+                :set certReady true
+            }
+        }
+    } on-error={}
+    :if ($certReady) do={ :break }
+    :delay 1s
+}
+:if ($certReady = false) do={
+    :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s — www-ssl will NOT bind on this run; re-run /import to retry."
+}
 
 # www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL —
 # restrict to the PANEL's wg-mgmt IP (PANEL_WG_ADDR/32).

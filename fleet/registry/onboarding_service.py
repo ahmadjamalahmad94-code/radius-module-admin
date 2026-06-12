@@ -32,8 +32,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 from app.extensions import db
 from app.models import utcnow
@@ -545,6 +548,38 @@ class OnboardingService:
         db.session.add(node)
         db.session.flush()  # assign node.id for the FK below
 
+        # fix/chr-unified-wg-mgmt-key-bootstrap — auto-mint REST credentials
+        # when neither the per-node row nor the fleet-default carries any.
+        #
+        # Background: the unified script's §11 (REST API + cert + user +
+        # firewall accept on wg-mgmt :8443) is gated on ``API_USER`` AND
+        # ``API_PASSWORD``. A fresh node with no fleet-default password
+        # produced a script that ran cleanly on the CHR but left www-ssl
+        # DISABLED and no firewall accept for the metrics port — the
+        # panel REST poll then returned ``connect_failed`` and
+        # ``wg_verify`` reported ``rest_failed`` → the wizard stayed
+        # stuck at the «سكربت» step forever, even though wg-mgmt and
+        # wg-data were both healthy.
+        #
+        # Same bootstrap pattern as the wg keys: panel mints + panel
+        # knows + panel uses. The password is stored Fernet-encrypted
+        # on the node row so the live-metrics poller decrypts it on
+        # read AND the script renderer pulls plaintext just-in-time
+        # in :meth:`_build_bindings`.
+        try:
+            import secrets as _secrets
+            from fleet.health.routeros_creds import (
+                HARD_DEFAULT_USER, credentials_for, set_credentials,
+            )
+            if credentials_for(node) is None:
+                set_credentials(
+                    node,
+                    username=HARD_DEFAULT_USER,
+                    password=_secrets.token_urlsafe(24),
+                )
+        except Exception:  # noqa: BLE001 — never block onboarding on a creds probe
+            pass
+
         job.chr_id = node.id
         # Store vault REFERENCES (never the private keys) + the non-secret pubkeys.
         job.wg_keypair_ref = json.dumps({
@@ -754,6 +789,47 @@ class OnboardingService:
                 bindings["API_PORT"] = int(node.routeros_api_port)
         except Exception:  # noqa: BLE001 — never break onboarding on a creds probe
             pass
+
+        # fix/chr-unified-wg-mgmt-key-bootstrap — normalise reserved usernames.
+        # Live incident: the owner saved username ``admin`` on the infra
+        # page; the script's ``/user remove [find name="admin"]`` is a
+        # no-op (RouterOS protects the last full-group user) and the
+        # following ``add`` errors with «user with such name already
+        # exists». The built-in admin then keeps its ORIGINAL password —
+        # not the panel's saved one — and panel REST polls fail with
+        # ``auth_failed``. Compounding: on a slow CHR, ``set www-ssl
+        # certificate=...`` racing the cert sign leaves www-ssl
+        # disabled → connect_failed instead → wizard stuck.
+        #
+        # Substituting reserved names with HARD_DEFAULT_USER ("hobe-panel")
+        # here means the script always provisions a clean, non-clobbering
+        # row. We ALSO stamp the substitution back onto the node row so
+        # ``credentials_for`` returns the SAME username the script
+        # provisioned — preventing a username/password mismatch between
+        # what the panel poller dials with and what the CHR knows.
+        try:
+            from fleet.health.routeros_creds import (
+                HARD_DEFAULT_USER, set_credentials,
+            )
+            current_user = (bindings.get("API_USER") or "").strip().lower()
+            reserved = {"admin", "root", "support", "operator"}
+            if current_user in reserved:
+                bindings["API_USER"] = HARD_DEFAULT_USER
+                # Persist the substituted username on the row so the
+                # poller uses the same name.
+                if node is not None:
+                    set_credentials(
+                        node, username=HARD_DEFAULT_USER,
+                        password=bindings["API_PASSWORD"],
+                    )
+                logger.warning(
+                    "onboarding: API_USER=%r is a RouterOS built-in name; "
+                    "substituted with HARD_DEFAULT_USER=%r for node %s",
+                    current_user, HARD_DEFAULT_USER, node.name,
+                )
+        except Exception:  # noqa: BLE001 — never break onboarding on this guard
+            pass
+
         return bindings
 
 
