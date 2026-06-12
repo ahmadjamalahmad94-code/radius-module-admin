@@ -578,6 +578,8 @@
    ups, animated bars, reveals; binds shimmer to form submitters. Reduced-
    motion-safe. Exposes window.AdminPolish.rescan() for AJAX-heavy pages. #}
 <script src="{{ url_for('static', filename='js/admin_polish.js') }}" defer></script>
+{# Per-direction symmetric speed UX — opt-in via [data-sym-form] on a form. #}
+<script src="{{ url_for('static', filename='js/sym_speed.js') }}" defer></script>
 
 <script>
 (function () {

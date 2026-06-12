@@ -8,6 +8,13 @@ CHR لا مجرّد البروفايل الافتراضي. تُترجَم الس
 الراوتر من العميل (= **رفع** العميل) و``tx`` = ما يرسله للعميل (= **تنزيل** العميل).
 لذا السلسلة المُطبَّقة = ``<upload>M/<download>M``.
 
+**العقد المركزي (Per-Direction Symmetric)**
+كل قيمة سرعة في هذه اللوحة (Mbps) تعني سرعة **لكل اتجاه على حدة** — ليست مجموعًا.
+أي ``850 Mbps`` تعني ``850↓ تنزيل + 850↑ رفع`` متزامنين، وتُترجَم إلى
+``rate-limit = 850M/850M`` على CHR. لا تُضمَّن الاتجاهان أبدًا في رقم واحد مجمَّع.
+حين يختار المالك «سرعة متماثلة» (الافتراضي) تُعبَّأ ``download_mbps`` و
+``upload_mbps`` بالقيمة نفسها؛ النمط غير المتماثل متاح للحالات النادرة فقط.
+
 هذه إعدادات مركزية للمالك ولا تُرسَل أبدًا لأي لوحة عميل (تُعرَض السرعة فقط في رد
 الجسر كمعلومة، لا أي وصول إلى CHR).
 """
@@ -34,7 +41,12 @@ def clean_code(value: str) -> str:
 def rate_limit_string(download_mbps, upload_mbps) -> str:
     """يبني سلسلة ``rate-limit`` لـ RouterOS من سرعتي التنزيل/الرفع (Mbps).
 
-    الصيغة ``<upload>M/<download>M`` (rx=رفع، tx=تنزيل). فارغة إن لم تكتمل السرعة."""
+    الصيغة ``<upload>M/<download>M`` (rx=رفع، tx=تنزيل). فارغة إن لم تكتمل السرعة.
+
+    **سيناريو متماثل (هو الافتراضي):** ``rate_limit_string(850, 850) == "850M/850M"``
+    — 850 لكل اتجاه على حدة، ليس 850 إجمالاً. نفس الرقم على الجانبين هو سلوك
+    المنتج المعتمد (انظر :func:`symmetric_rate_limit`).
+    """
     try:
         down = int(download_mbps or 0)
         up = int(upload_mbps or 0)
@@ -43,6 +55,42 @@ def rate_limit_string(download_mbps, upload_mbps) -> str:
     if down <= 0 or up <= 0:
         return ""
     return f"{up}M/{down}M"
+
+
+def symmetric_rate_limit(value) -> str:
+    """يبني ``rate-limit`` متماثل: نفس القيمة (Mbps) لكل اتجاه.
+
+    العقد المعتمد للمالك: قيمة واحدة تعني نفس السرعة تنزيلاً ورفعًا — أي
+    ``symmetric_rate_limit(850) == "850M/850M"`` (rx=850M، tx=850M). فارغة إن
+    لم تكن القيمة عددًا موجبًا. هذه هي الواجهة المختصرة التي تستعملها
+    المسارات/المودالات الجديدة بدل تكرار التنزيل والرفع.
+    """
+    try:
+        v = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if v <= 0:
+        return ""
+    return f"{v}M/{v}M"
+
+
+def per_direction_label(download_mbps, upload_mbps, *, suffix: str = "ميجابت") -> str:
+    """نص عربي موحَّد للعرض: ``«850↓ / 850↑ ميجابت»`` (لكل اتجاه على حدة).
+
+    يُستعمل في القوالب والـAPI كي لا يقرأ المالك «850» على أنها إجمالي مجموع
+    اتجاهين. يعيد ``"—"`` إن لم تكتمل القيمتان.
+    """
+    try:
+        down = int(download_mbps or 0)
+        up = int(upload_mbps or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if down <= 0 and up <= 0:
+        return "—"
+    if down == up:
+        return f"{down}↓ / {up}↑ {suffix}"
+    # غير متماثل (نادر) — نعرضه صريحًا كي لا يلتبس بمتماثل.
+    return f"{down}↓ / {up}↑ {suffix} (غير متماثل)"
 
 
 def custom_profile_name(download_mbps, upload_mbps) -> str:
@@ -87,6 +135,33 @@ def _parse_optional_int(form, field: str, label: str) -> int | None:
     return int(raw)
 
 
+def _resolve_symmetric_fields(form) -> tuple[str, str]:
+    """يطبّق سياسة «السرعة المتماثلة»: إن مُرِّر حقل ``speed_mbps`` (الافتراضي
+    الجديد) فإن قيمته تُنسَخ إلى ``download_mbps`` و``upload_mbps`` معًا، تجاهلاً
+    لأي قيم منفصلة قد تكون فارغة. النموذج غير المتماثل (نادر) يرسل القيمتين
+    مباشرة ويترك ``speed_mbps`` فارغًا.
+
+    يعيد القيم الجاهزة كنصوص (mutable form يُحدَّث ولكن نُعيد القيم لقراءة لاحقة).
+    """
+    raw_sym = (form.get("speed_mbps") or "").strip()
+    if raw_sym:
+        # سياسة المالك: قيمة واحدة ⇒ نفس السرعة لكل اتجاه. نُملِئ الحقلين معًا
+        # ونتجاهل أي قيم منفصلة كي لا تتسلَّل قيمة مختلفة بالخطأ.
+        try:
+            form.setlist("download_mbps", [raw_sym]) if hasattr(form, "setlist") else None
+            form.setlist("upload_mbps", [raw_sym]) if hasattr(form, "setlist") else None
+        except Exception:  # noqa: BLE001 — form may be a plain dict (tests)
+            pass
+        # Fall through: _parse_speed reads form.get("download_mbps") / ("upload_mbps").
+        # If form.setlist isn't available (plain dict), patch via __setitem__:
+        try:
+            form["download_mbps"] = raw_sym
+            form["upload_mbps"] = raw_sym
+        except Exception:
+            pass
+    return (form.get("download_mbps") or "", form.get("upload_mbps") or "")
+
+
 def create_profile(form) -> ChrSpeedProfile:
     name = (form.get("name") or "").strip()[:140]
     if not name:
@@ -96,6 +171,7 @@ def create_profile(form) -> ChrSpeedProfile:
         raise SpeedProfileError("رمز البروفايل (code) غير صالح.")
     if ChrSpeedProfile.query.filter_by(code=code).first():
         raise SpeedProfileError(f"الرمز «{code}» مستخدم سلفًا — اختر رمزًا آخر.")
+    _resolve_symmetric_fields(form)
     download = _parse_speed(form, "download_mbps", "سرعة التنزيل")
     upload = _parse_speed(form, "upload_mbps", "سرعة الرفع")
     max_sessions = _parse_optional_int(form, "max_sessions", "حدّ الجلسات")
@@ -119,6 +195,7 @@ def update_profile(profile: ChrSpeedProfile, form) -> ChrSpeedProfile:
     if not name:
         raise SpeedProfileError("اسم البروفايل مطلوب.")
     profile.name = name
+    _resolve_symmetric_fields(form)
     profile.download_mbps = _parse_speed(form, "download_mbps", "سرعة التنزيل")
     profile.upload_mbps = _parse_speed(form, "upload_mbps", "سرعة الرفع")
     profile.max_sessions = _parse_optional_int(form, "max_sessions", "حدّ الجلسات")

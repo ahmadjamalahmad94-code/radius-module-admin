@@ -1,0 +1,531 @@
+/*
+ * portal_redesign.css — Customer Portal redesign layer
+ *
+ * Loaded LAST in portal_base.html so it normalizes the legacy pp-* styles
+ * onto the new admin shell (.adm-shell + .adm-side + .adm-main + .adm-page).
+ * The portal_pro.css file stays untouched so the existing dashboard panes
+ * (service grid, tier badges, view-switcher) keep working — this file just
+ * removes the "cramped narrow column" issue and dials the dashboard into
+ * the canonical hub/adm visual system.
+ *
+ * Strategy:
+ *   1. Use full content width inside .adm-page (no 1180px cap).
+ *   2. Hide the in-page legacy pp-top header (replaced by .adm-topbar).
+ *   3. Hide the in-page legacy pp-side / pp-burger (replaced by .adm-side).
+ *   4. Re-target the dashboard's pp-grid layout to flow naturally inside
+ *      .adm-page — single column, full-width, generous gaps.
+ *   5. Polish pp-hero / pp-kpis / pp-svc to use design tokens consistently.
+ *   6. Auth pages (.pp-auth-shell) get a centered card layout without the
+ *      sidebar/topbar (login + signup).
+ *
+ * Tokens come from admin_tokens.css (--cc-*, --cc-sp-*, --cc-r-*). Nothing
+ * hard-coded — every dimension is a token reference.
+ */
+
+
+/* ============================================================
+   1. FULL-WIDTH PAGE — release the .adm-page cap for portal
+   ============================================================ */
+.adm-body.pp-shell .adm-page {
+  max-width: 100%;
+  padding-block: var(--cc-sp-11);
+  padding-inline: var(--cc-sp-12);
+  gap: var(--cc-gap-section);
+}
+
+@media (max-width: 1100px) {
+  .adm-body.pp-shell .adm-page {
+    padding-inline: var(--cc-sp-9);
+  }
+}
+@media (max-width: 720px) {
+  .adm-body.pp-shell .adm-page {
+    padding-inline: var(--cc-sp-7);
+    padding-block:  var(--cc-sp-8);
+  }
+}
+
+
+/* ============================================================
+   2. RETIRE THE LEGACY IN-PAGE CHROME
+   The old portal had its own pp-top header and pp-side sidebar
+   embedded INSIDE the page. The new shell provides those, so the
+   legacy ones must go.
+   ============================================================ */
+.adm-body.pp-shell .pp-top,
+.adm-body.pp-shell .pp-burger,
+.adm-body.pp-shell .pp-side,
+.adm-body.pp-shell .pp-side-out {
+  display: none !important;
+}
+
+/* The dashboard wraps its content in .pp-app > .pp-grid (sidebar + main).
+   Collapse the grid to a single column now that the sidebar lives in
+   .adm-side. The pp-main column becomes the entire content body. */
+.adm-body.pp-shell .pp-app {
+  padding: 0;
+  background: transparent;
+}
+.adm-body.pp-shell .pp-grid {
+  display: block;        /* not grid — single column flow */
+  grid-template-columns: none;
+  gap: 0;
+}
+.adm-body.pp-shell .pp-main {
+  width: 100%;
+  max-width: none;
+}
+
+
+/* ============================================================
+   3. HERO — polish the pp-hero to match the admin hub-hero feel
+   ============================================================ */
+.adm-body.pp-shell .pp-hero {
+  background: var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow: var(--cc-sh-hero);
+  color: #fff;
+  padding: var(--cc-sp-12) var(--cc-sp-13);
+  margin-block-end: var(--cc-gap-section);
+  position: relative;
+  overflow: hidden;
+}
+.adm-body.pp-shell .pp-hero::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: -60px;
+  inset-block-start: -60px;
+  width: 220px;
+  height: 220px;
+  border-radius: var(--cc-r-pill);
+  background: rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+.adm-body.pp-shell .pp-hero-c {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-10);
+  position: relative;
+}
+.adm-body.pp-shell .pp-hero-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--cc-r-card);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  flex-shrink: 0;
+}
+.adm-body.pp-shell .pp-hero h2 {
+  margin: 0;
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  line-height: var(--cc-lh-tight);
+  color: #fff;
+}
+.adm-body.pp-shell .pp-hero .sub {
+  font-size: var(--cc-fs-body-s);
+  color: rgba(255, 255, 255, 0.82);
+  margin-block-start: var(--cc-sp-3);
+  font-weight: var(--cc-fw-medium);
+  line-height: var(--cc-lh-default);
+}
+.adm-body.pp-shell .pp-hero-pill {
+  margin-inline-start: auto;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--cc-r-pill);
+  padding: var(--cc-sp-4) var(--cc-sp-7);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+  white-space: nowrap;
+}
+.adm-body.pp-shell .pp-hero-pill .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+}
+
+
+/* ============================================================
+   4. KPI STRIP — match hub-kpi cleanliness
+   ============================================================ */
+.adm-body.pp-shell .pp-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--cc-gap-inline);
+  margin-block-end: var(--cc-gap-section);
+}
+.adm-body.pp-shell .pp-kpi {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  padding: var(--cc-sp-9);
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-7);
+  transition: box-shadow var(--cc-anim-med) var(--cc-ease),
+              transform var(--cc-anim-med) var(--cc-ease);
+}
+.adm-body.pp-shell .pp-kpi:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform: translateY(-1px);
+}
+.adm-body.pp-shell .pp-kpi-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--cc-r-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--cc-fs-h3);
+  flex-shrink: 0;
+}
+.adm-body.pp-shell .pp-kpi-ic.is-violet { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.adm-body.pp-shell .pp-kpi-ic.is-green  { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+.adm-body.pp-shell .pp-kpi-ic.is-blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg);   }
+.adm-body.pp-shell .pp-kpi-ic.is-amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg);  }
+.adm-body.pp-shell .pp-kpi-ic.is-teal   { background: var(--tile-teal-bg);   color: var(--tile-teal-fg);   }
+.adm-body.pp-shell .pp-kpi-ic.is-red    { background: var(--tile-red-bg);    color: var(--tile-red-fg);    }
+.adm-body.pp-shell .pp-kpi-l {
+  font-size: var(--cc-fs-tiny);
+  color: var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+}
+.adm-body.pp-shell .pp-kpi-v {
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  color: var(--cc-text);
+  line-height: 1;
+  margin-block-start: var(--cc-sp-2);
+}
+.adm-body.pp-shell .pp-kpi-v small {
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+  margin-inline-start: var(--cc-sp-2);
+}
+
+
+/* ============================================================
+   5. PAGE-LEVEL TABS (.pp-view) — replaces the in-page sidebar
+   nav. Tabs are now controlled by the OUTER sidebar's data-pp-go
+   links via portal_sidebar.js.
+   ============================================================ */
+.adm-body.pp-shell .pp-view {
+  display: none;
+}
+.adm-body.pp-shell .pp-view.is-active {
+  display: block;
+  animation: pp-view-fade var(--cc-anim-med) var(--cc-ease-out);
+}
+@keyframes pp-view-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ============================================================
+   6. CARDS / SECTIONS — bring legacy pp-card + pp-block in line
+   ============================================================ */
+.adm-body.pp-shell .pp-card,
+.adm-body.pp-shell .pp-block {
+  background: var(--cc-card-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow: var(--cc-sh-card);
+  padding: var(--cc-sp-11);
+  margin-block-end: var(--cc-gap-section);
+}
+
+.adm-body.pp-shell .pp-card-head,
+.adm-body.pp-shell .pp-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-6);
+  margin-block-end: var(--cc-sp-7);
+}
+.adm-body.pp-shell .pp-card-head h3,
+.adm-body.pp-shell .pp-block-head h3 {
+  margin: 0;
+  font-size: var(--cc-fs-h3);
+  font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text);
+}
+
+
+/* ============================================================
+   7. SERVICE CARDS — keep portal_pro.css's pp-svc styles but
+   give them generous breathing room consistent with the rest.
+   ============================================================ */
+.adm-body.pp-shell .pp-svc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--cc-gap-section);
+}
+.adm-body.pp-shell .pp-svc {
+  border-radius: var(--cc-r-card);
+  border: 1px solid var(--cc-border);
+  box-shadow: var(--cc-sh-card);
+  padding: var(--cc-sp-9);
+  transition: box-shadow var(--cc-anim-med) var(--cc-ease),
+              transform var(--cc-anim-med) var(--cc-ease),
+              border-color var(--cc-anim-med) var(--cc-ease);
+}
+.adm-body.pp-shell .pp-svc:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform: translateY(-2px);
+  border-color: var(--cc-brand-soft2);
+}
+
+
+/* ============================================================
+   8. BUTTONS — alias pp-btn variants to feel like hub-btn
+   ============================================================ */
+.adm-body.pp-shell .pp-btn {
+  font-family: var(--cc-font);
+  font-weight: var(--cc-fw-bold);
+  border-radius: var(--cc-r-lg);
+  transition: var(--cc-tr-fast);
+}
+.adm-body.pp-shell .pp-btn--primary {
+  background: var(--cc-brand);
+  color: #fff;
+  border-color: var(--cc-brand);
+  box-shadow: var(--cc-sh-glow);
+}
+.adm-body.pp-shell .pp-btn--primary:hover {
+  background: var(--cc-brand-deep);
+  border-color: var(--cc-brand-deep);
+}
+
+
+/* ============================================================
+   9. AUTH PAGES (.pp-auth-shell) — login + signup
+   No sidebar/topbar. Just a centered card on a soft gradient
+   so users land on the brand from the very first paint.
+   ============================================================ */
+.adm-body.pp-auth-shell {
+  background: var(--cc-hero-grad);
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cc-sp-11);
+}
+.adm-body.pp-auth-shell .adm-shell { display: contents; }
+.adm-body.pp-auth-shell .adm-side,
+.adm-body.pp-auth-shell .adm-topbar,
+.adm-body.pp-auth-shell .adm-side-overlay { display: none !important; }
+.adm-body.pp-auth-shell .adm-main {
+  width: min(440px, 100%);
+  background: var(--cc-card-bg);
+  border-radius: var(--cc-r-card);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18),
+              0 6px 18px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+.adm-body.pp-auth-shell .adm-page {
+  padding: var(--cc-sp-13) var(--cc-sp-12);
+  max-width: 100%;
+}
+
+.pp-auth-brand {
+  text-align: center;
+  margin-block-end: var(--cc-sp-11);
+}
+.pp-auth-brand-mark {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto var(--cc-sp-6);
+  background: var(--cc-brand);
+  border-radius: var(--cc-r-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  color: #fff;
+  box-shadow: var(--cc-sh-glow);
+}
+.pp-auth-brand h1 {
+  margin: 0;
+  font-size: var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  color: var(--cc-text);
+}
+.pp-auth-brand p {
+  margin: var(--cc-sp-3) 0 0;
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-mute);
+  font-weight: var(--cc-fw-medium);
+}
+
+.pp-auth-form { display: grid; gap: var(--cc-sp-7); }
+.pp-auth-field { display: flex; flex-direction: column; gap: var(--cc-sp-3); }
+.pp-auth-field label {
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color: var(--cc-text-soft);
+}
+.pp-auth-field input,
+.pp-auth-field select {
+  width: 100%;
+  height: var(--cc-input-h);
+  padding-inline: var(--cc-sp-7);
+  background: var(--cc-input-bg);
+  border: 1px solid var(--cc-input-border);
+  border-radius: var(--cc-input-radius);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text);
+  transition: var(--cc-tr-fast);
+  outline: none;
+}
+.pp-auth-field input:focus,
+.pp-auth-field select:focus {
+  background: var(--cc-input-bg-focus);
+  border-color: var(--cc-brand);
+  box-shadow: var(--cc-input-ring);
+}
+.pp-auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cc-sp-3);
+  width: 100%;
+  height: var(--cc-btn-h);
+  background: var(--cc-brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--cc-btn-radius);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+  box-shadow: var(--cc-sh-glow);
+  transition: var(--cc-tr-fast);
+}
+.pp-auth-submit:hover {
+  background: var(--cc-brand-deep);
+  box-shadow: 0 6px 18px rgba(107, 90, 237, 0.42);
+}
+.pp-auth-meta {
+  margin-block-start: var(--cc-sp-11);
+  text-align: center;
+  font-size: var(--cc-fs-body-s);
+  color: var(--cc-text-mute);
+}
+.pp-auth-meta a {
+  color: var(--cc-brand);
+  font-weight: var(--cc-fw-bold);
+  text-decoration: none;
+}
+.pp-auth-meta a:hover { text-decoration: underline; }
+
+
+/* ============================================================
+   10. SIDEBAR TWEAKS — match portal copy + a softer brand hue
+   Apply only when body has .pp-shell so admin uses the original.
+   ============================================================ */
+.adm-body.pp-shell .adm-brand-mark {
+  background: linear-gradient(135deg, var(--cc-brand), var(--cc-brand-2));
+}
+
+
+/* ============================================================
+   11. LICENSE STATUS INDICATOR (top of dashboard hero, etc.)
+   The legacy pp-side-lic card was inside the in-page sidebar.
+   We hide it (sidebar is gone) but the hero-pill keeps the cue.
+   ============================================================ */
+.adm-body.pp-shell .pp-side-lic { display: none; }
+
+
+/* ============================================================
+   12. TABLES — ensure portal tables get the same floor as admin
+   even when wrapped in .pp-card / .pp-block instead of .hub-section
+   ============================================================ */
+.adm-body.pp-shell .pp-card table,
+.adm-body.pp-shell .pp-block table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.adm-body.pp-shell .pp-card th,
+.adm-body.pp-shell .pp-card td,
+.adm-body.pp-shell .pp-block th,
+.adm-body.pp-shell .pp-block td {
+  padding-block: var(--cc-sp-5);
+  padding-inline: var(--cc-sp-7);
+}
+.adm-body.pp-shell .pp-card thead th,
+.adm-body.pp-shell .pp-block thead th {
+  background: var(--hb-bg);
+  color: var(--cc-text-soft);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-heavy);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-block-end: 2px solid var(--cc-border);
+  text-align: start;
+}
+.adm-body.pp-shell .pp-card tbody td,
+.adm-body.pp-shell .pp-block tbody td {
+  border-block-end: 1px solid var(--cc-border);
+  color: var(--cc-text);
+  font-size: var(--cc-fs-body-s);
+}
+.adm-body.pp-shell .pp-card tbody tr:last-child td,
+.adm-body.pp-shell .pp-block tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+
+/* ============================================================
+   13. FLASH messages — inherit hub-flash look in portal
+   ============================================================ */
+.adm-body.pp-shell .hub-flash {
+  border-radius: var(--cc-r-lg);
+  padding: var(--cc-sp-6) var(--cc-sp-8);
+  margin-block-end: var(--cc-gap-section);
+  font-size: var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-sp-5);
+}
+
+
+/* ============================================================
+   14. INSTRUCTION/INFO BOXES — soften legacy boxes
+   ============================================================ */
+.adm-body.pp-shell .pp-info,
+.adm-body.pp-shell .pp-instructions {
+  border-radius: var(--cc-r-lg);
+  padding: var(--cc-sp-7) var(--cc-sp-8);
+  background: var(--cc-brand-softer);
+  border: 1px solid var(--cc-brand-soft2);
+  color: var(--cc-brand-ink);
+}
+
+
+/* ============================================================
+   15. RESPONSIVE — collapse sidebar on small viewports
+   ============================================================ */
+@media (max-width: 900px) {
+  .adm-body.pp-shell .pp-hero { padding: var(--cc-sp-10); }
+  .adm-body.pp-shell .pp-hero-c { gap: var(--cc-sp-6); }
+  .adm-body.pp-shell .pp-hero h2 { font-size: var(--cc-fs-h2); }
+}

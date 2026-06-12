@@ -1,27 +1,254 @@
+{# ═══════════════════════════════════════════════════════════════════════
+   portal_base.html — Customer Portal base layout (REDESIGNED)
+
+   Mission: give the customer-facing portal the SAME visual polish + shell
+   the admin panel uses. We reuse the admin shell CSS (.adm-shell / .adm-side
+   / .adm-main / .adm-page / .adm-topbar) so the portal automatically gets
+   the canonical sidebar + topbar + design-sweep floor (tables / cards /
+   confirm modal / toast) without re-authoring 700 LoC of layout CSS.
+
+   Pages that don't want the full chrome (login, signup) override the body
+   class via {% block body_class %} = "pp-auth-shell" and skip the
+   {% block sidebar %} / {% block topbar %} blocks. portal_pro.css stays
+   loaded so the existing dashboard's pp-* service-grid / pp-svc cards keep
+   working — the redesign is additive, not destructive.
+
+   Sidebar links: real portal sections (dashboard tabs + standalone pages).
+   They land on the dashboard with a URL hash like ``/portal#tab-services``
+   so the existing dashboard JS view-switcher activates the right pane.
+
+   Confirm modal + toast roots are inlined here so every portal page can
+   use ``data-confirm="…"`` and ``window.showToast(…)`` out of the box.
+   ═══════════════════════════════════════════════════════════════════════ #}
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="{{ current_locale|default('ar') }}" dir="{{ current_dir|default('rtl') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}HoberRadius{% endblock %}</title>
-  <link rel="icon" href="data:,">{# suppress favicon.ico 404 noise #}
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}بوابة العميل{% endblock %} — HobeRadius</title>
+  <link rel="icon" href="data:,">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer">
 
-  <script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
+  {# Canonical design system — same layers the admin panel loads. The
+     design_sweep file is loaded last so it normalizes spacing/tables. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_components.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_design_sweep.css') }}">
+  {# Legacy portal styles — kept so the dashboard's pp-svc service cards,
+     pp-tier-* badges, pp-view tab JS, etc. continue to render. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal_pro.css') }}">
+  {# Portal-specific redesign overrides — loaded LAST so it wins. #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/portal_redesign.css') }}">
+
   {% block head_extra %}{% endblock %}
 </head>
-<body class="hub-body">
-  <main style="max-width:1200px; margin:auto; padding:24px; display:grid; gap:16px">
-    {% block portal_topbar %}{% endblock %}
-    {% include "_partials/_flash.html" %}
-    {% block content %}{% endblock %}
+
+<body class="adm-body {% block body_class %}pp-shell{% endblock %}">
+
+{# Overlay used by the admin shell's mobile drawer (closes when tapped). #}
+<div class="adm-side-overlay" id="adm-overlay" aria-hidden="true"></div>
+
+<div class="adm-shell">
+
+  {% block sidebar %}
+  <aside class="adm-side" id="adm-side" role="navigation" aria-label="قائمة بوابة العميل">
+
+    <div class="adm-brand">
+      <div class="adm-brand-mark" aria-hidden="true">HR</div>
+      <div>
+        <div class="adm-brand-name">HobeRadius</div>
+        <div class="adm-brand-sub">بوابة العميل</div>
+      </div>
+    </div>
+
+    <nav class="adm-nav" id="adm-nav">
+      {% set ep = request.endpoint or '' %}
+      {% set _is_dash = (ep == 'public.customer_portal_dashboard') %}
+
+      {# ── Primary: dashboard home ── #}
+      <a href="{{ url_for('public.customer_portal_dashboard') }}"
+         class="adm-solo {% if _is_dash %}is-active{% endif %}"
+         data-pp-go="overview"
+         aria-current="{{ 'page' if _is_dash else 'false' }}">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-house"></i>
+        </span>
+        <span class="adm-solo-label">لوحة البوابة</span>
+      </a>
+
+      {# ── Group: my services + license + backups (in-dashboard panes) ── #}
+      {% set _g_svc = _is_dash %}
+      <div class="adm-group {% if _g_svc %}is-active is-open{% endif %}" data-group="services">
+        <button class="adm-group-head" type="button"
+                aria-expanded="{{ 'true' if _g_svc else 'false' }}"
+                aria-controls="grp-svc">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-shapes"></i>
+          </span>
+          <span class="adm-group-label">خدماتي وحسابي</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-svc">
+          <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-services"
+             class="adm-link" data-pp-go="services">
+            الخدمات
+          </a>
+          <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-whatsapp"
+             class="adm-link" data-pp-go="whatsapp">
+            رسائل واتساب
+          </a>
+          <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-backups"
+             class="adm-link" data-pp-go="backups">
+            النسخ الاحتياطية
+          </a>
+        </div>
+      </div>
+
+      {# ── Group: payments + requests ── #}
+      {% set _g_pay = ep in ('public.customer_portal_pay_new',
+                              'public.customer_portal_pay_submit',
+                              'public.payment_portal',
+                              'public.customer_portal_service_request_detail') %}
+      <div class="adm-group {% if _g_pay %}is-active is-open{% endif %}" data-group="pay">
+        <button class="adm-group-head" type="button"
+                aria-expanded="{{ 'true' if _g_pay else 'false' }}"
+                aria-controls="grp-pay">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-credit-card"></i>
+          </span>
+          <span class="adm-group-label">المدفوعات والطلبات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-pay">
+          <a href="{{ url_for('public.customer_portal_pay_new') }}"
+             class="adm-link {% if ep in ['public.customer_portal_pay_new','public.customer_portal_pay_submit'] %}is-active{% endif %}">
+            إرسال دفعة
+          </a>
+          <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-billing"
+             class="adm-link" data-pp-go="billing">
+            الفواتير والمدفوعات
+          </a>
+          <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-requests"
+             class="adm-link" data-pp-go="requests">
+            الطلبات والدعم
+          </a>
+        </div>
+      </div>
+
+      {# ── Single: account / settings ── #}
+      <a href="{{ url_for('public.customer_portal_dashboard') }}#tab-account"
+         class="adm-solo" data-pp-go="account">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-gear"></i>
+        </span>
+        <span class="adm-solo-label">الحساب والإعدادات</span>
+      </a>
+
+    </nav>
+
+    {# ── Sidebar footer: user pill + logout — same shape as admin ── #}
+    <div class="adm-side-foot">
+      <div class="adm-user-pill">
+        <span class="adm-user-avatar" aria-hidden="true">
+          <i class="fa-solid fa-user"></i>
+        </span>
+        <span class="adm-user-name">
+          {{ session.get('customer_name') or (customer.company_name if customer is defined and customer else 'العميل') }}
+        </span>
+      </div>
+      <form method="post" action="{{ url_for('public.customer_portal_logout') }}">
+        {{ csrf_input() }}
+        <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
+          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+        </button>
+      </form>
+    </div>
+
+  </aside>
+  {% endblock %}
+
+  {# ─────────────────────────────────────────────────────────────────────
+     Main area (.adm-main + .adm-topbar + .adm-page)
+     ───────────────────────────────────────────────────────────────────── #}
+  <main class="adm-main" id="adm-main" role="main">
+
+    {% block topbar %}
+    <header class="adm-topbar" role="banner">
+      <button class="adm-menu-btn" id="adm-menu-btn"
+              type="button"
+              aria-label="فتح القائمة الجانبية"
+              aria-expanded="false"
+              aria-controls="adm-side">
+        <i class="fa-solid fa-bars" aria-hidden="true"></i>
+      </button>
+      <div class="adm-topbar-page-title">
+        {% block page_title %}بوابة العميل{% endblock %}{% block page_subtitle %}{% endblock %}
+      </div>
+      <div class="adm-topbar-actions">
+        <div class="adm-topbar-user" aria-label="المستخدم الحالي">
+          <span class="adm-topbar-avatar" aria-hidden="true">
+            <i class="fa-solid fa-user"></i>
+          </span>
+          <span>
+            {{ session.get('customer_name') or (customer.company_name if customer is defined and customer else 'العميل') }}
+          </span>
+        </div>
+        <form method="post" action="{{ url_for('public.customer_portal_logout') }}">
+          {{ csrf_input() }}
+          <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
+            <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
+        </form>
+      </div>
+    </header>
+    {% endblock %}
+
+    <div class="adm-page pp-page">
+
+      {# Flash messages — uses the shared partial. #}
+      {% include "_partials/_flash.html" %}
+
+      {% block portal_topbar %}{% endblock %}
+
+      {% block content %}{% endblock %}
+
+    </div>{# /.adm-page #}
+
   </main>
-  {% include "_partials/_confirm_modal.html" %}
-  {% block scripts %}{% endblock %}
+
+</div>{# /.adm-shell #}
+
+{# Shared confirm modal partial (uses hub.js for [data-confirm-form]). #}
+{% include "_partials/_confirm_modal.html" %}
+
+{# Design-sweep building blocks: the second confirm overlay (hub-confirm-overlay)
+   + toast root drive [data-confirm] on submit buttons and window.showToast(). #}
+<div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
+  <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
+    <div class="hub-confirm-message" id="hub-confirm-message">—</div>
+    <div class="hub-confirm-actions">
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+<div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
+
+<script src="{{ url_for('static', filename='js/hub.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/admin_design_sweep.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/portal_sidebar.js') }}" defer></script>
+
+{% block scripts %}{% endblock %}
+{% block extra_js %}{% endblock %}
 </body>
 </html>
