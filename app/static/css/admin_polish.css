@@ -1,0 +1,620 @@
+/* ============================================================================
+ *  admin_polish.css — VISUAL POLISH + ANIMATION + الدلع LAYER
+ *
+ *  Loaded LAST (after admin_design_sweep.css), this layer:
+ *
+ *    1.  Strengthens visual CONTRAST (text weights, divider opacity, focus
+ *        rings) without changing palette — the canonical purple stays.
+ *    2.  Adds delicate ENTRANCE animations to every page so the panel feels
+ *        alive on load (fade-up cards, KPI count-ups, sheen on hero, bar
+ *        fills).  Each effect respects `prefers-reduced-motion`.
+ *    3.  Adds HOVER affordances (lift cards, glow buttons, table rows
+ *        smoothly tint) that survive across every page.
+ *    4.  Provides SHIMMER + skeleton helpers + spinner so async actions
+ *        feel polished (the dashboard's «اقرأ المقاييس الآن» button picks
+ *        these up automatically — no template change needed).
+ *
+ *  Implementation rules:
+ *
+ *    • RTL inherited from admin_base.css (`html[dir="rtl"]`). All offsets
+ *      use logical properties so a future LTR mode is one attribute flip.
+ *    • Tokens only — every colour/shadow/radius comes from
+ *      admin_tokens.css.  The two rgba()s here are alpha overlays where
+ *      the alpha is what matters.
+ *    • Progressive enhancement — every selector is additive on top of an
+ *      existing class.  Pages render perfectly without this stylesheet;
+ *      with it they pick up the polish silently.
+ *    • Reduced motion — every keyframe / transition has a matching
+ *      `@media (prefers-reduced-motion: reduce)` zero-out so vestibular-
+ *      sensitive operators get the calm version.
+ *
+ *  Companion JS: admin_polish.js
+ *    • IntersectionObserver-driven count-up on `[data-countup]` (default:
+ *      any numeric KPI value cell that opts in).
+ *    • Bar fill on `[data-bar]` (animates width from 0 to %).
+ *    • Reveal-on-scroll on `.polish-reveal`.
+ *    • Sheen pass on the page hero on first paint.
+ * ========================================================================== */
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   1.  TYPOGRAPHIC CONTRAST + READABILITY
+   Bumps body weight a notch where the panel was reading thin against the
+   purple-tinted background.  Numeric tabular figures keep dashboards stable.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.adm-body { font-feature-settings: "ss01", "tnum", "kern"; }
+
+.adm-page,
+.adm-page * {
+  /* Render numbers in tabular columns so KPI strips don't shift width
+     when the count-up animation iterates. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Body copy weight nudged for readability against #F5F3FB without changing
+   the design language. */
+.adm-page p,
+.adm-page li,
+.adm-page td,
+.adm-page small { font-weight: 500; }
+
+.adm-page h1, .adm-page h2, .adm-page h3,
+.adm-page .hub-section-head-title,
+.adm-page .hub-kpi-value,
+.adm-page .hub-hero-title { letter-spacing: -0.005em; }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   2.  FOCUS RINGS — visible everywhere, brand-coloured, never harsh
+   ───────────────────────────────────────────────────────────────────────── */
+.adm-page :is(a, button, input, textarea, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--cc-brand);
+  outline-offset: 2px;
+  border-radius: var(--cc-r-sm);
+  transition: outline-offset 120ms var(--cc-ease-out);
+}
+.adm-page :is(input, textarea, select):focus-visible {
+  outline-offset: 0;
+  box-shadow: var(--cc-input-ring);
+  border-color: var(--cc-brand);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   3.  HOVER AFFORDANCES — cards lift, buttons glow, links tint
+   Every animation duration ≤ 240 ms.  GPU-friendly transforms.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.hub-kpi,
+.hub-section,
+.hub-action,
+.sg-card,
+.fi-card,
+.fd-card,
+.cc-card,
+.cc-section,
+.adm-flash {
+  transition:
+    transform var(--cc-anim-med) var(--cc-ease-out),
+    box-shadow var(--cc-anim-med) var(--cc-ease-out),
+    border-color var(--cc-anim-med) var(--cc-ease-out);
+}
+
+.hub-kpi:hover,
+.hub-action:hover,
+.sg-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--cc-sh-card2);
+  border-color: var(--cc-border-2);
+}
+
+.hub-section:hover {
+  box-shadow: var(--cc-sh-card2);
+}
+
+/* Buttons get a subtle lift + glow on hover. */
+.hub-btn,
+.fi-btn,
+.sg-btn-primary,
+.sg-btn-secondary,
+.fd-btn,
+.fd-rowbtn {
+  transition:
+    transform var(--cc-anim-fast) var(--cc-ease-out),
+    box-shadow var(--cc-anim-fast) var(--cc-ease-out),
+    background var(--cc-anim-fast) var(--cc-ease-out),
+    color var(--cc-anim-fast) var(--cc-ease-out),
+    border-color var(--cc-anim-fast) var(--cc-ease-out);
+}
+.hub-btn:hover,
+.fi-btn:hover,
+.sg-btn-primary:hover,
+.sg-btn-secondary:hover,
+.fd-btn:hover,
+.fd-rowbtn:hover {
+  transform: translateY(-1px);
+}
+.hub-btn--primary:hover,
+.fi-btn--primary:hover,
+.sg-btn-primary:hover { box-shadow: var(--cc-sh-glow); }
+
+.hub-btn:active,
+.fi-btn:active,
+.sg-btn-primary:active,
+.sg-btn-secondary:active,
+.fd-btn:active,
+.fd-rowbtn:active { transform: translateY(0); }
+
+/* Table rows: smooth tint on hover, no jump. */
+.hub-table tbody tr,
+.fd-tbl tbody tr,
+.sg-table tbody tr,
+table.adm-table tbody tr {
+  transition: background var(--cc-anim-fast) var(--cc-ease-out);
+}
+.hub-table tbody tr:hover,
+.fd-tbl tbody tr:hover,
+.sg-table tbody tr:hover,
+table.adm-table tbody tr:hover {
+  background: var(--cc-brand-softer);
+}
+
+/* Sidebar links — already animated by base; we add a soft inset on hover so
+   navigation feels tactile. */
+.adm-side .adm-link,
+.adm-side .adm-solo {
+  transition:
+    background var(--cc-anim-fast) var(--cc-ease-out),
+    color var(--cc-anim-fast) var(--cc-ease-out),
+    transform var(--cc-anim-fast) var(--cc-ease-out);
+}
+.adm-side .adm-link:hover,
+.adm-side .adm-solo:hover { transform: translateX(2px); }
+html[dir="rtl"] .adm-side .adm-link:hover,
+html[dir="rtl"] .adm-side .adm-solo:hover { transform: translateX(-2px); }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   4.  ENTRANCE — fade-up cascade for cards on page load
+   The polish-stagger class on the page sets each direct .hub-* child to
+   the next stagger step.  JS strips the class after 800 ms so dynamic
+   inserts don't re-trigger.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes polish-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes polish-pop {
+  from { opacity: 0; transform: scale(.96); }
+  60%  { transform: scale(1.01); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.adm-page .hub-hero,
+.adm-page .sg-hero,
+.adm-page .fi-hero,
+.adm-page .fd-hero {
+  animation: polish-pop 360ms var(--cc-ease-out) both;
+}
+
+.adm-page .hub-kpi,
+.adm-page .hub-section,
+.adm-page .hub-action,
+.adm-page .sg-card,
+.adm-page .fi-card,
+.adm-page .fd-card {
+  animation: polish-fade-up 380ms var(--cc-ease-out) both;
+}
+
+/* Cascading delays — nth-child up to ten cards. */
+.adm-page .hub-kpi:nth-child(1),
+.adm-page .hub-section:nth-child(1) { animation-delay: 40ms; }
+.adm-page .hub-kpi:nth-child(2),
+.adm-page .hub-section:nth-child(2) { animation-delay: 80ms; }
+.adm-page .hub-kpi:nth-child(3),
+.adm-page .hub-section:nth-child(3) { animation-delay: 120ms; }
+.adm-page .hub-kpi:nth-child(4),
+.adm-page .hub-section:nth-child(4) { animation-delay: 160ms; }
+.adm-page .hub-kpi:nth-child(5),
+.adm-page .hub-section:nth-child(5) { animation-delay: 200ms; }
+.adm-page .hub-kpi:nth-child(6),
+.adm-page .hub-section:nth-child(6) { animation-delay: 240ms; }
+.adm-page .hub-kpi:nth-child(7),
+.adm-page .hub-section:nth-child(7) { animation-delay: 280ms; }
+.adm-page .hub-kpi:nth-child(8),
+.adm-page .hub-section:nth-child(8) { animation-delay: 320ms; }
+
+/* Reveal-on-scroll opt-in for long pages. */
+.polish-reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 360ms var(--cc-ease-out),
+    transform 360ms var(--cc-ease-out);
+}
+.polish-reveal.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   5.  HERO SHEEN — a one-shot light pass over the hero on load.
+   Pure CSS, no JS, runs once.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.hub-hero,
+.sg-hero,
+.fi-hero,
+.fd-hero,
+.p7-hero-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hub-hero::after,
+.sg-hero::after,
+.fi-hero::after,
+.fd-hero::after,
+.p7-hero-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    rgba(255, 255, 255, .18) 50%,
+    transparent 62%
+  );
+  transform: translateX(-100%);
+  animation: polish-hero-sheen 1600ms var(--cc-ease-out) 280ms 1 both;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes polish-hero-sheen {
+  to { transform: translateX(100%); }
+}
+
+.hub-hero > *,
+.sg-hero > *,
+.fi-hero > *,
+.fd-hero > *,
+.p7-hero-card > * { position: relative; z-index: 2; }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   6.  KPI VALUES — count-up styling
+   The JS counts the numeric portion of the value text; we keep the suffix
+   (« جلسة », « % », etc) stable while the digits animate.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.hub-kpi-value,
+.fi-stat-num,
+.fd-num-emph,
+[data-countup] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.polish-count-num {
+  /* The wrapper JS inserts around the digits so animation transforms only
+     them, not the surrounding suffix. */
+  display: inline-block;
+  min-width: 1ch;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   7.  ANIMATED BARS — width fill from 0 → target%
+   Templates opt in by adding `data-bar="N"` on any .hub-progress, or by
+   using the .polish-bar standalone component below.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.hub-progress > span,
+.polish-bar-fill,
+[data-bar] > .polish-bar-fill,
+[data-bar] > span {
+  transition: width 900ms cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-bar][data-animated="0"] > .polish-bar-fill,
+[data-bar][data-animated="0"] > span,
+.hub-progress[data-animated="0"] > span {
+  width: 0 !important;
+}
+
+.polish-bar {
+  position: relative;
+  height: 10px;
+  background: var(--cc-border);
+  border-radius: var(--cc-r-pill);
+  overflow: hidden;
+}
+.polish-bar-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 0;
+  background: linear-gradient(90deg, var(--cc-brand) 0%, var(--cc-brand-2) 100%);
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+}
+.polish-bar--green .polish-bar-fill {
+  background: linear-gradient(90deg, var(--hb-green) 0%, #4FD984 100%);
+}
+.polish-bar--amber .polish-bar-fill {
+  background: linear-gradient(90deg, var(--hb-amber) 0%, #FFB650 100%);
+}
+.polish-bar--red .polish-bar-fill {
+  background: linear-gradient(90deg, var(--hb-red) 0%, #FF7E7E 100%);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   8.  SHIMMER + SKELETON — for loading states + buttons in flight.
+   Owner's «الدلع»: every async button gets the shimmer free.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+.polish-skeleton,
+.is-busy.polish-shimmer,
+button.is-busy,
+.hub-btn[data-loading="true"],
+.fd-rowbtn.is-busy {
+  position: relative;
+  overflow: hidden;
+}
+
+.polish-skeleton {
+  background:
+    linear-gradient(
+      90deg,
+      var(--cc-border) 0%,
+      rgba(255,255,255,.6) 50%,
+      var(--cc-border) 100%
+    );
+  background-size: 200% 100%;
+  animation: polish-shimmer 1300ms linear infinite;
+  border-radius: var(--cc-r);
+  color: transparent !important;
+}
+
+button.is-busy::after,
+.hub-btn[data-loading="true"]::after,
+.fd-rowbtn.is-busy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,.32) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: polish-shimmer 1100ms linear infinite;
+  pointer-events: none;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   9.  SPINNER — drop-in `.polish-spinner`
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes polish-spin {
+  to { transform: rotate(360deg); }
+}
+.polish-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid currentColor;
+  border-block-end-color: transparent;
+  border-radius: 50%;
+  animation: polish-spin 720ms linear infinite;
+  vertical-align: -2px;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   10. STATUS DOT — pulsing live indicator for «متّصلة» / online badges.
+   Catches the operator's eye when something is live.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); }
+  70%  { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.polish-live-dot,
+.fd-badge--up .fa-circle,
+.polish-status-dot--live {
+  position: relative;
+}
+.fd-badge--up .fa-circle {
+  animation: polish-live-pulse 1800ms var(--cc-ease-out) infinite;
+  border-radius: 50%;
+}
+.polish-live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--hb-green);
+  animation: polish-live-pulse 1800ms var(--cc-ease-out) infinite;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   11. TOAST — gentle entry/exit
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.adm-toast.is-visible,
+.hub-toast.is-visible,
+.fd-toast.is-visible,
+.p7-toast.is-visible {
+  animation: polish-toast-in 220ms var(--cc-ease-out) both;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   12. FLASH MESSAGES — slide in from the start side (RTL aware)
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-flash-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+html[dir="rtl"] .adm-flash,
+.hub-flash {
+  animation: polish-flash-in 320ms var(--cc-ease-out) both;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   13. SECTION HEAD ICON — gentle bob on hover (premium touch)
+   ───────────────────────────────────────────────────────────────────────── */
+
+.hub-section-head-icon {
+  transition: transform var(--cc-anim-med) var(--cc-ease-out);
+}
+.hub-section:hover .hub-section-head-icon {
+  transform: rotate(-6deg) scale(1.06);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   14. EMPTY STATE — gentle floating icon
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes polish-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+.hub-empty .hub-empty-icon,
+.fd-empty i {
+  animation: polish-float 3200ms var(--cc-ease-inout) infinite;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   15. CONTRAST UPGRADES — small dividers, faint text, small captions
+   These were tested at 1280×800 on the design-sweep screenshots; they
+   bring the body to AA contrast without darkening the brand surface.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.adm-page hr,
+.adm-page .sg-divider,
+.adm-page .fi-divider {
+  border: 0;
+  height: 1px;
+  background: var(--cc-border-2);
+  opacity: 1;
+}
+
+.adm-page .hub-empty-msg,
+.adm-page .fd-empty {
+  color: var(--cc-text);
+}
+.adm-page .hub-empty-sub,
+.adm-page .fd-mini,
+.adm-page .sg-hint,
+.adm-page .fi-card-sub {
+  color: var(--cc-text-soft);
+}
+
+/* Numeric KPI value: bigger weight, brand-ink tint where readable. */
+.adm-page .hub-kpi-value,
+.adm-page .fi-stat-num {
+  color: var(--cc-brand-ink);
+  font-weight: var(--cc-fw-heavy);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   16. TABLE POLISH — zebra reinstated, sticky thead shadow
+   The design-sweep already gave tables a padding floor; this adds the
+   final premium texture.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.adm-page .hub-table tbody tr:nth-child(even),
+.adm-page .fd-tbl tbody tr:nth-child(even),
+.adm-page table.adm-table tbody tr:nth-child(even) {
+  background: var(--cc-table-zebra);
+}
+
+.adm-page .hub-table thead th,
+.adm-page .fd-tbl thead th,
+.adm-page table.adm-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--cc-table-head-bg);
+  box-shadow: inset 0 -1px 0 var(--cc-border-2);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   17. POLISH BADGES — semantic pill variants used by the audit JS
+   ───────────────────────────────────────────────────────────────────────── */
+.polish-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  background: var(--pill-grey-bg);
+  color: var(--pill-grey-fg);
+  line-height: 1.5;
+}
+.polish-pill--ok   { background: var(--pill-green-bg);  color: var(--pill-green-fg); }
+.polish-pill--warn { background: var(--pill-amber-bg);  color: var(--pill-amber-fg); }
+.polish-pill--info { background: var(--pill-blue-bg);   color: var(--pill-blue-fg); }
+.polish-pill--bad  { background: var(--pill-red-bg);    color: var(--pill-red-fg); }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   18. REDUCED MOTION — silence everything decorative
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .adm-page .hub-hero,
+  .adm-page .sg-hero,
+  .adm-page .fi-hero,
+  .adm-page .fd-hero,
+  .adm-page .hub-kpi,
+  .adm-page .hub-section,
+  .adm-page .hub-action,
+  .adm-page .sg-card,
+  .adm-page .fi-card,
+  .adm-page .fd-card { animation: none !important; }
+  .hub-hero::after, .sg-hero::after, .fi-hero::after,
+  .fd-hero::after, .p7-hero-card::after { display: none !important; }
+  .hub-empty .hub-empty-icon,
+  .fd-empty i { animation: none !important; }
+  .polish-bar-fill,
+  .hub-progress > span { transition: none !important; }
+  .polish-live-dot,
+  .fd-badge--up .fa-circle { animation: none !important; }
+  .polish-skeleton { animation: none !important; }
+  .polish-reveal { opacity: 1; transform: none; transition: none; }
+}

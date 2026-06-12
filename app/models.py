@@ -75,6 +75,16 @@ class Customer(TimestampMixin, db.Model):
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
     portal_config_json = db.Column(db.Text, default="{}", nullable=False)
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §11 — per-customer FQDN. Auto-assigned
+    # on customer create as "client<id>.<fleet.tls.zone_base>" (default
+    # hoberadius.com). The wildcard cert covers every subdomain; the
+    # customer-side SSTP/IPsec listener binds this CN. Operators can
+    # override per row when a customer needs a vanity name.
+    subdomain = db.Column(db.String(120), default="", nullable=False)
+    # §12 — panel-locked per-connection speed. 0 = inherit from plan;
+    # the resolver collapses zero to the LOCKED floor (5 Mbps). Owner
+    # bumps this to 10 / 50 / 100 to unlock the customer.
+    speed_unlock_mbps = db.Column(db.Integer, default=0, nullable=False)
 
     @property
     def portal_config(self) -> dict:
@@ -467,6 +477,13 @@ class Plan(TimestampMixin, db.Model):
     max_devices = db.Column(db.Integer, default=1, nullable=False)
     features_json = db.Column(db.Text, default="{}", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §12.1 — per-plan default unlock
+    # (Mbps, per-direction symmetric). 0 = no plan-level unlock, falls
+    # back to the hard-coded LOCKED floor (5). Customer override
+    # (``Customer.speed_unlock_mbps``) wins when set; the §9 type policy
+    # is still the ceiling — see ``resolve_speed_for`` in
+    # ``app/services/customer_speed_enforcement.py``.
+    speed_unlock_mbps = db.Column(db.Integer, default=0, nullable=False)
 
     licenses = db.relationship("License", back_populates="plan", lazy="dynamic")
 
@@ -1550,6 +1567,26 @@ class CustomerRadiusInstance(TimestampMixin, db.Model):
     status = db.Column(db.String(20), default="unknown", nullable=False, index=True)
     last_seen_at = db.Column(db.DateTime, nullable=True)
     notes = db.Column(db.Text, default="", nullable=False)
+
+    # wg-radius tunnel (CUSTOMER_RADIUS_TUNNEL_DESIGN §3.1 + §6.4).
+    # The customer's wg-radius public key is reported on every heartbeat;
+    # the panel stores it and re-publishes it via /api/proxy/radius-peers
+    # so the proxy's reconciler can build its peer table. Pubkey changes
+    # are accepted (reinstall case) and audited. ``wg_last_handshake_at``
+    # follows the customer's ``last_handshake_age_s`` report.
+    wg_public_key = db.Column(db.String(64), default="", nullable=False)
+    wg_last_handshake_at = db.Column(db.DateTime, nullable=True)
+    # config_fingerprint reconciliation (§6.4):
+    # The customer + the proxy each report the sha256 of what they actually
+    # applied. The panel compares to the fingerprint of what it just
+    # published and surfaces a single "متزامن ✓ / بانتظار التقارب" badge.
+    # ``drift_cycles`` ticks each time a stale fingerprint is reported in a
+    # row; when it crosses ``DRIFT_ALARM_AFTER`` the panel emits a P9 alarm
+    # (event + Alert with a dedupe_key).
+    last_published_fingerprint = db.Column(db.String(80), default="", nullable=False)
+    last_reported_fingerprint = db.Column(db.String(80), default="", nullable=False)
+    last_fingerprint_reported_at = db.Column(db.DateTime, nullable=True)
+    drift_cycles = db.Column(db.Integer, default=0, nullable=False)
 
     customer = db.relationship("Customer", back_populates="radius_instance")
     proxy_realm_route = db.relationship(

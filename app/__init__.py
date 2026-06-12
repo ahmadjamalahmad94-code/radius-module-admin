@@ -497,6 +497,47 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("chr_nodes", {
             "device_facts_json": "TEXT NOT NULL DEFAULT '{}'",
         })
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §10 — node roles tag. A SET of
+    # connection-type roles a node may host simultaneously (radius_transport
+    # + vpn_sstp/pptp/ipsec/wg). Empty = all roles, for back-compat with
+    # existing fleets — the operator opts a node into a narrower set once
+    # the §9 bandwidth-policy + capacity dashboard guide the call.
+    if "fleet_chr_nodes" in tables:
+        _add_columns_if_missing("fleet_chr_nodes", {
+            "roles_json": "TEXT NOT NULL DEFAULT '[]'",
+        })
+    # §11 (subdomain) + §12 (panel-locked speed) — per-customer columns
+    # land on existing rows via the same additive heal. Defaults match
+    # the column defaults so existing customers keep working unchanged:
+    # subdomain='' until assign_subdomain() runs, speed_unlock_mbps=0
+    # which the resolver collapses to the locked 5M floor.
+    if "customers" in tables:
+        _add_columns_if_missing("customers", {
+            "subdomain": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "speed_unlock_mbps": "INTEGER NOT NULL DEFAULT 0",
+        })
+    if "plans" in tables:
+        _add_columns_if_missing("plans", {
+            "speed_unlock_mbps": "INTEGER NOT NULL DEFAULT 0",
+        })
+    # Customer RADIUS↔proxy wg-radius tunnel (CUSTOMER_RADIUS_TUNNEL_DESIGN
+    # §3.1 + §6.4). The customer side reports its wg-radius pubkey on every
+    # bridge heartbeat; the panel stores it + the last-handshake age and
+    # republishes it via /api/proxy/radius-peers. The four
+    # fingerprint-related columns implement §6.4 "drift visibility": each
+    # heartbeat carries the customer's applied config_fingerprint, and we
+    # tick drift_cycles every time it disagrees with what we just
+    # published — the badge UI + the 3-cycle P9 alarm read these columns.
+    if "customer_radius_instances" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
+        _add_columns_if_missing("customer_radius_instances", {
+            "wg_public_key": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "wg_last_handshake_at": datetime_type,
+            "last_published_fingerprint": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "last_reported_fingerprint": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "last_fingerprint_reported_at": datetime_type,
+            "drift_cycles": "INTEGER NOT NULL DEFAULT 0",
+        })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("license_payment_requests", {
