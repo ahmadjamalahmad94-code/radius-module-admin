@@ -1544,6 +1544,26 @@ class CustomerRadiusInstance(TimestampMixin, db.Model):
     last_seen_at = db.Column(db.DateTime, nullable=True)
     notes = db.Column(db.Text, default="", nullable=False)
 
+    # wg-radius tunnel (CUSTOMER_RADIUS_TUNNEL_DESIGN §3.1 + §6.4).
+    # The customer's wg-radius public key is reported on every heartbeat;
+    # the panel stores it and re-publishes it via /api/proxy/radius-peers
+    # so the proxy's reconciler can build its peer table. Pubkey changes
+    # are accepted (reinstall case) and audited. ``wg_last_handshake_at``
+    # follows the customer's ``last_handshake_age_s`` report.
+    wg_public_key = db.Column(db.String(64), default="", nullable=False)
+    wg_last_handshake_at = db.Column(db.DateTime, nullable=True)
+    # config_fingerprint reconciliation (§6.4):
+    # The customer + the proxy each report the sha256 of what they actually
+    # applied. The panel compares to the fingerprint of what it just
+    # published and surfaces a single "متزامن ✓ / بانتظار التقارب" badge.
+    # ``drift_cycles`` ticks each time a stale fingerprint is reported in a
+    # row; when it crosses ``DRIFT_ALARM_AFTER`` the panel emits a P9 alarm
+    # (event + Alert with a dedupe_key).
+    last_published_fingerprint = db.Column(db.String(80), default="", nullable=False)
+    last_reported_fingerprint = db.Column(db.String(80), default="", nullable=False)
+    last_fingerprint_reported_at = db.Column(db.DateTime, nullable=True)
+    drift_cycles = db.Column(db.Integer, default=0, nullable=False)
+
     customer = db.relationship("Customer", back_populates="radius_instance")
     proxy_realm_route = db.relationship(
         "ProxyRealmRoute", back_populates="radius_instance",
