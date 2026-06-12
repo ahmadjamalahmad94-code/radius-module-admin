@@ -369,6 +369,25 @@ def routing_table():
             "routing-table: chr_shared_secret resolution degraded to empty",
         )
 
+    # feat/panel-chr-move-public-ip — outbound CoA-Disconnect command queue.
+    # The proxy is OUTBOUND-ONLY (no HTTP listener; enforced by
+    # test_proxy_not_in_license_path). So we publish CoA commands HERE
+    # and the proxy executes them between polls. ``pending_coa`` lists
+    # every command still alive (not done/failed/expired) — each row
+    # included in this response transitions from ``pending`` to ``sent``
+    # so the panel UI knows the proxy has actually fetched it.
+    pending_coa: list[dict] = []
+    try:
+        from app.services.coa_disconnect import (
+            alive_commands,
+            serialize_for_routing_table,
+        )
+        pending_coa = serialize_for_routing_table(alive_commands(), mark_sent=True)
+    except Exception:  # noqa: BLE001 — never break routing-table on a queue probe
+        current_app.logger.exception(
+            "routing-table: pending_coa publish degraded to empty",
+        )
+
     return jsonify({
         "ok": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -380,6 +399,9 @@ def routing_table():
         "realms_status": realms_status,
         # §6.1 — single source-of-truth secret. Authenticated channel only.
         "chr_shared_secret": chr_shared_secret,
+        # Outbound CoA-Disconnect command queue (poll-based; ≤60 s execution
+        # window matches the proxy's routing-table poll cadence).
+        "pending_coa": pending_coa,
     })
 
 
@@ -463,6 +485,72 @@ def heartbeat():
             "unknown_realms": unknown,
             "server_time": datetime.now(timezone.utc).isoformat(),
         },
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CoA-Disconnect result — proxy reports outcome of a pending_coa command
+# ──────────────────────────────────────────────────────────────────────────────
+
+@bp.post("/coa-result")
+def coa_result():
+    """Proxy reports the outcome of a CoA-Disconnect command it picked up
+    from ``pending_coa`` in a prior routing-table poll.
+
+    Auth: same ``X-Proxy-Token`` HMAC as the rest of ``/api/proxy/*``.
+
+    Body:
+        {
+          "id":       "<uuid>",      # the command_id from pending_coa
+          "status":   "done"|"failed",
+          "coa_code": 41|42,         # 41 = Disconnect-ACK, 42 = NAK (RFC 5176)
+          "detail":   "<short text>" # optional, audit-only
+        }
+
+    Response (always 200 unless auth or schema fails):
+        { "ok": true,
+          "found": <bool>,           # False when the id is unknown
+          "already_terminal": <bool>,# True on a re-report; we still ack
+          "status": "done"|"failed"|"expired" }
+
+    Idempotency: a re-report of a terminal command is a no-op + still
+    returns ``ok=true`` so the proxy can retry the POST without
+    poisoning anything. Unknown ids ack silently — a routing-table
+    publish that was wiped before the proxy heard back is not the
+    proxy's fault.
+    """
+    denied = _auth_required()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    cid = str(payload.get("id") or "").strip()
+    status = str(payload.get("status") or "").strip().lower()
+    if not cid:
+        return jsonify({"ok": False, "error": "missing_id"}), 400
+    if status not in ("done", "failed"):
+        return jsonify({"ok": False, "error": "bad_status"}), 400
+    detail = str(payload.get("detail") or "")[:500]
+    raw_code = payload.get("coa_code")
+    coa_code: int | None = None
+    if raw_code is not None:
+        try:
+            coa_code = int(raw_code)
+        except (TypeError, ValueError):
+            coa_code = None
+    try:
+        from app.services.coa_disconnect import apply_coa_result
+        outcome = apply_coa_result(
+            command_id=cid, status=status, detail=detail, coa_code=coa_code,
+        )
+    except Exception:  # noqa: BLE001 — never crash a poll on a queue write
+        current_app.logger.exception("coa-result: apply failed for id=%s", cid)
+        return jsonify({"ok": False, "error": "internal_error"}), 500
+    return jsonify({
+        "ok": True,
+        "found": outcome.found,
+        "already_terminal": outcome.already_terminal,
+        "status": outcome.new_status,
+        "command_id": outcome.command_id,
     })
 
 

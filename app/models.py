@@ -1758,6 +1758,57 @@ class ProxyRealmRoute(TimestampMixin, db.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# PendingCoaCommand — poll-based outbound command queue to the proxy.
+#
+# feat/panel-chr-move-public-ip: the proxy is OUTBOUND-ONLY (no HTTP
+# listener — enforced by ``test_proxy_not_in_license_path``). It POLLS
+# ``GET /api/proxy/routing-table`` ≤60 s; that response now carries a
+# top-level ``pending_coa`` array of CoA commands waiting to be executed
+# on the CHR side.
+#
+# Lifecycle per command:
+#   pending  — just enqueued by the panel; not yet seen by the proxy.
+#   sent     — included in a routing-table response (proxy fetched it).
+#              The panel marks this lazily on each publish so the UI can
+#              tell «أُرسل» from «بانتظار الاستلام».
+#   done     — proxy ACKed via POST /api/proxy/coa-result with coa_code
+#              41 (Disconnect-ACK).
+#   failed   — proxy NAKed via the same endpoint with coa_code 42
+#              (Disconnect-NAK) or an explicit "failed" status.
+#   expired  — TTL elapsed without a result; published list excludes
+#              expired rows so the routing-table never grows unbounded.
+# ─────────────────────────────────────────────────────────────────────────
+
+class PendingCoaCommand(TimestampMixin, db.Model):
+    """One CoA command waiting to be picked up by the proxy on its next
+    routing-table poll."""
+
+    __tablename__ = "pending_coa_commands"
+    __table_args__ = (
+        db.Index("ix_pending_coa_status_created", "status", "created_at"),
+        db.Index("ix_pending_coa_realm", "realm"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    #: Stable UUID the proxy echoes back in coa-result. Must be unique —
+    #: the proxy may re-report the same id on retry and we dedup on it.
+    command_id = db.Column(db.String(36), nullable=False, unique=True, index=True)
+    realm = db.Column(db.String(80), nullable=False)
+    action = db.Column(db.String(40), default="disconnect", nullable=False)
+    target_node_id = db.Column(db.Integer, nullable=True)
+    reason = db.Column(db.String(120), default="", nullable=False)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=True)
+    #: pending | sent | done | failed | expired
+    status = db.Column(db.String(16), default="pending", nullable=False, index=True)
+    picked_up_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    #: 41 = Disconnect-ACK, 42 = Disconnect-NAK (RFC 5176). NULL until
+    #: the proxy reports.
+    coa_code = db.Column(db.Integer, nullable=True)
+    detail = db.Column(db.String(500), default="", nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Landing Page CMS — admin-editable public landing content
 # All visible marketing content is driven from these tables (not hardcoded).
 # JSON is stored as Text + property accessors (project convention). The name
