@@ -120,7 +120,10 @@ class TunnelConfig:
     All four wire fields land in the heartbeat response under
     ``radius_tunnel``. The customer side compares ``fingerprint`` against
     its own ``config_fingerprint`` next pass — that is the drift signal
-    §6.4 reads.
+    §6.4 reads. ``rate_limit_mbps`` carries the §9 ``radius_transport``
+    cap (default 5 Mbps) so the customer wg-quick bringup applies it on
+    the wg interface and the RADIUS-only plane never starves user
+    traffic of the same 1 Gbps uplink.
     """
 
     enabled: bool
@@ -130,9 +133,10 @@ class TunnelConfig:
     proxy_tunnel_ip: str
     radius_secret: str
     fingerprint: str
+    rate_limit_mbps: int = 0   # 0 = no cap (back-compat); positive = §9 policy
 
     def as_payload(self) -> dict[str, Any]:
-        """Wire shape — see design §3.2."""
+        """Wire shape — see design §3.2 + §9.2."""
         return {
             "enabled": self.enabled,
             "tunnel_ip": self.tunnel_ip,
@@ -145,24 +149,31 @@ class TunnelConfig:
             "radius_secret": self.radius_secret,
             "listen_ports": {"auth": 1812, "acct": 1813},
             "fingerprint": self.fingerprint,
+            "rate_limit_mbps": self.rate_limit_mbps,
         }
 
 
 def compute_fingerprint(
-    *, tunnel_ip: str, proxy_public_key: str, proxy_endpoint: str, secret: str,
+    *,
+    tunnel_ip: str,
+    proxy_public_key: str,
+    proxy_endpoint: str,
+    secret: str,
+    rate_limit_mbps: int = 0,
 ) -> str:
-    """Hash the four fields the customer side hashes too.
+    """Hash the fields the customer side hashes too.
 
-    Returns ``sha256:<hex>``. The secret is mixed in so a secret-only
-    rotation registers as drift even when wg config is unchanged.
-    Logging discipline: we only ever LOG the prefixed digest — never the
-    inputs.
+    Returns ``sha256:<hex>``. The secret + rate cap are mixed in so a
+    secret-only rotation OR a §9 policy change registers as drift even
+    when wg config itself is unchanged. Logging discipline: we only
+    ever LOG the prefixed digest — never the inputs.
     """
     blob = "\x1f".join([
         (tunnel_ip or ""),
         (proxy_public_key or ""),
         (proxy_endpoint or ""),
         (secret or ""),
+        str(int(rate_limit_mbps or 0)),
     ]).encode("utf-8")
     return "sha256:" + hashlib.sha256(blob).hexdigest()
 
@@ -199,6 +210,19 @@ def build_tunnel_config(instance: CustomerRadiusInstance) -> TunnelConfig:
     tunnel_ip = allocate_radius_wg_ip(instance.customer_id)
     radius_secret = _resolve_route_secret(instance)
 
+    # §9.1 — read the RADIUS-transport cap (default 5 Mbps) from the
+    # central policy so the customer wg-quick bringup applies it.
+    # Resolution is policy_for() → defaults when no Setting row exists,
+    # so a panel that never had the policy edited still emits 5 Mbps.
+    rate_limit_mbps = 0
+    try:
+        from app.services.bandwidth_policy import policy_for as _policy_for
+        rate_limit_mbps = int(_policy_for("radius_transport").download_mbps)
+    except Exception:  # noqa: BLE001 - degrade to "no cap" rather than crash heartbeat
+        logger.exception(
+            "customer_radius_tunnel: rate_limit_mbps lookup degraded to 0",
+        )
+
     enabled = (
         instance.status != "disabled"
         and bool(panel_proxy["public_key"])
@@ -210,6 +234,7 @@ def build_tunnel_config(instance: CustomerRadiusInstance) -> TunnelConfig:
         proxy_public_key=panel_proxy["public_key"],
         proxy_endpoint=panel_proxy["endpoint"],
         secret=radius_secret,
+        rate_limit_mbps=rate_limit_mbps,
     )
     return TunnelConfig(
         enabled=enabled,
@@ -219,6 +244,7 @@ def build_tunnel_config(instance: CustomerRadiusInstance) -> TunnelConfig:
         proxy_tunnel_ip=panel_proxy["tunnel_ip"],
         radius_secret=radius_secret,
         fingerprint=fp,
+        rate_limit_mbps=rate_limit_mbps,
     )
 
 

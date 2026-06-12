@@ -497,6 +497,15 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("chr_nodes", {
             "device_facts_json": "TEXT NOT NULL DEFAULT '{}'",
         })
+    # CUSTOMER_RADIUS_TUNNEL_DESIGN §10 — node roles tag. A SET of
+    # connection-type roles a node may host simultaneously (radius_transport
+    # + vpn_sstp/pptp/ipsec/wg). Empty = all roles, for back-compat with
+    # existing fleets — the operator opts a node into a narrower set once
+    # the §9 bandwidth-policy + capacity dashboard guide the call.
+    if "fleet_chr_nodes" in tables:
+        _add_columns_if_missing("fleet_chr_nodes", {
+            "roles_json": "TEXT NOT NULL DEFAULT '[]'",
+        })
     # Customer RADIUS↔proxy wg-radius tunnel (CUSTOMER_RADIUS_TUNNEL_DESIGN
     # §3.1 + §6.4). The customer side reports its wg-radius pubkey on every
     # bridge heartbeat; the panel stores it + the last-handshake age and
