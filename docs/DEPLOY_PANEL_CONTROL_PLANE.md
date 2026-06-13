@@ -14,7 +14,10 @@ those connections.
 | WireGuard interface   | `wg-mgmt`                          |
 | Panel `wg-mgmt` IP    | `10.99.0.1/24` (gateway for the fleet) |
 | Panel `wg-mgmt` port  | `UDP 51820`                        |
-| First CHR `wg-mgmt` IP | `10.99.0.11`                      |
+| Panel `wg-mgmt` **public** key | `GKkomdrepZWPkJ1Bpqy65maeIAJ/hZOmEn52RtdlQhE=` |
+| Panel `wg-mgmt` **private** key | server-stored (Fernet-encrypted in `settings`); reveal once — see § 2 Path B |
+| First CHR `wg-mgmt` IP | `10.99.0.11` (`chr-vpn-1`)        |
+| `chr-vpn-1` `wg-mgmt` **public** key | `bkS4myVYQ3U88Rfk7vKjWghNQYLpgQCK+lneq2i9yh8=` |
 
 > **What this tunnel is for today.** Read [§ Panel ↔ CHR control-plane —
 > what's wired, what isn't](#panel--chr-control-plane--whats-wired-what-isnt)
@@ -54,6 +57,14 @@ The other two are mandatory.
 ---
 
 ## 2. Obtain the panel WG keypair
+
+> **For this deployment the panel keypair already exists** — it was minted
+> server-side and its public key is `GKkomdrepZWPkJ1Bpqy65maeIAJ/hZOmEn52RtdlQhE=`
+> (this is the key already baked into `chr-vpn-1`'s `.rsc`). **Do not
+> regenerate** it (that would invalidate every shipped node script). Skip
+> straight to **Path B → reveal once** to copy the matching private key onto
+> the host. Path A is documented for future fleets where you start from
+> scratch.
 
 You have two paths. **Path A is preferred** because the panel never sees
 your private key — easier to reason about and aligns with how the
@@ -104,10 +115,14 @@ printf '%s\n' '<paste-private-key-here>' > /etc/wireguard/wg-mgmt.key
 chmod 600 /etc/wireguard/wg-mgmt.key
 # Recompute the pubkey from the privkey for cross-checking:
 wg pubkey < /etc/wireguard/wg-mgmt.key
+# → must print exactly:
+#   GKkomdrepZWPkJ1Bpqy65maeIAJ/hZOmEn52RtdlQhE=
 ```
 
-The recomputed pubkey **must** match what the infra-settings page is
-showing. If it doesn't, you copied wrong — paste again.
+The recomputed pubkey **must** equal `GKkomdrepZWPkJ1Bpqy65maeIAJ/hZOmEn52RtdlQhE=`
+(the value the infra-settings page shows). If it doesn't, you copied wrong —
+re-reveal and paste again. **Do not** regenerate the keypair to "fix" a
+mismatch — that breaks every node already holding `GKkom…`.
 
 After installation, you may want to switch to Path A's posture: paste
 your own pubkey (computed above) back into the infra page. That deletes
@@ -233,14 +248,18 @@ SSH to the CHR (or use Winbox) and run:
 # → name="wg-mgmt"  …  public-key="…44-char base64…"  …
 ```
 
-Take that public-key value. On the panel host:
+Take that public-key value. **For `chr-vpn-1` it is already known** —
+`bkS4myVYQ3U88Rfk7vKjWghNQYLpgQCK+lneq2i9yh8=` — so you can append the peer
+block without SSHing the CHR (still worth confirming with the `print` above
+if in doubt). On the panel host:
 
 ```bash
 # Edit /etc/wireguard/wg-mgmt.conf — append:
 [Peer]
 # chr-vpn-1 — allocated wg-mgmt IP 10.99.0.11
-PublicKey  = <44-char CHR wg-mgmt public key>
+PublicKey  = bkS4myVYQ3U88Rfk7vKjWghNQYLpgQCK+lneq2i9yh8=
 AllowedIPs = 10.99.0.11/32
+PersistentKeepalive = 25
 ```
 
 Apply without restarting the interface (preserves in-flight traffic on
@@ -271,6 +290,17 @@ wg show wg-mgmt
 ping -c 4 10.99.0.11        # ping the CHR's wg-mgmt IP
 # Expect 4/4 replies, ~ms latency over the public network.
 ```
+
+This `ping` is **exactly what the health monitor does** (it shells out to
+`ping` over `wg-mgmt`). So the moment 4/4 replies come back, the node is
+reachable for health:
+
+* **Flip it now:** on the panel, open the **CHR Fleet dashboard** and click
+  **«فحص الآن»** on `chr-vpn-1` (or **«فحص الكل»**). A node that has never
+  been probed flips to **«نشطة»** on this first successful probe.
+* **Or wait for the cron pass:** the monitor (`python -m fleet.health.monitor`,
+  on its timer) will flip it automatically on its next run. If the node was
+  previously `down`, recovery needs 5 minutes of continuous success first.
 
 If `latest handshake: (none)` after 60 s:
 
@@ -305,13 +335,23 @@ The «حالة الإعدادات» panel shows `PANEL_WG_PUBKEY` and
 
 **Honest current state of the code in this repo:**
 
-* **Health monitoring does NOT depend on `wg-mgmt`.** `fleet.health.monitor`
-  picks `node.public_ip` first (TCP-connect probe to the RouterOS API
-  port, default `8729`), and only falls back to `node.wg_mgmt_ip` if
-  `public_ip` is empty (a path that's effectively dead today, since the
-  onboarding form requires a public IP). Bringing `wg-mgmt` up does
-  **not** unlock health-polling — that already works as soon as the CHR
-  is reachable on the public internet at its api-ssl port.
+* **Health monitoring runs OVER `wg-mgmt`.** `fleet.health.monitor`
+  (`_resolve_target`) probes `node.wg_mgmt_ip` **first** — `10.99.0.11`
+  for `chr-vpn-1` — and only falls back to `public_ip` if a node somehow
+  has no mgmt IP. The default probe is **ICMP echo** (`IcmpPinger`): the
+  panel shells out to `ping -c 1 -W <t> 10.99.0.11` over the tunnel, and
+  a reply means "the CHR is alive." It is **not** a TCP dial to RouterOS
+  api-ssl — that port (`8729`, binary api-ssl) is **deliberately disabled**
+  by the unified script; the only management port the CHR opens is `8443`
+  (www-ssl REST), and only on `wg-mgmt` from the panel `/32`, for the
+  separate live-metrics collector — never for the up/down probe.
+  **Consequence: bringing this tunnel up is exactly what lets the monitor
+  reach the CHR.** Until `wg-mgmt` is up, `ping 10.99.0.11` fails and the
+  node reads `down`; the moment the tunnel is up and ICMP flows, the next
+  probe flips it to **`up` / «نشطة»**. (A never-probed node — health state
+  `unknown` — flips up on the **first** successful ping; a node already in
+  `down` needs continuous success for `up_after` = **5 min** before it
+  flips back.)
 * **No live panel→CHR command path goes over `wg-mgmt` yet.**
   - The brain (`fleet.brain`) is pure-DB algorithm — it doesn't connect
     to any CHR.
@@ -329,13 +369,15 @@ The «حالة الإعدادات» panel shows `PANEL_WG_PUBKEY` and
   it — useful for the operator, and the channel future panel→CHR tooling
   (live config push, log streaming, on-demand `wg show`) will sit on.
 
-**Translation:** completing this runbook does not magically light up
-extra features in the panel today. It does (a) prove the tunnel works
-end-to-end, (b) give the operator an out-of-band ssh path into each CHR
-that doesn't depend on the CHR's public IP / management firewall, and
-(c) make the `.rsc`'s `endpoint-address=control.hoberadius.com:51820`
-line not point at a black hole. Health polling will keep working over
-the public IP regardless.
+**Translation:** completing this runbook is what flips `chr-vpn-1` (and
+every future CHR) to **«نشطة»** on the dashboard — the health monitor can
+only reach the node once this tunnel is up. It also (a) proves the tunnel
+works end-to-end, (b) gives the operator an out-of-band ssh/Winbox path
+into each CHR that doesn't depend on the CHR's public IP, and (c) makes the
+`.rsc`'s `endpoint-address=control.hoberadius.com:51820` line resolve to a
+live listener instead of a black hole. The live panel→CHR *command* paths
+(config push, log streaming) are still future work — but **health is no
+longer one of them; it rides this tunnel today.**
 
 ---
 
@@ -374,6 +416,25 @@ Common causes:
   `wg-mgmt`. The unified template doesn't add a default route via
   `wg-mgmt` on purpose — that's correct (we don't want control-plane
   carrying data).
+
+### Node still shows «معطّلة»/`down` even though `ping 10.99.0.11` works
+
+* Is the monitor actually running? It flips state only when it runs.
+  Trigger one pass by hand from the panel host:
+  ```bash
+  cd /opt/hoberadius-license-panel
+  python -m fleet.health.monitor      # one probe over every enabled node
+  ```
+  or click **«فحص الآن»** on the dashboard for an immediate probe.
+* The node must be `enabled = TRUE` and `drain = FALSE` — a disabled node
+  is never probed on the cron path (only via the explicit «فحص الآن»).
+* If it was already `down`, the up-edge needs **5 min** of *continuous*
+  successful pings (`HealthConfig.up_after`). A single «فحص الآن» won't
+  shortcut that window — keep the tunnel healthy and it settles.
+* Confirm the probe target is the mgmt IP: the monitor pings
+  `node.wg_mgmt_ip` (`10.99.0.11`), not the public IP. If `wg_mgmt_ip` is
+  blank on the row, fix the registry — the public-IP fallback won't pass
+  (the CHR firewall blocks ICMP/api there by design).
 
 ### Rotating the panel key later
 
