@@ -494,12 +494,16 @@
     confirm.addEventListener("click", async function () {
       confirm.disabled = true;
       try {
+        // fix/orphan-purge-csrf-header — header MUST be X-CSRFToken
+        // (no hyphen) to match Flask-WTF's WTF_CSRF_HEADERS default +
+        // every other fetch() in this file. The hyphenated variant
+        // silently 400'd the POST, so «نفّذ التنظيف» appeared dead.
         const resp = await fetch(purgeUrl, {
           method: "POST",
           credentials: "same-origin",
           headers: {
             "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken(),
+            "X-CSRFToken": csrfToken(),
             "Accept": "application/json",
           },
           body: "{}",
