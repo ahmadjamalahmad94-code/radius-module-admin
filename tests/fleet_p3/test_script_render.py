@@ -272,10 +272,18 @@ class TestRouterosSanity:
             assert path in out, f"expected RouterOS path missing from render: {path!r}"
 
     def test_quoted_values_balanced(self, chr_a, fleet_cfg) -> None:
-        """Double-quoted RouterOS strings must come in pairs on each line."""
+        """Double-quoted RouterOS strings must come in pairs on each
+        logical line. Logical lines are formed by joining backslash
+        continuations; multi-line ``source="..."`` script bodies in
+        §11b (break-glass scripts) span many text lines as ONE
+        RouterOS-token quoted literal, so we strip them before the
+        per-line check."""
+        import re as _re
         node, keys = chr_a
         out = render_chr_script(node, keys, fleet_cfg)
-        for lineno, line in enumerate(out.splitlines(), start=1):
+        flat = out.replace(" \\\n", " ").replace("\\\n", "")
+        flat = _re.sub(r'source="(?:[^"\\]|\\.)*"', 'source=""', flat, flags=_re.DOTALL)
+        for lineno, line in enumerate(flat.splitlines(), start=1):
             dq = line.count('"')
             assert dq % 2 == 0, (
                 f"line {lineno} has an odd number of double-quotes: {line!r}"

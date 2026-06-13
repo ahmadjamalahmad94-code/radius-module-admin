@@ -978,6 +978,50 @@ def fleet_infra_save_radius_secret():
     return _infra_redirect()
 
 
+@bp.post("/infrastructure/operator-admin-ips")
+@super_admin_required
+def fleet_infra_save_operator_admin_ips():
+    """fix/chr-hardening-safe-firewall-order — save the optional list of
+    operator management source IPs/CIDRs.
+
+    The field is OPTIONAL. Empty input clears the row (back to wg-mgmt-
+    only + the temp-emergency fallback in §11). Non-empty input is
+    normalised + validated (each token must parse as a CIDR; ‎0.0.0.0/0
+    is REJECTED — the point of this field is "the owner's IP, not the
+    public internet"); the rendered RouterOS script then:
+
+      1. emits a scoped accept for tcp:22,8291 on the WAN from those
+         sources (alongside the wg-mgmt accept from PANEL/32);
+      2. unions the ssh/winbox `/ip service address=` ACL with those
+         CIDRs so the listeners themselves accept those sources.
+
+    A change here only takes effect on the NEXT script export; the
+    operator must re-import on each CHR for the new ACL to land. (The
+    break-glass `hobe-open-winbox` script on the CHR is the recovery
+    path if a stale CHR still has the prior tight ACL.)
+    """
+    from fleet.registry import infra_settings as svc
+    try:
+        svc.set_operator_admin_ips(request.form.get("operator_admin_ips") or "")
+    except svc.InfraSettingsError as exc:
+        flash(str(exc), "error")
+        return _infra_redirect()
+    audit(
+        "fleet_infra_operator_admin_ips_set",
+        "fleet_infra",
+        "OPERATOR_ADMIN_IPS",
+        "تم حفظ IPs الإدارة (WinBox/SSH من جهازك)",
+    )
+    db.session.commit()
+    flash(
+        "تم حفظ IPs الإدارة. أعد استيراد السكربت على كل CHR لتفعيل "
+        "الوصول من تلك العناوين. للطوارئ: استخدم وحدة تحكّم المزوّد "
+        "(VPS console) وشغّل /system script run hobe-open-winbox.",
+        "success",
+    )
+    return _infra_redirect()
+
+
 @bp.post("/infrastructure/cert-names")
 @super_admin_required
 def fleet_infra_save_cert_names():

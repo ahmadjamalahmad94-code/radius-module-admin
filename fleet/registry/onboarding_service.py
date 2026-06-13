@@ -366,6 +366,11 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
     "WG_USERS_ADDR": "10.51.0.1/24",
     # ── self-lockout rollback window (§0a / §12 in the template) ──────
     "SAFEMODE_ROLLBACK_DELAY": "3m",
+    # ── operator manual-access source list (fix/chr-hardening-safe-firewall-order)
+    # Optional comma-separated CIDRs. Empty ⇒ wg-mgmt-only + the
+    # temp-emergency fallback in §11; non-empty ⇒ scoped accept on
+    # tcp:22,8291 from those sources + service-level address ACL union.
+    "OPERATOR_ADMIN_IPS": "",
 }
 
 # Pool the wg-mgmt control-plane addresses are allocated from (§6.3).

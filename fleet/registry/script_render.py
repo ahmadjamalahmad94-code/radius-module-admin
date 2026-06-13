@@ -179,6 +179,17 @@ class RouterosTemplateConfig:
     # CHR boots back into the pre-apply snapshot after this delay.
     safemode_rollback_delay: str = "3m"
 
+    # ── operator manual-access source list (fix/chr-hardening-safe-firewall-order)
+    # Optional comma-separated list of CIDRs (e.g. "1.2.3.4/32,5.6.7.0/24")
+    # the owner manages WinBox/SSH from. When non-empty the template:
+    #   1. emits a scoped accept for tcp:22,8291 on the WAN from those
+    #      sources (alongside wg-mgmt 10.99.0.1/32);
+    #   2. unions the ssh/winbox `/ip service address=` ACL with those
+    #      CIDRs so the listener accepts them.
+    # NEVER 0.0.0.0/0. Empty ⇒ wg-mgmt-only + temp-emergency fallback
+    # (the prior behaviour).
+    operator_admin_ips: str = ""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Jinja environment
@@ -335,6 +346,8 @@ def build_bindings(
         "WG_USERS_ADDR":        template_cfg.wg_users_addr,
         # ── self-lockout rollback delay (§0a / §12) ────────────────────────
         "SAFEMODE_ROLLBACK_DELAY": template_cfg.safemode_rollback_delay,
+        # ── operator manual-access source list ─────────────────────────────
+        "OPERATOR_ADMIN_IPS":   template_cfg.operator_admin_ips,
     }
 
 
@@ -461,6 +474,7 @@ def render_from_bindings(bindings: dict[str, Any], *, env: Environment | None = 
     enriched.setdefault("WG_USERS_PORT", 51822)
     enriched.setdefault("WG_USERS_ADDR", "10.51.0.1/24")
     enriched.setdefault("SAFEMODE_ROLLBACK_DELAY", "3m")
+    enriched.setdefault("OPERATOR_ADMIN_IPS", "")
     # feat/chr-auto-scoped-mgmt-user — dedicated scoped management group
     # (see the unified template §11 + the policy audit in
     # fleet/registry/onboarding_service.py for the rationale).
