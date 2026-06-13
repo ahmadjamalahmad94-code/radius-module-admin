@@ -389,23 +389,32 @@ class TestInvariant6WgMgmtVerifyGate:
         assert re.search(r":if \(\$mgmtReachable\) do=\{", script), script
 
     def test_fallback_keeps_ssh_winbox_open_and_logs_a_warning(self):
-        """If wg-mgmt is unreachable, the script must NOT lock down
-        ssh/winbox. It must add a TEMP emergency-admin firewall rule
-        (tagged so the next clean run sweeps it) and warn the operator."""
+        """Owner review #1: if wg-mgmt is unreachable AND OPERATOR_ADMIN_IPS
+        is unset, BOTH layers must open up — the firewall AND the
+        service-layer ACL. Without the service-layer widening, the
+        temp firewall accept is silently dropped by the still-restrictive
+        `address=10.99.0.1/32`. The owner pointed this out in expert
+        review."""
         script = _render()
-        assert "/ip service set ssh    disabled=no" in script, (
-            "fallback must keep ssh open"
+        # Service-layer ACL widened to 0.0.0.0/0 (the fix).
+        assert "/ip service set ssh    address=0.0.0.0/0 disabled=no" in script, (
+            "fallback must widen ssh SERVICE ACL to 0.0.0.0/0"
         )
-        assert "/ip service set winbox disabled=no" in script, (
-            "fallback must keep winbox open"
+        assert "/ip service set winbox address=0.0.0.0/0 disabled=no" in script, (
+            "fallback must widen winbox SERVICE ACL to 0.0.0.0/0"
         )
+        # Matching temp firewall rule.
         assert (
             'comment="hobe-fleet-fw-temp-emergency-admin"' in script
         ), "missing TEMP emergency-admin rule in fallback"
+        # Warning text + the break-glass recovery hint.
         assert (
             ":log warning" in script
             and "wg-mgmt NOT reachable" in script
         ), "missing operator warning in fallback"
+        assert "hobe-open-winbox" in script, (
+            "fallback warning must point at the break-glass recovery path"
+        )
 
     def test_probe_precedes_ssh_winbox_restriction_in_script_text(self):
         """The wg-mgmt probe + the `:local mgmtReachable` flag MUST

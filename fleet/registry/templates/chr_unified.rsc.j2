@@ -1,11 +1,11 @@
 {# ============================================================================
-   HobeRadius unified CHR provisioning script — Jinja2 source.
+   HobeRadius unified CHR provisioning script -- Jinja2 source.
    Renders RouterOS v7.x configuration that is IDENTICAL across the fleet
    except for the documented per-CHR bindings. See:
 
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5  — the canonical script
-     * docs/chr_fleet/06_ONBOARDING_WIZARD.md §6.5.1 — which vars are per-CHR
-     * docs/CUSTOMER_RADIUS_TUNNEL_DESIGN.md §10    — node-role gating
+     * docs/chr_fleet/06_ONBOARDING_WIZARD.md sec 6.5  -- the canonical script
+     * docs/chr_fleet/06_ONBOARDING_WIZARD.md sec 6.5.1 -- which vars are per-CHR
+     * docs/CUSTOMER_RADIUS_TUNNEL_DESIGN.md sec 10    -- node-role gating
 
    Per-CHR (renders differ between two CHRs):
      - WG_MGMT_PRIVKEY, WG_MGMT_ADDR          (control tunnel)
@@ -18,10 +18,10 @@
    Fleet-constant (identical in every render):
      - PANEL_WG_PUBKEY / PANEL_WG_HOST / PANEL_WG_PORT / PANEL_WG_ADDR
      - PROXY_WG_PUBKEY / PROXY_WG_HOST / PROXY_WG_PORT / PROXY_WG_ADDR
-     - CHR_SHARED_SECRET (matches proxy's PROXY_CHR_SECRET; §6.5.1 note)
+     - CHR_SHARED_SECRET (matches proxy's PROXY_CHR_SECRET; sec 6.5.1 note)
      - SSTP_CERT_NAME, IKE_CERT_NAME
      - CLIENT_SUPERNET, DNS_PUSH, GW_LOCAL_ADDR
-     - IP_POOL_NAME, IP_POOL_RANGES         (shared client pool — §6.5.2)
+     - IP_POOL_NAME, IP_POOL_RANGES         (shared client pool -- sec 6.5.2)
      - PPP_PROFILE_NAME                      (shared default PPP profile)
      - WG_USERS_PORT                         (user-WireGuard listener)
      - WG_USERS_ADDR                         (user-WG gateway address)
@@ -30,7 +30,7 @@
    See ``fleet/registry/script_render.py`` for the binding model and dataclass.
 
    IDEMPOTENCY (fix/fleet-script-idempotent):
-     Every `add` in this script is preceded by `remove [find …]` so the
+     Every `add` in this script is preceded by `remove [find ...]` so the
      whole .rsc is safe to import twice in a row, or to re-import after a
      partial first run that already created some of the resources.
 
@@ -44,67 +44,67 @@
            the prior working config;
        (b) ``/system scheduler add name="hobe-fleet-rollback"
            interval=SAFEMODE_ROLLBACK_DELAY on-event="/system backup
-           load …"`` — the rollback fires at T+delay UNLESS we cancel
+           load ..."`` -- the rollback fires at T+delay UNLESS we cancel
            it;
        (c) the LAST line of the script removes the scheduler.
 
-     Clean run ⇒ cancel executes, rollback never fires. Halted run
-     (script error, lost connectivity, broken firewall) ⇒ scheduler
+     Clean run => cancel executes, rollback never fires. Halted run
+     (script error, lost connectivity, broken firewall) => scheduler
      trips at T+delay and restores the pre-apply backup. The window is
      documented in this header so the operator knows to wait before
      re-running.
 
    ROLE GATING (feat/chr-unified-provisioning-complete):
      ``NODE_ROLES_SET`` is the SET of roles enabled on this node (see
-     app/services/node_roles.py — empty list ⇒ all roles). The template
+     app/services/node_roles.py -- empty list => all roles). The template
      conditionally enables service blocks per role:
 
-       * ``radius_transport`` — wg-data + RADIUS client + CoA listener;
-       * ``vpn_sstp``         — SSTP server (still gated on
+       * ``radius_transport`` -- wg-data + RADIUS client + CoA listener;
+       * ``vpn_sstp``         -- SSTP server (still gated on
                                 ``SSTP_CERT_NAME`` being non-empty);
-       * ``vpn_pptp``         — PPTP server + GRE allow;
-       * ``vpn_ipsec``        — IKEv2 + L2TP/IPsec server (IKEv2 still
+       * ``vpn_pptp``         -- PPTP server + GRE allow;
+       * ``vpn_ipsec``        -- IKEv2 + L2TP/IPsec server (IKEv2 still
                                 gated on ``IKE_CERT_NAME``);
-       * ``vpn_wireguard``    — wg-users user-WireGuard server.
+       * ``vpn_wireguard``    -- wg-users user-WireGuard server.
 
      The firewall block emits the matching ``accept`` rules ONLY for
      roles that are enabled, so an unwanted port is never exposed.
 
    SURGICAL FIREWALL (feat/chr-unified-provisioning-complete):
-     Owner brief: «بدي كل شي جراحي وقوي، ما تحظر شي يمنع اتصالات». Block:
+     Owner brief: "I want everything surgical and strong; do not block anything that prevents legitimate connections". Block:
 
        1. ``hobe-fleet-fw-conntrack`` accept established,related,untracked
-          — first match for any existing flow including the SSH session
+          -- first match for any existing flow including the SSH session
           carrying this very ``/import``;
-       2. ``hobe-fleet-fw-invalid`` drop conntrack=invalid — hygiene;
-       3. ``hobe-fleet-fw-mgmt`` accept in=wg-mgmt src=PANEL_WG_ADDR/32 —
+       2. ``hobe-fleet-fw-invalid`` drop conntrack=invalid -- hygiene;
+       3. ``hobe-fleet-fw-mgmt`` accept in=wg-mgmt src=PANEL_WG_ADDR/32 --
           panel-only management BEFORE any drop;
        4. ``hobe-fleet-fw-radius`` / ``-coa`` accept in=wg-data
           src=PROXY_WG_ADDR/32 (only when ``radius_transport`` enabled);
        5. wg-mgmt + wg-data UDP handshake accepts on the WAN iface;
        6. per-role VPN service accepts (sstp 443/tcp, pptp 1723/tcp +
           gre, ike 500,4500/udp + esp/50, l2tp 1701/udp, wg-users
-          WG_USERS_PORT/udp) — each labelled with its role so the
+          WG_USERS_PORT/udp) -- each labelled with its role so the
           remove-by-regex picks them up cleanly;
        7. ICMP accept with a rate limit;
        8. ``hobe-fleet-fw-no-public-radius`` drop udp 1812/1813/3799 on
-          any iface OTHER than wg-data — defence vs an operator who
+          any iface OTHER than wg-data -- defence vs an operator who
           forgot to enable the role;
-       9. ``hobe-fleet-fw-drop-last`` is the FINAL input rule — every
+       9. ``hobe-fleet-fw-drop-last`` is the FINAL input rule -- every
           accept above explicit, then deny the rest.
 
      The explicit hoist-to-top of conntrack + mgmt + coa + radius via
      ``move destination=0`` survives stale operator drops the way the
-     original §9b fix established. ``conntrack`` lands at absolute top so
+     original sec 9b fix established. ``conntrack`` lands at absolute top so
      a re-import never breaks the very session running it.
 
    DNS-LESS BOOTSTRAP + :resolve OVERRIDE (fix/fleet-endpoint-resolve):
      A field finding: even with host-only endpoint-address,
      ``endpoint-address=proxy.hoberadius.com`` left wg-data with
-     current-endpoint-address="" and no handshake — replacing with the
+     current-endpoint-address="" and no handshake -- replacing with the
      resolved IP literal worked instantly. The script now:
        (a) ensures /ip dns has at least one server (sets 1.1.1.1,8.8.8.8
-           as fallback — does NOT clobber an operator-set list);
+           as fallback -- does NOT clobber an operator-set list);
        (b) tags each peer with a stable comment;
        (c) runs ``:resolve`` against PANEL_WG_HOST / PROXY_WG_HOST with
            up to 5 retries (2-second back-off) and overwrites the peer's
@@ -128,7 +128,7 @@
 /system identity set name="{{ ROUTER_IDENTITY }}"
 
 # ============================================================
-# 0a. SELF-LOCKOUT GUARD — snapshot + auto-rollback
+# 0a. SELF-LOCKOUT GUARD -- snapshot + auto-rollback
 # ============================================================
 # Take a backup of the CURRENT (working) config, then arm a one-shot
 # scheduler that, in {{ SAFEMODE_ROLLBACK_DELAY }}, loads it back. The
@@ -144,7 +144,7 @@ add name="hobe-fleet-rollback" interval={{ SAFEMODE_ROLLBACK_DELAY }} \
     on-event=(":log warning \"hobe-fleet: rollback fired (no cancel within {{ SAFEMODE_ROLLBACK_DELAY }})\"; /system backup load name=hobe-fleet-pre-apply") \
     policy=read,write,policy,test,password,sensitive \
     comment="hobe-fleet-rollback-guard"
-:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) — script must run to completion to cancel it"
+:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) -- script must run to completion to cancel it"
 
 # ---- 0b. DNS bootstrap (so :resolve works in section 2b) ----
 # If the CHR has no DNS servers configured yet, set a public fallback.
@@ -164,7 +164,7 @@ remove [find interface="wg-mgmt"]
 remove [find name="wg-mgmt"]
 add name=wg-mgmt listen-port=51820 private-key="{{ WG_MGMT_PRIVKEY }}"
 /interface wireguard peers
-{# endpoint-address MUST be host-only — RouterOS rejects host:port silently
+{# endpoint-address MUST be host-only -- RouterOS rejects host:port silently
    and leaves current-endpoint-address="" with no handshake. The renderer
    splits the stored host:port into HOST + PORT bindings; see
    fleet.registry.script_render._split_endpoint. #}
@@ -188,7 +188,7 @@ remove [find interface="wg-data"]
 remove [find name="wg-data"]
 add name=wg-data listen-port=51821 private-key="{{ WG_DATA_PRIVKEY }}"
 /interface wireguard peers
-{# Same as the wg-mgmt block — host-only endpoint-address, port separate. #}
+{# Same as the wg-mgmt block -- host-only endpoint-address, port separate. #}
 add interface=wg-data public-key="{{ PROXY_WG_PUBKEY }}" \
     endpoint-address={{ PROXY_WG_HOST }} endpoint-port={{ PROXY_WG_PORT }} \
     allowed-address={{ PROXY_WG_ADDR }}/32 persistent-keepalive=25s \
@@ -200,7 +200,7 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shar
 # Pure VPN-terminator CHRs don't carry RADIUS to/from the proxy.
 {% endif %}
 
-# ---- 2b. Resolve peer hostnames → set IP literal on each peer ----
+# ---- 2b. Resolve peer hostnames -> set IP literal on each peer ----
 # Field finding (fix/fleet-endpoint-resolve): RouterOS doesn't always
 # resolve the peer host into a working endpoint at peer-add time.
 # Retries 5x with 2s back-off; on permanent failure we leave the hostname
@@ -233,7 +233,7 @@ set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ 
 # ---- 2c. Key-identity audit trail ----
 # Identity log lines: when a key mismatch produces a silent dead tunnel,
 # /log carries the EXPECTED identities for one-glance comparison against
-# «إعدادات بنية الأسطول» on the panel.
+# "Settings -> Fleet Infrastructure" on the panel.
 :log info ("hobe-fleet: wg-mgmt peer expects PANEL pubkey = {{ PANEL_WG_PUBKEY }}")
 {% if 'radius_transport' in ROLES %}
 :log info ("hobe-fleet: wg-data peer expects PROXY pubkey = {{ PROXY_WG_PUBKEY }}")
@@ -241,10 +241,16 @@ set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ 
 :log info ("hobe-fleet: this CHR wg-mgmt pubkey (give to panel) = " . [/interface wireguard get [find name="wg-mgmt"] public-key])
 
 {% if 'radius_transport' in ROLES %}
-# ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
+# ---- 3. RADIUS client -> the central proxy (FLEET-CONSTANT) -
+# owner review fix #4 -- service=ppp ONLY (no `,login`). Allowing the
+# `login` service would let RADIUS authenticate RouterOS admin login
+# (ssh / winbox / WebFig). That widens the trust boundary: a compromised
+# RADIUS server could grant router admin access, NOT just subscriber
+# PPP auth. The panel manages router admins explicitly via /user; the
+# proxy is for SUBSCRIBER PPP only.
 /radius
 remove [find comment="hobe-fleet-radius"]
-add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
+add service=ppp address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
     authentication-port=1812 accounting-port=1813 \
     src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
     comment="hobe-fleet-radius"
@@ -264,10 +270,10 @@ set use-radius=yes accounting=yes interim-update=5m
 {% endif %}
 
 # ---- 4. Shared IP pool + unified PPP profile (FLEET-CONSTANT) --
-# §10.2 / §6.5.2: every node carries the SAME pool name + ranges + the
+# sec 10.2 / sec 6.5.2: every node carries the SAME pool name + ranges + the
 # SAME PPP profile (rate-limit driven by RADIUS Mikrotik-Rate-Limit).
 # Subscriber roaming/failover keeps the same Framed-IP and the same
-# profile across nodes ⇒ no disconnect.
+# profile across nodes => no disconnect.
 #
 # Idempotent: remove by stable comment/name-prefix, then re-add.
 /ppp profile
@@ -309,8 +315,8 @@ set enabled=no
 # ---- 6. SSTP server (role: vpn_sstp; TLS 443) ----------------
 {# Cert-conditional: SSTP requires a TLS cert pre-imported on the CHR. We
    skip the whole sub-section when no cert name is configured on the panel
-   — emitting `certificate=` empty would fail with "input does not match
-   any value of certificate". The «رابط RADIUS» SSTP for the customer NAS
+   -- emitting `certificate=` empty would fail with "input does not match
+   any value of certificate". The "RADIUS link" SSTP for the customer NAS
    to dial in shares this same listener; both end-users AND the customer
    NAS authenticate via the RADIUS client above, distinguished by user. #}
 {% if SSTP_CERT_NAME %}
@@ -331,8 +337,8 @@ set enabled=no
 
 {% if 'vpn_ipsec' in ROLES %}
 # ---- 7. IPsec / IKEv2 server (role: vpn_ipsec) -----------
-# IPsec children reference parents by name — clean child→parent order on
-# remove, then parent→child on add.
+# IPsec children reference parents by name -- clean child->parent order on
+# remove, then parent->child on add.
 /ip ipsec identity
 remove [find peer="hobe-peer"]
 /ip ipsec peer
@@ -363,7 +369,7 @@ add auth-method=eap-radius generate-policy=port-strict mode-config=hobe-mc \
 # ---- 7b. L2TP/IPsec server (role: vpn_ipsec) ----------------
 # L2TP rides inside an IPsec transport. Enable L2TP and require the
 # IPsec PSK so a plain-L2TP client can't reach us. The PSK is the same
-# central CHR_SHARED_SECRET — the panel is the SINGLE source of truth.
+# central CHR_SHARED_SECRET -- the panel is the SINGLE source of truth.
 /interface l2tp-server server
 set enabled=yes authentication=mschap2 default-profile={{ PPP_PROFILE_NAME }} \
     use-ipsec=required ipsec-secret="{{ CHR_SHARED_SECRET }}"
@@ -385,7 +391,7 @@ set enabled=no
 # back via the existing heartbeat/identity channel and distributes it to
 # customer client devices when their tunnel is provisioned.
 #
-# Peers are added per-customer by a later panel call, NOT here — this
+# Peers are added per-customer by a later panel call, NOT here -- this
 # block only stands up the listener + gateway address. The firewall block
 # below opens WG_USERS_PORT only when this role is enabled.
 /interface wireguard peers
@@ -413,30 +419,30 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
     src-address={{ CLIENT_SUPERNET }} comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
 
 # ============================================================
-# 9. SURGICAL FIREWALL (input chain) — clean rebuild, place-before order.
+# 9. SURGICAL FIREWALL (input chain) -- clean rebuild, place-before order.
 # ============================================================
-# LIVE INCIDENT (fix/chr-hardening-safe-firewall-order — chr-vpn-3):
+# LIVE INCIDENT (fix/chr-hardening-safe-firewall-order -- chr-vpn-3):
 #   A foreign rule `chain=input action=drop in-interface=ether1` (added
 #   by an operator or older script) sat BEFORE our public WG/VPN allows
-#   → wg-mgmt handshake packets to UDP 51820 were dropped at the WAN
-#   → no wg-mgmt tunnel → REST polls returned rest_failed → wizard
+#   -> wg-mgmt handshake packets to UDP 51820 were dropped at the WAN
+#   -> no wg-mgmt tunnel -> REST polls returned rest_failed -> wizard
 #   stuck. The previous template used `add` then `move destination=0`
 #   to hoist our allows to the top, but foreign drops interleaved
 #   between the moves still beat us in first-match order.
 #
-# OWNER PRINCIPLE («لازم السكربت ينظف أي شي قبله — طالما بده يكتب
-# بمكان، ينظف قبل ما يكتب»): every section the script WRITES first
+# OWNER PRINCIPLE (clean-before-write): the script must clean anything
+# before it writes to a location. Every section the script WRITES first
 # REMOVES the conflicting prior state. For the INPUT chain on a
 # dedicated fleet CHR (which we fully own) that means a CLEAN REBUILD:
 # wipe every existing input rule and re-emit our authoritative ordered
 # set. forward / output / nat chains are NOT touched beyond our own
-# hobe-fleet-* tagged rules (see §8 nat / §9z below).
+# hobe-fleet-* tagged rules (see sec 8 nat / sec 9z below).
 #
-# Safety: the §0a 3-min self-lockout rollback is armed BEFORE this
+# Safety: the sec 0a 3-min self-lockout rollback is armed BEFORE this
 # wipe runs, so a mid-rebuild session drop reverts to the prior
 # working firewall.
 #
-# THE NEW APPROACH — four guarantees:
+# THE NEW APPROACH -- four guarantees:
 #
 #   1. CLEAN REBUILD of the INPUT chain only. `remove [find chain=input]`
 #      wipes every existing input rule (ours + foreign + temp + duplicate),
@@ -454,33 +460,33 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
 #      is total; the authoritative set is deterministic from bindings).
 #
 #   4. forward + output chains NOT touched. Only our tagged nat rule
-#      in §8 is replaced (remove-by-comment, then add).
+#      in sec 8 is replaced (remove-by-comment, then add).
 #
-# Effective order on the CHR (top → bottom):
-#   conntrack accept            ← rule 0, first match
+# Effective order on the CHR (top -> bottom):
+#   conntrack accept            <- rule 0, first match
 #   conntrack=invalid drop
 #   wg-mgmt mgmt accept (PANEL)
 #   wg-mgmt api-ssl 8443 accept (PANEL, if API user provisioned)
 #   operator-IP ssh+winbox accept (if OPERATOR_ADMIN_IPS set)
-#   wg-data RADIUS auth/acct accept (PROXY) — if radius_transport role
-#   wg-data CoA accept (PROXY) — if radius_transport role
+#   wg-data RADIUS auth/acct accept (PROXY) -- if radius_transport role
+#   wg-data CoA accept (PROXY) -- if radius_transport role
 #   WAN wg-mgmt udp 51820 accept
-#   WAN wg-data udp 51821 accept — if radius_transport role
+#   WAN wg-data udp 51821 accept -- if radius_transport role
 #   WAN VPN listener accepts (role-gated)
 #   ICMP rate-limited accept
 #   no-public-radius drop (1812/1813/3799 on non-wg-data ifaces)
-#   drop-last                   ← rule N, final deny
+#   drop-last                   <- rule N, final deny
 #
-# ─── Step 1: CLEAN REBUILD — wipe the input chain entirely ──────────
+# --- Step 1: CLEAN REBUILD -- wipe the input chain entirely ----------
 /ip firewall filter
 #
 # Pre-wipe documentation sweeps. These remove statements are now
-# REDUNDANT with the clean rebuild below — `remove [find chain=input]`
+# REDUNDANT with the clean rebuild below -- `remove [find chain=input]`
 # subsumes every comment-pattern remove. We keep them as:
-#   (a) self-documenting INTENT — names every bad shape this script
+#   (a) self-documenting INTENT -- names every bad shape this script
 #       protects against (foreign broad drops, TEMP-labelled allows,
 #       our own prior tagged rules);
-#   (b) audit-log fidelity — RouterOS logs the matched count per
+#   (b) audit-log fidelity -- RouterOS logs the matched count per
 #       remove, so a re-import shows exactly what patterns existed
 #       before the clean rebuild swept them.
 # A remove against an empty find is a no-op, so these are free.
@@ -489,7 +495,7 @@ remove [find comment~"^TEMP allow"]
 remove [find comment~"^TEMP-"]
 remove [find comment~"^drop public input"]
 # Broad foreign drops on in-interface=ether1 with no additional
-# selectors — these are the operator-added blanket drops that ended
+# selectors -- these are the operator-added blanket drops that ended
 # up above our allows on chr-vpn-3. We walk the matching rules and
 # only remove the truly-broad ones (no protocol, no dst-port,
 # no src-address). Logged for the post-import audit.
@@ -507,30 +513,30 @@ remove [find comment~"^drop public input"]
     }
 }
 #
-# Total wipe of whatever survived. The §0a rollback scheduler armed
+# Total wipe of whatever survived. The sec 0a rollback scheduler armed
 # BEFORE this line is the safety net: if anything below halts the
 # script, the CHR reverts to the pre-apply snapshot at
 # T+{{ SAFEMODE_ROLLBACK_DELAY }} and the prior firewall comes back.
 #
 # We log what we removed (count + the comment of each rule) before the
 # wipe so the post-import audit log shows exactly what the script
-# replaced — useful when reviewing the diff between operator-edited
+# replaced -- useful when reviewing the diff between operator-edited
 # state and the authoritative re-render.
 :local wipedCount 0
 :foreach r in=[find chain=input] do={
     :local c [/ip firewall filter get $r comment]
-    :log info ("hobe-fleet: input-chain clean-rebuild — removing rule comment=" . $c)
+    :log info ("hobe-fleet: input-chain clean-rebuild -- removing rule comment=" . $c)
     :set wipedCount ($wipedCount + 1)
 }
 :if ($wipedCount > 0) do={
-    :log warning ("hobe-fleet: input chain clean-rebuild — " . $wipedCount . " prior rule(s) removed; re-emitting authoritative set")
+    :log warning ("hobe-fleet: input chain clean-rebuild -- " . $wipedCount . " prior rule(s) removed; re-emitting authoritative set")
 }
 remove [find chain=input]
 # forward + output chains are NOT touched here. Our own tagged rules
-# in those chains (currently none in the input chain rewrite — see §8
+# in those chains (currently none in the input chain rewrite -- see sec 8
 # for nat) are managed by their own remove-by-comment blocks above.
 
-# ─── Step 2: drop-last anchor FIRST ─────────────────────────────────
+# --- Step 2: drop-last anchor FIRST ---------------------------------
 # Lands at the end of the table; every subsequent add uses a
 # place-before pointing at this anchor, so the rule inserts JUST BEFORE
 # drop-last and the previous insertion shifts up by one slot. Insertion
@@ -538,18 +544,18 @@ remove [find chain=input]
 # needed; foreign rules can't interleave.
 add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 
-# ─── Step 3: every accept + the no-public-radius drop, IN ORDER ────
-# (A) Conntrack accept — first match for established/related/untracked.
+# --- Step 3: every accept + the no-public-radius drop, IN ORDER ----
+# (A) Conntrack accept -- first match for established/related/untracked.
 add chain=input action=accept connection-state=established,related,untracked \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-conntrack"
 
-# (B) Drop conntrack=invalid early — hygiene.
+# (B) Drop conntrack=invalid early -- hygiene.
 add chain=input action=drop connection-state=invalid \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-invalid"
 
-# (C) Management accept — wg-mgmt from PANEL/32. Keeps the live SSH
+# (C) Management accept -- wg-mgmt from PANEL/32. Keeps the live SSH
 #     session over wg-mgmt alive across re-imports.
 add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
     action=accept \
@@ -557,7 +563,7 @@ add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
     comment="hobe-fleet-fw-mgmt"
 
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
-# (C') API REST 8443 accept — wg-mgmt from PANEL/32 only. Was in §11
+# (C') API REST 8443 accept -- wg-mgmt from PANEL/32 only. Was in sec 11
 #      previously; consolidated here so the place-before anchor is
 #      the only anchor anywhere in the script (no late re-anchoring).
 add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
@@ -567,8 +573,8 @@ add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
 {% endif %}
 
 {% if OPERATOR_ADMIN_IPS|default('') %}
-# (C") Operator manual-access — WinBox + SSH from the owner's source
-#      IP(s) on the WAN. This is the «أقدر أفوت ع WinBox» rule:
+# (C") Operator manual-access -- WinBox + SSH from the owner's source
+#      IP(s) on the WAN. This is the "I can still get into WinBox" rule:
 #      WinBox/SSH remain reachable from those specific addresses even
 #      after wg-mgmt is the primary management path. The list is
 #      sanitised on the panel (CIDR-parsed, 0.0.0.0/0 rejected, capped
@@ -581,7 +587,7 @@ add chain=input in-interface={{ WAN_IFACE }} \
 {% endif %}
 
 {% if 'radius_transport' in ROLES %}
-# (D) RADIUS over wg-data — auth/acct + CoA, scoped to the proxy IP.
+# (D) RADIUS over wg-data -- auth/acct + CoA, scoped to the proxy IP.
 add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
     protocol=udp dst-port=1812,1813 \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
@@ -592,7 +598,7 @@ add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
     action=accept comment="hobe-fleet-fw-coa"
 {% endif %}
 
-# (E) Public WireGuard listener UDP on the WAN — required for either
+# (E) Public WireGuard listener UDP on the WAN -- required for either
 #     peer to handshake. THIS is the rule that the foreign broad drop
 #     was beating on chr-vpn-3.
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51820 \
@@ -619,11 +625,15 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=gre \
     action=accept comment="hobe-fleet-fw-pptp-data"
 {% endif %}
 {% if 'vpn_ipsec' in ROLES %}
-{% if IKE_CERT_NAME %}
+# owner review fix #3 -- IKE 500/4500 firewall accept is no longer
+# gated on IKE_CERT_NAME. The cert gates the IKEv2 SERVER (sec7), not
+# the WAN-side firewall accept; if vpn_ipsec is enabled but the cert
+# isn't ready yet, we still want UDP 500/4500 + ESP + UDP 1701 to be
+# permitted at the firewall layer so the operator's NAT-T / IKE
+# negotiations don't get blackholed once the cert lands.
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-ike"
-{% endif %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=ipsec-esp \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-esp"
@@ -637,12 +647,12 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port={{ WG_USERS_P
     action=accept comment="hobe-fleet-fw-wg-users"
 {% endif %}
 
-# (G) Sane ICMP — pings work but can't flood.
+# (G) Sane ICMP -- pings work but can't flood.
 add chain=input protocol=icmp action=accept limit=50,5:packet \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-icmp"
 
-# (H) Defence vs an operator that forgot the role flag — public RADIUS
+# (H) Defence vs an operator that forgot the role flag -- public RADIUS
 #     ports must NEVER answer outside wg-data.
 add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
@@ -651,11 +661,11 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 # ---- 10. control-plane is NOT a data route ----------------
 # Ensure wg-mgmt carries no default route / no forwarding (invariant).
 /ip route
-# (no default via wg-mgmt — intentionally absent)
+# (no default via wg-mgmt -- intentionally absent)
 
 # ---- 11. Panel-side read-only API user (live-metrics poller) ----
 # A dedicated RouterOS user the panel logs in as to read CPU, /ppp/active
-# count and interface bytes — over the REST API on www-ssl ONLY, exposed
+# count and interface bytes -- over the REST API on www-ssl ONLY, exposed
 # on the wg-mgmt source (NEVER the WAN). The collector at
 # app/services/routeros_client.py speaks HTTPS REST against
 # https://<host>:<port>/rest/, so the matching service is `www-ssl`.
@@ -664,53 +674,54 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 #   1. PROTOCOL: www-ssl (REST), not api-ssl (binary).
 #   2. CERTIFICATE: cert assigned so the TCP listener actually binds.
 #   3. ACL DIRECTION: source-IP ACL points at the PANEL's wg-mgmt IP,
-#      not the CHR's own — so the panel itself isn't blocked.
+#      not the CHR's own -- so the panel itself isn't blocked.
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
-# feat/chr-auto-scoped-mgmt-user — dedicated SCOPED management user.
+# feat/chr-auto-scoped-mgmt-user -- dedicated SCOPED management user.
 #
-# The owner's idea: «بدل ما ينتظر مني أحط admin أو hobe-panel — ليش
-# السكربت ما يكون فيه إنشاء يوزر إدارة موحّد، بينشئ بصلاحيات معيّنة حسب
-# الحاجة». So the script ALWAYS provisions a dedicated user bound to a
-# DEDICATED group with the EXACT policy set the panel needs — never the
+# The owner's idea (paraphrased): instead of waiting for me to set
+# admin or hobe-panel manually, the script should auto-create a
+# unified management user with the exact privileges per need. So
+# the script ALWAYS provisions a dedicated user bound to a
+# DEDICATED group with the EXACT policy set the panel needs -- never the
 # default ``read`` / ``full`` / ``write`` groups, never a built-in
 # RouterOS user. Renderer auto-mints user+password if no operator
 # override was set; reserved built-in names (admin/root/support/
 # operator) are substituted to HARD_DEFAULT_USER upstream so this
 # block never has to clobber a built-in row.
 #
-# Policy set — see fleet/registry/onboarding_service.py for the audit
+# Policy set -- see fleet/registry/onboarding_service.py for the audit
 # of every REST call the panel actually makes. Granted:
 #
-#   read        — system/resource, /interface, /ppp/active, etc.
-#   write       — PUT/PATCH on /ppp/{secret,profile}, /ip/pool, /ip/ipsec/*,
+#   read        -- system/resource, /interface, /ppp/active, etc.
+#   write       -- PUT/PATCH on /ppp/{secret,profile}, /ip/pool, /ip/ipsec/*,
 #                 /interface/wireguard{,/peers}
-#   sensitive   — required to write ppp/secret password=, ipsec PSK,
+#   sensitive   -- required to write ppp/secret password=, ipsec PSK,
 #                 wireguard peer private-key=
-#   reboot      — /system/reboot from the CHR console «إعادة التشغيل»
-#   rest-api    — login via REST API (the only login channel the panel
+#   reboot      -- /system/reboot from the CHR console "(reboot)"
+#   rest-api    -- login via REST API (the only login channel the panel
 #                 uses; the unified script disables SSH/WinBox/FTP/web/
 #                 telnet for this user at the /ip service layer too)
 #
 # DENIED by omission (RouterOS rule): api (binary), ssh, winbox, ftp,
 # web, telnet, password (no user-mgmt), policy (no /system/scripts),
-# sniff, test, romon, dude, tikapp, local — everything NOT in the
+# sniff, test, romon, dude, tikapp, local -- everything NOT in the
 # granted list above stays denied. If a future panel call needs a new
 # policy, justify it in the renderer's audit + add it to the granted
 # list below.
 #
-# LIVE INCIDENT (fix/chr-group-policy-granted-only — chr-vpn-3,
+# LIVE INCIDENT (fix/chr-group-policy-granted-only -- chr-vpn-3,
 # WinBox 4.1):
 #   Script Error: input does not match any value of policy
 #   (/user/group/add (policy); line 391)
 # Root cause: RouterOS v7 `/user group add policy=` accepts a
 # comma-separated list of GRANTED policy names ONLY. `!negation`
-# tokens (e.g. `!ssh`) are NOT valid input — RouterOS denies any
+# tokens (e.g. `!ssh`) are NOT valid input -- RouterOS denies any
 # UNLISTED policy by default, so deny-by-omission is the only
 # correct form. The previous policy carried `!api,!ssh,...,!tikapp`
 # and the parser errored on the first `!` token, leaving the group
-# unprovisioned → /user add referenced a non-existent group →
+# unprovisioned -> /user add referenced a non-existent group ->
 # import halted. Fix: granted-only tokens.
-# LIVE INCIDENT (fix/chr-group-idempotent-no-remove — chr-vpn-3):
+# LIVE INCIDENT (fix/chr-group-idempotent-no-remove -- chr-vpn-3):
 #   Script Error: failure: group has some users (/user/group/remove)
 # Root cause: ``/user group remove`` REFUSES to delete a group that
 # still has members. On a fresh install the group has no users so
@@ -735,16 +746,16 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
     :log info ("hobe-fleet: refreshed policy on existing scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
 }
 
-# User row — ADD-OR-SET, no remove. On first install the row is
+# User row -- ADD-OR-SET, no remove. On first install the row is
 # absent; on every re-import it already exists in the scoped group.
-# We ``set`` the group + comment but NEVER touch ``password=`` —
+# We ``set`` the group + comment but NEVER touch ``password=`` --
 # the panel's stored ciphertext from generate_keys IS the source of
 # truth (panel-mints-panel-knows). Rotating the password here would
-# break the script↔row match the first /user add already pinned.
+# break the script<->row match the first /user add already pinned.
 #
 # Find-by-comment guard: we only manage our OWN row (the
 # ``hobe-fleet-api-managed`` comment). A built-in row at the same
-# name (admin/root/…) is untouched — the renderer substitutes
+# name (admin/root/...) is untouched -- the renderer substitutes
 # reserved names off API_USER upstream so the second branch
 # below is belt-and-braces only.
 /user
@@ -761,7 +772,7 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
             comment="hobe-fleet-api-managed"
         :log info ("hobe-fleet: refreshed group binding on existing managed user {{ API_USER }}")
     } else={
-        :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber it. Pick a non-conflicting username from the panel's «إعدادات بنية الأسطول» page; auto-provisioned defaults already avoid every RouterOS built-in.")
+        :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row -- refusing to clobber it. Pick a non-conflicting username from the panel's "Settings -> Fleet Infrastructure" page; auto-provisioned defaults already avoid every RouterOS built-in.")
     }
 }
 
@@ -769,16 +780,16 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 #
 # LIVE INCIDENT (fix/chr-unified-wg-mgmt-key-bootstrap):
 # 2s delay between sign + service-assign was too short on slower CHRs
-# (1-vCPU contabo VPS under §0a-backup + §9-firewall CPU load).
+# (1-vCPU contabo VPS under sec 0a-backup + sec 9-firewall CPU load).
 # ``/ip service set www-ssl certificate=hobe-fleet-api-cert`` fired
-# while the cert was still being signed → set errored silently → www-ssl
-# stayed DISABLED → panel TCP to :8443 was refused → connect_failed →
-# wg_verify reported rest_failed → wizard stuck.
+# while the cert was still being signed -> set errored silently -> www-ssl
+# stayed DISABLED -> panel TCP to :8443 was refused -> connect_failed ->
+# wg_verify reported rest_failed -> wizard stuck.
 #
-# Fix: bumped each delay 2s → 5s AND added an explicit poll-wait that
+# Fix: bumped each delay 2s -> 5s AND added an explicit poll-wait that
 # checks the cert's ``invalid-after`` field (signed certs carry an
-# expiry; unsigned ones don't). The :for retries 10 × 1s before
-# giving up + logging — even on a saturated CHR the cert is ready
+# expiry; unsigned ones don't). The :for retries 10 x 1s before
+# giving up + logging -- even on a saturated CHR the cert is ready
 # within 10 s.
 /certificate
 remove [find name="hobe-fleet-api-cert"]
@@ -795,21 +806,21 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
 
 # Poll-wait: ensure the leaf cert is fully signed (has invalid-after)
 # before we assign it to www-ssl. The set-line that follows errors
-# silently when the cert isn't ready yet, leaving www-ssl disabled —
+# silently when the cert isn't ready yet, leaving www-ssl disabled --
 # the on-CHR cause of `connect_failed` on slow CHRs.
 #
-# LIVE INCIDENT (fix/chr-script-remove-break — chr-vpn-3):
+# LIVE INCIDENT (fix/chr-script-remove-break -- chr-vpn-3):
 #   Script Error: bad command name break (line 469 column 28)
 # Root cause: `:break` inside a nested ``:if do={}`` is rejected by
-# RouterOS («bad command name break»). The construct is unreliable
+# RouterOS ("bad command name break"). The construct is unreliable
 # across v7 builds and we deliberately do NOT rely on it.
 #
 # BREAK-FREE pattern: the loop ALWAYS runs all 15 iterations, but
-# each iteration's body is gated by ``!$certReady`` — once the cert
+# each iteration's body is gated by ``!$certReady`` -- once the cert
 # is ready the body and the ``:delay 1s`` are skipped, so the loop
 # spins through the remaining counter ticks with effectively no
-# work. Worst-case overshoot: 14 noop ticks (≈ a few µs each). No
-# `:break`, no `:continue` — pure flag-gated iteration.
+# work. Worst-case overshoot: 14 noop ticks (~= a few us each). No
+# `:break`, no `:continue` -- pure flag-gated iteration.
 :local certReady false
 :for i from=1 to=15 do={
     :if (!$certReady) do={
@@ -826,14 +837,14 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
     }
 }
 :if ($certReady = false) do={
-    :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s — www-ssl will NOT bind on this run; re-run /import to retry."
+    :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s -- www-ssl will NOT bind on this run; re-run /import to retry."
 }
 
-# www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL —
+# www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL --
 # restrict to the PANEL's wg-mgmt IP (PANEL_WG_ADDR/32). This is safe
 # to set unconditionally because the panel ALWAYS dials from
 # PANEL_WG_ADDR over wg-mgmt; restricting at the service layer is a
-# defence-in-depth complement to the §9 firewall rule.
+# defence-in-depth complement to the sec 9 firewall rule.
 /ip service
 set www-ssl disabled=no port={{ API_PORT|default(8443) }} \
     certificate=hobe-fleet-api-cert address={{ PANEL_WG_ADDR }}/32
@@ -843,39 +854,39 @@ set www     disabled=yes  ;# plain HTTP stays off
 set telnet  disabled=yes
 set ftp     disabled=yes
 
-# ─── WG-MGMT-FIRST SAFETY GATE + MANUAL-ACCESS UNION ────────────────
+# --- WG-MGMT-FIRST SAFETY GATE + MANUAL-ACCESS UNION ----------------
 # Hardened ssh/winbox source-IP ACL = the UNION of:
 #   * the panel over wg-mgmt:   PANEL_WG_ADDR/32        (always)
 #   * the owner's source IPs:   OPERATOR_ADMIN_IPS      (if set)
 #
 # That way WinBox is NEVER fully blocked: the owner can manage from
-# his own IP even when wg-mgmt is down. NEVER 0.0.0.0/0 — the panel
+# his own IP even when wg-mgmt is down. NEVER 0.0.0.0/0 -- the panel
 # validator rejects it.
 #
 # We still verify wg-mgmt is REACHABLE before applying the restriction.
 # Two cases:
 #
-#   (a) wg-mgmt reachable → apply the union ACL on ssh + winbox.
+#   (a) wg-mgmt reachable -> apply the union ACL on ssh + winbox.
 #       This is the secure final state.
 #
 #   (b) wg-mgmt unreachable (panel hasn't added this CHR as a wg-mgmt
-#       peer yet) →
+#       peer yet) ->
 #         - if OPERATOR_ADMIN_IPS is SET: still apply the union, so the
 #           owner reaches WinBox/SSH from his own IP while the panel
 #           side is fixed. No temp-emergency rule needed (the operator
-#           accept rule emitted in §9 handles it).
+#           accept rule emitted in sec 9 handles it).
 #         - if OPERATOR_ADMIN_IPS is UNSET: keep ssh/winbox listening
 #           on default + add a comment-tagged TEMP emergency-admin
 #           firewall rule (cleaned on next clean run). Warn the
 #           operator + tell him the break-glass path (provider VPS
-#           console → /system script run hobe-open-winbox — see §11b).
+#           console -> /system script run hobe-open-winbox -- see sec 11b).
 #
-# The 3-min self-lockout rollback scheduler armed in §0a is the second
-# safety net underneath this gate — a verify false-positive that cuts
+# The 3-min self-lockout rollback scheduler armed in sec 0a is the second
+# safety net underneath this gate -- a verify false-positive that cuts
 # the session still recovers.
 
 # Compose the address ACL. RouterOS /ip service accepts a comma-
-# separated address list — we splice PANEL/32 with the operator IPs.
+# separated address list -- we splice PANEL/32 with the operator IPs.
 {% if OPERATOR_ADMIN_IPS|default('') %}
 :local mgmtAddrACL "{{ PANEL_WG_ADDR }}/32,{{ OPERATOR_ADMIN_IPS }}"
 {% else %}
@@ -897,60 +908,70 @@ set ftp     disabled=yes
 } on-error={}
 
 {% if OPERATOR_ADMIN_IPS|default('') %}
-# OPERATOR_ADMIN_IPS is set → always apply the union ACL, regardless of
+# OPERATOR_ADMIN_IPS is set -> always apply the union ACL, regardless of
 # wg-mgmt state. WinBox stays reachable from the owner's IP either way.
 /ip service set ssh    address=$mgmtAddrACL disabled=no
 /ip service set winbox address=$mgmtAddrACL disabled=no
 :if ($mgmtReachable) do={
     :log info ("hobe-fleet: wg-mgmt reachable; ssh+winbox ACL = " . $mgmtAddrACL)
 } else={
-    :log warning ("hobe-fleet: wg-mgmt NOT reachable yet, but operator-IP allow is set; ssh+winbox ACL = " . $mgmtAddrACL . " — WinBox remains reachable from those sources.")
+    :log warning ("hobe-fleet: wg-mgmt NOT reachable yet, but operator-IP allow is set; ssh+winbox ACL = " . $mgmtAddrACL . " -- WinBox remains reachable from those sources.")
 }
 {% else %}
-# OPERATOR_ADMIN_IPS is NOT set → run the original verify-then-restrict
+# OPERATOR_ADMIN_IPS is NOT set -> run the original verify-then-restrict
 # flow. On wg-mgmt failure keep ssh/winbox open + add a temp emergency
 # rule + warn the operator (with break-glass instructions).
 :if ($mgmtReachable) do={
     /ip service set ssh    address=$mgmtAddrACL disabled=no
     /ip service set winbox address=$mgmtAddrACL disabled=no
-    :log info ("hobe-fleet: wg-mgmt verified reachable — ssh+winbox restricted to " . $mgmtAddrACL)
+    :log info ("hobe-fleet: wg-mgmt verified reachable -- ssh+winbox restricted to " . $mgmtAddrACL)
 } else={
-    /ip service set ssh    disabled=no
-    /ip service set winbox disabled=no
+    # owner review fix #1 -- BOTH layers must agree, otherwise the
+    # temp firewall accept is silently dropped by the service ACL.
+    # OPERATOR_ADMIN_IPS is unset AND wg-mgmt is down: open ssh/winbox
+    # at the SERVICE layer too (0.0.0.0/0) so the panel-recovery path
+    # actually works. The 3-min self-lockout rollback armed in sec0a
+    # is the safety net that bounds the exposure window if this apply
+    # halted mid-way; otherwise the operator is expected to either
+    # (a) fix wg-mgmt and re-import, OR (b) set OPERATOR_ADMIN_IPS on
+    # the panel and re-export, both of which re-restrict at the next
+    # apply.
+    /ip service set ssh    address=0.0.0.0/0 disabled=no
+    /ip service set winbox address=0.0.0.0/0 disabled=no
     /ip firewall filter
     :if ([:len [find comment="hobe-fleet-fw-temp-emergency-admin"]] = 0) do={
         add chain=input action=accept protocol=tcp dst-port=22,8291 \
             place-before=[find comment="hobe-fleet-fw-drop-last"] \
             comment="hobe-fleet-fw-temp-emergency-admin"
     }
-    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR — ssh/winbox kept OPEN and TEMP emergency-admin rule active. Either (a) set OPERATOR_ADMIN_IPS on the panel and re-export the script, or (b) fix wg-mgmt on the panel and re-import. Recovery: VPS provider console → /system script run hobe-open-winbox (opens WinBox for 15m)."
-    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN + TEMP emergency-admin rule active. Recovery break-glass: VPS console → /system script run hobe-open-winbox"
+    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR -- ssh/winbox SERVICE ACL widened to 0.0.0.0/0 + TEMP emergency-admin firewall rule active. Either (a) set OPERATOR_ADMIN_IPS on the panel and re-export, or (b) fix wg-mgmt and re-import; both re-restrict on next apply. Recovery: VPS provider console -> /system script run hobe-open-winbox (opens WinBox for 15m)."
+    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox ACL widened to 0.0.0.0/0 + TEMP emergency-admin rule active. Recovery break-glass: VPS console -> /system script run hobe-open-winbox"
 }
 {% endif %}
 
-# ── operator-facing summary print ───────────────────────────────────
+# -- operator-facing summary print -----------------------------------
 {% if OPERATOR_ADMIN_IPS|default('') %}
-:log warning ("hobe-fleet: Management ACL applied — ssh/winbox accept from PANEL/32 + OPERATOR_ADMIN_IPS=" . "{{ OPERATOR_ADMIN_IPS }}" . ". Public WinBox/SSH from any other source is BLOCKED.")
-:put ("hobe-fleet: ssh+winbox ACL = PANEL_WG_ADDR/32 + OPERATOR_ADMIN_IPS (" . "{{ OPERATOR_ADMIN_IPS }}" . "). Break-glass: VPS console → /system script run hobe-open-winbox (15 min open WinBox, auto-close).")
+:log warning ("hobe-fleet: Management ACL applied -- ssh/winbox accept from PANEL/32 + OPERATOR_ADMIN_IPS=" . "{{ OPERATOR_ADMIN_IPS }}" . ". Public WinBox/SSH from any other source is BLOCKED.")
+:put ("hobe-fleet: ssh+winbox ACL = PANEL_WG_ADDR/32 + OPERATOR_ADMIN_IPS (" . "{{ OPERATOR_ADMIN_IPS }}" . "). Break-glass: VPS console -> /system script run hobe-open-winbox (15 min open WinBox, auto-close).")
 {% else %}
-:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only (OPERATOR_ADMIN_IPS not set). Public WinBox/SSH will NOT work after hardening. Break-glass: VPS console → /system script run hobe-open-winbox (opens WinBox 15 min, auto-close)."
-:put "hobe-fleet WARNING: ssh+winbox restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only. Break-glass: VPS console → /system script run hobe-open-winbox"
+:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only (OPERATOR_ADMIN_IPS not set). Public WinBox/SSH will NOT work after hardening. Break-glass: VPS console -> /system script run hobe-open-winbox (opens WinBox 15 min, auto-close)."
+:put "hobe-fleet WARNING: ssh+winbox restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only. Break-glass: VPS console -> /system script run hobe-open-winbox"
 {% endif %}
 {% else %}
 # Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
-# the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
+# the panel. The dashboard will keep showing "no measurements yet" for CPU /
 # sessions / bandwidth until the operator configures these in
-# «إعدادات بنية الأسطول → بيانات اعتماد قراءة المقاييس».
+# "Settings -> Fleet Infrastructure -> metrics read credentials".
 {% endif %}
 
 # CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
 
 # ============================================================
-# 11b. BREAK-GLASS MANUAL ACCESS — provider-console recovery scripts
+# 11b. BREAK-GLASS MANUAL ACCESS -- provider-console recovery scripts
 # ============================================================
-# Owner: «لازم يكون في طريقة دخول يدوي للـWinBox». There must always
+# Owner: "There must be a manual WinBox entry path". There must always
 # be a guaranteed manual recovery path that the network firewall can
-# NEVER block — because the recovery is initiated from the VPS
+# NEVER block -- because the recovery is initiated from the VPS
 # provider's console (Hetzner / NovoServe VNC / Serial) which is a
 # console session on the VM, not an IP session. That session bypasses
 # /ip firewall filter entirely; it talks to the RouterOS shell
@@ -958,32 +979,32 @@ set ftp     disabled=yes
 #
 #     /system script run hobe-open-winbox
 #
-# …and WinBox opens for 15 minutes (then auto-reverts to the hardened
+# ...and WinBox opens for 15 minutes (then auto-reverts to the hardened
 # state). For an explicit close: /system script run hobe-close-winbox.
 #
 # Idempotency: scripts are managed ADD-OR-SET by name (same pattern
-# as /user group in §11). Clean-before-write — if the row exists we
+# as /user group in sec 11). Clean-before-write -- if the row exists we
 # overwrite its source; if not we add it. Re-imports converge.
 #
 # Why this is safe:
-#   * The script source is the SCRIPT'S WORK — it widens winbox only
+#   * The script source is the SCRIPT'S WORK -- it widens winbox only
 #     TEMPORARILY (15 min) and schedules its own revert. If the
 #     operator forgets, the scheduler re-tightens automatically.
 #   * The scripts are bound to the panel's mgmt group
-#     (`hobe-fleet-mgmt`) — only a logged-in admin can run them.
+#     (`hobe-fleet-mgmt`) -- only a logged-in admin can run them.
 #   * Running them is an EXPLICIT operator action; nothing on the
 #     CHR triggers them on its own.
 #
 # Visible to the operator via /system script print (also shown in
-# the §13 validation dump).
-{# fix/chr-script-syntax-355 — single-line source bodies.
+# the sec 13 validation dump).
+{# fix/chr-script-syntax-355 -- single-line source bodies.
 
    RouterOS lesson learned from chr-vpn-2 import: `\n\` inside a quoted
-   `source="..."` is NOT a "newline + line-continuation" pair —
+   `source="..."` is NOT a "newline + line-continuation" pair --
    backslash-at-EOL is RouterOS line continuation OUTSIDE strings only.
    Inside a quoted string the trailing `\` followed by a real newline
    is invalid and trips the parser. Same goes for arithmetic in
-   scheduler `interval=` — it wants a literal time, not `($x . "m")`.
+   scheduler `interval=` -- it wants a literal time, not `($x . "m")`.
 
    Robust shape (this is what's now emitted):
      source="cmd1; cmd2; cmd3; ..."
@@ -996,12 +1017,12 @@ set ftp     disabled=yes
 {%- set closeACL = PANEL_WG_ADDR ~ '/32' -%}
 {%- endif %}
 /system script
-# ── (1) hobe-open-winbox — temporarily widen WinBox for recovery ──
+# -- (1) hobe-open-winbox -- temporarily widen WinBox for recovery --
 # Body (single line, `;` separated):
 #   1. log + put the operator-facing notice
 #   2. widen ssh + winbox /ip service ACL to 0.0.0.0/0
 #   3. add a tagged firewall accept for tcp:22,8291 above drop-last
-#      (only if not already present — idempotent)
+#      (only if not already present -- idempotent)
 #   4. remove any stale auto-revert scheduler, then arm a fresh one
 #      with interval=15m calling hobe-close-winbox on tick
 :if ([:len [find name="hobe-open-winbox"]] = 0) do={
@@ -1016,11 +1037,11 @@ set ftp     disabled=yes
         source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
 }
 
-# ── (2) hobe-close-winbox — immediate re-restrict to hardened state ──
+# -- (2) hobe-close-winbox -- immediate re-restrict to hardened state --
 # Body (single line, `;` separated):
 #   1. log + put the operator-facing notice
 #   2. restore ssh + winbox /ip service ACL to the hardened union
-#      (PANEL_WG_ADDR/32 plus OPERATOR_ADMIN_IPS if set — baked at
+#      (PANEL_WG_ADDR/32 plus OPERATOR_ADMIN_IPS if set -- baked at
 #      render time so this script needs no panel round-trip)
 #   3. remove the break-glass firewall rule + the auto-revert scheduler
 :if ([:len [find name="hobe-close-winbox"]] = 0) do={
@@ -1035,26 +1056,67 @@ set ftp     disabled=yes
         source=":log warning \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; /ip service set winbox address=\"{{ closeACL }}\" disabled=no; /ip service set ssh address=\"{{ closeACL }}\" disabled=no; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored\""
 }
 
-:log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox). Run from VPS provider console if locked out."
+# -- (3) hobe-open-webfig -- temporarily widen public WebFig (HTTPS) --
+# Owner review #2: after hardening, public WebFig is NOT supported
+# (www disabled, www-ssl restricted to PANEL_WG_ADDR/32). The
+# production path is wg-mgmt REST (the panel) or the WinBox break-
+# glass above. This script is the optional WebFig recovery for the
+# rare case where the operator NEEDS the HTML5 UI from the public
+# WAN (e.g. WinBox is broken on his machine and he doesn't have
+# wg-mgmt up). It widens /ip service www-ssl to 0.0.0.0/0 on port
+# 8443 + opens tcp/8443 above drop-last + arms an auto-close timer
+# that fires hobe-close-webfig in 15 minutes.
+#
+# REASON to PREFER WinBox: the WebFig path is HTTPS to the wg-mgmt
+# certificate (hobe-fleet-api-cert) which is self-signed -- browsers
+# block by default. WinBox doesn't have that issue.
+:if ([:len [find name="hobe-open-webfig"]] = 0) do={
+    add name="hobe-open-webfig" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; :put \"hobe-fleet break-glass: opening public WebFig for 15 minutes (HTTPS port 8443, self-signed cert -- browser will warn)\"; /ip service set www-ssl address=\"0.0.0.0/0\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass-webfig\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port={{ API_PORT|default(8443) }} place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass-webfig\" }; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; add name=\"hobe-close-webfig-auto\" interval=15m on-event=\"/system script run hobe-close-webfig\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: WebFig auto-revert in 15m via hobe-close-webfig-auto\""
+} else={
+    set [find name="hobe-open-webfig"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; :put \"hobe-fleet break-glass: opening public WebFig for 15 minutes (HTTPS port 8443, self-signed cert -- browser will warn)\"; /ip service set www-ssl address=\"0.0.0.0/0\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass-webfig\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port={{ API_PORT|default(8443) }} place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass-webfig\" }; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; add name=\"hobe-close-webfig-auto\" interval=15m on-event=\"/system script run hobe-close-webfig\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: WebFig auto-revert in 15m via hobe-close-webfig-auto\""
+}
+
+# -- (4) hobe-close-webfig -- restore www-ssl to PANEL_WG_ADDR/32 --
+# Mirrors hobe-close-winbox: restore the hardened ACL on www-ssl,
+# remove the break-glass firewall rule + the auto-revert scheduler.
+:if ([:len [find name="hobe-close-webfig"]] = 0) do={
+    add name="hobe-close-webfig" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
+} else={
+    set [find name="hobe-close-webfig"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
+}
+
+:log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox / hobe-open-webfig / hobe-close-webfig). Run from VPS provider console if locked out."
 
 # ============================================================
-# 12. SELF-LOCKOUT GUARD — CANCEL (we made it through cleanly)
+# 12. SELF-LOCKOUT GUARD -- CANCEL (we made it through cleanly)
 # ============================================================
 # Last block of the script. If we get here, every section above ran
 # without halting, so the apply is good. Cancel the rollback scheduler
-# armed in §0a; without this line the CHR would auto-revert at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
+# armed in sec 0a; without this line the CHR would auto-revert at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
 :do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
 :do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
-:log info "hobe-fleet: rollback guard CANCELLED — apply complete"
+:log info "hobe-fleet: rollback guard CANCELLED -- apply complete"
 
 # ============================================================
 # 13. POST-IMPORT VALIDATION DUMP
 # ============================================================
-# Operator sees this after `/import file=` finishes — confirms the
+# Operator sees this after `/import file=` finishes -- confirms the
 # final on-CHR state without needing a separate inspection session.
 :put ""
 :put "==================================================================="
-:put "  hobe-fleet validation — post-import state on this CHR"
+:put "  hobe-fleet validation -- post-import state on this CHR"
 :put "==================================================================="
 :put ""
 :put "[/ip service print detail]"
@@ -1076,24 +1138,31 @@ set ftp     disabled=yes
 /system script print where name~"hobe-"
 :put ""
 :put "==================================================================="
-:put "  MANUAL-ACCESS GUARANTEE — how to reach WinBox manually"
+:put "  MANUAL-ACCESS GUARANTEE -- how to reach WinBox manually"
 :put "==================================================================="
 {% if OPERATOR_ADMIN_IPS|default('') %}
 :put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 + your"
 :put "     configured OPERATOR_ADMIN_IPS ({{ OPERATOR_ADMIN_IPS }})."
 {% else %}
 :put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 only."
-:put "     (OPERATOR_ADMIN_IPS is empty — set it on the panel under"
-:put "     «إعدادات بنية الأسطول → IPs الإدارة» to allow WinBox"
-:put "     from your own IP, then re-export this script.)"
+:put "     (OPERATOR_ADMIN_IPS is empty -- set it on the panel under"
+:put "     Settings -> Fleet Infrastructure -> Admin IPs to allow"
+:put "     WinBox from your own IP, then re-export this script.)"
 {% endif %}
 :put "  2) BREAK-GLASS (if locked out): open the VPS provider"
-:put "     console (Hetzner / NovoServe VNC or Serial) — it bypasses"
-:put "     the network firewall entirely — and run:"
-:put "         /system script run hobe-open-winbox"
-:put "     WinBox opens for 15 minutes, then auto-closes."
-:put "     Close early with: /system script run hobe-close-winbox"
-:put "  3) Production management path is wg-mgmt (private control"
+:put "     console (Hetzner / NovoServe VNC or Serial) -- it bypasses"
+:put "     the network firewall entirely -- and run one of:"
+:put "       /system script run hobe-open-winbox    (15 min, auto-close)"
+:put "       /system script run hobe-open-webfig    (15 min, auto-close)"
+:put "     The matching close scripts re-restrict immediately:"
+:put "       /system script run hobe-close-winbox"
+:put "       /system script run hobe-close-webfig"
+:put "  3) PUBLIC WebFig is NOT supported after hardening:"
+:put "     /ip service www is disabled and www-ssl is restricted to"
+:put "     PANEL_WG_ADDR/32. Use the wg-mgmt REST path (panel) or the"
+:put "     hobe-open-webfig break-glass above if you must use the"
+:put "     HTML5 UI from the public WAN."
+:put "  4) Production management path is wg-mgmt (private control"
 :put "     plane). The panel uses it for REST polls + provisioning."
 :put "==================================================================="
 :put ""
@@ -1105,7 +1174,7 @@ set ftp     disabled=yes
 # END unified script.
 # Re-importable: every resource clears its prior copy first.
 # Role-gated: services + firewall accepts emitted only for enabled roles.
-# Self-lockout proof: §0a arms, §12 cancels.
-# Firewall ordering: place-before drop-last anchor in §9.
-# Service hardening: wg-mgmt-verify-then-restrict in §11.
+# Self-lockout proof: sec 0a arms, sec 12 cancels.
+# Firewall ordering: place-before drop-last anchor in sec 9.
+# Service hardening: wg-mgmt-verify-then-restrict in sec 11.
 # ============================================================

@@ -111,7 +111,9 @@ def test_radius_entry_tagged_and_removed_first():
     """Brief said: add stable `comment="hobe-fleet"` to the /radius row and
     remove by that tag before re-adding. Stronger tag used: hobe-fleet-radius."""
     script = _render().replace(" \\\n", " ")
-    assert "/radius\nremove [find comment=\"hobe-fleet-radius\"]\nadd service=ppp,login " in script, \
+    # owner review fix #4: service=ppp only, no `,login` (so RADIUS can't
+    # authorise router admin login on the CHR).
+    assert "/radius\nremove [find comment=\"hobe-fleet-radius\"]\nadd service=ppp " in script, \
         "/radius entry must be remove-by-tag then re-add with comment=\"hobe-fleet-radius\""
     assert 'comment="hobe-fleet-radius"' in script, "/radius add must carry the tag"
 
@@ -213,10 +215,19 @@ def test_cert_conditional_skips_preserved():
     # previously had certs (and the blocks) gets them swept on re-import.
     assert 'remove [find peer="hobe-peer"]' in script
     assert 'remove [find name="hobe-peer"]' in script
-    # The hobe-fleet-fw-sstp + hobe-fleet-fw-ike rules should NOT be added
-    # when their certs are off — but the regex remove still cleans any leftover.
+    # SSTP firewall accept stays gated on SSTP_CERT_NAME (no cert ⇒
+    # no listener so no public 443 accept).
     assert "hobe-fleet-fw-sstp" not in script
-    assert "hobe-fleet-fw-ike" not in script
+    # owner review fix #3 -- the IKE 500/4500 firewall accept is no
+    # longer gated on IKE_CERT_NAME. The cert gates the IKEv2 SERVER
+    # block in §7, not the WAN-side firewall accept; if the cert isn't
+    # ready yet we still want UDP 500/4500 + ESP + UDP 1701 permitted
+    # at the firewall layer so the operator's NAT-T / IKE negotiations
+    # don't get blackholed once the cert lands. So:
+    assert "hobe-fleet-fw-ike" in script, (
+        "owner review #3: IKE 500/4500 firewall accept must render whenever "
+        "vpn_ipsec role is enabled, regardless of IKE_CERT_NAME"
+    )
     assert 'remove [find comment~"^hobe-fleet-fw-"]' in script
 
 
@@ -240,7 +251,7 @@ def test_remove_appears_before_add_for_every_managed_resource():
         ('remove [find name="wg-data"]',                    "add name=wg-data "),
         ('remove [find interface="wg-mgmt"]',               "add interface=wg-mgmt "),
         ('remove [find interface="wg-data"]',               "add interface=wg-data "),
-        ('remove [find comment="hobe-fleet-radius"]',       "add service=ppp,login"),
+        ('remove [find comment="hobe-fleet-radius"]',       "add service=ppp "),
         ('remove [find name="hobe-ike"]',                   "add name=hobe-ike "),
         ('remove [find name="hobe-prop"]',                  "add name=hobe-prop "),
         ('remove [find name="hobe-mc"]',                    "add name=hobe-mc "),

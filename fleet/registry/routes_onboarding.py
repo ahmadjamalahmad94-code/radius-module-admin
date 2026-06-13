@@ -567,4 +567,81 @@ def view_script(job_id: int):
     })
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# fix/chr-script-syntax-355 owner review #5 — secret rotation scaffold
+# ════════════════════════════════════════════════════════════════════════════
+# The owner's review flagged that the rendered script embeds plaintext:
+#
+#   * WireGuard PRIVATE keys (wg-mgmt + wg-data, per-node).
+#   * The RADIUS shared secret (`CHR_SHARED_SECRET`, fleet-constant).
+#   * The IPsec PSK (`hobe-mc` peer secret, currently the same as
+#     `CHR_SHARED_SECRET` — fleet-constant by design).
+#   * The panel poller user password (`API_PASSWORD`, per-fleet default
+#     or per-node override).
+#
+# Rotating these in-place requires touching FOUR distinct surfaces:
+#
+#   (a) Fleet vault (per-node WG keypairs → re-mint + re-store ciphertext).
+#   (b) Settings (`fleet.infra.CHR_SHARED_SECRET` → re-generate +
+#       Fernet-encrypt + commit).
+#   (c) Per-node row (`routeros_api_password_enc` → re-encrypt new
+#       password).
+#   (d) Distributed convergence (the routing-table / secret-sync
+#       channel must publish the new secret to the proxy BEFORE the
+#       CHR re-imports, otherwise RADIUS auth fails mid-rotation).
+#
+# The full sequencer (rotate → re-render → push → verify → reconcile-
+# on-proxy) is non-trivial and out of scope for this fix branch. The
+# panel ALREADY has the building blocks (`generate_chr_shared_secret`
+# in infra_settings.py, the wg_keys minter in fleet/registry/wg_keys.py,
+# the secret-sync channel in fleet/sync/) — the missing piece is the
+# orchestration + the proxy-side replay-safe convergence test.
+#
+# What ships in THIS branch: a stub endpoint that responds 501 Not
+# Implemented with a clear Arabic message explaining the deferred
+# scope, so the UI button can be wired up without serving a 404. The
+# audit log records the operator's request, so we can size the real
+# rotation work from the access pattern.
+
+
+@bp.post("/jobs/<int:job_id>/rotate-secrets")
+@super_admin_required
+def rotate_secrets(job_id: int):
+    """Stub for the per-node secret rotation flow (deferred).
+
+    Audited even though we don't perform the rotation yet — operator
+    intent is the signal we need to size the real work."""
+    job = _job_or_404(job_id)
+    if job is None:
+        return jsonify({"ok": False, "error": "not_found",
+                        "message": "مهمة التسجيل غير موجودة."}), 404
+    node_name = (job.form_input or {}).get("name") or f"chr-job-{job.id}"
+    audit(
+        "fleet_onboarding_script_rotate_requested",
+        "fleet_onboarding",
+        str(job.id),
+        f"طُلب تدوير أسرار العقدة «{node_name}» (الجوب #{job.id}) — مؤجَّل (501).",
+        metadata={"chr_id": job.chr_id, "status": job.status},
+    )
+    db.session.commit()
+    return jsonify({
+        "ok": False,
+        "error": "rotate_not_implemented_yet",
+        "message": (
+            "تدوير الأسرار غير مفعَّل في هذه النسخة بعد. الأجزاء الجاهزة في "
+            "اللوحة: توليد مفاتيح WireGuard جديدة، توليد سرّ RADIUS مشترك "
+            "جديد، إعادة تشفير كلمة المستخدم على الخادم. الجزء الناقص: "
+            "تنسيق التدوير عبر الـRADIUS proxy (نشر السرّ الجديد قبل "
+            "إعادة الاستيراد على الـCHR) لتجنّب فشل المصادقة في منتصف "
+            "العملية. سيُشحَن في فرع منفصل."
+        ),
+        "deferred_components": {
+            "wg_keys":       "generator ready (fleet/registry/wg_keys.py); orchestrator missing",
+            "radius_secret": "generator ready (infra_settings.generate_chr_shared_secret); proxy-side replay-safe push missing",
+            "ipsec_psk":     "shares CHR_SHARED_SECRET by design; rotates together",
+            "api_password":  "per-node row column ready; minter + re-encryption + onboarding-state machine glue missing",
+        },
+    }), 501
+
+
 __all__ = ["bp", "build_service"]
