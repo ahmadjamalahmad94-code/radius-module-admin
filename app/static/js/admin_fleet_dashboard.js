@@ -393,8 +393,136 @@
   }
 
   // ────────────────────────────────────────────────────────────────────
+  // fix/fleet-delete-complete-teardown — orphan-purge button + modal.
+  // Flow: GET survey → render preview → user clicks confirm → POST purge.
+  // ────────────────────────────────────────────────────────────────────
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function renderSurvey(survey) {
+    const node_ids = survey.orphan_node_ids || [];
+    const job_ids = survey.orphan_job_ids || [];
+    const route_map = survey.stale_route_node_ids || {};
+    const coa_ids = survey.stale_coa_node_ids || [];
+    const total = node_ids.length + job_ids.length
+                + Object.keys(route_map).length + coa_ids.length;
+    if (total === 0) {
+      return '<div style="color:#15803d"><i class="fa-solid fa-circle-check"></i>'
+           + '  لا توجد مهملات — كل شيء نظيف.</div>';
+    }
+    const lines = [];
+    lines.push('<div style="color:#92400e;margin-bottom:8px">'
+             + '<i class="fa-solid fa-triangle-exclamation"></i>'
+             + ' <strong>' + total + '</strong> عنصر سيُحذف:</div>');
+    lines.push('<ul style="margin:0 0 0 18px;padding:0">');
+    if (node_ids.length) {
+      lines.push('<li><strong>عقد يتيمة (IDs):</strong> '
+               + node_ids.map(escapeHtml).join("، ") + '</li>');
+    }
+    if (job_ids.length) {
+      lines.push('<li><strong>مهام بدون عقدة:</strong> #'
+               + job_ids.map(escapeHtml).join("، #") + '</li>');
+    }
+    const route_count = Object.keys(route_map).length;
+    if (route_count) {
+      const parts = [];
+      for (const rid in route_map) {
+        parts.push('مسار #' + escapeHtml(rid) + ' (يحوي '
+                 + (route_map[rid] || []).map(escapeHtml).join("،") + ')');
+      }
+      lines.push('<li><strong>مراجع بائدة في مسارات Realm:</strong> '
+               + parts.join("، ") + '</li>');
+    }
+    if (coa_ids.length) {
+      lines.push('<li><strong>أوامر CoA بائدة:</strong> '
+               + coa_ids.length + ' أمر</li>');
+    }
+    lines.push('</ul>');
+    return lines.join("");
+  }
+
+  function setupOrphanPurge() {
+    const btn = document.getElementById("fd-orphan-purge-btn");
+    if (!btn) return;
+    const modal = document.getElementById("fd-orphan-modal");
+    const body = document.getElementById("fd-orphan-survey-body");
+    const cancel = document.getElementById("fd-orphan-cancel-btn");
+    const confirm = document.getElementById("fd-orphan-confirm-btn");
+    if (!modal || !body || !cancel || !confirm) return;
+
+    const surveyUrl = btn.dataset.surveyUrl;
+    const purgeUrl  = btn.dataset.purgeUrl;
+
+    function openModal() { modal.style.display = "flex"; }
+    function closeModal() { modal.style.display = "none"; }
+
+    btn.addEventListener("click", async function () {
+      body.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جارٍ القراءة…';
+      confirm.disabled = true;
+      openModal();
+      try {
+        const resp = await fetch(surveyUrl, {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" },
+        });
+        const data = await resp.json();
+        const survey = (data && data.survey) || {};
+        body.innerHTML = renderSurvey(survey);
+        const total = (survey.orphan_node_ids || []).length
+                    + (survey.orphan_job_ids || []).length
+                    + Object.keys(survey.stale_route_node_ids || {}).length
+                    + (survey.stale_coa_node_ids || []).length;
+        confirm.disabled = total === 0;
+      } catch (e) {
+        body.innerHTML =
+          '<div style="color:#b91c1c">'
+          + '<i class="fa-solid fa-circle-xmark"></i> تعذّر قراءة المعاينة. حاول لاحقاً.'
+          + '</div>';
+        confirm.disabled = true;
+      }
+    });
+
+    cancel.addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) {
+      if (e.target === modal) closeModal();
+    });
+
+    confirm.addEventListener("click", async function () {
+      confirm.disabled = true;
+      try {
+        const resp = await fetch(purgeUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken(),
+            "Accept": "application/json",
+          },
+          body: "{}",
+        });
+        const data = await resp.json();
+        closeModal();
+        if (data && data.ok) {
+          // Reload so every surface refreshes against post-purge state.
+          window.location.reload();
+        } else {
+          confirm.disabled = false;
+        }
+      } catch (e) {
+        closeModal();
+        confirm.disabled = false;
+      }
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────────
   // Boot
   // ────────────────────────────────────────────────────────────────────
   bindSingleCheckButtons();
   bindPollMetricsButtons();
+  setupOrphanPurge();
 })();

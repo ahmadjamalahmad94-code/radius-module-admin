@@ -462,13 +462,16 @@ def chr_node_delete(node_id: int):
     The disable/drain endpoint stays as the soft option; this is the
     explicit hard path the owner asked for.
     """
-    from app.models import ProxyRealmRoute, ServiceAllocation
+    from app.models import ServiceAllocation
+    from fleet.registry.teardown import teardown_node
 
     node = db.session.get(FleetChrNode, node_id)
     if node is None:
         flash("العقدة غير موجودة.", "error")
         return redirect(url_for("fleet_ui.fleet_dashboard"))
 
+    # ServiceAllocation guard stays — only this route owns service
+    # allocations, so the centralised teardown can't see them.
     blocking = (
         ServiceAllocation.query
         .filter_by(fleet_chr_node_id=node_id)
@@ -483,33 +486,25 @@ def chr_node_delete(node_id: int):
         )
         return redirect(url_for("fleet_ui.fleet_dashboard"))
 
-    # Scrub soft refs from proxy routes' allow-lists.
-    scrubbed_routes = 0
-    for r in ProxyRealmRoute.query.all():
-        ids = list(r.allowed_fleet_chr_node_ids or [])
-        if node_id in ids:
-            ids.remove(node_id)
-            r.allowed_fleet_chr_node_ids = ids
-            scrubbed_routes += 1
-
+    # fix/fleet-delete-complete-teardown — single centralised cascade:
+    # ProxyRealmRoute scrub + PendingCoaCommand drop + fleet sessions +
+    # UserFleet.pinned_chr_id clear + panel-host wg-mgmt peer apply.
     name_snapshot = node.name
-    db.session.delete(node)
+    report = teardown_node(node)
     audit(
         "fleet_chr_node_delete",
         "fleet_chr_node",
         str(node_id),
-        f"حذف عقدة CHR {name_snapshot}",
-        {"scrubbed_proxy_routes": scrubbed_routes},
+        f"حذف عقدة CHR {name_snapshot} مع التنظيف الكامل.",
+        {"teardown": report.as_dict()},
     )
     db.session.commit()
-    if scrubbed_routes:
-        flash(
-            f"تم حذف العقدة «{name_snapshot}». "
-            f"تم تنظيف {scrubbed_routes} مسار من قائمة العقد المسموحة.",
-            "success",
-        )
-    else:
-        flash(f"تم حذف العقدة «{name_snapshot}».", "success")
+    parts = [f"تم حذف العقدة «{name_snapshot}»."]
+    if report.routes_scrubbed:
+        parts.append(f"نُظِّف {report.routes_scrubbed} مسار Realm.")
+    if report.coa_commands_dropped:
+        parts.append(f"أُسقط {report.coa_commands_dropped} أمر CoA.")
+    flash(" ".join(parts), "success")
     return redirect(url_for("fleet_ui.fleet_dashboard"))
 
 
