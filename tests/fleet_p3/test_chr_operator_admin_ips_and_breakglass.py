@@ -258,35 +258,40 @@ class TestBreakGlassScripts:
             )
 
     def test_open_script_widens_winbox_and_schedules_auto_revert(self):
+        """fix/chr-script-syntax-355: source bodies are now SINGLE-LINE
+        with `;` separators (the multi-line `\\n\\` shape was rejected
+        by RouterOS on chr-vpn-2). Spaces between tokens are single."""
         script = _render()
-        # The source string opens the listener and adds the break-glass FW rule.
-        # Inside the source= string the quotes are escaped — assert on the
-        # escaped form RouterOS sees on disk.
-        assert '/ip service set winbox address=\\"0.0.0.0/0\\"' in script
-        assert '/ip service set ssh    address=\\"0.0.0.0/0\\"' in script
+        # Inside the source= string the quotes are escaped.
+        assert 'set winbox address=\\"0.0.0.0/0\\"' in script
+        assert 'set ssh address=\\"0.0.0.0/0\\"' in script
         assert 'hobe-fleet-fw-break-glass' in script
-        # Schedules `hobe-close-winbox-auto` to fire in ~15 min.
-        assert 'hobe-close-winbox-auto' in script
-        # on-event="/system script run hobe-close-winbox" — escaped because
-        # the whole source= is a single-quoted string with escaped inner
-        # double-quotes.
-        assert (
-            'on-event=\\"/system script run hobe-close-winbox\\"' in script
-            or '"/system script run hobe-close-winbox"' in script
-        )
+        # The new shape arms with a literal `interval=15m` (no
+        # arithmetic — RouterOS rejected the old `interval=($x . "m")`).
+        assert 'interval=15m' in script
+        # And the on-event field points at the close script.
+        assert 'on-event=\\"/system script run hobe-close-winbox\\"' in script
 
     def test_close_script_restores_hardened_acl(self):
+        """fix/chr-script-syntax-355: closeACL is now baked at TEMPLATE
+        RENDER time (a Jinja `{% set %}`), not at script RUN time —
+        which let us drop the `:local _closeACL` underscore-prefix
+        variable that RouterOS objected to. We assert by looking at the
+        source= body, which carries the rendered union literally."""
         # Default (no operator IPs) → restored ACL = PANEL/32.
         script_a = _render()
-        assert ':local _closeACL "10.99.0.1/32"' in script_a, (
+        assert 'set winbox address=\\"10.99.0.1/32\\"' in script_a, (
             "hobe-close-winbox restored ACL must be PANEL_WG_ADDR/32 by default"
         )
         # With operator IPs → restored ACL = union.
         script_b = _render(OPERATOR_ADMIN_IPS="9.9.9.9/32")
-        assert ':local _closeACL "10.99.0.1/32,9.9.9.9/32"' in script_b
-        # Close script removes the break-glass firewall rule + the auto-close scheduler.
+        assert 'set winbox address=\\"10.99.0.1/32,9.9.9.9/32\\"' in script_b
+        # Close script body removes the break-glass FW rule + the auto-revert.
         assert 'remove [find comment=\\"hobe-fleet-fw-break-glass\\"]' in script_a
         assert 'remove [find name=\\"hobe-close-winbox-auto\\"]' in script_a
+        # And the underscore-prefixed local that used to exist is GONE.
+        assert ':local _closeACL' not in script_a
+        assert ':local _closeACL' not in script_b
 
     def test_scripts_are_added_OR_set_idempotent(self):
         """ADD-OR-SET: if the script row exists we OVERWRITE its source;
