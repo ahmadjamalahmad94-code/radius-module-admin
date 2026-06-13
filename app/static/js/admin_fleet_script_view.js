@@ -121,15 +121,46 @@
     }
   }
 
+  // fix/pause-livepoll-while-modal-open — raise + clear the generic
+  // pause signal so the dashboard's live-poll (data-live-rows replace
+  // + count-up rAF storm) doesn't run UNDERNEATH this modal and freeze
+  // the renderer with the ~900-line script <pre>. The signal is BOTH
+  // a window flag (read by live_poll.isExternalPaused()) AND a body
+  // data-attribute (for any future declarative consumer). Plus we fire
+  // hobe:poll-pause / hobe:poll-resume events so the poller resumes
+  // immediately on close (vs waiting for the next tick to notice).
+  function pausePoll() {
+    try {
+      window.__hobePausePoll = true;
+      if (document.body && document.body.dataset) {
+        document.body.dataset.pollPaused = "1";
+      }
+      document.dispatchEvent(new CustomEvent("hobe:poll-pause"));
+    } catch (_err) { /* never break the modal on a signal error */ }
+  }
+  function resumePoll() {
+    try {
+      window.__hobePausePoll = false;
+      if (document.body && document.body.dataset) {
+        delete document.body.dataset.pollPaused;
+      }
+      document.dispatchEvent(new CustomEvent("hobe:poll-resume"));
+    } catch (_err) { /* never break the modal on a signal error */ }
+  }
+
   function closeModal() {
     if (!modal) return;
     modal.style.display = "none";
     document.removeEventListener("keydown", onKey);
     clearBlob();
     currentScript = "";
+    resumePoll();
   }
   function openModal() {
     if (!modal) return;
+    // Pause BEFORE we make the modal visible so the very next tick the
+    // poller would have fired is already short-circuited.
+    pausePoll();
     modal.style.display = "flex";
     document.addEventListener("keydown", onKey);
   }

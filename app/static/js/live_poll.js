@@ -63,15 +63,52 @@
     return typeof v === "number" && Number.isFinite(v);
   }
 
-  // Smooth count-up for numbers. Skips animation for tiny deltas or first paint.
+  // fix/pause-livepoll-while-modal-open — external pause signal.
+  //
+  // Heavy modals (script-view) freeze the renderer if the poll keeps
+  // running underneath them: every tick re-renders data-live-rows + an
+  // rAF count-up storm fires across dozens of nodes, while the modal's
+  // ~900-line <pre> already saturates layout. Chrome's renderer becomes
+  // unresponsive on the live panel until the modal closes -- so the
+  // operator can't click نسخ/تنزيل.
+  //
+  // The signal is GENERIC -- any page-level UI (script modal, the data-
+  // chr connection modal, a future heavy preview) can set it without
+  // knowing live-poll internals:
+  //
+  //   * window.__hobePausePoll = true   (programmatic)
+  //   * document.body.dataset.pollPaused = "1"   (declarative)
+  //
+  // Either signal pauses every poller's tick + skips the rAF count-up.
+  // Clearing both signals resumes; on resume each poller fetches once
+  // immediately so the user sees fresh data when the modal closes.
+  function isExternalPaused() {
+    if (typeof window !== "undefined" && window.__hobePausePoll === true) return true;
+    const body = (typeof document !== "undefined") ? document.body : null;
+    if (body && body.dataset && body.dataset.pollPaused === "1") return true;
+    return false;
+  }
+
+  // Smooth count-up for numbers. Skips animation for tiny deltas, first
+  // paint, OR when the external pause signal is on (no rAF storm under
+  // a heavy modal). When paused we still write the final value so the
+  // text doesn't go stale on resume.
   function animateNumber(el, from, to, suffix) {
     suffix = suffix || "";
-    if (!Number.isFinite(from) || Math.abs(to - from) <= 1 || ANIM_MS <= 0) {
+    if (!Number.isFinite(from) || Math.abs(to - from) <= 1 || ANIM_MS <= 0
+        || isExternalPaused()) {
       el.textContent = formatNumber(to) + suffix;
       return;
     }
     const start = performance.now();
     function tick(now) {
+      // If something opened a heavy modal mid-animation, abort the rAF
+      // chain and write the final value -- avoids running 30 concurrent
+      // rAF loops behind a frozen modal.
+      if (isExternalPaused()) {
+        el.textContent = formatNumber(to) + suffix;
+        return;
+      }
       const t = Math.min(1, (now - start) / ANIM_MS);
       // easeOutCubic
       const e = 1 - Math.pow(1 - t, 3);
@@ -121,6 +158,11 @@
       this.tick();
       this.schedule(this.interval);
       document.addEventListener("visibilitychange", () => this.onVisibility());
+      // fix/pause-livepoll-while-modal-open — listen for the generic
+      // pause/resume events any page-level UI can fire. Same semantic
+      // as the visibilitychange handler.
+      document.addEventListener("hobe:poll-pause",  () => this.onExtPauseChange());
+      document.addEventListener("hobe:poll-resume", () => this.onExtPauseChange());
     }
 
     onVisibility() {
@@ -128,9 +170,24 @@
         this.paused = true;
         this.clear();
         this.renderIndicator();
-      } else if (this.paused) {
+      } else if (this.paused && !isExternalPaused()) {
         this.paused = false;
         // Refetch immediately so the user sees fresh data on tab focus.
+        this.tick();
+        this.schedule(this.interval);
+      }
+    }
+
+    // External-pause coalescer. When the signal flips ON we clear the
+    // timer + flag paused; when it flips OFF we resume + fetch once
+    // immediately so the user sees fresh data on modal-close.
+    onExtPauseChange() {
+      if (isExternalPaused()) {
+        this.paused = true;
+        this.clear();
+        this.renderIndicator();
+      } else if (this.paused && !document.hidden) {
+        this.paused = false;
         this.tick();
         this.schedule(this.interval);
       }
@@ -147,7 +204,18 @@
     }
 
     async tick() {
-      if (this.inFlight || document.hidden) return;
+      // fix/pause-livepoll-while-modal-open — also short-circuit on the
+      // external pause signal so an open modal halts the render storm.
+      // We DO NOT re-schedule here; onExtPauseChange will re-arm when
+      // the signal clears.
+      if (this.inFlight || document.hidden || isExternalPaused()) {
+        if (isExternalPaused()) {
+          this.paused = true;
+          this.clear();
+          this.renderIndicator();
+        }
+        return;
+      }
       this.inFlight = true;
       try {
         const res = await fetch(this.url, {
@@ -335,7 +403,11 @@
       }
       if (this.indicatorText) {
         if (this.paused) {
-          this.indicatorText.textContent = "إيقاف مؤقت — التبويب في الخلفية";
+          // The pause may be from the tab going hidden OR from an
+          // open modal (script-view, etc). Distinguish for clarity.
+          this.indicatorText.textContent = isExternalPaused()
+            ? "إيقاف مؤقت — نافذة مفتوحة"
+            : "إيقاف مؤقت — التبويب في الخلفية";
         } else if (err) {
           this.indicatorText.textContent =
             "تعذّر التحديث — إعادة المحاولة بعد قليل";
