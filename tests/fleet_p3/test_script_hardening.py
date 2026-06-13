@@ -76,27 +76,72 @@ def test_interface_addresses_stay_slash_24():
 # ── firewall: allows hoisted above any drop ─────────────────────────────
 
 
-def test_wg_allow_rules_are_moved_to_top_after_adds():
-    """The move-to-destination-0 block exists AND comes after the adds —
-    first-match firewalls need our accepts above any stale drop."""
+def test_wg_allow_rules_use_place_before_drop_last():
+    """Effective rule order is built via insertion order, not `move`.
+    Every accept rule we add is anchored against the drop-last sentinel
+    via `place-before=[find comment="hobe-fleet-fw-drop-last"]` so that
+    on the CHR it lands ABOVE the catch-all drop even when foreign
+    rules interleave between adds (the chr-vpn-3 incident)."""
     script = _render()
+    anchor = 'place-before=[find comment="hobe-fleet-fw-drop-last"]'
     for c in ("hobe-fleet-fw-mgmt", "hobe-fleet-fw-coa", "hobe-fleet-fw-radius"):
-        move_line = f'move [find comment="{c}"] destination=0'
-        assert move_line in script, f"missing hoist for {c}"
-        # add (the rule creation) precedes its move
-        add_pos = script.index(f'comment="{c}"')
-        move_pos = script.index(move_line)
-        assert add_pos < move_pos, f"{c}: move must come after add"
+        rule_re = re.compile(
+            r"add chain=input[\s\S]+?comment=\"" + re.escape(c) + r"\"",
+            re.MULTILINE,
+        )
+        m = rule_re.search(script)
+        assert m, f"missing add for {c}"
+        assert anchor in m.group(0), (
+            f"{c} accept must anchor against drop-last via place-before; "
+            f"got: {m.group(0)!r}"
+        )
 
 
-def test_mgmt_move_order_puts_radius_first():
-    """Moves execute mgmt → coa → radius, each to slot 0, so the final
-    top-of-chain order is radius, coa, mgmt — all three above any drop."""
+def test_drop_last_anchor_added_before_all_other_input_rules():
+    """The anchor `hobe-fleet-fw-drop-last` must be the FIRST add in §9
+    (script-text position), so every subsequent place-before find
+    succeeds (no «no such item» on a fresh CHR)."""
     script = _render()
-    pos_mgmt = script.index('move [find comment="hobe-fleet-fw-mgmt"]')
-    pos_coa = script.index('move [find comment="hobe-fleet-fw-coa"]')
-    pos_radius = script.index('move [find comment="hobe-fleet-fw-radius"]')
-    assert pos_mgmt < pos_coa < pos_radius
+    drop_last_add = script.index(
+        'add chain=input action=drop comment="hobe-fleet-fw-drop-last"'
+    )
+    # Every other hobe-fleet-fw-* rule must appear AFTER the anchor in the
+    # script text — confirms the place-before pattern (insertion order =
+    # effective order, bottom-up).
+    for c in (
+        "hobe-fleet-fw-conntrack",
+        "hobe-fleet-fw-mgmt",
+        "hobe-fleet-fw-coa",
+        "hobe-fleet-fw-radius",
+        "hobe-fleet-fw-no-public-radius",
+    ):
+        pos = script.index(f'comment="{c}"')
+        assert pos > drop_last_add, (
+            f"{c} must appear AFTER drop-last anchor in script text "
+            f"so place-before resolves"
+        )
+
+
+def test_no_move_destination_zero_pattern_remains():
+    """The old `move ... destination=0` hoist must be gone — replaced by
+    the place-before anchor. Mixing both patterns produces races vs
+    foreign rules. Match only whole-word `move` (re**move** legitimately
+    occurs as a different verb)."""
+    script = _render()
+    legacy = re.search(r"(?<!re)move \[find comment=\"hobe-fleet-fw-", script)
+    assert legacy is None, (
+        "found legacy `move [find comment=\"hobe-fleet-fw-...\"]` hoist — "
+        "the hoist must be replaced by place-before anchors against "
+        f"hobe-fleet-fw-drop-last; near: {script[max(0, legacy.start()-40):legacy.end()+80]!r}"
+    )
+    code_lines = [
+        ln for ln in script.splitlines()
+        if "destination=0" in ln and not ln.lstrip().startswith("#")
+    ]
+    assert not code_lines, (
+        "found `destination=0` in CODE (not a comment) — likely the old "
+        f"move hoist; replace with place-before. lines: {code_lines!r}"
+    )
 
 
 def test_our_own_drop_rule_still_exists_below():

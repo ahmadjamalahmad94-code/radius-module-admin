@@ -149,34 +149,32 @@ class TestSurgicalFirewallOrder:
             )
 
     def test_management_accept_precedes_catch_all_drop(self):
-        """No self-lockout: the panel mgmt accept must come BEFORE the
-        catch-all drop, otherwise a re-import severs the SSH session
-        running it. (The §9b ``hobe-fleet-fw-invalid`` drop is a
-        conntrack-invalid drop and runs AFTER conntrack-accept — the
-        established SSH session is unaffected.)"""
+        """No self-lockout: the panel mgmt accept must end up BEFORE the
+        catch-all drop on the CHR, otherwise a re-import severs the SSH
+        session running it.
+
+        Shape change (fix/chr-hardening-safe-firewall-order): the script
+        now adds drop-last FIRST in §9, then every other rule uses
+        ``place-before=[find comment="hobe-fleet-fw-drop-last"]`` to land
+        ABOVE drop-last on the CHR. So in script-text order drop-last is
+        at idx 0; every accept comes after AND anchors against it."""
         rules = _input_filter_rules(_render())
-        mgmt_idx = next(
-            (i for i, r in enumerate(rules)
-             if 'comment="hobe-fleet-fw-mgmt"' in r),
+        mgmt = next(
+            (r for r in rules if 'comment="hobe-fleet-fw-mgmt"' in r),
             None,
         )
-        drop_idx = next(
-            (i for i, r in enumerate(rules)
-             if 'comment="hobe-fleet-fw-drop-last"' in r),
-            None,
+        assert mgmt is not None, "missing hobe-fleet-fw-mgmt accept"
+        assert (
+            'place-before=[find comment="hobe-fleet-fw-drop-last"]' in mgmt
+        ), (
+            f"mgmt accept must use place-before to land above drop-last "
+            f"on the CHR; got: {mgmt!r}"
         )
-        assert mgmt_idx is not None, "missing hobe-fleet-fw-mgmt accept"
-        assert drop_idx is not None, "missing hobe-fleet-fw-drop-last"
-        assert mgmt_idx < drop_idx, (
-            f"mgmt accept at idx {mgmt_idx} must precede catch-all drop "
-            f"at idx {drop_idx}; lockout risk."
-        )
-        # Conntrack accept also above the catch-all drop.
-        ct_idx = next(
-            i for i, r in enumerate(rules)
-            if 'comment="hobe-fleet-fw-conntrack"' in r
-        )
-        assert ct_idx < drop_idx
+        # Conntrack accept also anchors above the catch-all drop.
+        ct = next(r for r in rules if 'comment="hobe-fleet-fw-conntrack"' in r)
+        assert (
+            'place-before=[find comment="hobe-fleet-fw-drop-last"]' in ct
+        ), ct
 
     def test_management_accept_is_scoped_to_panel_only(self):
         """Surgical ≠ broad: the mgmt rule MUST scope by both
@@ -194,24 +192,38 @@ class TestSurgicalFirewallOrder:
         )
 
     def test_conntrack_accept_is_first_match(self):
-        """Established/related/untracked accept must come BEFORE every
-        drop so the SSH session running the import survives the firewall
-        rebuild. We assert it appears in the script text (the §9b move
-        block hoists it to absolute top on-CHR)."""
+        """Established/related/untracked accept must end up as the FIRST
+        match on the CHR so the SSH session running the import survives
+        the firewall rebuild.
+
+        Shape change: drop-last is added first in §9; conntrack is the
+        FIRST place-before add after it, so on the CHR conntrack lands
+        just before drop-last (and every later add shifts conntrack up
+        by one) ⇒ conntrack ends at the top."""
         rules = _input_filter_rules(_render())
+        ct = next(
+            (r for r in rules if 'comment="hobe-fleet-fw-conntrack"' in r),
+            None,
+        )
+        assert ct is not None, "missing hobe-fleet-fw-conntrack accept"
+        assert (
+            'place-before=[find comment="hobe-fleet-fw-drop-last"]' in ct
+        ), f"conntrack must anchor against drop-last: {ct!r}"
+        assert "connection-state=established,related,untracked" in ct, ct
+        # And conntrack is the FIRST place-before rule after drop-last in
+        # the script text (so it ends UP at the top on the CHR).
+        drop_idx = next(
+            i for i, r in enumerate(rules)
+            if 'comment="hobe-fleet-fw-drop-last"' in r
+        )
         ct_idx = next(
-            (i for i, r in enumerate(rules)
-             if 'comment="hobe-fleet-fw-conntrack"' in r),
-            None,
+            i for i, r in enumerate(rules)
+            if 'comment="hobe-fleet-fw-conntrack"' in r
         )
-        first_drop_idx = next(
-            (i for i, r in enumerate(rules) if "action=drop" in r),
-            None,
+        assert ct_idx == drop_idx + 1, (
+            f"conntrack must be the first add after drop-last in script "
+            f"text (drop-last @ {drop_idx}, conntrack @ {ct_idx})"
         )
-        assert ct_idx is not None, "missing hobe-fleet-fw-conntrack accept"
-        assert ct_idx < first_drop_idx
-        ct_rule = rules[ct_idx]
-        assert "connection-state=established,related,untracked" in ct_rule, ct_rule
 
     def test_radius_only_over_wg_data_never_public(self):
         """RADIUS auth/acct + CoA must accept ONLY on wg-data scoped to

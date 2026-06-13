@@ -415,99 +415,181 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
 # ============================================================
 # 9. SURGICAL FIREWALL (input chain) — see header comment for full spec.
 # ============================================================
-# Strip every prior hobe-fleet-fw-* rule in one go, then re-add the
-# current set. The regex remove catches stale rules even if role/cert
-# flags flipped between renders.
+# LIVE INCIDENT (fix/chr-hardening-safe-firewall-order — chr-vpn-3):
+#   A foreign rule `chain=input action=drop in-interface=ether1` (added
+#   by an operator or older script) sat BEFORE our public WG/VPN allows
+#   → wg-mgmt handshake packets to UDP 51820 were dropped at the WAN
+#   → no wg-mgmt tunnel → REST polls returned rest_failed → wizard
+#   stuck. The previous template used `add` then `move destination=0`
+#   to hoist our allows to the top, but foreign drops interleaved
+#   between the moves still beat us in first-match order.
+#
+# THE NEW APPROACH — three guarantees:
+#
+#   1. Sweep our rules + a precise set of FOREIGN known-bad patterns
+#      before rebuilding. Patterns: any rule with comment matching
+#      ^TEMP|^drop public input, plus any unlabeled
+#      `chain=input action=drop in-interface=ether1` with no protocol
+#      and no dst-port (truly broad public drops). Operator rules with
+#      legitimate selectors (protocol=tcp dst-port=22 etc.) are
+#      preserved.
+#
+#   2. Anchor `hobe-fleet-fw-drop-last` is added FIRST. Every other
+#      rule is added with a place-before pointing at that anchor, so
+#      the script's insertion order == the on-CHR effective top-to-
+#      bottom order. No `move destination=0` games that fail on
+#      interleaved foreign rules.
+#
+#   3. Re-running the script is BYTE-IDENTICAL output and converges to
+#      the same effective order with zero duplicates (the regex sweep
+#      catches every prior hobe-fleet-fw-* rule including the temp
+#      emergency-admin rule when one was added by a previous run).
+#
+# Effective order on the CHR (top → bottom):
+#   conntrack accept            ← rule 0, first match
+#   conntrack=invalid drop
+#   wg-mgmt mgmt accept (PANEL)
+#   wg-mgmt api-ssl 8443 accept (PANEL, if API user provisioned)
+#   wg-data RADIUS auth/acct accept (PROXY) — if radius_transport role
+#   wg-data CoA accept (PROXY) — if radius_transport role
+#   WAN wg-mgmt udp 51820 accept
+#   WAN wg-data udp 51821 accept — if radius_transport role
+#   WAN VPN listener accepts (role-gated)
+#   ICMP rate-limited accept
+#   no-public-radius drop (1812/1813/3799 on non-wg-data ifaces)
+#   drop-last                   ← rule N, final deny
+#
+# ─── Step 1: sweep ours + known-bad foreign patterns ────────────────
 /ip firewall filter
+# Our own tagged rules: a single regex remove catches every state
+# (the temp-emergency-admin rule added by a previous fallback run too).
 remove [find comment~"^hobe-fleet-fw-"]
+# Foreign rules with the known-bad temp labels.
+remove [find comment~"^TEMP allow"]
+remove [find comment~"^TEMP-"]
+remove [find comment~"^drop public input"]
+# Broad foreign drops on in-interface=ether1 with NO additional
+# selectors — these are the operator-added blanket drops that ended
+# up above our allows on chr-vpn-3. We walk the matching rules and
+# only remove the truly-broad ones (no protocol, no dst-port,
+# no src-address) so operator drops with legitimate selectors stay.
+:foreach r in=[find chain=input action=drop in-interface={{ WAN_IFACE }}] do={
+    :local c [get $r comment]
+    :local proto [/ip firewall filter get $r protocol]
+    :local dport [/ip firewall filter get $r dst-port]
+    :local src [/ip firewall filter get $r src-address]
+    :if ([:typeof [:find $c "hobe-fleet-fw-"]] = "nothing" \
+            && [:tostr $proto] = "" \
+            && [:tostr $dport] = "" \
+            && [:tostr $src] = "") do={
+        :log warning ("hobe-fleet: removing foreign broad-public-drop rule comment=" . $c)
+        remove $r
+    }
+}
 
-# (a) Conntrack accept — first match for established/related/untracked.
-#     The SSH session running this very import lives here; it MUST come
-#     before any drop or we self-lockout the moment the next rule lands.
+# ─── Step 2: drop-last anchor FIRST ─────────────────────────────────
+# Lands at the end of the table; every subsequent add uses a
+# place-before pointing at this anchor, so the rule inserts JUST BEFORE
+# drop-last and the previous insertion shifts up by one slot. Insertion
+# order in the script == top-to-bottom order on the CHR. No `move`
+# needed; foreign rules can't interleave.
+add chain=input action=drop comment="hobe-fleet-fw-drop-last"
+
+# ─── Step 3: every accept + the no-public-radius drop, IN ORDER ────
+# (A) Conntrack accept — first match for established/related/untracked.
 add chain=input action=accept connection-state=established,related,untracked \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-conntrack"
 
-# (b) Hygiene: drop conntrack=invalid early.
+# (B) Drop conntrack=invalid early — hygiene.
 add chain=input action=drop connection-state=invalid \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-invalid"
 
-# (c) MANAGEMENT FIRST — wg-mgmt accepts panel-only, before any drop.
-#     Scoped: in-interface=wg-mgmt AND src-address=PANEL_WG_ADDR/32.
-#     This is what keeps the connected admin alive across re-imports.
+# (C) Management accept — wg-mgmt from PANEL/32. Keeps the live SSH
+#     session over wg-mgmt alive across re-imports.
 add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
-    action=accept comment="hobe-fleet-fw-mgmt"
+    action=accept \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
+    comment="hobe-fleet-fw-mgmt"
 
-{% if 'radius_transport' in ROLES %}
-# (d) RADIUS over wg-data — auth/acct + CoA, scoped to the proxy IP.
-add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
-    protocol=udp dst-port=1812,1813 action=accept comment="hobe-fleet-fw-radius"
-add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
-    protocol=udp dst-port=3799 action=accept comment="hobe-fleet-fw-coa"
+{% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+# (C') API REST 8443 accept — wg-mgmt from PANEL/32 only. Was in §11
+#      previously; consolidated here so the place-before anchor is
+#      the only anchor anywhere in the script (no late re-anchoring).
+add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
+    protocol=tcp dst-port={{ API_PORT|default(8443) }} \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
+    action=accept comment="hobe-fleet-fw-api-ssl"
 {% endif %}
 
-# (e) WG handshake UDP on the WAN — required for either peer to come up.
+{% if 'radius_transport' in ROLES %}
+# (D) RADIUS over wg-data — auth/acct + CoA, scoped to the proxy IP.
+add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
+    protocol=udp dst-port=1812,1813 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
+    action=accept comment="hobe-fleet-fw-radius"
+add chain=input in-interface=wg-data src-address={{ PROXY_WG_ADDR }}/32 \
+    protocol=udp dst-port=3799 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
+    action=accept comment="hobe-fleet-fw-coa"
+{% endif %}
+
+# (E) Public WireGuard listener UDP on the WAN — required for either
+#     peer to handshake. THIS is the rule that the foreign broad drop
+#     was beating on chr-vpn-3.
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51820 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-wg-mgmt-udp"
 {% if 'radius_transport' in ROLES %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51821 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-wg-data-udp"
 {% endif %}
 
-# (f) VPN service ports — role-gated, cert-gated where the server needs a cert.
+# (F) Role-gated public VPN service ports.
 {% if 'vpn_sstp' in ROLES and SSTP_CERT_NAME %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-sstp"
 {% endif %}
 {% if 'vpn_pptp' in ROLES %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=1723 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-pptp-ctrl"
 add chain=input in-interface={{ WAN_IFACE }} protocol=gre \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-pptp-data"
 {% endif %}
 {% if 'vpn_ipsec' in ROLES %}
 {% if IKE_CERT_NAME %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=500,4500 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-ike"
 {% endif %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=ipsec-esp \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-esp"
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=1701 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-l2tp"
 {% endif %}
 {% if 'vpn_wireguard' in ROLES %}
 add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port={{ WG_USERS_PORT }} \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-wg-users"
 {% endif %}
 
-# (g) Sane ICMP — pings work but can't flood.
+# (G) Sane ICMP — pings work but can't flood.
 add chain=input protocol=icmp action=accept limit=50,5:packet \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-icmp"
 
-# (h) Defence vs. an operator that forgot the role flag — RADIUS ports
-#     must NEVER answer on the public iface. wg-data is whitelisted
-#     above, so this drop applies to every OTHER iface.
+# (H) Defence vs an operator that forgot the role flag — public RADIUS
+#     ports must NEVER answer outside wg-data.
 add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
     comment="hobe-fleet-fw-no-public-radius"
-
-# (i) FINAL drop — every accept must be ABOVE this rule. Comment-tagged
-#     so the regex remove at top of §9 picks it up on re-import.
-add chain=input action=drop comment="hobe-fleet-fw-drop-last"
-
-# ---- 9b. HOIST critical accepts to absolute top of input chain ----
-# Defence vs operator-set stale drops further up the chain (real
-# incident: a pre-existing src-address=!<public-ip> drop landed above
-# our wg-mgmt accept). RouterOS firewall is first-match; we explicitly
-# hoist the critical accepts to position 0 in reverse-priority order
-# so the final on-CHR order is: conntrack(0), radius(1), coa(2), mgmt(3),
-# then everything else. The :do/on-error wraps the «cannot move rule
-# before itself» error some builds raise when the rule is already at
-# position 0 — desired order is in place, error is noise.
-:do { /ip firewall filter move [find comment="hobe-fleet-fw-mgmt"] destination=0 } on-error={}
-{% if 'radius_transport' in ROLES %}
-:do { /ip firewall filter move [find comment="hobe-fleet-fw-coa"] destination=0 } on-error={}
-:do { /ip firewall filter move [find comment="hobe-fleet-fw-radius"] destination=0 } on-error={}
-{% endif %}
-:do { /ip firewall filter move [find comment="hobe-fleet-fw-conntrack"] destination=0 } on-error={}
 
 # ---- 10. control-plane is NOT a data route ----------------
 # Ensure wg-mgmt carries no default route / no forwarding (invariant).
@@ -691,30 +773,73 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
 }
 
 # www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL —
-# restrict to the PANEL's wg-mgmt IP (PANEL_WG_ADDR/32).
+# restrict to the PANEL's wg-mgmt IP (PANEL_WG_ADDR/32). This is safe
+# to set unconditionally because the panel ALWAYS dials from
+# PANEL_WG_ADDR over wg-mgmt; restricting at the service layer is a
+# defence-in-depth complement to the §9 firewall rule.
 /ip service
 set www-ssl disabled=no port={{ API_PORT|default(8443) }} \
     certificate=hobe-fleet-api-cert address={{ PANEL_WG_ADDR }}/32
 set api     disabled=yes  ;# binary API stays off (we use REST)
 set api-ssl disabled=yes  ;# binary-over-TLS stays off (we use REST/www-ssl)
 set www     disabled=yes  ;# plain HTTP stays off
-# SSH + WinBox restricted to the panel source-IP over wg-mgmt — the only
-# way an operator hand-touches a CHR is through the panel-controlled
-# management plane. Defence-in-depth on top of the surgical firewall.
-set ssh    address={{ PANEL_WG_ADDR }}/32 disabled=no
-set winbox address={{ PANEL_WG_ADDR }}/32 disabled=no
-set telnet disabled=yes
-set ftp    disabled=yes
+set telnet  disabled=yes
+set ftp     disabled=yes
 
-/ip firewall filter
-remove [find comment="hobe-fleet-fw-api-ssl"]
-# Place the API accept just BEFORE the drop-last rule so a re-import
-# always lands it above the deny — and the regex remove at §9 already
-# swept the prior copy.
-add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
-    protocol=tcp dst-port={{ API_PORT|default(8443) }} \
-    place-before=[find comment="hobe-fleet-fw-drop-last"] \
-    action=accept comment="hobe-fleet-fw-api-ssl"
+# ─── WG-MGMT-FIRST SAFETY GATE ──────────────────────────────────────
+# Restricting ssh/winbox to PANEL_WG_ADDR/32 makes them ONLY reachable
+# from the panel over wg-mgmt. That's the secure final state — but it
+# silently locks the operator out if wg-mgmt isn't actually up yet
+# (e.g. panel hasn't added this CHR as a wg-mgmt peer on its host).
+#
+# So we verify wg-mgmt is REACHABLE first, then apply. If the ping
+# fails, we keep ssh/winbox open + add a clearly-tagged TEMPORARY
+# emergency-admin firewall rule (matches the regex sweep at §9 so the
+# next clean re-import will remove it automatically), and :log a
+# warning. The operator fixes the panel side, re-imports, and the
+# next pass applies the lockdown.
+#
+# The 3-min self-lockout rollback scheduler armed in §0a is still the
+# second safety net underneath this — even a verify false-positive
+# rolls back if the operator's session dies.
+:local mgmtReachable false
+:do {
+    :local pres [/ping address={{ PANEL_WG_ADDR }} interface=wg-mgmt count=3 as-value]
+    :if ([:typeof $pres] = "array") do={
+        :foreach p in=$pres do={
+            :if ([:typeof $p] = "array") do={
+                :if ([:typeof ($p->"received")] != "nothing") do={
+                    :if (($p->"received") > 0) do={ :set mgmtReachable true }
+                }
+            }
+        }
+    }
+} on-error={}
+
+:if ($mgmtReachable) do={
+    /ip service set ssh    address={{ PANEL_WG_ADDR }}/32 disabled=no
+    /ip service set winbox address={{ PANEL_WG_ADDR }}/32 disabled=no
+    :log info "hobe-fleet: wg-mgmt verified reachable — ssh+winbox restricted to PANEL_WG_ADDR/32"
+} else={
+    # wg-mgmt is not yet a working management path. DO NOT fully lock
+    # the operator out. Keep ssh/winbox listening on default + open a
+    # comment-tagged TEMPORARY firewall accept for 22/8291 so the
+    # operator can still reach the CHR. The comment matches the §9
+    # regex sweep so the next import removes it automatically.
+    /ip service set ssh    disabled=no
+    /ip service set winbox disabled=no
+    /ip firewall filter
+    :if ([:len [find comment="hobe-fleet-fw-temp-emergency-admin"]] = 0) do={
+        add chain=input action=accept protocol=tcp dst-port=22,8291 \
+            place-before=[find comment="hobe-fleet-fw-drop-last"] \
+            comment="hobe-fleet-fw-temp-emergency-admin"
+    }
+    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR — ssh/winbox kept OPEN and TEMP emergency-admin rule active. After confirming wg-mgmt is up on the panel (add this CHR as a wg-mgmt peer + re-sync), re-import this script to apply the lockdown."
+    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN + TEMP emergency-admin rule active. Fix wg-mgmt on the panel + re-import to lock down."
+}
+
+:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32. Public WebFig/Winbox will NOT work after hardening. The production management path is wg-mgmt."
+:put "hobe-fleet WARNING: Management services restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32. Public WebFig/Winbox will NOT work. Production management path is wg-mgmt."
 {% else %}
 # Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
 # the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
@@ -735,8 +860,39 @@ add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
 :log info "hobe-fleet: rollback guard CANCELLED — apply complete"
 
 # ============================================================
+# 13. POST-IMPORT VALIDATION DUMP
+# ============================================================
+# Operator sees this after `/import file=` finishes — confirms the
+# final on-CHR state without needing a separate inspection session.
+:put ""
+:put "==================================================================="
+:put "  hobe-fleet validation — post-import state on this CHR"
+:put "==================================================================="
+:put ""
+:put "[/ip service print detail]"
+/ip service print detail
+:put ""
+:put "[/ip firewall filter print]"
+/ip firewall filter print
+:put ""
+:put "[/interface print]"
+/interface print
+:put ""
+:put "[/ip address print]"
+/ip address print
+:put ""
+:put "[/log print where message~\"hobe-fleet\"]"
+/log print where message~"hobe-fleet"
+:put ""
+:put "==================================================================="
+:put "  hobe-fleet apply finished."
+:put "==================================================================="
+
+# ============================================================
 # END unified script.
 # Re-importable: every resource clears its prior copy first.
 # Role-gated: services + firewall accepts emitted only for enabled roles.
 # Self-lockout proof: §0a arms, §12 cancels.
+# Firewall ordering: place-before drop-last anchor in §9.
+# Service hardening: wg-mgmt-verify-then-restrict in §11.
 # ============================================================

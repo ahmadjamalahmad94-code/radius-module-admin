@@ -401,9 +401,12 @@ def test_script_provisions_api_user_when_bindings_present():
     script = _render("hobe-panel", "TopSecretP@ss", 8443)
     assert '/user' in script
     assert 'name="hobe-panel"' in script
-    assert 'group=read' in script
+    # fix/chr-auto-scoped-mgmt-user — the user is no longer attached to
+    # the broad built-in `read` group; instead a DEDICATED group
+    # `hobe-fleet-mgmt` is provisioned with the exact policy set the
+    # panel poller needs, and the user is in that group.
+    assert 'group="hobe-fleet-mgmt"' in script
     assert 'password="TopSecretP@ss"' in script
-    assert 'hobe-fleet-api-readonly' in script
     # Inspect actual CONFIG lines (substrings appear in the §11
     # explanatory comment that documents the previous bug shapes).
     config_lines = [
@@ -470,15 +473,27 @@ def test_script_skips_api_block_when_password_blank():
 
 
 def test_script_api_user_block_is_idempotent():
-    """Re-applying the script must remove the prior /user row first so a
-    rotated password takes effect; same pattern as every other resource."""
+    """Re-applying the script must converge for the same name="hobe-panel".
+
+    fix/chr-group-idempotent-no-remove (chr-vpn-3): a `/user remove`
+    before `/user add` would fail on a re-import because the row
+    already exists AND is in use. The block was rewritten ADD-OR-SET:
+    `add` if absent, `set` if present, never `remove`. So on re-import
+    the script either creates the user or updates the existing row.
+    Re-rendering with the same bindings yields a byte-identical script.
+    """
     script = _render("hobe-panel", "x", 8443)
     user_section = script.split('/user', 1)[1]
-    # remove appears BEFORE the add for the same name="hobe-panel".
-    remove_idx = user_section.find('remove [find name="hobe-panel"]')
-    add_idx = user_section.find('add name="hobe-panel"')
-    assert remove_idx >= 0 and add_idx >= 0
-    assert remove_idx < add_idx
+    # ADD-OR-SET pattern present.
+    assert 'add name="hobe-panel"' in user_section, (
+        "missing /user add for hobe-panel"
+    )
+    assert 'set [find name="hobe-panel"' in user_section, (
+        "missing /user set fall-through for re-import — without it the "
+        "second-run /user add would fail on the duplicate name"
+    )
+    # And the script renders deterministically.
+    assert script == _render("hobe-panel", "x", 8443)
 
 
 def test_cert_block_is_ca_then_leaf_in_order(app):
@@ -522,13 +537,35 @@ def test_cert_block_is_ca_then_leaf_in_order(app):
     assert 'certificate=hobe-fleet-ca' not in script
 
 
-def test_firewall_hoists_tolerate_rule_already_at_top(app):
-    """The move-to-top hoists are wrapped in :do/on-error so a rule that
-    is already at index 0 («can not move rule before itself» on some v7
-    builds) doesn't spray errors during re-import."""
+def test_firewall_rules_anchor_against_drop_last(app):
+    """fix/chr-hardening-safe-firewall-order — the move-to-top hoist
+    block is gone; the new shape uses a single `hobe-fleet-fw-drop-last`
+    anchor added FIRST, and every subsequent accept add uses
+    `place-before=[find comment="hobe-fleet-fw-drop-last"]` so the
+    on-CHR rule ends up ABOVE the catch-all drop EVEN WHEN FOREIGN
+    RULES INTERLEAVE between our adds (the chr-vpn-3 incident).
+
+    This replaces the prior :do/on-error wrappers around `move` calls;
+    place-before is idempotent and never errors on «already at the top».
+    """
     script = _render("hobe-panel", "x", 8443)
+    flat = script.replace(" \\\n", " ")
+    # The legacy hoist block must be gone.
+    assert "destination=0" not in flat or all(
+        ln.lstrip().startswith("#") for ln in flat.splitlines() if "destination=0" in ln
+    ), "legacy move-destination=0 hoist still present in code"
+    # Every accept must anchor against drop-last via place-before.
     for c in ("hobe-fleet-fw-mgmt", "hobe-fleet-fw-coa", "hobe-fleet-fw-radius"):
-        assert f':do {{ /ip firewall filter move [find comment="{c}"] destination=0 }} on-error={{}}' in script
+        rule = next(
+            (ln for ln in flat.splitlines()
+             if ln.lstrip().startswith("add ") and f'comment="{c}"' in ln),
+            None,
+        )
+        assert rule, f"missing add for {c}"
+        assert 'place-before=[find comment="hobe-fleet-fw-drop-last"]' in rule, (
+            f"{c} must anchor against drop-last via place-before "
+            f"(otherwise interleaved foreign rules shadow it); got: {rule!r}"
+        )
 
 
 # ════════════════════════════════════════════════════════════════════════
