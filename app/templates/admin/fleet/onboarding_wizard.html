@@ -317,19 +317,30 @@
         <input type="number" id="weight" name="weight" min="0" step="0.01" placeholder="1.0">
         <div class="fw-hint">مضاعف يدوي على درجة المخّ — اتركه 1.0 افتراضياً.</div>
       </div>
-      <div class="fw-field">
-        <label for="bootstrap_endpoint">عنوان RouterOS الأولي (host:port)</label>
-        <input type="text" id="bootstrap_endpoint" name="bootstrap_endpoint" placeholder="203.0.113.11:8728">
-        <div class="fw-hint">يُستخدم مرة واحدة لزرع wg-mgmt. لا يُخزَّن كنص خام.</div>
-      </div>
-      <div class="fw-field">
-        <label for="bootstrap_user">مستخدم RouterOS الأولي</label>
-        <input type="text" id="bootstrap_user" name="bootstrap_user" placeholder="admin" autocomplete="off">
-      </div>
-      <div class="fw-field">
-        <label for="bootstrap_pass">كلمة المرور الأولية</label>
-        <input type="password" id="bootstrap_pass" name="bootstrap_pass" autocomplete="new-password">
-        <div class="fw-hint">تُستخدم مرة واحدة فقط لتنزيل السكربت، ثم تُلغى.</div>
+      {# fix/wizard-drop-initial-creds-prompt — the «مستخدم/كلمة المرور
+         الأولية» + «عنوان RouterOS الأولي» fields are GONE. They bound
+         to a never-shipped «panel pushes script via API» path: the
+         server-side ``WizardForm.from_dict`` ignored them, and the
+         push transport in ``fleet/registry/bootstrap_push.py`` isn't
+         registered in production (manual ``/import`` is the deploy
+         model). Worse, the placeholder ``admin`` invited the
+         reserved-name trap the feat/chr-auto-scoped-mgmt-user fix
+         already guards against. The auto-provisioned ``hobe-panel``
+         user + Fernet-encrypted password sit on the node row from
+         keys_generated onward; the unified script bakes the SAME
+         pair into ``/user add ... group=hobe-fleet-mgmt password=...``.
+         The owner enters NOTHING. #}
+      <div class="fw-callout fw-callout--ok" role="status"
+           style="margin-block-start:14px;padding:12px 14px;border:1px solid #bbf7d0;
+                  background:#f0fdf4;border-radius:10px;color:#166534;
+                  font-size:13px;line-height:1.7">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"
+           style="margin-inline-end:6px"></i>
+        <strong>اعتمادات الإدارة تلقائية.</strong>
+        ستُولِّد اللوحة مستخدم REST مخصّصًا (<code dir="ltr">hobe-panel</code>) في
+        مجموعة صلاحيات مقيَّدة (<code dir="ltr">hobe-fleet-mgmt</code>) وكلمة مرور
+        قويّة تُخزَّن مشفّرة على صفّ العقدة، ثم يُضمِّن السكربت نفس المستخدم
+        وكلمة المرور تلقائيًا. لا حاجة لإدخال اسم مستخدم/كلمة مرور أوّلية للعقدة.
       </div>
     </div>
     <div class="fw-foot">

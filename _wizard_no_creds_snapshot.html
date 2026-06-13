@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>معالج إضافة CHR — أسطول CHR — HobeRadius</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+
+  <link rel="stylesheet" href="/static/css/app.css?v=1781321785">
+  
+  <style>
+    .live-indicator {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 4px 10px; border-radius: 999px;
+      background: #f1f5f9; color: #334155;
+      font-size: 12px; font-weight: 600; line-height: 1;
+      border: 1px solid #e2e8f0;
+      font-variant-numeric: tabular-nums;
+    }
+    .live-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #94a3b8;
+      box-shadow: 0 0 0 0 rgba(34,197,94,0);
+    }
+    .live-dot--ok {
+      background: #22c55e;
+      animation: livePulse 2s ease-out infinite;
+    }
+    .live-dot--err    { background: #ef4444; }
+    .live-dot--paused { background: #94a3b8; }
+    @keyframes livePulse {
+      0%   { box-shadow: 0 0 0 0   rgba(34,197,94,.55); }
+      70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0);   }
+      100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1781321785">
+  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781321785">
+  <link rel="stylesheet" href="/static/css/admin_components.css?v=1781321785">
+  
+  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781321785">
+
+  
+  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781321785">
+
+  <style>
+    /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
+    .adm-lang-form{display:inline-flex;align-items:center;gap:6px;margin-inline-end:8px;}
+    .adm-lang-label{display:inline-flex;align-items:center;color:var(--cc-text-mute);font-size:14px;}
+    .adm-lang-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+    .adm-lang-select{
+      appearance:none;background:var(--cc-tint-bg);color:var(--cc-text);
+      border:1px solid var(--cc-border);border-radius:8px;
+      padding:5px 26px 5px 10px;font-size:13px;font-weight:700;cursor:pointer;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:left 8px center;outline:none;
+    }
+    .adm-lang-select:focus{border-color:var(--cc-brand);box-shadow:0 0 0 3px rgba(99,102,241,.18);}
+    .adm-lang-submit{display:none;}
+    [dir=ltr] .adm-lang-select{padding:5px 10px 5px 26px;background-position:right 8px center;}
+  </style>
+
+  
+<style>
+  /* ─── Wizard shell ───────────────────────────────────────────── */
+  .fw-hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+    border-radius: 18px;
+    padding: 22px 26px;
+    color: #fff;
+    margin-block-end: 18px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
+  }
+  .fw-hero-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.32);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; color: #fff;
+  }
+  .fw-hero-body { flex: 1 1 220px; }
+  .fw-hero-title { font-size: 22px; font-weight: 800; line-height: 1.2; }
+  .fw-hero-sub { font-size: 13px; color: rgba(255,255,255,.78); margin-top: 6px; max-width: 720px; }
+
+  /* ─── Stepper bar ────────────────────────────────────────────── */
+  .fw-stepper {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 14px 16px; margin-block-end: 18px;
+  }
+  .fw-step {
+    display: flex; align-items: center; gap: 10px; flex: 1 1 160px;
+    min-width: 160px; padding: 8px 10px; border-radius: 10px;
+    background: #f8fafc; color: #475569; font-size: 12.5px; font-weight: 700;
+    border: 1px solid #e5e7eb;
+  }
+  .fw-step.is-current { background: #1e40af; color: #fff; border-color: #1e40af; }
+  .fw-step.is-done    { background: #ecfdf5; color: #047857; border-color: #d1fae5; }
+  .fw-step-num {
+    width: 24px; height: 24px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.06); color: inherit; font-weight: 800; font-size: 12px;
+  }
+  .fw-step.is-current .fw-step-num { background: rgba(255,255,255,.22); color: #fff; }
+  .fw-step.is-done    .fw-step-num { background: #d1fae5; color: #065f46; }
+
+  /* ─── Step panels ────────────────────────────────────────────── */
+  .fw-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 22px; margin-block-end: 16px;
+  }
+  .fw-card-title {
+    font-size: 16px; font-weight: 800; color: #0f172a;
+    display: flex; align-items: center; gap: 8px; margin-block-end: 4px;
+  }
+  .fw-card-title i { color: #1e40af; }
+  .fw-card-sub { font-size: 12.5px; color: #475569; margin-block-end: 16px; }
+
+  .fw-panel { display: none; }
+  .fw-panel.is-active { display: block; }
+
+  .fw-grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .fw-field { display: flex; flex-direction: column; gap: 6px; }
+  .fw-field--wide { grid-column: 1 / -1; }
+  .fw-field label { font-size: 12.5px; font-weight: 700; color: #0f172a; }
+  .fw-field .fw-req { color: #b91c1c; margin-inline-start: 4px; }
+  .fw-field .fw-hint { font-size: 11.5px; color: #6b7280; }
+  .fw-field input, .fw-field select, .fw-field textarea {
+    height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 10px;
+    font-size: 13px; background: #fff; color: #0f172a; transition: border-color .15s ease;
+  }
+  .fw-field textarea { height: auto; padding: 10px 12px; min-height: 70px; resize: vertical; }
+  .fw-field input:focus, .fw-field select:focus, .fw-field textarea:focus {
+    outline: none; border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.12);
+  }
+  .fw-field.is-error input, .fw-field.is-error select { border-color: #b91c1c; }
+  .fw-field-err { font-size: 11.5px; color: #b91c1c; display: none; }
+  .fw-field.is-error .fw-field-err { display: block; }
+
+  .fw-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f172a; }
+  .fw-check input { width: 18px; height: 18px; }
+
+  .fw-row-radio {
+    display: grid; gap: 10px; grid-template-columns: 1fr 1fr;
+  }
+  .fw-radio-card {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px;
+    border: 1.5px solid #e5e7eb; border-radius: 12px; cursor: pointer;
+    background: #fafbfc; transition: all .15s ease;
+  }
+  .fw-radio-card:hover { background: #f1f5f9; }
+  .fw-radio-card input { margin-top: 2px; }
+  .fw-radio-card.is-selected { background: #eff6ff; border-color: #1e40af; }
+  .fw-radio-title { font-weight: 800; font-size: 13.5px; color: #0f172a; }
+  .fw-radio-sub   { font-size: 11.5px; color: #475569; margin-top: 2px; }
+
+  .fw-foot {
+    display: flex; gap: 10px; justify-content: space-between;
+    padding-top: 16px; margin-top: 16px; border-top: 1px solid #f1f5f9;
+  }
+  .fw-btn {
+    height: 38px; padding-inline: 16px; border-radius: 10px; font-weight: 700; font-size: 13px;
+    border: 1px solid #e5e7eb; background: #fff; color: #0f172a;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .fw-btn--primary { background: #1e40af; border-color: #1e40af; color: #fff; }
+  .fw-btn--primary:hover { background: #1e3a8a; }
+  .fw-btn--ghost:hover { background: #f1f5f9; }
+  .fw-btn[disabled] { opacity: .55; cursor: not-allowed; }
+
+  .fw-review-row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 10px 12px; border-block-end: 1px dashed #e5e7eb; font-size: 13px;
+  }
+  .fw-review-row:last-child { border-block-end: none; }
+  .fw-review-key { color: #6b7280; font-weight: 600; }
+  .fw-review-val { color: #0f172a; font-weight: 700; max-width: 60%; word-break: break-word; text-align: end; }
+
+  .fw-banner {
+    display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px;
+    background: #f0f9ff; color: #075985; border: 1px solid #bae6fd; font-size: 12.5px;
+    margin-block-end: 12px;
+  }
+  .fw-banner i { color: #0284c7; margin-top: 2px; }
+
+  /* ─── Toast (replaces native alert/confirm) ──────────────────── */
+  .fw-toast-host {
+    position: fixed; inset-inline-end: 24px; bottom: 24px; z-index: 90;
+    display: flex; flex-direction: column; gap: 10px; max-width: 360px;
+  }
+  .fw-toast {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    box-shadow: 0 22px 40px -18px rgba(15, 23, 42, .32);
+    padding: 14px 16px; display: flex; gap: 10px; align-items: flex-start;
+    animation: fw-toast-in .18s ease-out;
+  }
+  .fw-toast i.fw-toast-icon { font-size: 16px; margin-top: 2px; }
+  .fw-toast--info    i.fw-toast-icon { color: #0284c7; }
+  .fw-toast--success i.fw-toast-icon { color: #047857; }
+  .fw-toast--warn    i.fw-toast-icon { color: #b45309; }
+  .fw-toast--error   i.fw-toast-icon { color: #b91c1c; }
+  .fw-toast-msg { font-size: 13px; color: #0f172a; line-height: 1.55; flex: 1; }
+  .fw-toast-close {
+    background: transparent; border: none; cursor: pointer; color: #6b7280; font-size: 14px;
+  }
+  @keyframes fw-toast-in { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+
+  /* Confirm dialog (styled toast that blocks until decision) */
+  .fw-confirm {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; background: rgba(15,23,42,.32);
+  }
+  .fw-confirm.is-open { display: flex; }
+  .fw-confirm-box {
+    background: #fff; border-radius: 16px; padding: 20px 22px; max-width: 420px; width: 92%;
+    box-shadow: 0 30px 60px -24px rgba(15, 23, 42, .45);
+  }
+  .fw-confirm-title { font-weight: 800; font-size: 15px; color: #0f172a; margin-block-end: 8px; display: flex; align-items: center; gap: 8px; }
+  .fw-confirm-title i { color: #b45309; }
+  .fw-confirm-msg { font-size: 13px; color: #1f2937; line-height: 1.6; margin-block-end: 16px; }
+  .fw-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+
+</head>
+
+<body class="adm-body">
+
+
+<div class="adm-side-overlay" id="adm-overlay" aria-hidden="true"></div>
+
+
+<div class="adm-shell">
+
+  
+  <aside class="adm-side" id="adm-side" role="navigation" aria-label="القائمة الرئيسية">
+
+    
+    <div class="adm-brand">
+      <div class="adm-brand-mark" aria-hidden="true">HR</div>
+      <div>
+        <div class="adm-brand-name">HobeRadius</div>
+        <div class="adm-brand-sub">لوحة الإدارة</div>
+      </div>
+    </div>
+
+    
+    <nav class="adm-nav" id="adm-nav">
+      
+
+      
+      <a href="/admin/dashboard"
+         class="adm-solo "
+         aria-current="false">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-gauge-high"></i>
+        </span>
+        <span class="adm-solo-label">لوحة التحكم</span>
+      </a>
+
+      
+      
+      
+      <div class="adm-group " data-group="customers">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-customers">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-users"></i>
+          </span>
+          <span class="adm-group-label">العملاء</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-customers">
+          
+          <a href="/admin/customers"
+             class="adm-link ">
+            قائمة العملاء
+          </a>
+          
+          
+          
+          
+          <a href="/admin/service-requests"
+             class="adm-link ">
+            طلبات الخدمات
+          </a>
+          <a href="/admin/whatsapp-gateway"
+             class="adm-link ">
+            بوابة واتساب
+          </a>
+          <a href="/admin/whatsapp-gateway/messages"
+             class="adm-link adm-link--sub ">
+            سجل الرسائل
+          </a>
+          <a href="/admin/whatsapp-gateway/webhooks"
+             class="adm-link adm-link--sub ">
+            أحداث Webhook
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="licenses">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-licenses">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-key"></i>
+          </span>
+          <span class="adm-group-label">التراخيص والاشتراكات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-licenses">
+          
+          <a href="/admin/licenses"
+             class="adm-link ">
+            التراخيص
+          </a>
+          
+          
+          <a href="/admin/plans"
+             class="adm-link ">
+            خطط الاشتراك
+          </a>
+          
+          <a href="/admin/services"
+             class="adm-link ">
+            الخدمات
+          </a>
+          <a href="/admin/payments/review-queue"
+             class="adm-link ">
+            مراجعة المدفوعات
+          </a>
+          <a href="/admin/payments/reports"
+             class="adm-link ">
+            تقارير الدفع
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="vpn">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-vpn">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-shield-halved"></i>
+          </span>
+          <span class="adm-group-label">خدمات VPN</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-vpn">
+          <a href="/admin/access-connections"
+             class="adm-link ">
+            <i class="fa-solid fa-link fa-xs" aria-hidden="true"></i>
+            اتصالات الوصول
+          </a>
+          
+          <a href="/admin/vpn-services"
+             class="adm-link ">
+            باقات الخدمة
+          </a>
+          
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="infra">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-infra">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-server"></i>
+          </span>
+          <span class="adm-group-label">البنية التحتية</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-infra">
+          <a href="/admin/infra/system-health"
+             class="adm-link ">
+            صحة الخدمات
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group is-active is-open" data-group="fleet">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="true"
+                aria-controls="grp-fleet">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-diagram-project"></i>
+          </span>
+          <span class="adm-group-label">أسطول CHR</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-fleet">
+          <a href="/admin/fleet/"
+             class="adm-link ">
+            لوحة الأسطول
+          </a>
+          <a href="/admin/fleet/onboarding/new"
+             class="adm-link is-active">
+            معالج إضافة CHR
+          </a>
+          
+          <a href="/admin/chr/console"
+             class="adm-link ">
+            تحكم RouterOS
+            <span class="adm-badge adm-badge--lock" aria-label="للمسؤول العام فقط">
+              <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            </span>
+          </a>
+          
+          <a href="/admin/chr/speed-profiles"
+             class="adm-link ">
+            بروفايلات السرعة
+          </a>
+          <a href="/admin/infra/radius-instances"
+             class="adm-link ">
+            نسخ RADIUS
+          </a>
+          <a href="/admin/infra/service-allocations"
+             class="adm-link ">
+            تخصيصات الخدمة
+          </a>
+          <a href="/admin/infra/proxy-routes"
+             class="adm-link ">
+            وكيل RADIUS
+          </a>
+          <a href="/admin/fleet/dns/"
+             class="adm-link ">
+            الباب الأمامي (DNS)
+          </a>
+          <a href="/admin/fleet/infrastructure"
+             class="adm-link ">
+            إعدادات البنية
+          </a>
+          <a href="/admin/fleet/p7/"
+             class="adm-link ">
+            التطبيق الحي والتحريك
+          </a>
+          <a href="/admin/fleet/p8/"
+             class="adm-link ">
+            إعادة التوازن والإخلاء
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      
+      <div class="adm-group " data-group="logs">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-logs">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-clipboard-list"></i>
+          </span>
+          <span class="adm-group-label">السجلات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-logs">
+          <a href="/admin/checks"
+             class="adm-link ">
+            سجل الفحوصات
+          </a>
+          <a href="/admin/renewals"
+             class="adm-link ">
+            التجديدات
+          </a>
+          <a href="/admin/audit-logs"
+             class="adm-link ">
+            سجل التدقيق
+          </a>
+        </div>
+      </div>
+      
+
+      
+      
+      <div class="adm-group " data-group="landing">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-landing">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-window-maximize"></i>
+          </span>
+          <span class="adm-group-label">محتوى الموقع</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-landing">
+          <a href="/admin/landing/"
+             class="adm-link ">
+            نظرة عامة
+          </a>
+          <a href="/admin/landing/preview"
+             class="adm-link ">
+            معاينة الصفحة
+          </a>
+          <a href="/admin/landing/social-links"
+             class="adm-link ">
+            روابط التواصل
+          </a>
+          <a href="/admin/landing/contact-methods"
+             class="adm-link ">
+            طرق التواصل
+          </a>
+        </div>
+      </div>
+
+      
+      
+      
+      <div class="adm-group " data-group="settings">
+        <button class="adm-group-head"
+                type="button"
+                aria-expanded="false"
+                aria-controls="grp-settings">
+          <span class="adm-group-icon" aria-hidden="true">
+            <i class="fa-solid fa-gear"></i>
+          </span>
+          <span class="adm-group-label">الإعدادات</span>
+          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
+        </button>
+        <div class="adm-group-links" id="grp-settings">
+          
+          <a href="/admin/settings"
+             class="adm-link ">
+            الإعدادات العامة
+          </a>
+          <a href="/admin/settings/platform"
+             class="adm-link ">
+            <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
+            إعدادات المنصة
+          </a>
+          
+          
+          <a href="/admin/settings/admins"
+             class="adm-link ">
+            إدارة المشرفين
+          </a>
+          
+          
+          <a href="/admin/settings/whatsapp"
+             class="adm-link ">
+            إعدادات واتساب
+          </a>
+          
+          
+          <a href="/admin/messaging/settings"
+             class="adm-link ">
+            <i class="fa-solid fa-paper-plane fa-xs" aria-hidden="true"></i>
+            قنوات التواصل والإشعارات
+          </a>
+          
+          <a href="/admin/settings/sections"
+             class="adm-link ">
+            <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
+            تخصيص الأقسام
+          </a>
+        </div>
+      </div>
+      
+
+    </nav>
+
+    
+    <div class="adm-side-foot">
+      <div class="adm-user-pill">
+        <span class="adm-user-avatar" aria-hidden="true">
+          <i class="fa-solid fa-user-shield"></i>
+        </span>
+        <span class="adm-user-name">
+          
+          مدير النظام
+        </span>
+      </div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="_csrf_token" value="y8W9c_4w3ywZjpkRtViOgJW9lvm4ounmrtGK0retTPg">
+        <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
+          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+        </button>
+      </form>
+    </div>
+
+  </aside>
+
+  
+  <main class="adm-main" id="adm-main" role="main">
+
+    
+    <header class="adm-topbar" role="banner">
+      <button class="adm-menu-btn"
+              id="adm-menu-btn"
+              type="button"
+              aria-label="فتح القائمة الجانبية"
+              aria-expanded="false"
+              aria-controls="adm-side">
+        <i class="fa-solid fa-bars" aria-hidden="true"></i>
+      </button>
+
+      <div class="adm-topbar-page-title">
+        لوحة التحكم
+      </div>
+
+      <div class="adm-topbar-actions">
+        
+        <form method="post" action="/i18n/set"
+              class="adm-lang-form" aria-label="اللغة">
+          <input type="hidden" name="_csrf_token" value="y8W9c_4w3ywZjpkRtViOgJW9lvm4ounmrtGK0retTPg">
+          <input type="hidden" name="next" value="/admin/fleet/onboarding/new">
+          <label for="adm-lang" class="adm-lang-label">
+            <i class="fa-solid fa-language" aria-hidden="true"></i>
+            <span class="adm-lang-sr">اللغة</span>
+          </label>
+          <select id="adm-lang" name="locale" class="adm-lang-select"
+                  onchange="this.form.submit()">
+            
+            <option value="ar" selected>
+              🇸🇦 العربية
+            </option>
+            
+            <option value="en" >
+              🇬🇧 English
+            </option>
+            
+            <option value="fr" >
+              🇫🇷 Français
+            </option>
+            
+            <option value="tr" >
+              🇹🇷 Türkçe
+            </option>
+            
+          </select>
+          <noscript>
+            <button type="submit" class="adm-lang-submit">تطبيق</button>
+          </noscript>
+        </form>
+
+        <div class="adm-topbar-user" aria-label="المستخدم الحالي">
+          <span class="adm-topbar-avatar" aria-hidden="true">
+            <i class="fa-solid fa-user-shield"></i>
+          </span>
+          <span>
+            
+            مدير النظام
+          </span>
+        </div>
+        <form method="post" action="/logout">
+          <input type="hidden" name="_csrf_token" value="y8W9c_4w3ywZjpkRtViOgJW9lvm4ounmrtGK0retTPg">
+          <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
+            <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+          </button>
+        </form>
+      </div>
+    </header>
+
+    
+    <div class="adm-page">
+
+      
+      
+
+      
+      
+
+  
+    <div class="hub-flash-stack">
+      
+        <div class="hub-flash hub-flash--success">تم تسجيل الدخول بنجاح.</div>
+      
+    </div>
+  
+
+
+      
+      
+
+      
+      
+
+<div class="fw-hero">
+  <div class="fw-hero-icon"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i></div>
+  <div class="fw-hero-body">
+    <div class="fw-hero-title">معالج إضافة عقدة CHR للأسطول</div>
+    <div class="fw-hero-sub">
+      أدخل بيانات العقدة الجديدة في الخطوات التالية، والباقي تولّده اللوحة تلقائياً:
+      مفاتيح WireGuard، سكربت RouterOS الموحّد، اختبار RADIUS، ثم الإضافة لـ DNS الذكي.
+      جميع العقد تشغّل نفس الإعدادات (PPTP / SSTP / IPsec) — يختلف بينها فقط معرّفات الربط.
+    </div>
+  </div>
+</div>
+
+
+<div class="fw-stepper" role="tablist" aria-label="خطوات معالج CHR">
+  <div class="fw-step is-current" data-step-tag="1"><span class="fw-step-num">1</span><span>المزود والاسم</span></div>
+  <div class="fw-step" data-step-tag="2"><span class="fw-step-num">2</span><span>السعة والشبكة</span></div>
+  <div class="fw-step" data-step-tag="3"><span class="fw-step-num">3</span><span>النموذج المادي للنطاق</span></div>
+  <div class="fw-step" data-step-tag="4"><span class="fw-step-num">4</span><span>مراجعة وإرسال</span></div>
+</div>
+
+
+<form id="fw-form" class="fw-card" novalidate
+      data-onboarding-url="/admin/fleet/onboarding/jobs"
+      data-providers-url="/admin/fleet/providers">
+  <input type="hidden" name="_csrf_token" value="y8W9c_4w3ywZjpkRtViOgJW9lvm4ounmrtGK0retTPg">
+
+  
+  <div class="fw-panel is-active" data-step="1">
+    <div class="fw-card-title"><i class="fa-solid fa-building"></i> الخطوة 1 — المزود واسم العقدة</div>
+    <div class="fw-card-sub">اختر المزود (Contabo, Hetzner…) واسم محلي مميّز للعقدة. لو المزود غير موجود اخترْ «إضافة مزود جديد».</div>
+    <div class="fw-grid">
+      <div class="fw-field">
+        <label for="provider_id">المزود <span class="fw-req">*</span></label>
+        <select id="provider_id" name="provider_id" required>
+          <option value="">— اختر —</option>
+          
+            <option value="1" data-cost-model="open">contabo-de (مفتوحة)</option>
+          
+          <option value="__new__">+ إضافة مزود جديد…</option>
+        </select>
+        <div class="fw-field-err">اختر مزوداً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="name">اسم العقدة <span class="fw-req">*</span></label>
+        <input type="text" id="name" name="name" placeholder="contabo-de-01" required maxlength="120">
+        <div class="fw-hint">يطابق <code>chr_nodes.name</code> (وحيد لكل مزود).</div>
+        <div class="fw-field-err">اكتب اسماً صالحاً.</div>
+      </div>
+
+      
+      <div class="fw-field fw-field--wide" id="fw-new-provider" style="display:none">
+        <div class="fw-banner">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>سيُنشأ المزود فوراً بإعداداته الأساسية. تستطيع تعديلها لاحقاً من صفحة المزودين.</span>
+        </div>
+        <div class="fw-grid">
+          <div class="fw-field">
+            <label for="np_name">اسم المزود <span class="fw-req">*</span></label>
+            <input type="text" id="np_name" name="np_name" placeholder="Hetzner" maxlength="120">
+          </div>
+          <div class="fw-field">
+            <label for="np_cost_model">نموذج التكلفة الافتراضي</label>
+            <select id="np_cost_model" name="np_cost_model">
+              <option value="open">مفتوحة (open)</option>
+              <option value="metered">محدودة (metered)</option>
+            </select>
+          </div>
+          <div class="fw-field">
+            <label for="np_monthly_cap_tb">سقف شهري (TB)</label>
+            <input type="number" id="np_monthly_cap_tb" name="np_monthly_cap_tb" min="0" step="0.001" placeholder="مثلاً 30">
+            <div class="fw-hint">مطلوب لو المزود محدود.</div>
+          </div>
+          <div class="fw-field">
+            <label for="np_price_per_tb">سعر/TB ($)</label>
+            <input type="number" id="np_price_per_tb" name="np_price_per_tb" min="0" step="0.01" placeholder="5.00">
+          </div>
+          <div class="fw-field">
+            <label class="fw-check">
+              <input type="checkbox" id="np_overage_allowed" name="np_overage_allowed">
+              <span>السماح بالتجاوز الشهري المدفوع</span>
+            </label>
+          </div>
+          
+          <div class="fw-field" id="np_overage_price_field" style="display:none">
+            <label for="np_overage_price_per_tb">سعر التجاوز / TB ($)</label>
+            <input type="number" id="np_overage_price_per_tb" name="np_overage_price_per_tb"
+                   min="0" step="0.01" placeholder="مثلاً 12.00">
+            <div class="fw-hint">
+              مطلوب فقط عند تفعيل «السماح بالتجاوز». يمكن أن يساوي سعر TB العادي.
+            </div>
+          </div>
+        </div>
+        <div class="fw-foot" style="justify-content:flex-end;padding-top:0;border-top:none;margin-top:0">
+          <button type="button" class="fw-btn fw-btn--primary" id="fw-new-provider-save">
+            <i class="fa-solid fa-floppy-disk"></i> حفظ المزود
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="fw-foot">
+      <span></span>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  
+  <div class="fw-panel" data-step="2">
+    <div class="fw-card-title"><i class="fa-solid fa-gauge-high"></i> الخطوة 2 — السعة والشبكة</div>
+    <div class="fw-card-sub">السعة (عدد الجلسات + سرعة الرابط) والـ IP العام. الباقي (مفاتيح WireGuard، عنوان wg-mgmt) يولّده النظام تلقائياً.</div>
+    <div class="fw-grid">
+      <div class="fw-field">
+        <label for="max_sessions">السعة القصوى (جلسات) <span class="fw-req">*</span></label>
+        <input type="number" id="max_sessions" name="max_sessions" min="1" placeholder="500" required>
+        <div class="fw-field-err">أدخل عدداً موجباً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="link_speed_mbps">سرعة الرابط (Mbps) <span class="fw-req">*</span></label>
+        <input type="number" id="link_speed_mbps" name="link_speed_mbps" min="1" placeholder="1000" required>
+        <div class="fw-field-err">أدخل عدداً موجباً.</div>
+      </div>
+      <div class="fw-field">
+        <label for="public_ip">IP عام v4 <span class="fw-req">*</span></label>
+        <input type="text" id="public_ip" name="public_ip" placeholder="203.0.113.11" required
+               pattern="^(\d{1,3}\.){3}\d{1,3}$">
+        <div class="fw-field-err">صيغة IPv4 غير صحيحة.</div>
+      </div>
+      <div class="fw-field">
+        <label for="public_ipv6">IP عام v6 (اختياري)</label>
+        <input type="text" id="public_ipv6" name="public_ipv6" placeholder="2001:db8::11">
+      </div>
+      <div class="fw-field">
+        <label for="weight">وزن التفضيل اليدوي</label>
+        <input type="number" id="weight" name="weight" min="0" step="0.01" placeholder="1.0">
+        <div class="fw-hint">مضاعف يدوي على درجة المخّ — اتركه 1.0 افتراضياً.</div>
+      </div>
+      
+      <div class="fw-callout fw-callout--ok" role="status"
+           style="margin-block-start:14px;padding:12px 14px;border:1px solid #bbf7d0;
+                  background:#f0fdf4;border-radius:10px;color:#166534;
+                  font-size:13px;line-height:1.7">
+        <i class="fa-solid fa-circle-check" aria-hidden="true"
+           style="margin-inline-end:6px"></i>
+        <strong>اعتمادات الإدارة تلقائية.</strong>
+        ستُولِّد اللوحة مستخدم REST مخصّصًا (<code dir="ltr">hobe-panel</code>) في
+        مجموعة صلاحيات مقيَّدة (<code dir="ltr">hobe-fleet-mgmt</code>) وكلمة مرور
+        قويّة تُخزَّن مشفّرة على صفّ العقدة، ثم يُضمِّن السكربت نفس المستخدم
+        وكلمة المرور تلقائيًا. لا حاجة لإدخال اسم مستخدم/كلمة مرور أوّلية للعقدة.
+      </div>
+    </div>
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  
+  <div class="fw-panel" data-step="3">
+    <div class="fw-card-title"><i class="fa-solid fa-water"></i> الخطوة 3 — نموذج النطاق (Bandwidth)</div>
+    <div class="fw-card-sub">يحدد كيف يُحسب النطاق المسموح والسعر لكل تيرابايت. الافتراضي «وراثة من المزود».</div>
+    <div class="fw-row-radio" style="margin-block-end:14px">
+      <label class="fw-radio-card is-selected">
+        <input type="radio" name="cost_model" value="inherit" checked>
+        <span>
+          <span class="fw-radio-title">وراثة من المزود</span>
+          <span class="fw-radio-sub">استخدم نموذج التكلفة الذي حدّدته على المزود.</span>
+        </span>
+      </label>
+      <label class="fw-radio-card">
+        <input type="radio" name="cost_model" value="open">
+        <span>
+          <span class="fw-radio-title">مفتوحة (Open)</span>
+          <span class="fw-radio-sub">لا يوجد سقف شهري للنطاق.</span>
+        </span>
+      </label>
+      <label class="fw-radio-card">
+        <input type="radio" name="cost_model" value="metered">
+        <span>
+          <span class="fw-radio-title">محدودة (Metered)</span>
+          <span class="fw-radio-sub">سقف TB شهري + سعر/TB.</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="fw-grid">
+      <div class="fw-field" data-fw-metered>
+        <label for="bandwidth_cap_tb">السقف الشهري (TB)</label>
+        <input type="number" id="bandwidth_cap_tb" name="bandwidth_cap_tb" min="0" step="0.001" placeholder="30">
+        <div class="fw-hint">يُطبَّق على نموذج «محدودة» فقط.</div>
+      </div>
+      <div class="fw-field" data-fw-metered>
+        <label for="price_per_tb">سعر / TB ($)</label>
+        <input type="number" id="price_per_tb" name="price_per_tb" min="0" step="0.01" placeholder="5.00">
+      </div>
+      <div class="fw-field" data-fw-metered>
+        <label class="fw-check">
+          <input type="checkbox" id="overage_allowed" name="overage_allowed" value="1">
+          <span>السماح بالتجاوز المدفوع للسقف الشهري</span>
+        </label>
+        <div class="fw-hint">لو تجاوز هذا CHR سقفه، يستمر بالعمل ويُحاسَب على الزيادة.</div>
+      </div>
+    </div>
+
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" data-fw-next>التالي <i class="fa-solid fa-arrow-left"></i></button>
+    </div>
+  </div>
+
+  
+  <div class="fw-panel" data-step="4">
+    <div class="fw-card-title"><i class="fa-solid fa-check-double"></i> الخطوة 4 — مراجعة وإرسال</div>
+    <div class="fw-card-sub">راجع البيانات قبل الإرسال. عند الإرسال يُنشأ سجلٌّ في <code>onboarding_jobs</code> بحالة <code>draft</code>، وتبدأ آلة الحالة تلقائياً.</div>
+    <div id="fw-review" class="fw-card" style="background:#fafbfc;border-style:dashed;padding:10px"></div>
+    <div class="fw-foot">
+      <button type="button" class="fw-btn fw-btn--ghost" data-fw-prev><i class="fa-solid fa-arrow-right"></i> السابق</button>
+      <button type="button" class="fw-btn fw-btn--primary" id="fw-submit">
+        <i class="fa-solid fa-paper-plane"></i> إرسال للأنبوردنغ
+      </button>
+    </div>
+  </div>
+</form>
+
+
+<div class="fw-toast-host" id="fw-toast-host" aria-live="polite" aria-atomic="true"></div>
+
+
+<div class="fw-confirm" id="fw-confirm" role="dialog" aria-modal="true" aria-labelledby="fw-confirm-title">
+  <div class="fw-confirm-box">
+    <div class="fw-confirm-title" id="fw-confirm-title"><i class="fa-solid fa-triangle-exclamation"></i> تأكيد</div>
+    <div class="fw-confirm-msg" id="fw-confirm-msg"></div>
+    <div class="fw-confirm-actions">
+      <button type="button" class="fw-btn fw-btn--ghost" id="fw-confirm-cancel">إلغاء</button>
+      <button type="button" class="fw-btn fw-btn--primary" id="fw-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/admin_fleet_wizard.js?v=1781321924" defer></script>
+
+
+
+    </div>
+
+  </main>
+
+</div>
+
+
+
+<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="hub-modal-card">
+    <div class="hub-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h3 class="hub-modal-title" id="hub-confirm-title">تأكيد العملية</h3>
+    <p class="hub-modal-msg" id="hub-confirm-msg">هل أنت متأكد من المتابعة؟</p>
+    <div class="hub-modal-actions">
+      <button type="button" class="hub-btn hub-btn--ghost" id="hub-confirm-cancel">إلغاء</button>
+      <button type="button" class="hub-btn hub-btn--danger" id="hub-confirm-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="hub-confirm-overlay" id="hub-confirm-overlay" hidden>
+  <div class="hub-confirm-box" role="dialog" aria-modal="true" aria-labelledby="hub-confirm-message">
+    <div class="hub-confirm-message" id="hub-confirm-message">—</div>
+    <div class="hub-confirm-actions">
+      <button class="hub-btn hub-btn--ghost"   type="button" id="hub-confirm-overlay-cancel">إلغاء</button>
+      <button class="hub-btn hub-btn--primary" type="button" id="hub-confirm-overlay-ok">تأكيد</button>
+    </div>
+  </div>
+</div>
+<div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
+
+
+<script src="/static/js/hub.js?v=1781321785" defer></script>
+<script src="/static/js/admin_design_sweep.js?v=1781321785" defer></script>
+
+<script src="/static/js/admin_polish.js?v=1781321785" defer></script>
+
+<script src="/static/js/sym_speed.js?v=1781321785" defer></script>
+
+<script src="/static/js/live_poll.js?v=1781321785" defer></script>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'adm_open_groups_v2';
+
+  function getOpen() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(_) { return []; }
+  }
+  function saveOpen() {
+    var list = [];
+    document.querySelectorAll('.adm-group.is-open').forEach(function(g) {
+      var k = g.getAttribute('data-group'); if (k) list.push(k);
+    });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(_) {}
+  }
+
+  function openGroup(g) {
+    /* أكوردين: أغلق أي مجموعة أخرى مفتوحة — مجموعة واحدة مفتوحة فقط (تقليل الازدحام) */
+    document.querySelectorAll('.adm-group.is-open').forEach(function (o) {
+      if (o !== g) closeGroup(o);
+    });
+    g.classList.add('is-open');
+    var btn = g.querySelector('.adm-group-head');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  }
+  function closeGroup(g) {
+    g.classList.remove('is-open');
+    var btn = g.querySelector('.adm-group-head');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleGroup(g) {
+    g.classList.contains('is-open') ? closeGroup(g) : openGroup(g);
+    saveOpen();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var saved = getOpen();
+    var active = null, savedG = null;
+
+    document.querySelectorAll('.adm-group').forEach(function (g) {
+      var key = g.getAttribute('data-group');
+      var btn = g.querySelector('.adm-group-head');
+      if (!btn) return;
+
+      closeGroup(g);
+      btn.addEventListener('click', function () { toggleGroup(g); });
+
+      /* المرشّحون لمجموعة واحدة مفتوحة: النشطة لها الأولوية ثم أول محفوظة */
+      if (g.classList.contains('is-active') && !active) active = g;
+      if (key && saved.indexOf(key) !== -1 && !savedG) savedG = g;
+    });
+
+    var target = active || savedG;
+    if (target) openGroup(target);
+
+    /* drawer mobile */
+    var toggle  = document.getElementById('adm-menu-btn');
+    var side    = document.getElementById('adm-side');
+    var overlay = document.getElementById('adm-overlay');
+    if (toggle && side) toggle.addEventListener('click', function () {
+      var open = side.classList.toggle('is-drawer-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (overlay) overlay.classList.toggle('is-visible', open);
+    });
+    if (overlay) overlay.addEventListener('click', function () {
+      if (side) side.classList.remove('is-drawer-open');
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      overlay.classList.remove('is-visible');
+    });
+
+    /* flash auto-close */
+    document.querySelectorAll('.adm-flash[data-auto-close]').forEach(function (el) {
+      setTimeout(function () {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity .4s';
+        setTimeout(function () { el.remove(); }, 420);
+      }, 6000);
+    });
+
+    /* table sort */
+    document.querySelectorAll('.cc-th-sort').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var table = th.closest('table'); if (!table) return;
+        var col = Array.from(th.parentElement.children).indexOf(th);
+        var dir = th.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+        th.parentElement.querySelectorAll('.cc-th-sort').forEach(function(t){ t.removeAttribute('data-sort-dir'); });
+        th.setAttribute('data-sort-dir', dir);
+        var tbody = table.querySelector('tbody'); if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort(function (a, b) {
+          var aT = (a.children[col]||{}).textContent||'';
+          var bT = (b.children[col]||{}).textContent||'';
+          aT = aT.trim(); bT = bT.trim();
+          var aN = parseFloat(aT.replace(/[^\d.-]/g,'')), bN = parseFloat(bT.replace(/[^\d.-]/g,''));
+          if (!isNaN(aN) && !isNaN(bN)) return dir==='asc' ? aN-bN : bN-aN;
+          return dir==='asc' ? aT.localeCompare(bT,'ar') : bT.localeCompare(aT,'ar');
+        });
+        rows.forEach(function(r){ tbody.appendChild(r); });
+      });
+    });
+
+    /* rows per page */
+    document.querySelectorAll('.cc-per-page').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var n = parseInt(sel.value, 10);
+        var table = (sel.closest('.cc-table-wrapper')||document).querySelector('table');
+        if (!table) return;
+        table.querySelectorAll('tbody tr').forEach(function(r,i){
+          r.style.display = (!n || i < n) ? '' : 'none';
+        });
+      });
+    });
+  });
+
+})();
+</script>
+
+
+
+
+</body>
+</html>

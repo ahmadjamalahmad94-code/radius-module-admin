@@ -356,13 +356,15 @@
       price_per_tb: (fd.get("price_per_tb") || "").toString().trim() || null,
       overage_allowed: overage,
       weight: (fd.get("weight") || "").toString().trim() || null,
-      bootstrap: {
-        endpoint: (fd.get("bootstrap_endpoint") || "").toString().trim(),
-        user: (fd.get("bootstrap_user") || "").toString().trim(),
-        // password is intentionally NOT echoed back into the review pane.
-        // It is sent ONCE to the onboarding endpoint and never logged.
-        pass: fd.get("bootstrap_pass") || "",
-      },
+      // fix/wizard-drop-initial-creds-prompt — the `bootstrap` object
+      // (endpoint/user/pass) is GONE. It bound to a never-shipped
+      // «panel pushes script via API» path; the server-side
+      // WizardForm.from_dict ignored it, and the push transport in
+      // fleet/registry/bootstrap_push isn't registered in production
+      // (manual /import is the deploy model). The auto-scoped-user
+      // feature already provisions hobe-panel + a Fernet-encrypted
+      // password on the node row at keys_generated, so the wizard
+      // needs no credential input.
     };
   }
 
