@@ -625,19 +625,33 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
 # before we assign it to www-ssl. The set-line that follows errors
 # silently when the cert isn't ready yet, leaving www-ssl disabled —
 # the on-CHR cause of `connect_failed` on slow CHRs.
+#
+# LIVE INCIDENT (fix/chr-script-remove-break — chr-vpn-3):
+#   Script Error: bad command name break (line 469 column 28)
+# Root cause: `:break` inside a nested ``:if do={}`` is rejected by
+# RouterOS («bad command name break»). The construct is unreliable
+# across v7 builds and we deliberately do NOT rely on it.
+#
+# BREAK-FREE pattern: the loop ALWAYS runs all 15 iterations, but
+# each iteration's body is gated by ``!$certReady`` — once the cert
+# is ready the body and the ``:delay 1s`` are skipped, so the loop
+# spins through the remaining counter ticks with effectively no
+# work. Worst-case overshoot: 14 noop ticks (≈ a few µs each). No
+# `:break`, no `:continue` — pure flag-gated iteration.
 :local certReady false
 :for i from=1 to=15 do={
-    :do {
-        :local cert [/certificate find name="hobe-fleet-api-cert"]
-        :if ([:len $cert] > 0) do={
-            :local exp [/certificate get $cert invalid-after]
-            :if ([:typeof $exp] != "nothing" && [:tostr $exp] != "") do={
-                :set certReady true
+    :if (!$certReady) do={
+        :do {
+            :local cert [/certificate find name="hobe-fleet-api-cert"]
+            :if ([:len $cert] > 0) do={
+                :local exp [/certificate get $cert invalid-after]
+                :if ([:typeof $exp] != "nothing" && [:tostr $exp] != "") do={
+                    :set certReady true
+                }
             }
-        }
-    } on-error={}
-    :if ($certReady) do={ :break }
-    :delay 1s
+        } on-error={}
+        :if (!$certReady) do={ :delay 1s }
+    }
 }
 :if ($certReady = false) do={
     :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s — www-ssl will NOT bind on this run; re-run /import to retry."
