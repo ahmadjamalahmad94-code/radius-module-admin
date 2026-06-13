@@ -172,6 +172,10 @@ def _start_workers(app: Flask) -> None:
       * ``fleet.health.metrics_poller`` — polls RouterOS over wg-mgmt and
         writes ``fleet_chr_metrics`` rows with ``source='control'`` so
         the dashboard renders real CPU / sessions / bandwidth.
+      * ``fleet.sync.wg_mgmt_autosync`` — periodic self-healer that
+        adopts a drifted live wg-mgmt pubkey + reconciles peers on the
+        control host. Closes the control-plane half of BUG B (the
+        proxy heartbeat already does the same for wg-data).
 
     Every worker is opt-in via a config flag and gated by ``TESTING`` so
     unit tests + the CLI never spawn background threads they didn't ask
@@ -183,6 +187,12 @@ def _start_workers(app: Flask) -> None:
         start_background_poller(app)
     except Exception:  # noqa: BLE001 — never fail app boot on a worker
         app.logger.exception("fleet metrics poller failed to start")
+
+    try:
+        from fleet.sync.wg_mgmt_autosync import start_background_autosync
+        start_background_autosync(app)
+    except Exception:  # noqa: BLE001 — never fail app boot on a worker
+        app.logger.exception("fleet wg-mgmt autosync failed to start")
 
 
 def _configure_logging(app: Flask) -> None:
