@@ -150,102 +150,99 @@
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // Advance
+  // EVENT DELEGATION — single document-level listener for BOTH
+  // .fd-pj-advance and .fd-pj-delete.
+  //
+  // fix/dashboard-buttons-event-delegation — the previous binding
+  // walked the DOM at init and called addEventListener per button.
+  // The fleet dashboard rewrites pending-card markup on every tab
+  // switch / live-poll row replace, so any button rendered AFTER
+  // init silently became dead. One delegated listener at `document`
+  // matches every present-or-future button via .closest().
+  //
+  // Async handlers (advance, delete) get their button reference from
+  // the matched element, so the busy/idle visual states still work.
   // ────────────────────────────────────────────────────────────────────
-  function bindAdvance() {
-    document.querySelectorAll(".fd-pj-advance").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id   = btn.dataset.jobId;
-        const name = btn.dataset.jobName || ("#" + id);
-        setBusy(btn, true);
-        try {
-          const res = await fetch(advanceUrl(id), {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-            body: JSON.stringify({}),
-          });
-          const body = await safeJson(res);
-          if (!res.ok || !body.ok) {
-            const reason = body.message || body.error || ("HTTP " + res.status);
-            toast("error", "تعذّر متابعة الجوب «" + name + "»: " + reason, { ttl: 8000 });
-            return;
-          }
-          if (body.advanced) {
-            const created = body.chr_id ? (" · عقدة #" + body.chr_id) : "";
-            toast("success",
-              "تم دفع الجوب «" + name + "» إلى «" + (body.status || "—") + "»" + created);
-          } else {
-            toast("info", "الجوب «" + name + "» وصل بالفعل لأبعد ما يمكن من اللوحة.");
-          }
-          refreshPageAfterChange();
-        } catch (_err) {
-          toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 8000 });
-        } finally {
-          setBusy(btn, false);
-        }
+  async function handleAdvance(btn) {
+    const id   = btn.dataset.jobId;
+    const name = btn.dataset.jobName || ("#" + id);
+    setBusy(btn, true);
+    try {
+      const res = await fetch(advanceUrl(id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({}),
       });
-    });
+      const body = await safeJson(res);
+      if (!res.ok || !body.ok) {
+        const reason = body.message || body.error || ("HTTP " + res.status);
+        toast("error", "تعذّر متابعة الجوب «" + name + "»: " + reason, { ttl: 8000 });
+        return;
+      }
+      if (body.advanced) {
+        const created = body.chr_id ? (" · عقدة #" + body.chr_id) : "";
+        toast("success",
+          "تم دفع الجوب «" + name + "» إلى «" + (body.status || "—") + "»" + created);
+      } else {
+        toast("info", "الجوب «" + name + "» وصل بالفعل لأبعد ما يمكن من اللوحة.");
+      }
+      refreshPageAfterChange();
+    } catch (_err) {
+      toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 8000 });
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function handleDelete(btn) {
+    const id     = btn.dataset.jobId;
+    const name   = btn.dataset.jobName || ("#" + id);
+    const chrId  = (btn.dataset.chrId || "").trim();
+
+    let msg = "حذف جوب التسجيل «" + name + "»؟";
+    if (chrId) {
+      msg += " ستُحذف أيضاً العقدة المرتبطة #" + chrId
+          + " (حالتها «تجهيز» — لم تُفعَّل بعد).";
+    } else {
+      msg += " هذا الجوب لم ينشئ عقدة بعد، لن تتأثّر أي عقدة موجودة.";
+    }
+    const ok = await confirmDialog(msg);
+    if (!ok) return;
+
+    setBusy(btn, true);
+    try {
+      const res = await fetch(deleteUrl(id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({ remove_node: !!chrId }),
+      });
+      const body = await safeJson(res);
+      if (!res.ok || !body.ok) {
+        const reason = body.message || body.error || ("HTTP " + res.status);
+        toast("error", "تعذّر حذف الجوب «" + name + "»: " + reason, { ttl: 8000 });
+        return;
+      }
+      const row = rowFor(id);
+      if (row) row.remove();
+      const nodeBit = body.node_removed ? " (والعقدة المرتبطة)" : "";
+      toast("success", "تم حذف الجوب «" + name + "»" + nodeBit + ".");
+      refreshPageAfterChange();
+    } catch (_err) {
+      toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 8000 });
+    } finally {
+      setBusy(btn, false);
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // Delete
+  // Boot — one document listener covers every present + future button.
   // ────────────────────────────────────────────────────────────────────
-  function bindDelete() {
-    document.querySelectorAll(".fd-pj-delete").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id     = btn.dataset.jobId;
-        const name   = btn.dataset.jobName || ("#" + id);
-        const chrId  = (btn.dataset.chrId || "").trim();
-
-        let msg = "حذف جوب التسجيل «" + name + "»؟";
-        if (chrId) {
-          msg += " ستُحذف أيضاً العقدة المرتبطة #" + chrId
-              + " (حالتها «تجهيز» — لم تُفعَّل بعد).";
-        } else {
-          msg += " هذا الجوب لم ينشئ عقدة بعد، لن تتأثّر أي عقدة موجودة.";
-        }
-        const ok = await confirmDialog(msg);
-        if (!ok) return;
-
-        setBusy(btn, true);
-        try {
-          const res = await fetch(deleteUrl(id), {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-            body: JSON.stringify({ remove_node: !!chrId }),
-          });
-          const body = await safeJson(res);
-          if (!res.ok || !body.ok) {
-            const reason = body.message || body.error || ("HTTP " + res.status);
-            toast("error", "تعذّر حذف الجوب «" + name + "»: " + reason, { ttl: 8000 });
-            return;
-          }
-          const row = rowFor(id);
-          if (row) row.remove();
-          const nodeBit = body.node_removed ? " (والعقدة المرتبطة)" : "";
-          toast("success", "تم حذف الجوب «" + name + "»" + nodeBit + ".");
-          // If the table is now empty, do a full reload so the empty card
-          // disappears + KPIs zero out + ranking refreshes.
-          if (pendingCount() === 0) {
-            refreshPageAfterChange();
-          } else {
-            // Otherwise just update the KPI tile counter inline.
-            const counter = document.querySelector(".fd-kpi-num + .fd-kpi-label");  // no-op fallback
-            void counter;
-            refreshPageAfterChange();
-          }
-        } catch (_err) {
-          toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 8000 });
-        } finally {
-          setBusy(btn, false);
-        }
-      });
-    });
-  }
-
-  // ────────────────────────────────────────────────────────────────────
-  // Boot
-  // ────────────────────────────────────────────────────────────────────
-  bindAdvance();
-  bindDelete();
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var advBtn = t.closest(".fd-pj-advance");
+    if (advBtn) { e.preventDefault(); handleAdvance(advBtn); return; }
+    var delBtn = t.closest(".fd-pj-delete");
+    if (delBtn) { e.preventDefault(); handleDelete(delBtn); return; }
+  });
 })();

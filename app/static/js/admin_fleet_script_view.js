@@ -247,23 +247,46 @@
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // Wire the per-row buttons.
-  //   .fd-pj-view-script (pending-card path) — keyed by data-job-id.
-  //   .fd-node-view-script (active-node path) — keyed by data-node-id.
-  // Both flow through the same modal.
+  // EVENT DELEGATION — single document-level listener
+  //
+  // fix/dashboard-buttons-event-delegation — the fleet dashboard
+  // rewrites node-card / pending-card markup after init (see
+  // live_poll.js's `data-live-rows` replace path + the tab content
+  // injection on tab switch). A per-button addEventListener at init
+  // time silently dies on every replaced/late-rendered button — the
+  // exact live bug the owner saw: «عرض السكربت» on active node cards
+  // did nothing, no console error, because the buttons in the
+  // dashboard's «عقد CHR» tab were re-created after the JS bound the
+  // ORIGINAL set.
+  //
+  // One delegated listener at `document` survives every DOM rewrite
+  // and binds every present-or-future button matching the selector.
+  // We use .closest() so a click on the icon INSIDE the button still
+  // resolves to the button element + its dataset.
+  //
+  //   .fd-pj-view-script  — pending-card path,  data-job-id  → kind="job"
+  //   .fd-node-view-script — active-node path,   data-node-id → kind="node"
+  // Both flow through the same modal via openFor(id, name, kind).
   // ────────────────────────────────────────────────────────────────────
-  document.querySelectorAll(".fd-pj-view-script").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id   = btn.dataset.jobId;
-      const name = btn.dataset.jobName || ("#" + id);
-      openFor(id, name, "job");
-    });
-  });
-  document.querySelectorAll(".fd-node-view-script").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id   = btn.dataset.nodeId;
-      const name = btn.dataset.nodeName || ("#" + id);
-      openFor(id, name, "node");
-    });
+  document.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest
+      ? e.target.closest(".fd-pj-view-script, .fd-node-view-script")
+      : null;
+    if (!btn) return;
+    // Prevent any accidental form-submit / link-follow.
+    e.preventDefault();
+    var isNode = btn.classList.contains("fd-node-view-script");
+    var id, name, kind;
+    if (isNode) {
+      id = btn.dataset.nodeId;
+      name = btn.dataset.nodeName || ("#" + id);
+      kind = "node";
+    } else {
+      id = btn.dataset.jobId;
+      name = btn.dataset.jobName || ("#" + id);
+      kind = "job";
+    }
+    if (!id) return;   // defensive — a button without an id is a render bug
+    openFor(id, name, kind);
   });
 })();

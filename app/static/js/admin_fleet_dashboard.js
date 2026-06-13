@@ -200,16 +200,24 @@
 
   // ────────────────────────────────────────────────────────────────────
   // Single-node check
+  //
+  // fix/dashboard-buttons-event-delegation — one document-level
+  // listener so buttons rendered later (tab switch / live-poll row
+  // replace / data-nodes page injecting cards) still fire. The old
+  // per-button addEventListener at init silently died on every
+  // re-rendered button — same class of bug as «عرض السكربت».
   // ────────────────────────────────────────────────────────────────────
   function bindSingleCheckButtons() {
-    document.querySelectorAll(".fd-check-one").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const nodeId = btn.dataset.nodeId;
-        const nodeName = btn.dataset.nodeName || ("#" + nodeId);
-        const ok = await confirmDialog("هل تريد طلب فحص فوري للعقدة «" + nodeName + "»؟");
-        if (!ok) return;
-        await runCheck([Number(nodeId)], btn);
-      });
+    document.addEventListener("click", async function (e) {
+      const btn = e.target && e.target.closest
+        ? e.target.closest(".fd-check-one") : null;
+      if (!btn) return;
+      e.preventDefault();
+      const nodeId = btn.dataset.nodeId;
+      const nodeName = btn.dataset.nodeName || ("#" + nodeId);
+      const ok = await confirmDialog("هل تريد طلب فحص فوري للعقدة «" + nodeName + "»؟");
+      if (!ok) return;
+      await runCheck([Number(nodeId)], btn);
     });
   }
 
@@ -342,53 +350,59 @@
 
   // ────────────────────────────────────────────────────────────────────
   // Single-node live-metrics poll — bypasses the 60s background worker.
+  //
+  // fix/dashboard-buttons-event-delegation — document-level listener
+  // (same reason as .fd-check-one above: per-button binding at init
+  // silently dies on every dynamically re-rendered button).
   // ────────────────────────────────────────────────────────────────────
   function bindPollMetricsButtons() {
-    document.querySelectorAll(".fd-poll-metrics").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const url = btn.dataset.url;
-        const nodeName = btn.dataset.nodeName || ("#" + btn.dataset.nodeId);
-        if (!url) {
-          toast("error", "تعذّر تحديد عنوان الطلب.");
+    document.addEventListener("click", async function (e) {
+      const btn = e.target && e.target.closest
+        ? e.target.closest(".fd-poll-metrics") : null;
+      if (!btn) return;
+      e.preventDefault();
+      const url = btn.dataset.url;
+      const nodeName = btn.dataset.nodeName || ("#" + btn.dataset.nodeId);
+      if (!url) {
+        toast("error", "تعذّر تحديد عنوان الطلب.");
+        return;
+      }
+      const tr = btn.closest("[data-node-id]");
+      if (tr) tr.classList.add("is-checking");
+      btn.classList.add("is-busy");
+      btn.disabled = true;
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+          body: JSON.stringify({}),
+        });
+        const body = await safeJson(res);
+        if (!res.ok || !body.ok) {
+          const detail = body.detail || body.error || ("HTTP " + res.status);
+          toast("error",
+            "تعذّر قراءة المقاييس للعقدة «" + nodeName + "»: " + detail,
+            { ttl: 6500 });
           return;
         }
-        const tr = btn.closest("[data-node-id]");
-        if (tr) tr.classList.add("is-checking");
-        btn.classList.add("is-busy");
-        btn.disabled = true;
-        try {
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
-            body: JSON.stringify({}),
-          });
-          const body = await safeJson(res);
-          if (!res.ok || !body.ok) {
-            const detail = body.detail || body.error || ("HTTP " + res.status);
-            toast("error",
-              "تعذّر قراءة المقاييس للعقدة «" + nodeName + "»: " + detail,
-              { ttl: 6500 });
-            return;
-          }
-          if (body.row) applyRowPayload(body.row);
-          recomputeKpis();
-          const summary = body.summary || {};
-          if ((summary.error_count || 0) > 0) {
-            const first = (summary.errors || [])[0] || ["", ""];
-            toast("warning",
-              "العقدة «" + nodeName + "» — تعذّرت القراءة: " + (first[1] || "خطأ غير معروف"));
-          } else {
-            toast("success",
-              "تمت قراءة المقاييس من «" + nodeName + "» (مصدر: control).");
-          }
-        } catch (err) {
-          toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.");
-        } finally {
-          if (tr) tr.classList.remove("is-checking");
-          btn.classList.remove("is-busy");
-          btn.disabled = false;
+        if (body.row) applyRowPayload(body.row);
+        recomputeKpis();
+        const summary = body.summary || {};
+        if ((summary.error_count || 0) > 0) {
+          const first = (summary.errors || [])[0] || ["", ""];
+          toast("warning",
+            "العقدة «" + nodeName + "» — تعذّرت القراءة: " + (first[1] || "خطأ غير معروف"));
+        } else {
+          toast("success",
+            "تمت قراءة المقاييس من «" + nodeName + "» (مصدر: control).");
         }
-      });
+      } catch (err) {
+        toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.");
+      } finally {
+        if (tr) tr.classList.remove("is-checking");
+        btn.classList.remove("is-busy");
+        btn.disabled = false;
+      }
     });
   }
 

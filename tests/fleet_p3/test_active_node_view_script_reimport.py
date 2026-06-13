@@ -246,15 +246,29 @@ class TestJsWiresBoth:
 
     def test_js_binds_both_classes(self):
         body = self.JS.read_text(encoding="utf-8")
-        # Both classes wired.
+        # Both classes wired — now via document delegation (see
+        # fix/dashboard-buttons-event-delegation: the delegation moved
+        # the dispatch from a per-button addEventListener inside a
+        # querySelectorAll().forEach loop into a SINGLE document-level
+        # listener that matches BOTH classes via .closest(). The
+        # ``kind`` is now decided inside the handler by inspecting
+        # ``btn.classList.contains("fd-node-view-script")``.).
         assert ".fd-pj-view-script" in body, "pending-card binding lost"
         assert ".fd-node-view-script" in body, (
             "active-node binding missing — owner can't re-import "
             "active nodes' scripts"
         )
-        # And openFor dispatches via the `kind` param.
-        assert 'openFor(id, name, "job")' in body
-        assert 'openFor(id, name, "node")' in body
+        # openFor is still the single dispatch entry, called with the
+        # resolved kind variable from the delegated handler.
+        assert "openFor(id, name, kind)" in body, (
+            "delegation must dispatch through openFor(id, name, kind)"
+        )
+        # Both kind constants reachable in the dispatch.
+        assert '"node"' in body and '"job"' in body
+        assert 'classList.contains("fd-node-view-script")' in body, (
+            "delegated handler must distinguish node vs job by the "
+            "button's class, not by which iterator wrote the listener"
+        )
 
     def test_js_reads_node_script_url_from_script_tag(self):
         body = self.JS.read_text(encoding="utf-8")
