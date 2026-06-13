@@ -119,10 +119,19 @@ class TestScopedGroupPolicy:
     def test_group_created_with_exact_policy(self, provider_app):
         script = _render()
         # The full add line — gather across the line-continuation.
-        flat = script.replace(" \\\n    ", " ").replace(" \\\n", " ")
-        add_line = next(
+        # feat/chr-group-idempotent-no-remove — the add line is now
+        # indented inside a ``:if [:len find] = 0 do={ /user group add
+        # ... } else={ /user group set ... }`` guard. Flatten the
+        # continuations tolerantly + strip comment-only lines.
+        import re as _re
+        flat = _re.sub(r" \\\n\s*", " ", script)
+        text = "\n".join(
             ln for ln in flat.splitlines()
-            if ln.startswith(f'add name="{EXPECTED_GROUP_NAME}"')
+            if not ln.lstrip().startswith("#")
+        )
+        add_line = next(
+            ln for ln in text.splitlines()
+            if f'/user group add name="{EXPECTED_GROUP_NAME}"' in ln
         )
         assert f"policy={EXPECTED_POLICY}" in add_line, (
             f"policy must match the audited least-privilege set; got:\n{add_line}"
@@ -141,25 +150,35 @@ class TestScopedGroupPolicy:
         """fix/chr-group-policy-granted-only — RouterOS v7
         ``/user group add policy=`` errors with «input does not
         match any value of policy» on the FIRST ``!`` token. The
-        rendered policy value must contain NO ``!`` at all."""
+        rendered policy value must contain NO ``!`` at all.
+        feat/chr-group-idempotent-no-remove also wraps the add in a
+        find-len guard — the policy value MUST be identical on both
+        the add and the set branches."""
         script = _render()
-        # Extract the joined add-line and pull the policy= value.
-        flat = script.replace(" \\\n    ", " ").replace(" \\\n", " ")
-        add_line = next(
-            ln for ln in flat.splitlines()
-            if ln.startswith(f'add name="{EXPECTED_GROUP_NAME}"')
-        )
         import re
-        m = re.search(r'policy=([^\s]+)', add_line)
-        assert m, f"could not extract policy= value from: {add_line!r}"
-        policy_value = m.group(1)
-        assert "!" not in policy_value, (
-            f"policy value must NOT contain `!` (RouterOS rejects negation "
-            f"tokens on /user group add); got: {policy_value!r}"
+        # Tolerant join of every "backslash + newline + any spaces" run,
+        # then strip comment-only lines so doc comments like
+        # `/user group add policy=...` don't false-match.
+        flat = re.sub(r" \\\n\s*", " ", script)
+        text = "\n".join(
+            ln for ln in flat.splitlines()
+            if not ln.lstrip().startswith("#")
         )
-        assert policy_value == EXPECTED_POLICY, (
-            f"policy value must equal {EXPECTED_POLICY!r}; got: {policy_value!r}"
+        # Both branches: /user group add … policy=… AND /user group set … policy=…
+        policies = re.findall(r"/user group (?:add|set) [^\n]*?policy=(\S+)", text)
+        assert len(policies) >= 2, (
+            "expected both `/user group add` and `/user group set` to "
+            "carry the policy= value (find-len idempotency guard); got: "
+            f"{policies!r}"
         )
+        for policy_value in policies:
+            assert "!" not in policy_value, (
+                f"policy value must NOT contain `!` (RouterOS rejects "
+                f"negation tokens on /user group add); got: {policy_value!r}"
+            )
+            assert policy_value == EXPECTED_POLICY, (
+                f"policy value must equal {EXPECTED_POLICY!r}; got: {policy_value!r}"
+            )
 
     def test_group_denies_forbidden_policies_by_omission(self, provider_app):
         """RouterOS denies any UNLISTED policy by default — we assert
@@ -182,12 +201,32 @@ class TestScopedGroupPolicy:
         assert 'group="full"' not in script
         assert 'group=admin' not in script
 
-    def test_group_remove_before_add_is_idempotent(self, provider_app):
-        """Re-import is safe — the group is dropped before re-creation."""
+    def test_group_provisioning_is_safe_for_reimport(self, provider_app):
+        """fix/chr-group-idempotent-no-remove — the script must NEVER
+        ``/user group remove`` (RouterOS refuses to drop a group with
+        members → halt on every re-import after the first). The
+        rendered block uses ``find-len = 0 ⇒ add, else ⇒ set`` so
+        re-imports update the policy in-place without touching members.
+        """
         script = _render()
-        rem_idx = script.index('remove [find name="hobe-fleet-mgmt"]')
-        add_idx = script.index('add name="hobe-fleet-mgmt"')
-        assert rem_idx < add_idx
+        # NO executable `/user group ... remove` anywhere.
+        bad_lines = [
+            (i + 1, ln) for i, ln in enumerate(script.splitlines())
+            if "/user group" in ln
+            and "remove" in ln
+            and not ln.lstrip().startswith("#")
+        ]
+        assert not bad_lines, (
+            "RouterOS refuses to remove a /user group that has members "
+            "(«failure: group has some users»). The script must not "
+            "emit /user group remove. Offenders:\n  "
+            + "\n  ".join(f"L{n}: {l!r}" for n, l in bad_lines)
+        )
+        # The add-or-set guard is present.
+        assert ':if ([:len [/user group find name="hobe-fleet-mgmt"]] = 0) do={' in script
+        assert "/user group set [find name=" in script
+        # Both branches carry the same policy + comment.
+        assert script.count("policy=read,write,sensitive,reboot,rest-api") >= 2
 
 
 # ════════════════════════════════════════════════════════════════════════
