@@ -389,30 +389,32 @@ class TestInvariant6WgMgmtVerifyGate:
         assert re.search(r":if \(\$mgmtReachable\) do=\{", script), script
 
     def test_fallback_keeps_ssh_winbox_open_and_logs_a_warning(self):
-        """If wg-mgmt is unreachable, the script must NOT lock the
-        operator out. Since fix/chr-script-review-remaining the fallback
-        opens BOTH layers:
-          * /ip service set ssh    address=0.0.0.0/0 disabled=no
-          * /ip service set winbox address=0.0.0.0/0 disabled=no
-          * a tagged firewall accept for tcp:22,8291 above drop-last.
-        Pre-fix the service-layer ACL stayed at PANEL_WG_ADDR/32 and the
-        firewall accept was silently blocked at the listener — the real
-        lockout bug item 2 of the review fixed.
-        """
+        """Owner review #1: if wg-mgmt is unreachable AND OPERATOR_ADMIN_IPS
+        is unset, BOTH layers must open up — the firewall AND the
+        service-layer ACL. Without the service-layer widening, the
+        temp firewall accept is silently dropped by the still-restrictive
+        `address=10.99.0.1/32`. The owner pointed this out in expert
+        review."""
         script = _render()
+        # Service-layer ACL widened to 0.0.0.0/0 (the fix).
         assert "/ip service set ssh    address=0.0.0.0/0 disabled=no" in script, (
-            "fallback must widen ssh service ACL (not just the firewall)"
+            "fallback must widen ssh SERVICE ACL to 0.0.0.0/0"
         )
         assert "/ip service set winbox address=0.0.0.0/0 disabled=no" in script, (
-            "fallback must widen winbox service ACL (not just the firewall)"
+            "fallback must widen winbox SERVICE ACL to 0.0.0.0/0"
         )
+        # Matching temp firewall rule.
         assert (
             'comment="hobe-fleet-fw-temp-emergency-admin"' in script
         ), "missing TEMP emergency-admin rule in fallback"
+        # Warning text + the break-glass recovery hint.
         assert (
             ":log warning" in script
             and "wg-mgmt NOT reachable" in script
         ), "missing operator warning in fallback"
+        assert "hobe-open-winbox" in script, (
+            "fallback warning must point at the break-glass recovery path"
+        )
 
     def test_probe_precedes_ssh_winbox_restriction_in_script_text(self):
         """The wg-mgmt probe + the `:local mgmtReachable` flag MUST

@@ -879,10 +879,27 @@
         كيف أُثبّت السكربت على المايكروتيك؟
       </summary>
       <div style="padding:14px 20px;font-size:13px;color:#1f2937;line-height:1.85">
-        <div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:600">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-          هذا السكربت يحتوي على مفاتيح WireGuard خاصّة بهذه العقدة تحديداً (IP عام،
-          هوية، مفاتيح). لا تشاركه ولا تطبّقه على أي مايكروتيك آخر.
+        {# fix/chr-script-syntax-355 owner review #5 — sensitivity banner.
+           The rendered script contains plaintext secrets: WireGuard private
+           keys (wg-mgmt + wg-data), the RADIUS shared secret, the IPsec PSK,
+           and the panel poller user password. Treat every download as
+           sensitive material. #}
+        <div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+          <div style="display:flex;align-items:flex-start;gap:8px;font-weight:700">
+            <i class="fa-solid fa-shield-halved" style="margin-top:2px"></i>
+            <div>هذا السكربت يحوي أسراراً — تعامل معه بسرّية.</div>
+          </div>
+          <ul style="margin:8px 0 0;padding-inline-start:22px;font-size:12.5px;font-weight:500;line-height:1.7">
+            <li>مفاتيح WireGuard الخاصّة لهذه العقدة (<code dir="ltr">wg-mgmt</code> + <code dir="ltr">wg-data</code>).</li>
+            <li>السرّ المشترك لـ RADIUS بين الـCHR وبروكسي RADIUS.</li>
+            <li>المفتاح المسبق التشاركي (PSK) لـ IPsec.</li>
+            <li>كلمة سرّ مستخدم اللوحة على RouterOS (قارئ المقاييس).</li>
+          </ul>
+          <div style="margin-top:8px;font-size:12.5px;font-weight:500">
+            لا تشاركه. لا تنشره. استخدمه فقط على هذه العقدة (<span id="fd-sm-secret-node">—</span>).
+            عند الشك في تسرّب أحد الأسرار:
+            <strong>تدوير الأسرار</strong> (يُعاد توليد المفاتيح والكلمات).
+          </div>
         </div>
         <div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.75">
           <i class="fa-solid fa-shield-halved"></i>

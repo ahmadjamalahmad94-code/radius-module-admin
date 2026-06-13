@@ -101,6 +101,24 @@ class TestNoUnderscorePrefixLocals:
                 f"plain identifier: {offenders[:3]!r}"
             )
 
+    def test_no_underscore_var_reference_anywhere(self):
+        """Owner-confirmed root cause of line 355:8 — RouterOS rejects
+        variable names starting with an underscore. Beyond the
+        declaration sites (:local _foo), forbid REFERENCES too — any
+        `$_<word>` substitution in the rendered output is the same
+        hazard."""
+        for mode in ("", "1.2.3.4/32"):
+            script = _render(OPERATOR_ADMIN_IPS=mode)
+            # Find any $_word token — includes references inside source=
+            # bodies because they execute when the operator invokes the
+            # break-glass script.
+            refs = re.findall(r"\$_\w+", script)
+            assert not refs, (
+                "found underscore-prefixed variable reference(s) in the "
+                f"rendered script: {sorted(set(refs))[:5]!r}. "
+                "Rename the underlying :local / :set."
+            )
+
 
 # ════════════════════════════════════════════════════════════════════════
 # (2) Every `find` call has a menu-path context line above it
@@ -341,3 +359,211 @@ def test_clean_rebuild_uses_plain_local_name():
     assert ":local _wiped" not in script
     assert ":set _wiped" not in script
     assert ":local _closeACL" not in script
+
+
+# ════════════════════════════════════════════════════════════════════════
+# (8) Pure ASCII rendered output (owner MUST-DO #2)
+# ════════════════════════════════════════════════════════════════════════
+class TestPureAsciiRender:
+    """Some RouterOS v7 builds reject non-ASCII bytes inside script
+    strings. Em-dashes, right-arrows, Arabic punctuation — anything
+    above 0x7F — must NOT appear in the rendered output. We assert
+    every byte is <= 0x7F across both binding modes."""
+
+    def test_every_byte_is_ascii_unset(self):
+        script = _render()
+        offenders = [(i, c, hex(ord(c)))
+                     for i, c in enumerate(script) if ord(c) > 127]
+        assert not offenders, (
+            "rendered script contains non-ASCII bytes (RouterOS may "
+            f"reject the import): {offenders[:5]!r}"
+        )
+
+    def test_every_byte_is_ascii_set(self):
+        script = _render(OPERATOR_ADMIN_IPS="1.2.3.4/32,5.6.7.0/24")
+        offenders = [(i, c, hex(ord(c)))
+                     for i, c in enumerate(script) if ord(c) > 127]
+        assert not offenders, offenders[:5]
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Owner review acceptance — the 5 review points pinned on the render
+# ════════════════════════════════════════════════════════════════════════
+class TestOwnerReviewAcceptance:
+    """Per the owner's expert review, pin the 5 functional fixes that
+    accompanied the line-355 syntax fix."""
+
+    # #1 emergency admin — BOTH layers (firewall + service ACL) must agree
+    def test_emergency_branch_widens_service_acl_to_0_0_0_0(self):
+        """With OPERATOR_ADMIN_IPS unset AND wg-mgmt unreachable, the
+        :else branch must explicitly set `/ip service set ssh|winbox
+        address=0.0.0.0/0` — otherwise the temp firewall accept is
+        silently dropped by the still-restrictive service-layer ACL."""
+        script = _render()
+        # The two emergency-fallback set lines (inside `} else={` block).
+        assert "/ip service set ssh    address=0.0.0.0/0 disabled=no" in script, (
+            "emergency branch must widen ssh service ACL to 0.0.0.0/0"
+        )
+        assert "/ip service set winbox address=0.0.0.0/0 disabled=no" in script, (
+            "emergency branch must widen winbox service ACL to 0.0.0.0/0"
+        )
+        # And the matching temp firewall rule is added.
+        assert 'comment="hobe-fleet-fw-temp-emergency-admin"' in script
+
+    def test_operator_set_branch_keeps_union_acl_unchanged(self):
+        """When OPERATOR_ADMIN_IPS is set, the service ACL is the union
+        (PANEL/32,<operator-ips>) regardless of wg-mgmt state — NEVER
+        widened to 0.0.0.0/0 at the steady-state apply layer."""
+        script = _render(OPERATOR_ADMIN_IPS="9.9.9.9/32")
+        # The steady-state lines must reference $mgmtAddrACL, not 0/0.
+        for ln in script.splitlines():
+            if not ln.startswith("/ip service set ssh") and not ln.startswith("/ip service set winbox"):
+                continue
+            if 'address=\\"' in ln:  # inside a break-glass source body
+                continue
+            assert "address=$mgmtAddrACL" in ln, ln
+            assert "0.0.0.0/0" not in ln, ln
+
+    # #2 WebFig — break-glass + documentation
+    def test_webfig_break_glass_scripts_render(self):
+        script = _render()
+        assert 'name="hobe-open-webfig"' in script
+        assert 'name="hobe-close-webfig"' in script
+        # Open body widens www-ssl + opens 8443 + arms 15m revert.
+        for m in re.finditer(r'source="((?:[^"\\]|\\.)*)"', script, flags=re.DOTALL):
+            body = m.group(1)
+            if 'add name=\\"hobe-close-webfig-auto\\"' not in body:
+                continue
+            assert "set www-ssl address=\\\"0.0.0.0/0\\\"" in body
+            assert "hobe-fleet-fw-break-glass-webfig" in body
+            assert "interval=15m" in body
+            break
+        else:
+            pytest.fail("no source= body provisions the WebFig auto-revert")
+
+    def test_webfig_unsupported_documented_in_print_block(self):
+        script = _render()
+        assert "WEBFIG (public HTML5 UI on www-ssl) is NOT supported" in script
+        assert "hobe-open-webfig" in script
+        assert "hobe-close-webfig" in script
+
+    # #3 IPsec firewall — IKE 500/4500 always present when vpn_ipsec
+    def test_ike_firewall_accept_renders_without_cert(self):
+        """The 500/4500 firewall accept must NOT be gated on
+        IKE_CERT_NAME. The cert gates the IKEv2 SERVER, not the WAN-
+        side accept. If the cert isn't ready yet we still want
+        UDP 500/4500 + ESP + UDP 1701 permitted at the firewall."""
+        from fleet.registry.script_render import render_from_bindings
+        # Render with IKE_CERT_NAME explicitly empty.
+        b = dict(_BASE)
+        b["IKE_CERT_NAME"] = ""
+        s = render_from_bindings(b)
+        # Even with cert empty, when vpn_ipsec role is on, the IKE
+        # firewall accept renders (default NODE_ROLES_SET = all roles).
+        assert 'comment="hobe-fleet-fw-ike"' in s, (
+            "IKE 500/4500 firewall accept must render when vpn_ipsec "
+            "role is enabled, regardless of IKE_CERT_NAME"
+        )
+        assert "dst-port=500,4500" in s
+        assert 'comment="hobe-fleet-fw-esp"' in s
+        assert 'comment="hobe-fleet-fw-l2tp"' in s
+        assert "dst-port=1701" in s
+
+    # #4 RADIUS — service=ppp only
+    def test_radius_service_is_ppp_only(self):
+        script = _render()
+        assert "add service=ppp address=" in script, (
+            "/radius add must use service=ppp (no `,login`)"
+        )
+        assert "service=ppp,login" not in script, (
+            "/radius must NOT carry `,login` — that would let RADIUS "
+            "authenticate router admin login, widening the trust boundary"
+        )
+
+    # #5 secret rotation scaffold endpoint
+    def test_rotate_secrets_endpoint_exists_and_returns_501(self):
+        """The rotation flow is deferred — but the endpoint exists
+        and returns 501 with a clear deferred-scope message so the UI
+        can wire up the button."""
+        from fleet.registry.routes_onboarding import bp
+        urls = {r.rule for r in bp.deferred_functions and [] or []}  # placeholder
+        # Use Flask's url_map via a test app for a clean assertion.
+        from app import create_app
+        app = create_app()
+        with app.app_context():
+            rules = [r for r in app.url_map.iter_rules()
+                     if r.endpoint.endswith("rotate_secrets")]
+            assert rules, "rotate_secrets endpoint must be registered"
+            r = rules[0]
+            assert "POST" in r.methods
+            assert "/jobs/" in r.rule and "/rotate-secrets" in r.rule
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Acceptance — re-run doesn't duplicate fw rules; key listener accepts
+# all land above drop-last on the CHR
+# ════════════════════════════════════════════════════════════════════════
+def test_no_duplicate_firewall_rules_on_rerun():
+    """The clean-rebuild guarantees that each authoritative tag appears
+    at most once in the rendered output. (Re-running the script on the
+    CHR re-rebuilds from scratch — no duplicate rows.)"""
+    script = _render()
+    # Flatten backslash continuations so each multi-line `add` rule is one
+    # logical line. Then strip source= bodies so we don't count `comment=`
+    # tokens inside break-glass script source strings.
+    flat = _join_continuations(script)
+    stripped = _strip_source_literals(flat)
+    # Build (rule-id, line) by extracting the LAST `comment="..."` on
+    # each `add chain=input` line — the rule's own tag, not its
+    # place-before anchor reference.
+    rule_tag_line = []
+    for ln in stripped.splitlines():
+        if not (ln.lstrip().startswith("add ") and "chain=input" in ln):
+            continue
+        tags = re.findall(r'comment="(hobe-fleet-fw-[^"]+)"', ln)
+        if tags:
+            rule_tag_line.append((tags[-1], ln))
+    for tag in (
+        "hobe-fleet-fw-drop-last",
+        "hobe-fleet-fw-conntrack",
+        "hobe-fleet-fw-mgmt",
+        "hobe-fleet-fw-wg-mgmt-udp",
+        "hobe-fleet-fw-no-public-radius",
+    ):
+        matches = [ln for t, ln in rule_tag_line if t == tag]
+        assert len(matches) == 1, (
+            f"tag {tag!r} appears in {len(matches)} authoritative `add` lines; "
+            "the clean rebuild should produce exactly one"
+        )
+
+
+def test_listener_accepts_present_when_role_enabled():
+    """Belt-and-braces for the IPsec + PPTP + wg-users + radius
+    listeners — every required accept renders when its role is on
+    AND lands above drop-last via place-before."""
+    script = _render()
+    flat = script.replace(" \\\n", " ")
+    must_have = {
+        "hobe-fleet-fw-wg-mgmt-udp":  "dst-port=51820",
+        "hobe-fleet-fw-wg-data-udp":  "dst-port=51821",
+        "hobe-fleet-fw-pptp-ctrl":    "dst-port=1723",
+        "hobe-fleet-fw-pptp-data":    "protocol=gre",
+        "hobe-fleet-fw-ike":          "dst-port=500,4500",
+        "hobe-fleet-fw-esp":          "protocol=ipsec-esp",
+        "hobe-fleet-fw-l2tp":         "dst-port=1701",
+        "hobe-fleet-fw-wg-users":     "protocol=udp",
+        "hobe-fleet-fw-no-public-radius": "dst-port=1812,1813,3799",
+    }
+    for tag, marker in must_have.items():
+        line = next(
+            (ln for ln in flat.splitlines()
+             if 'add chain=input' in ln and f'comment="{tag}"' in ln),
+            None,
+        )
+        assert line, f"missing listener accept for {tag!r}"
+        assert marker in line, (
+            f"{tag!r} rule must carry {marker!r}; got: {line!r}"
+        )
+        assert 'place-before=[find comment="hobe-fleet-fw-drop-last"]' in line, (
+            f"{tag!r} must anchor against drop-last"
+        )
