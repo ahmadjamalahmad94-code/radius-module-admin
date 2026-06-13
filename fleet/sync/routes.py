@@ -82,4 +82,33 @@ def tick_sync_job(job_id: int):
     return jsonify({"ok": True, "job": service.to_dict(job)})
 
 
+@bp.post("/server-peers/resync")
+@login_required
+def resync_server_peers():
+    """Fast-path: reconcile the wg-mgmt peer set on the panel host NOW.
+
+    fix/fleet-wireguard-provisioning (BUG C+D): «إعادة مزامنة peers
+    الخادم». A node added in the DB/UI was sometimes never matched by
+    a server-side ``wg set wg-mgmt peer ...`` — so the CHR's wg-mgmt
+    dial-in was rejected and REST stayed unreachable. The full
+    fleet-resync covers this as a side effect, but the operator
+    also needs a fast, focused «just-add-the-peer» button without
+    spinning a full pipeline (and the «إعادة مزامنة الأسطول»
+    button on the dashboard calls THIS too, so the same peer-add
+    runs without waiting for every check stage).
+
+    Returns the ApplyResult shape from
+    :func:`fleet.sync.wg_apply.apply_panel_peers` — the front-end
+    flashes the Arabic message verbatim.
+    """
+    try:
+        result = service.reconcile_panel_host()
+    except Exception as exc:  # noqa: BLE001 — surface, never crash the call
+        return jsonify({
+            "ok": False, "error": "internal_error",
+            "message": f"تعذّر إعادة مزامنة نظراء الخادم: {exc}",
+        }), 500
+    return jsonify({"ok": True, "result": result})
+
+
 __all__ = ["bp"]

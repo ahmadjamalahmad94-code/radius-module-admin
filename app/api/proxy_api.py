@@ -281,6 +281,13 @@ def routing_table():
             "public_ip": n.public_ip,
             "wg_mgmt_ip": n.wg_mgmt_ip,
             "wg_data_ip": _derive_wg_data_ip(n.wg_mgmt_ip),
+            # fix/fleet-wireguard-provisioning — surface the CHR's wg-data
+            # pubkey alongside the address so the proxy agent can correlate
+            # an incoming RADIUS packet to a node identity in ONE read
+            # (vs cross-referencing /api/proxy/wg-peers). Empty string ⇒
+            # legacy row without a stored data pubkey; proxy falls back
+            # to /api/proxy/wg-peers as the authoritative peer source.
+            "wg_data_pubkey": (n.wg_data_pubkey or "").strip(),
             "status": n.status,
             "enabled": bool(n.enabled),
             "drain": bool(n.drain),

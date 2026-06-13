@@ -156,9 +156,51 @@ def current_panel_peer_pubkeys() -> list[str] | None:
         return None
 
 
+def read_live_panel_pubkey() -> str | None:
+    """Read the LIVE control-server wg-mgmt PUBLIC key via the helper.
+
+    fix/fleet-wireguard-provisioning (BUG B): every CHR script MUST be
+    rendered with the key the control server is using RIGHT NOW. A
+    stored value in ``Setting fleet.infra.PANEL_WG_PUBKEY`` drifts as
+    soon as anyone runs ``wg genkey`` on the host (chr-vpn-1 / chr-vpn-2
+    both shipped with stale keys → permanent wg-mgmt handshake failure).
+
+    Returns:
+        * the 44-char base64 public key on success,
+        * ``None`` when the helper is absent (dev/CI, fresh install
+          before zero-touch was applied) OR the wg-mgmt interface is
+          not up. The caller must decide what to do — typically fall
+          back to ``infra_settings.panel_pubkey_for_display()`` and
+          warn the operator that the rendered script may carry a stale
+          key (see fleet.registry.onboarding_service._build_bindings).
+
+    Never raises; failures are reported via ``None`` + a panel log line
+    (the caller logs the exact reason — kept out of this module so we
+    stay Flask-import-free for the unit tests).
+    """
+    if not helper_installed():
+        return None
+    ok, out = _run_helper("pubkey", None)
+    if not ok:
+        return None
+    try:
+        parsed = json.loads(out) if out else {}
+    except (ValueError, TypeError):
+        return None
+    key = str(parsed.get("public_key") or "").strip()
+    # Defence in depth: the helper is supposed to print a single
+    # 44-char base64 key. Anything else (empty, multi-line, wrong
+    # length) is treated as a read failure so a malformed value
+    # never reaches a CHR script.
+    if len(key) == 44 and key.endswith("="):
+        return key
+    return None
+
+
 __all__ = [
     "ApplyResult",
     "apply_panel_peers",
     "current_panel_peer_pubkeys",
     "helper_installed",
+    "read_live_panel_pubkey",
 ]

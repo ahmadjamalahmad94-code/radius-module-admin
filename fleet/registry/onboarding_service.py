@@ -660,6 +660,59 @@ class OnboardingService:
         self._clear_job_error(job)
         job.advance("script_generated")
         db.session.commit()
+
+        # fix/fleet-wireguard-provisioning (BUG C+D) — the panel itself
+        # must add THIS CHR's wg-mgmt peer on the control server NOW, and
+        # persist it to /etc/wireguard/wg-mgmt.conf so it survives a
+        # reboot. Pre-fix, the panel created the FleetChrNode row + the
+        # script but never added the matching server-side peer → the CHR
+        # dialed in, presented its (correct) wg-mgmt pubkey, the server
+        # rejected it as unknown, no handshake → REST forever
+        # unreachable → operator saw the cascading "rest_failed". The
+        # owner manually ran ``wg set wg-mgmt peer <chr_pubkey>
+        # allowed-ips <chr_wg_mgmt_ip>/32`` on every new node.
+        #
+        # ``reconcile_panel_host()`` is idempotent (helper reconciles the
+        # FULL desired set, ``wg-quick save`` persists), helper-absent =
+        # reported no-op (dev/CI), never raises. We log the outcome so a
+        # silent helper-missing case is auditable.
+        try:
+            from fleet.sync.service import reconcile_panel_host
+            from flask import current_app
+            result = reconcile_panel_host()
+            if result.get("available") and result.get("applied"):
+                current_app.logger.info(
+                    "onboarding: wg-mgmt peer reconciled on panel host "
+                    "after render(node=%s) — desired=%s applied=%s",
+                    (db.session.get(FleetChrNode, job.chr_id).name
+                     if job.chr_id else "?"),
+                    result.get("desired_count"),
+                    len(result.get("applied_pubkeys") or []),
+                )
+            elif not result.get("available"):
+                current_app.logger.info(
+                    "onboarding: wg sudo-helper absent — server-side "
+                    "peer add SKIPPED; install via "
+                    "deploy/zero_touch/install_wg_helper.sh on the panel "
+                    "host. wg-mgmt handshake will fail until then."
+                )
+            else:
+                current_app.logger.warning(
+                    "onboarding: server-side peer reconcile reported "
+                    "failure: %s", result.get("message"),
+                )
+        except Exception as exc:  # noqa: BLE001 — render must succeed even if reconcile fails
+            try:
+                from flask import current_app
+                current_app.logger.warning(
+                    "onboarding: server-side peer reconcile RAISED "
+                    "(%s) — script generated but wg-mgmt peer may be "
+                    "absent on control server. Run a manual fleet "
+                    "resync from the dashboard.",
+                    exc.__class__.__name__,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return job, script
 
     # ── step 3: pushed ───────────────────────────────────────────────────────
@@ -732,6 +785,52 @@ class OnboardingService:
                 return candidate
         raise OnboardingError("نفد مجال عناوين wg-mgmt (10.99.0.0/24).")
 
+    def _read_live_panel_pubkey(self) -> str:
+        """Read the LIVE wg-mgmt PUBLIC key from the control server.
+
+        Returns the 44-char base64 key or ``""`` when the wg sudo-helper
+        is absent / the wg-mgmt interface is not up. Empty result ⇒ the
+        caller keeps the Setting-stored value (older nodes / fresh dev
+        installs). Logs the fallback so the operator can see in
+        ``journalctl`` exactly which CHR scripts were rendered with a
+        non-live key.
+
+        Lifted out of ``_build_bindings`` so tests can stub it without
+        having to mock the full helper chain.
+        """
+        try:
+            from fleet.sync.wg_apply import (
+                helper_installed as _hi,
+                read_live_panel_pubkey as _read,
+            )
+        except Exception:  # noqa: BLE001 — branch w/o fleet.sync (legacy)
+            return ""
+        if not _hi():
+            try:
+                from flask import current_app
+                current_app.logger.info(
+                    "onboarding: wg sudo-helper not installed — falling "
+                    "back to Setting fleet.infra.PANEL_WG_PUBKEY. Run "
+                    "deploy/zero_touch/install_wg_helper.sh on the panel "
+                    "host to render every CHR script with the live key."
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return ""
+        live = _read()
+        if not live:
+            try:
+                from flask import current_app
+                current_app.logger.warning(
+                    "onboarding: wg sudo-helper installed but live "
+                    "panel pubkey read returned empty (wg-mgmt down?) — "
+                    "falling back to Setting fleet.infra.PANEL_WG_PUBKEY"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return ""
+        return live
+
     def _build_bindings(self, job: OnboardingJob) -> dict[str, Any]:
         """Merge per-CHR bindings (from the node + vaulted keys) with the
         fleet-constant config (§6.5.1). The renderer (T3) owns the template."""
@@ -771,6 +870,54 @@ class OnboardingService:
         # fleet-constant
         for key in _FLEET_CONST_DEFAULTS:
             bindings[key] = self._const(key)
+
+        # fix/fleet-wireguard-provisioning (BUG B) — render with the LIVE
+        # control + proxy WG pubkeys, never a stale Setting row.
+        #
+        # Background: chr-vpn-1 and chr-vpn-2 both shipped with a stored
+        # PANEL_WG_PUBKEY that no longer matched the live key on the
+        # control server (rotation happened on the host without an
+        # accompanying Setting update). The CHR's wg-mgmt peer trusted
+        # the stale key → permanent handshake failure → no REST → "rest
+        # _failed" forever. The owner had to manually fix it on every
+        # node before wg-mgmt would come up. This block makes that
+        # fix automatic + records the snapshot so future drift is
+        # diagnosable in one DB read.
+        live_panel = self._read_live_panel_pubkey()
+        if live_panel:
+            stored = (bindings.get("PANEL_WG_PUBKEY") or "").strip()
+            if stored and stored != live_panel:
+                try:
+                    from flask import current_app
+                    current_app.logger.warning(
+                        "onboarding: stale Setting fleet.infra.PANEL_WG_PUBKEY "
+                        "(stored=%s…, live=%s…) — using LIVE key for node=%s",
+                        stored[:8], live_panel[:8], node.name,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            bindings["PANEL_WG_PUBKEY"] = live_panel
+        # Proxy pubkey is read via the proxy contract (settings layer
+        # remains the source of truth until the proxy publishes a
+        # ``/api/proxy/wg-public-key`` endpoint coordinated with
+        # fix/proxy-wg-data-provisioning). Snapshot whatever we use so
+        # the panel can spot a future stale-key by diffing snapshot
+        # vs the proxy's published key.
+        proxy_pubkey_used = (bindings.get("PROXY_WG_PUBKEY") or "").strip()
+
+        # Persist the snapshot onto the node row so the troubleshoot
+        # page and future audits can answer "what key did we embed in
+        # the last script?" without re-rendering. Best-effort: a DB
+        # write failure must not block render.
+        try:
+            node.control_wg_public_key_snapshot = (
+                bindings.get("PANEL_WG_PUBKEY") or ""
+            ).strip()
+            node.proxy_wg_public_key_snapshot = proxy_pubkey_used
+            db.session.add(node)
+            db.session.commit()
+        except Exception:  # noqa: BLE001 — snapshot is diagnostic, not load-bearing
+            db.session.rollback()
 
         # Per-node role set (feat/chr-unified-provisioning-complete). The
         # template gates each VPN service + its firewall accept on this

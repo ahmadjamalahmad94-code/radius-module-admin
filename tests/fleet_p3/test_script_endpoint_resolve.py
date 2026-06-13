@@ -121,20 +121,27 @@ def test_resolve_helper_with_retry_loop():
 
 
 def test_resolve_sets_endpoint_address_on_both_peers():
-    """The override MUST `set` endpoint-address on BOTH peers using the
-    resolved IP variables — not write hostnames back."""
+    """The script MUST set endpoint-address on BOTH peers using the
+    resolved IP variables.
+
+    Since fix/fleet-wireguard-provisioning (BUG A) the per-peer
+    ``set`` is wrapped in a ``hobeSetEndpoint`` function so we never
+    write an empty value -- a wrapper invocation per peer is the
+    equivalent contract.
+    """
     script = _render()
-    flat = script.replace(" \\\n", " ")
-    mgmt_set = re.search(
-        r'set \[find comment="hobe-fleet-mgmt"\] endpoint-address=\$panelIP endpoint-port=\d+',
-        flat,
+    # The wrapper invocation: $hobeSetEndpoint "<comment>" $ip <port> "<fallback>"
+    assert '$hobeSetEndpoint "hobe-fleet-mgmt" $panelIP' in script, (
+        "missing $hobeSetEndpoint wrapper for the wg-mgmt peer"
     )
-    data_set = re.search(
-        r'set \[find comment="hobe-fleet-data"\] endpoint-address=\$proxyIP endpoint-port=\d+',
-        flat,
+    assert '$hobeSetEndpoint "hobe-fleet-data" $proxyIP' in script, (
+        "missing $hobeSetEndpoint wrapper for the wg-data peer"
     )
-    assert mgmt_set, "missing `set` of wg-mgmt endpoint-address from $panelIP"
-    assert data_set, "missing `set` of wg-data endpoint-address from $proxyIP"
+    # And the wrapper itself MUST contain `endpoint-address=` somewhere
+    # (else it isn't actually setting anything).
+    assert "endpoint-address=$clean" in script, (
+        "hobeSetEndpoint must set endpoint-address=$clean when resolve succeeds"
+    )
 
 
 def test_resolve_called_on_both_panel_and_proxy_hosts():
@@ -153,17 +160,27 @@ def test_resolve_called_on_both_panel_and_proxy_hosts():
 
 
 def test_resolve_uses_per_plane_port_in_set():
-    """The `set` MUST use the per-plane port (PANEL=51820 / PROXY=51821 or
-    operator-chosen override) — not a stale hardcoded value."""
+    """The wrapper invocation MUST pass the per-plane port (PANEL=51820 /
+    PROXY=51821 or operator-chosen override) -- not a stale hardcoded
+    value. The signature is `$hobeSetEndpoint "<comment>" $ip <port>
+    "<fallback>"`, so we assert the port literal lands as the third
+    argument on each call.
+    """
     script = _render(
         PANEL_WG_ENDPOINT="control.hoberadius.com:9999",
         PROXY_WG_ENDPOINT="proxy.hoberadius.com:8888",
     )
-    flat = script.replace(" \\\n", " ")
-    mgmt_set = next(l for l in flat.splitlines() if 'comment="hobe-fleet-mgmt"' in l and "set " in l)
-    data_set = next(l for l in flat.splitlines() if 'comment="hobe-fleet-data"' in l and "set " in l)
-    assert "endpoint-port=9999" in mgmt_set, mgmt_set
-    assert "endpoint-port=8888" in data_set, data_set
+    mgmt = next(
+        l for l in script.splitlines()
+        if '$hobeSetEndpoint "hobe-fleet-mgmt"' in l
+    )
+    data = next(
+        l for l in script.splitlines()
+        if '$hobeSetEndpoint "hobe-fleet-data"' in l
+    )
+    # arg-3 is the port (panelIP / proxyIP is arg-2).
+    assert " 9999 " in mgmt, mgmt
+    assert " 8888 " in data, data
 
 
 # ─── Belt-and-braces ────────────────────────────────────────────────────────
@@ -185,8 +202,9 @@ def test_no_colon_port_anywhere_in_endpoint_address_even_after_resolve():
 
 def test_set_block_runs_after_both_peers_exist():
     """Logical order: both `add interface=wg-mgmt` and `add interface=wg-data`
-    must appear before the `set [find comment=…]` lines. Otherwise the find
-    returns empty and the set is a no-op."""
+    must appear before the `$hobeSetEndpoint` calls. Otherwise the
+    wrapper's `find comment=...` returns empty and the set is a no-op.
+    """
     script = _render()
     flat = script.replace(" \\\n", " ")
     lines = flat.splitlines()
@@ -199,14 +217,14 @@ def test_set_block_runs_after_both_peers_exist():
 
     mgmt_add  = first('add interface=wg-mgmt ')
     data_add  = first('add interface=wg-data ')
-    mgmt_set  = first('comment="hobe-fleet-mgmt"] endpoint-address=$panelIP')
-    data_set  = first('comment="hobe-fleet-data"] endpoint-address=$proxyIP')
+    mgmt_set  = first('$hobeSetEndpoint "hobe-fleet-mgmt" $panelIP')
+    data_set  = first('$hobeSetEndpoint "hobe-fleet-data" $proxyIP')
 
     assert mgmt_add >= 0 and data_add >= 0
     assert mgmt_set >= 0 and data_set >= 0
     assert mgmt_set > mgmt_add, (
-        f"mgmt `set` (line {mgmt_set}) must come after `add` (line {mgmt_add})"
+        f"mgmt wrapper (line {mgmt_set}) must come after `add` (line {mgmt_add})"
     )
     assert data_set > data_add, (
-        f"data `set` (line {data_set}) must come after `add` (line {data_add})"
+        f"data wrapper (line {data_set}) must come after `add` (line {data_add})"
     )

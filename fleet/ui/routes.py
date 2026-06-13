@@ -1230,7 +1230,10 @@ def fleet_chr_node_poll_metrics_now(node_id: int):
     def _solo_collector(n):
         if n.id != target_id:
             from fleet.health.routeros_collector import Sample
-            return Sample(error="not_targeted")
+            return Sample(
+                error="not_targeted",
+                error_detail=_not_targeted_diagnostics(node, n),
+            )
         from fleet.health.routeros_collector import collect as _real
         return _real(n)
 
@@ -1246,6 +1249,74 @@ def fleet_chr_node_poll_metrics_now(node_id: int):
         },
         "row": row,
     })
+
+
+def _not_targeted_diagnostics(requested, sibling) -> str:
+    """fix/fleet-wireguard-provisioning (BUG L) — never return a bare
+    ``not_targeted``. Pack everything the operator needs to know why a
+    different node landed in this collector pass into a SINGLE string
+    (Sample.error_detail is a string today; we serialise as JSON so
+    the row payload / future structured callers can parse).
+
+    The classic field confusion was: "the poll_all loop scanned chr-A
+    but I asked about chr-B" -- silent in the old shape, surfaced as
+    a structured payload here so the UI / dashboard JS can show the
+    operator exactly which node they ARE seeing and what they EXPECTED.
+    """
+    import json as _json
+    from fleet.health.routeros_creds import credentials_for as _creds
+    requested_creds = None
+    actual_creds = None
+    try:
+        requested_creds = _creds(requested)
+    except Exception:  # noqa: BLE001 — diagnostics must never raise
+        pass
+    try:
+        actual_creds = _creds(sibling)
+    except Exception:  # noqa: BLE001
+        pass
+
+    payload = {
+        "kind": "not_targeted",
+        "requested": {
+            "id": getattr(requested, "id", None),
+            "name": getattr(requested, "name", "?"),
+            "expected_wg_mgmt_ip": getattr(requested, "wg_mgmt_ip", ""),
+            "expected_wg_mgmt_pubkey": (
+                getattr(requested, "wg_mgmt_pubkey", "") or ""
+            )[:44],
+            "expected_rest_host": (
+                f"{getattr(requested, 'wg_mgmt_ip', '?')}:"
+                f"{getattr(requested, 'routeros_api_port', 8443)}"
+            ),
+            "control_wg_public_key_snapshot": (
+                getattr(requested, "control_wg_public_key_snapshot", "") or ""
+            )[:44],
+        },
+        "actually_polled": {
+            "id": getattr(sibling, "id", None),
+            "name": getattr(sibling, "name", "?"),
+            "wg_mgmt_ip": getattr(sibling, "wg_mgmt_ip", ""),
+            "wg_mgmt_pubkey": (
+                getattr(sibling, "wg_mgmt_pubkey", "") or ""
+            )[:44],
+            "rest_host": (
+                f"{getattr(sibling, 'wg_mgmt_ip', '?')}:"
+                f"{getattr(sibling, 'routeros_api_port', 8443)}"
+            ),
+        },
+        "reason_ar": (
+            "تم استدعاء جامع القياسات بعقدة مختلفة عن المطلوبة - "
+            "هذا سلوك مقصود (poll_all يمشي بكل العقد)؛ "
+            "النتيجة المعروضة في الواجهة تخص العقدة المطلوبة فقط."
+        ),
+        "reason_code": "poll_all_sibling_skipped",
+        "creds_state": {
+            "requested_has_creds": requested_creds is not None,
+            "sibling_has_creds": actual_creds is not None,
+        },
+    }
+    return _json.dumps(payload, ensure_ascii=False)
 
 
 __all__ = ["bp"]

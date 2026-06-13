@@ -675,6 +675,12 @@ def ensure_schema_compatibility(app: Flask) -> None:
             # the stale-script flag flipped on panel-key drift.
             "wg_data_pubkey": "TEXT NOT NULL DEFAULT ''",
             "needs_reimport": bool_false,
+            # fix/fleet-wireguard-provisioning (BUG B): snapshot of the LIVE
+            # control + proxy WG pubkeys that were embedded in the last
+            # rendered script for this node. Empty ⇒ never rendered (or
+            # helper absent at render time).
+            "control_wg_public_key_snapshot": "TEXT NOT NULL DEFAULT ''",
+            "proxy_wg_public_key_snapshot": "TEXT NOT NULL DEFAULT ''",
         })
         # Backfill wg_data_pubkey from the onboarding job refs for rows that
         # predate the column. Best-effort + idempotent: only touches rows that

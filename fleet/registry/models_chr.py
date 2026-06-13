@@ -135,6 +135,21 @@ class FleetChrNode(TimestampMixin, db.Model):
     needs_reimport = db.Column(
         db.Boolean, nullable=False, default=False, server_default=db.text("FALSE")
     )
+    # fix/fleet-wireguard-provisioning (BUG B): snapshot of the LIVE control-
+    # server wg-mgmt pubkey and LIVE proxy wg-data pubkey that were embedded
+    # into THIS node's last rendered script. Set by OnboardingService.render
+    # using fleet.sync.wg_apply.read_live_panel_pubkey() (and the proxy-key
+    # equivalent). Diverging from the panel's stored ``PANEL_WG_PUBKEY`` is
+    # the chr-vpn-1/2 root-cause signal: the script the operator imported
+    # trusted a stale key, so the CHR's wg-mgmt peer rejected the panel's
+    # handshake forever. Empty string ⇒ never rendered yet (or helper was
+    # absent and the renderer fell back to the stored key).
+    control_wg_public_key_snapshot = db.Column(
+        db.Text, nullable=False, default="", server_default=""
+    )
+    proxy_wg_public_key_snapshot = db.Column(
+        db.Text, nullable=False, default="", server_default=""
+    )
     # RouterOS REST API port we use for live metrics polling. Default 8443
     # because the production deploy occupies 443 with SSTP; the unified
     # provisioning script enables ``www-ssl`` on this port and binds it to

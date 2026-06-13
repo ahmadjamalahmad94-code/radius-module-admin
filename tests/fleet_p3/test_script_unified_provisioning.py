@@ -485,10 +485,12 @@ class TestSingleImportContext:
         script = _render()
         # :local panelIP exists.
         assert ":local panelIP" in script
-        # And the wg-mgmt peer is updated right after with the variable.
+        # And the wg-mgmt peer is updated right after with the variable
+        # -- via the $hobeSetEndpoint wrapper since fix/fleet-wireguard-
+        # provisioning (BUG A), which never overwrites with empty.
         idx = script.index(":local panelIP")
         following = script[idx: idx + 400]
-        assert "endpoint-address=$panelIP" in following
+        assert '$hobeSetEndpoint "hobe-fleet-mgmt" $panelIP' in following
 
 
 # ════════════════════════════════════════════════════════════════════════

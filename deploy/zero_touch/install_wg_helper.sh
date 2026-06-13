@@ -43,7 +43,7 @@ cat > "$TMP_SUDOERS" <<EOF
 # Managed by deploy/zero_touch/install_wg_helper.sh — DO NOT EDIT BY HAND.
 # Lets the unprivileged panel user reconcile wg-mgmt peers via the single
 # scoped helper, and nothing else.
-${PANEL_USER} ALL=(root) NOPASSWD: ${HELPER_DST} apply, ${HELPER_DST} show
+${PANEL_USER} ALL=(root) NOPASSWD: ${HELPER_DST} apply, ${HELPER_DST} show, ${HELPER_DST} pubkey
 EOF
 # Validate BEFORE installing — a broken sudoers file is dangerous.
 visudo -c -f "$TMP_SUDOERS"

@@ -72,6 +72,21 @@ def cmd_show() -> None:
     print(json.dumps({"peers": _current_peers(iface)}))
 
 
+def cmd_pubkey() -> None:
+    """Print the LIVE wg-mgmt INTERFACE public key as JSON.
+
+    fix/fleet-wireguard-provisioning (BUG B): the panel must embed the
+    public key the control server is using RIGHT NOW into every rendered
+    CHR script — not the (potentially stale) value stored in the DB.
+    ``wg show wg-mgmt public-key`` is read-only and needs no extra
+    privilege beyond what ``apply`` already requires (the wg interface
+    itself is owned by root).
+    """
+    iface = "wg-mgmt"
+    out = _wg("show", iface, "public-key").strip()
+    print(json.dumps({"interface": iface, "public_key": out}))
+
+
 def cmd_apply() -> None:
     try:
         payload = json.load(sys.stdin)
@@ -108,10 +123,12 @@ def cmd_apply() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) < 2 or sys.argv[1] not in ("apply", "show"):
-        _die("usage: hobe-wg-sync {apply|show}")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("apply", "show", "pubkey"):
+        _die("usage: hobe-wg-sync {apply|show|pubkey}")
     if sys.argv[1] == "show":
         cmd_show()
+    elif sys.argv[1] == "pubkey":
+        cmd_pubkey()
     else:
         cmd_apply()
 

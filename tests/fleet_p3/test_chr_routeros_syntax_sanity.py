@@ -284,18 +284,23 @@ def test_break_glass_names_and_behavior_render_correctly():
     # `on-event="..."`. Both must be the documented names.
     assert 'add name="hobe-open-winbox"' in script
     assert 'add name="hobe-close-winbox"' in script
-    # Open script widens winbox (we look inside any source= body that
-    # mentions hobe-close-winbox-auto — that's the open script).
+    # Open script widens winbox. The OPEN script body adds a scheduler
+    # named hobe-close-winbox-auto (the CLOSE script removes it).
+    # Pre-BUG-G the test could distinguish by the auto name alone;
+    # since close-first ordering both bodies mention the auto name, so
+    # we additionally require the "opening WinBox for 15 minutes"
+    # banner that is unique to the open body.
     for m in re.finditer(r'source="((?:[^"\\]|\\.)*)"', script, flags=re.DOTALL):
         body = m.group(1)
-        if "hobe-close-winbox-auto" not in body:
+        if "opening WinBox for 15 minutes" not in body:
             continue
         assert "set winbox address=" in body
         assert "0.0.0.0/0" in body
         assert "/system script run hobe-close-winbox" in body
+        assert "hobe-close-winbox-auto" in body
         break
     else:
-        pytest.fail("no source= body schedules the auto-revert")
+        pytest.fail("no source= body identified as the open script")
 
 
 def test_close_script_restores_panel_only_acl_when_operator_ips_unset():

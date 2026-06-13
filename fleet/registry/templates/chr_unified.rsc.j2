@@ -203,8 +203,17 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shar
 # ---- 2b. Resolve peer hostnames -> set IP literal on each peer ----
 # Field finding (fix/fleet-endpoint-resolve): RouterOS doesn't always
 # resolve the peer host into a working endpoint at peer-add time.
-# Retries 5x with 2s back-off; on permanent failure we leave the hostname
-# in place + :log error.
+# Retries 5x with 2s back-off.
+#
+# fix/fleet-wireguard-provisioning (BUG A): chr-vpn-2 came up with
+# endpoint-address="" on BOTH peers even though :resolve succeeded in
+# the log -- some build/path of RouterOS returned an empty string from
+# the :do block AND the set still ran, overwriting the hostname the
+# peer was added with. The fix: NEVER set endpoint-address to "". If
+# the resolved value isn't a non-empty IP-shaped string, KEEP THE
+# HOSTNAME that the peer was added with at peer-add time (the literal
+# {{ PANEL_WG_HOST }} / {{ PROXY_WG_HOST }} -- RouterOS itself will
+# keep re-resolving the hostname endpoint on each handshake retry).
 :local hobeResolve do={
     :local host $1
     :for i from=1 to=5 do={
@@ -218,16 +227,60 @@ add interface=wg-data address={{ WG_DATA_ADDR }}     ;# e.g. 10.98.0.11/24 (shar
         }
     }
     :log error ("hobe-fleet: :resolve " . $host . " gave up after 5 attempts; leaving hostname on peer")
-    :return $host
+    :return ""
+}
+
+# hobeSetEndpoint: write endpoint-address ONLY when the resolved value
+# is a non-empty IP-shaped string; on empty/garbage, leave whatever the
+# peer-add set (the hostname) intact so the peer is NEVER left with
+# endpoint-address="".
+:local hobeSetEndpoint do={
+    :local comm $1
+    :local ip $2
+    :local port $3
+    :local fallback $4
+    :local clean [:tostr $ip]
+    :if ([:len $clean] > 0 && [:typeof [:find $clean "."]] != "nothing") do={
+        /interface wireguard peers set [find comment=$comm] endpoint-address=$clean endpoint-port=$port
+        :log info ("hobe-fleet: peer " . $comm . " endpoint-address set to literal " . $clean . ":" . $port)
+    } else={
+        # Keep / restore the hostname so RouterOS can re-resolve later.
+        /interface wireguard peers set [find comment=$comm] endpoint-address=$fallback endpoint-port=$port
+        :log warning ("hobe-fleet: peer " . $comm . " resolve unusable, keeping hostname " . $fallback . ":" . $port)
+    }
 }
 
 :local panelIP [$hobeResolve "{{ PANEL_WG_HOST }}"]
-/interface wireguard peers
-set [find comment="hobe-fleet-mgmt"] endpoint-address=$panelIP endpoint-port={{ PANEL_WG_PORT }}
+$hobeSetEndpoint "hobe-fleet-mgmt" $panelIP {{ PANEL_WG_PORT }} "{{ PANEL_WG_HOST }}"
 {% if 'radius_transport' in ROLES %}
 :local proxyIP [$hobeResolve "{{ PROXY_WG_HOST }}"]
-/interface wireguard peers
-set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ PROXY_WG_PORT }}
+$hobeSetEndpoint "hobe-fleet-data" $proxyIP {{ PROXY_WG_PORT }} "{{ PROXY_WG_HOST }}"
+{% endif %}
+
+# ---- 2d. POST-SETUP ENDPOINT-ADDRESS VALIDATION ----
+# fix/fleet-wireguard-provisioning (BUG A) - assert that each peer
+# really carries a non-empty endpoint-address NOW. Empty = the resolve
+# branch above misfired; we abort by leaving an error flag the rollback
+# gate in section 12 will read (and refuse to cancel the rollback).
+:global hobeWgValidationOk true
+:global hobeWgValidationDetail ""
+:local mgmtEp [/interface wireguard peers get [find comment="hobe-fleet-mgmt"] endpoint-address]
+:if ([:len [:tostr $mgmtEp]] = 0) do={
+    :log error "hobe-fleet: BUG A - wg-mgmt peer endpoint-address is EMPTY after setup. No handshake will ever occur."
+    :set hobeWgValidationOk false
+    :set hobeWgValidationDetail "wg-mgmt endpoint-address empty"
+} else={
+    :log info ("hobe-fleet: wg-mgmt endpoint-address OK = " . $mgmtEp)
+}
+{% if 'radius_transport' in ROLES %}
+:local dataEp [/interface wireguard peers get [find comment="hobe-fleet-data"] endpoint-address]
+:if ([:len [:tostr $dataEp]] = 0) do={
+    :log error "hobe-fleet: BUG A - wg-data peer endpoint-address is EMPTY after setup. No RADIUS will ever flow."
+    :set hobeWgValidationOk false
+    :set hobeWgValidationDetail ($hobeWgValidationDetail . " wg-data endpoint-address empty")
+} else={
+    :log info ("hobe-fleet: wg-data endpoint-address OK = " . $dataEp)
+}
 {% endif %}
 
 # ---- 2c. Key-identity audit trail ----
@@ -1017,27 +1070,16 @@ set ftp     disabled=yes
 {%- set closeACL = PANEL_WG_ADDR ~ '/32' -%}
 {%- endif %}
 /system script
-# -- (1) hobe-open-winbox -- temporarily widen WinBox for recovery --
-# Body (single line, `;` separated):
-#   1. log + put the operator-facing notice
-#   2. widen ssh + winbox /ip service ACL to 0.0.0.0/0
-#   3. add a tagged firewall accept for tcp:22,8291 above drop-last
-#      (only if not already present -- idempotent)
-#   4. remove any stale auto-revert scheduler, then arm a fresh one
-#      with interval=15m calling hobe-close-winbox on tick
-:if ([:len [find name="hobe-open-winbox"]] = 0) do={
-    add name="hobe-open-winbox" \
-        comment="hobe-fleet-break-glass" \
-        policy=read,write,policy,test,reboot,sensitive \
-        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
-} else={
-    set [find name="hobe-open-winbox"] \
-        comment="hobe-fleet-break-glass" \
-        policy=read,write,policy,test,reboot,sensitive \
-        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
-}
-
-# -- (2) hobe-close-winbox -- immediate re-restrict to hardened state --
+# fix/fleet-wireguard-provisioning (BUG G) - CLOSE-FIRST ORDERING.
+# Pre-fix the open-* scripts armed `hobe-close-winbox-auto` that called
+# `/system script run hobe-close-winbox`. On the FIRST import the close
+# script didn't exist yet when the open block ran -- the operator's
+# manual `run hobe-open-winbox` would widen the surface AND schedule a
+# call to a script RouterOS doesn't have yet, so the scheduler tick
+# would log "no such script" and the public surface would stay open
+# indefinitely. Defining close-* BEFORE open-* removes the race entirely.
+#
+# -- (1) hobe-close-winbox -- immediate re-restrict to hardened state --
 # Body (single line, `;` separated):
 #   1. log + put the operator-facing notice
 #   2. restore ssh + winbox /ip service ACL to the hardened union
@@ -1056,7 +1098,46 @@ set ftp     disabled=yes
         source=":log warning \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; /ip service set winbox address=\"{{ closeACL }}\" disabled=no; /ip service set ssh address=\"{{ closeACL }}\" disabled=no; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored\""
 }
 
-# -- (3) hobe-open-webfig -- temporarily widen public WebFig (HTTPS) --
+# -- (2) hobe-open-winbox -- temporarily widen WinBox for recovery --
+# Body (single line, `;` separated):
+#   1. log + put the operator-facing notice
+#   2. widen ssh + winbox /ip service ACL to 0.0.0.0/0
+#   3. add a tagged firewall accept for tcp:22,8291 above drop-last
+#      (only if not already present -- idempotent)
+#   4. remove any stale auto-revert scheduler, then arm a fresh one
+#      with interval=15m calling hobe-close-winbox on tick. This is
+#      safe ONLY because hobe-close-winbox above was created FIRST.
+:if ([:len [find name="hobe-open-winbox"]] = 0) do={
+    add name="hobe-open-winbox" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
+} else={
+    set [find name="hobe-open-winbox"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
+}
+
+# -- (3) hobe-close-webfig -- restore www-ssl to PANEL_WG_ADDR/32 --
+# fix/fleet-wireguard-provisioning (BUG G) - define CLOSE before OPEN
+# so the auto-revert scheduler that the open block arms always has a
+# real script name to run on the first tick.
+# Mirrors hobe-close-winbox: restore the hardened ACL on www-ssl,
+# remove the break-glass firewall rule + the auto-revert scheduler.
+:if ([:len [find name="hobe-close-webfig"]] = 0) do={
+    add name="hobe-close-webfig" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
+} else={
+    set [find name="hobe-close-webfig"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
+}
+
+# -- (4) hobe-open-webfig -- temporarily widen public WebFig (HTTPS) --
 # Owner review #2: after hardening, public WebFig is NOT supported
 # (www disabled, www-ssl restricted to PANEL_WG_ADDR/32). The
 # production path is wg-mgmt REST (the panel) or the WinBox break-
@@ -1065,7 +1146,8 @@ set ftp     disabled=yes
 # WAN (e.g. WinBox is broken on his machine and he doesn't have
 # wg-mgmt up). It widens /ip service www-ssl to 0.0.0.0/0 on port
 # 8443 + opens tcp/8443 above drop-last + arms an auto-close timer
-# that fires hobe-close-webfig in 15 minutes.
+# that fires hobe-close-webfig in 15 minutes (safe ONLY because the
+# close-webfig script above was defined FIRST -- BUG G).
 #
 # REASON to PREFER WinBox: the WebFig path is HTTPS to the wg-mgmt
 # certificate (hobe-fleet-api-cert) which is self-signed -- browsers
@@ -1082,32 +1164,176 @@ set ftp     disabled=yes
         source=":log warning \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; :put \"hobe-fleet break-glass: opening public WebFig for 15 minutes (HTTPS port 8443, self-signed cert -- browser will warn)\"; /ip service set www-ssl address=\"0.0.0.0/0\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass-webfig\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port={{ API_PORT|default(8443) }} place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass-webfig\" }; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; add name=\"hobe-close-webfig-auto\" interval=15m on-event=\"/system script run hobe-close-webfig\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: WebFig auto-revert in 15m via hobe-close-webfig-auto\""
 }
 
-# -- (4) hobe-close-webfig -- restore www-ssl to PANEL_WG_ADDR/32 --
-# Mirrors hobe-close-winbox: restore the hardened ACL on www-ssl,
-# remove the break-glass firewall rule + the auto-revert scheduler.
-:if ([:len [find name="hobe-close-webfig"]] = 0) do={
-    add name="hobe-close-webfig" \
-        comment="hobe-fleet-break-glass" \
-        policy=read,write,policy,test,reboot,sensitive \
-        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
-} else={
-    set [find name="hobe-close-webfig"] \
-        comment="hobe-fleet-break-glass" \
-        policy=read,write,policy,test,reboot,sensitive \
-        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened www-ssl ACL\"; :put \"hobe-fleet break-glass: closing WebFig; restoring www-ssl ACL to {{ PANEL_WG_ADDR }}/32\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: WebFig hardened state restored\""
-}
-
 :log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox / hobe-open-webfig / hobe-close-webfig). Run from VPS provider console if locked out."
 
 # ============================================================
-# 12. SELF-LOCKOUT GUARD -- CANCEL (we made it through cleanly)
+# 12. ROLLBACK VALIDATION GATE -- 12 explicit checks before CANCEL
 # ============================================================
-# Last block of the script. If we get here, every section above ran
-# without halting, so the apply is good. Cancel the rollback scheduler
-# armed in sec 0a; without this line the CHR would auto-revert at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
-:do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
-:do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
-:log info "hobe-fleet: rollback guard CANCELLED -- apply complete"
+# fix/fleet-wireguard-provisioning (BUG F) -- pre-fix, the rollback
+# scheduler was cancelled UNCONDITIONALLY at the end of the script
+# (any time the parser reached this line). That hid the chr-vpn-2
+# class of failure: the script ran end-to-end, but wg-mgmt never
+# handshook (empty endpoint, wrong key, missing server peer) so the
+# CHR was permanently unreachable -- yet the rollback was cancelled
+# so the (broken) firewall stayed. The 3-min revert window's whole
+# point is to UNDO an apply that broke connectivity; cancelling on
+# "I reached the bottom of the file" defeats it.
+#
+# The gate below cancels ONLY when EVERY listed check passes. Any
+# failure leaves :global hobeRollbackOk false; the cancel block is
+# skipped and the rollback fires at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
+:global hobeRollbackOk true
+:global hobeRollbackReason ""
+
+# (1) wg-mgmt peer endpoint-address non-empty (BUG A signal).
+:if (!$hobeWgValidationOk) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ("(1) endpoint validation: " . $hobeWgValidationDetail)
+}
+
+# (2) wg-mgmt has either a handshake OR a ping to the panel works.
+:local mgmtAlive false
+:do {
+    :local lh [/interface wireguard peers get [find comment="hobe-fleet-mgmt"] last-handshake]
+    :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
+        :set mgmtAlive true
+    }
+} on-error={}
+:if (!$mgmtAlive) do={
+    :do {
+        :local pres [/ping address={{ PANEL_WG_ADDR }} interface=wg-mgmt count=3 as-value]
+        :if ([:typeof $pres] = "array") do={
+            :foreach p in=$pres do={
+                :if ([:typeof $p] = "array" && [:typeof ($p->"received")] != "nothing") do={
+                    :if (($p->"received") > 0) do={ :set mgmtAlive true }
+                }
+            }
+        }
+    } on-error={}
+}
+:if (!$mgmtAlive) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (2) wg-mgmt no handshake AND no ping to {{ PANEL_WG_ADDR }}")
+}
+
+{% if 'radius_transport' in ROLES %}
+# (3) wg-data peer endpoint-address non-empty (re-check after section 2d).
+:local dataEp [/interface wireguard peers get [find comment="hobe-fleet-data"] endpoint-address]
+:if ([:len [:tostr $dataEp]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (3) wg-data endpoint empty")
+}
+
+# (4) wg-data alive: handshake OR ping to proxy.
+:local dataAlive false
+:do {
+    :local lh [/interface wireguard peers get [find comment="hobe-fleet-data"] last-handshake]
+    :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
+        :set dataAlive true
+    }
+} on-error={}
+:if (!$dataAlive) do={
+    :do {
+        :local pres [/ping address={{ PROXY_WG_ADDR }} interface=wg-data count=3 as-value]
+        :if ([:typeof $pres] = "array") do={
+            :foreach p in=$pres do={
+                :if ([:typeof $p] = "array" && [:typeof ($p->"received")] != "nothing") do={
+                    :if (($p->"received") > 0) do={ :set dataAlive true }
+                }
+            }
+        }
+    } on-error={}
+}
+:if (!$dataAlive) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (4) wg-data no handshake AND no ping to {{ PROXY_WG_ADDR }}")
+}
+{% endif %}
+
+{% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
+# (5) www-ssl enabled on port {{ API_PORT|default(8443) }} scoped to PANEL/32.
+:local wwwSslOk false
+:do {
+    :local svc [/ip service find name=www-ssl]
+    :local enabled [/ip service get $svc disabled]
+    :local port [/ip service get $svc port]
+    :local addr [/ip service get $svc address]
+    :if ([:tostr $enabled] = "false" && [:tonum $port] = {{ API_PORT|default(8443) }} && [:find [:tostr $addr] "{{ PANEL_WG_ADDR }}"] >= 0) do={
+        :set wwwSslOk true
+    }
+} on-error={}
+:if (!$wwwSslOk) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (5) www-ssl not enabled/scoped on {{ API_PORT|default(8443) }}")
+}
+
+# (6) Firewall has the api-ssl allow from panel wg-mgmt.
+:if ([:len [/ip firewall filter find comment="hobe-fleet-fw-api-ssl"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (6) firewall hobe-fleet-fw-api-ssl missing")
+}
+{% endif %}
+
+# (7) Firewall has the final drop rule.
+:if ([:len [/ip firewall filter find comment="hobe-fleet-fw-drop-last"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (7) firewall hobe-fleet-fw-drop-last missing")
+}
+
+# (8) Defence-in-depth: no-public-radius rule present (or radius role off).
+{% if 'radius_transport' in ROLES %}
+:if ([:len [/ip firewall filter find comment="hobe-fleet-fw-no-public-radius"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (8) no-public-radius drop missing")
+}
+{% endif %}
+
+# (9) Break-glass: hobe-open-winbox exists.
+:if ([:len [/system script find name="hobe-open-winbox"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (9) hobe-open-winbox missing")
+}
+
+# (10) Break-glass: hobe-close-winbox exists (BUG G - must exist
+#      BEFORE open arms a scheduler that runs it).
+:if ([:len [/system script find name="hobe-close-winbox"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (10) hobe-close-winbox missing -- BUG G safeguard")
+}
+
+# (11) If break-glass open is active right now, the auto-close
+#      scheduler MUST exist (else the surface stays open forever).
+:local breakGlassActive false
+:if ([:len [/ip firewall filter find comment="hobe-fleet-fw-break-glass"]] > 0) do={
+    :set breakGlassActive true
+}
+:if ($breakGlassActive && [:len [/system scheduler find name="hobe-close-winbox-auto"]] = 0) do={
+    :set hobeRollbackOk false
+    :set hobeRollbackReason ($hobeRollbackReason . " (11) break-glass open but auto-close scheduler missing")
+}
+
+# (12) No public WinBox open unless emergency mode active. In normal
+#      mode /ip service winbox address must NOT be 0.0.0.0/0.
+:local winboxAddr [/ip service get [find name=winbox] address]
+:if (!$breakGlassActive && [:find [:tostr $winboxAddr] "0.0.0.0/0"] >= 0) do={
+    # Tolerate the emergency-admin branch (wg-mgmt unreachable +
+    # OPERATOR_ADMIN_IPS unset) which intentionally opens both layers.
+    :if ([:len [/ip firewall filter find comment="hobe-fleet-fw-temp-emergency-admin"]] = 0) do={
+        :set hobeRollbackOk false
+        :set hobeRollbackReason ($hobeRollbackReason . " (12) public winbox open without emergency mode")
+    }
+}
+
+:if ($hobeRollbackOk) do={
+    :do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
+    :do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
+    :log info "hobe-fleet: rollback guard CANCELLED -- all 12 validation checks passed."
+    :put "hobe-fleet: validation PASSED -- rollback cancelled. Apply complete."
+} else={
+    :log error ("hobe-fleet: VALIDATION FAILED -- rollback LEFT ARMED. reason=" . $hobeRollbackReason)
+    :put ("hobe-fleet: VALIDATION FAILED -- rollback LEFT ARMED at T+{{ SAFEMODE_ROLLBACK_DELAY }}. Reason:" . $hobeRollbackReason)
+    :put "hobe-fleet: if you do NOT want the CHR to revert, run /system scheduler remove [find name=hobe-fleet-rollback] manually within the window."
+}
 
 # ============================================================
 # 13. POST-IMPORT VALIDATION DUMP
