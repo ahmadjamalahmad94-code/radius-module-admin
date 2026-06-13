@@ -168,37 +168,109 @@ class TestDashboardActionDelegation:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# (4) Modal markup + JS load at page level (not inside a tab partial)
+# (4) Modal markup + JS load at page level — RENDER-TIME test
+#
+# fix/script-modal-js-page-level — the previous source-level test
+# FALSE-PASSED: it confirmed the modal markup existed somewhere
+# inside {% block content %} but did NOT prove it was actually
+# emitted by GET /admin/fleet/. The modal + the two <script> tags
+# sat inside `{% if pending_jobs %}` so they vanished whenever the
+# operator had no pending onboarding jobs (the chr-vpn-1/2 active
+# state). Active-node «عرض السكربت» buttons opened a modal that
+# wasn't in the DOM + ran a handler that wasn't loaded.
+#
+# These tests render the dashboard via the test client and grep the
+# RESPONSE HTML — the only check that catches the conditional-
+# rendering trap. Two scenarios: empty fleet + active-node-only.
 # ════════════════════════════════════════════════════════════════════════
-class TestModalAtPageLevel:
+class TestModalAndJsRenderedAtPageLevel:
 
-    def test_modal_lives_inside_block_content_not_a_tab_partial(self):
-        """The script-view modal markup + JS load must sit in
-        ``{% block content %}`` (page-level), not inside a tab partial
-        that gets replaced. We pin this by reading the source bounds
-        and asserting the modal id is BEFORE the {% endblock %} of the
-        content block + BEFORE any sub-include that could be swapped."""
+    @staticmethod
+    def _login_super(client):
+        from app.extensions import db
+        from app.models import Admin
+        client.post("/login", data={"username": "admin",
+                                    "password": "admin12345"})
+        adm = Admin.query.first()
+        if adm and not adm.is_super_admin:
+            adm.is_super_admin = True
+            db.session.commit()
+
+    def test_render_with_no_pending_jobs_still_has_modal_and_js(
+        self, app, client,
+    ):
+        """The exact live state the owner hit: chr-vpn-1/2 are ACTIVE
+        (no pending OnboardingJob rows), so {% if pending_jobs %} is
+        FALSE. Modal + both script tags MUST still render."""
+        self._login_super(client)
+        # No pending jobs, no nodes — pure empty state.
+        html = client.get("/admin/fleet/").get_data(as_text=True)
+        assert 'id="fd-script-modal"' in html, (
+            "modal element missing from render with no pending jobs — "
+            "the «عرض السكربت» button on any future active-node card "
+            "would open a modal that isn't in the DOM"
+        )
+        assert "admin_fleet_script_view.js" in html, (
+            "script-view JS bundle missing from render — the button "
+            "click handler would never load"
+        )
+        assert "admin_fleet_pending_actions.js" in html, (
+            "pending-actions JS bundle missing from render — the "
+            "advance/delete handlers for any future pending card "
+            "wouldn't load either"
+        )
+
+    def test_render_with_active_node_and_no_pending_has_button_and_js(
+        self, app, client,
+    ):
+        """The active-node card renders the .fd-node-view-script
+        button AND the script tag + modal that wire it up — all in
+        the SAME response, so the page is self-consistent."""
+        from app.extensions import db
+        from fleet.registry.models_chr import FleetChrNode, FleetProvider
+        self._login_super(client)
+        p = FleetProvider.query.first() or FleetProvider(
+            name="rt", cost_model="open", price_per_tb=0,
+            overage_allowed=False, billing_cycle_day=1,
+        )
+        if p.id is None:
+            db.session.add(p); db.session.commit()
+        n = FleetChrNode(
+            provider_id=p.id, name="chr-vpn-active",
+            public_ip="203.0.113.11",
+            wg_mgmt_ip="10.99.0.11", wg_mgmt_pubkey="x" * 44,
+            max_sessions=500, link_speed_mbps=1000, weight=1.0,
+            enabled=True, drain=False, status="up",
+            cpu_pct=0, active_sessions=0,
+        )
+        db.session.add(n); db.session.commit()
+
+        html = client.get("/admin/fleet/").get_data(as_text=True)
+        # The button is there.
+        assert "fd-node-view-script" in html
+        assert f'data-node-id="{n.id}"' in html
+        # AND the modal + JS are there in the SAME response — so
+        # clicking the button actually does something.
+        assert 'id="fd-script-modal"' in html
+        assert "admin_fleet_script_view.js" in html
+        assert "admin_fleet_pending_actions.js" in html
+        # The script-view tag also carries BOTH URL templates so the
+        # delegation handler can dispatch node-keyed vs job-keyed.
+        assert "data-script-url=" in html
+        assert "data-node-script-url=" in html
+
+    def test_modal_subtree_not_live_replace_target(self):
+        """Defence-in-depth: confirm the modal subtree is not marked
+        as a live-poll replace target. If it were, every poll tick
+        would destroy + re-create the modal — which would also wipe
+        any open state. Read template source for this pin (the live-
+        poll subtree marker would survive across renders)."""
         html = Path("app/templates/admin/fleet/dashboard.html").read_text(encoding="utf-8")
-        # Locate {% block content %} ... {% endblock %} bounds.
-        start = html.index("{% block content %}")
-        # The TOP-level endblock for content is the last one before EOF
-        # (the template uses several nested-looking {% endif %} etc but
-        # only one {% block content %}). Walk forward to find the
-        # matching {% endblock %} for content.
-        # Simpler check: the modal id is present + comes AFTER `{% block content %}`.
         modal_idx = html.index('id="fd-script-modal"')
-        assert modal_idx > start, "modal must be inside {% block content %}"
-        # And the script-view JS tag is loaded at page level too.
-        script_tag_idx = html.index("admin_fleet_script_view.js")
-        assert script_tag_idx > start
-        # Neither sits inside any {% include %} (tab content is rendered
-        # inline by Jinja; there is no template include path that gets
-        # AJAX-swapped). Pin that there's no `data-live-replace` on the
-        # modal's container element.
         modal_block = html[modal_idx:modal_idx + 800]
         assert "data-live-replace" not in modal_block, (
-            "modal subtree must NOT be a live-replace target — that would "
-            "destroy the modal element on every live-poll tick"
+            "modal subtree must NOT be a live-replace target — that "
+            "would destroy the modal element on every live-poll tick"
         )
 
 

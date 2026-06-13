@@ -857,6 +857,16 @@
     </article>
   {% endfor %}
 </div>
+{# fix/script-modal-js-page-level — close the {% if pending_jobs %}
+   block HERE so the CSRF helper form, both <script> tags, the
+   #fd-script-modal, the confirm dialog AND the .fd-pj-* styles
+   all render PAGE-LEVEL. Pre-fix they sat inside the conditional
+   and silently disappeared whenever pending_jobs was empty — so
+   .fd-node-view-script buttons on active-node cards opened a modal
+   that wasn't in the DOM + ran a handler that wasn't loaded. The
+   move keeps the per-card UI structure (everything ABOVE this
+   {% endif %}) gated; everything BELOW becomes always-rendered. #}
+{% endif %}
 
 {# CSRF helper + endpoint templates the pending-card JS needs. #}
 <form id="fd-pending-csrf" style="display:none">{{ csrf_input() }}</form>
@@ -1042,7 +1052,12 @@
   .fd-pj-btn.is-busy .fd-pj-icon { display: none; }
   .fd-pj-btn.is-busy .fa-spinner { display: inline-block; }
 </style>
-{% endif %}
+{# fix/script-modal-js-page-level — the matching {% if pending_jobs %}
+   was closed early (right after the pj-card forEach) so the modal +
+   script tags above render page-level. The block from there down to
+   here is now always emitted; everything inside has either no-op
+   selectors when pending_jobs is empty (CSS, hidden CSRF form, the
+   delegated JS handlers) or its own gating elsewhere. #}
 
 {% if not pending_jobs %}
   <div class="fd-empty">
