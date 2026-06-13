@@ -276,17 +276,34 @@ def find_orphans() -> OrphanSurvey:
     # OnboardingJob rows that have NULL chr_id AND are still in a
     # pending-card state. These show up in the dashboard pending count
     # without a node to act on — pure UI noise.
-    orphan_job_ids = sorted(
+    # fix/view-script-404-orphan — ALSO sweep jobs whose chr_id points
+    # at a node that no longer exists (the operator deleted the node
+    # directly, leaving the job dangling). The dashboard renders these
+    # jobs with a «عرض السكربت» button that 404s when clicked, because
+    # the renderer needs the node row to build bindings. Same UI noise,
+    # same purge.
+    pending_states_tuple = (
+        "draft", "keys_generated", "script_generated",
+        "pushed", "verifying", "failed",
+    )
+    null_chr_ids = [
         j_id for (j_id,) in (
             db.session.query(OnboardingJob.id)
             .filter(OnboardingJob.chr_id.is_(None))
-            .filter(OnboardingJob.status.in_(
-                ("draft", "keys_generated", "script_generated",
-                 "pushed", "verifying", "failed"),
-            ))
+            .filter(OnboardingJob.status.in_(pending_states_tuple))
             .all()
         )
-    )
+    ]
+    dangling_chr_ids = [
+        j_id for (j_id, chr_id) in (
+            db.session.query(OnboardingJob.id, OnboardingJob.chr_id)
+            .filter(OnboardingJob.chr_id.isnot(None))
+            .filter(OnboardingJob.status.in_(pending_states_tuple))
+            .all()
+        )
+        if chr_id is not None and chr_id not in all_node_ids
+    ]
+    orphan_job_ids = sorted(set(null_chr_ids) | set(dangling_chr_ids))
 
     # ProxyRealmRoute entries listing node ids that don't exist anymore.
     stale_route_node_ids: dict[int, list[int]] = {}

@@ -16,7 +16,7 @@ in-memory collaborator fakes.
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.auth.routes import audit, login_required, super_admin_required
 from app.extensions import db
@@ -475,11 +475,66 @@ def view_script(job_id: int):
 
     Response on refusal:
         400 {ok:false, error:"script_unavailable", message:"<Arabic reason>"}
+
+    fix/view-script-404-orphan — robust resolver:
+      1. Try ``OnboardingJob(job_id)`` directly (normal path).
+      2. If absent, try ``FleetChrNode(job_id)`` and find ANY
+         OnboardingJob whose ``chr_id`` matches that node's id in a
+         renderable state — covers the "operator clicked a stale
+         button whose underlying job id was deleted but the node id
+         lives on" race + the legacy chrome where the dashboard URL
+         happens to carry a node id that collides with a deleted
+         job id.
+      3. If neither resolves, return 410 GONE (not bare 404) with a
+         clear actionable message: refresh the dashboard / run «نظّف
+         المهملات» / re-add via the wizard.
     """
     job = _job_or_404(job_id)
     if job is None:
-        return jsonify({"ok": False, "error": "not_found",
-                        "message": "مهمة التسجيل غير موجودة."}), 404
+        # Fallback A: maybe the id refers to a FleetChrNode whose
+        # OnboardingJob got deleted (orphan card). Look up a renderable
+        # job by chr_id so the operator can still SEE the script.
+        from fleet.registry.models_chr import FleetChrNode
+        node = db.session.get(FleetChrNode, int(job_id))
+        if node is not None:
+            sibling_job = (
+                OnboardingJob.query
+                .filter(OnboardingJob.chr_id == node.id)
+                .filter(OnboardingJob.status.in_(_SCRIPT_VIEW_OK_STATUSES))
+                .order_by(OnboardingJob.id.desc())
+                .first()
+            )
+            if sibling_job is not None:
+                current_app.logger.info(
+                    "view_script: id=%s resolved via FleetChrNode(%s) -> "
+                    "OnboardingJob(%s) (stale-button fallback)",
+                    job_id, node.id, sibling_job.id,
+                )
+                job = sibling_job
+            else:
+                return jsonify({
+                    "ok": False,
+                    "error": "orphan_node",
+                    "message": (
+                        f"العقدة #{node.id} «{node.name}» موجودة لكن لا توجد "
+                        f"مهمة تسجيل قابلة للعرض مرتبطة بها — على الأرجح "
+                        f"حُذفت المهمة لاحقاً. شغّل «نظّف المهملات» لإزالة "
+                        f"العقدة المعزولة ثم أضِفها من جديد عبر المعالج."
+                    ),
+                    "node_id": node.id,
+                    "node_name": node.name,
+                }), 410   # Gone — the resource existed but is no longer available
+        if job is None:
+            return jsonify({
+                "ok": False,
+                "error": "not_found",
+                "message": (
+                    "مهمة التسجيل غير موجودة — على الأرجح حُذفت بعد فتح "
+                    "هذه الصفحة. أعد تحميل اللوحة لمشاهدة الحالة الحالية، "
+                    "أو شغّل «نظّف المهملات» إن بقيت بطاقات وهمية."
+                ),
+                "job_id": job_id,
+            }), 404
     if job.status not in _SCRIPT_VIEW_OK_STATUSES:
         return jsonify({
             "ok": False, "error": "script_unavailable",

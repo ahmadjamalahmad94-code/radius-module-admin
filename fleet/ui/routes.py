@@ -122,10 +122,20 @@ def fleet_dashboard():
     live_node_ids = {
         v.node.id for v in node_views if v.health.state in ("up", "degraded")
     }
+    # fix/view-script-404-orphan — and DROP jobs whose chr_id points at
+    # a node that no longer exists. The dashboard's «عرض السكربت» button
+    # for such a job 404s because the renderer needs the node row to
+    # build bindings. These are also picked up by the orphan-purge so
+    # «نظّف المهملات» eventually removes them; the filter here keeps the
+    # owner from clicking a broken button in the meantime.
+    existing_node_ids = {
+        nid for (nid,) in db.session.query(FleetChrNode.id).all()
+    }
     pending_job_views = [
         _onboarding_job_view(j)
         for j in pending_jobs
         if not (j.chr_id and j.chr_id in live_node_ids)
+        and not (j.chr_id and j.chr_id not in existing_node_ids)
     ]
 
     # ── Overview aggregates (read-only, derived from the same node_views) ──
