@@ -275,24 +275,32 @@ def delete_job(job_id: int):
         }), 409
 
     remove_node = bool(_body().get("remove_node", True))
-    node_removed = False
+    teardown_report = None
     if remove_node and job.chr_id is not None:
-        node = db.session.get(FleetChrNode, job.chr_id)
-        if node is not None:
-            # Surface the node id in the audit summary so the operation is
-            # auditable even after the rows are gone.
-            db.session.delete(node)
-            node_removed = True
+        # fix/fleet-delete-complete-teardown — route through the
+        # centralised teardown so the cascade is COMPLETE (proxy
+        # route scrub + CoA queue drop + sessions + pinned refs +
+        # panel-host wg-mgmt reconcile). The previous handler just
+        # called ``db.session.delete(node)`` which left every one
+        # of those surfaces stale until the operator clicked
+        # another button.
+        from fleet.registry.teardown import teardown_node
+        report = teardown_node(job.chr_id)
+        teardown_report = report.as_dict()
 
     summary_name = (job.form_input or {}).get("name", f"#{job.id}")
+    node_removed = bool(teardown_report and teardown_report.get("node_row_deleted"))
     audit(
         "fleet_onboarding_delete",
         "fleet_onboarding",
         str(job.id),
         f"حذف جوب تسجيل «{summary_name}» (الحالة: {job.status})"
         + (f" + إزالة العقدة #{job.chr_id}" if node_removed else ""),
-        metadata={"status": job.status, "chr_id": job.chr_id,
-                  "node_removed": node_removed},
+        metadata={
+            "status": job.status, "chr_id": job.chr_id,
+            "node_removed": node_removed,
+            "teardown": teardown_report or {},
+        },
     )
     db.session.delete(job)
     db.session.commit()
@@ -301,7 +309,106 @@ def delete_job(job_id: int):
         "deleted": True,
         "node_removed": node_removed,
         "job_id": job_id,
+        "teardown": teardown_report or {},
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# fix/fleet-delete-complete-teardown — orphan cleanup surfaces
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.post("/nodes/<int:node_id>/delete")
+@super_admin_required
+def delete_orphan_node(node_id: int):
+    """Delete a fleet_chr_nodes row directly — used to clean up nodes
+    that no longer have an active OnboardingJob pointing at them.
+
+    Previously the only delete path was through the job-delete handler;
+    a node left behind by ``remove_node=False`` or by a manual API
+    insertion was invisible from the wizard tab and unreachable for
+    cleanup. This endpoint plugs that gap. Runs the same centralised
+    teardown cascade as the job-delete path.
+
+    Refuses to delete a node that's still pointed at by a NON-failed,
+    NON-active job — the operator should delete the job (or advance
+    it past failure) before reaching for direct node deletion. This
+    keeps the «one wizard job ↔ one node row» invariant intact for
+    the normal flow.
+    """
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({
+            "ok": False, "error": "not_found",
+            "message": "عقدة الأسطول غير موجودة.",
+        }), 404
+    # Refuse if a live (non-failed, non-active) job is still pointing here.
+    blocking_states = (
+        "draft", "keys_generated", "script_generated",
+        "pushed", "verifying",
+    )
+    blocking = (
+        OnboardingJob.query
+        .filter(OnboardingJob.chr_id == node_id)
+        .filter(OnboardingJob.status.in_(blocking_states))
+        .first()
+    )
+    if blocking is not None:
+        return jsonify({
+            "ok": False, "error": "delete_refused",
+            "message": (
+                f"العقدة مرتبطة بمهمة تسجيل قيد التنفيذ #{blocking.id} "
+                f"(الحالة: {blocking.status}). احذف المهمة أولاً، أو ادفعها "
+                "حتى تنتهي ثم احذف العقدة."),
+        }), 409
+
+    from fleet.registry.teardown import teardown_node
+    report = teardown_node(node)
+    audit(
+        "fleet_node_delete",
+        "fleet_chr_node",
+        str(node_id),
+        f"حذف عقدة الأسطول «{report.node_name}» (المعرّف #{node_id}) "
+        f"مع التنظيف الكامل.",
+        metadata={"teardown": report.as_dict()},
+    )
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "deleted": True,
+        "node_id": node_id,
+        "teardown": report.as_dict(),
+    })
+
+
+@bp.get("/orphans")
+@super_admin_required
+def survey_orphans():
+    """Read-only survey of dangling refs — the «معاينة المهملات» panel
+    shows this so the operator can preview before purging."""
+    from fleet.registry.teardown import find_orphans
+    return jsonify({"ok": True, "survey": find_orphans().as_dict()})
+
+
+@bp.post("/orphans/purge")
+@super_admin_required
+def purge_orphans_route():
+    """Run the full orphan sweep + commit. Audits exactly what was
+    found and what was removed."""
+    from fleet.registry.teardown import purge_orphans
+    report = purge_orphans()
+    audit(
+        "fleet_orphan_purge", "fleet_onboarding", "*",
+        (
+            f"تنظيف المهملات: "
+            f"{len(report.survey_before.orphan_node_ids)} عقدة + "
+            f"{report.orphan_jobs_deleted} مهمة + "
+            f"{len(report.survey_before.stale_route_node_ids)} مسار + "
+            f"{len(report.survey_before.stale_coa_node_ids)} CoA"
+        ),
+        metadata=report.as_dict(),
+    )
+    db.session.commit()
+    return jsonify({"ok": True, "report": report.as_dict()})
 
 
 def _stamp_job_error(job: OnboardingJob, message: str) -> None:
