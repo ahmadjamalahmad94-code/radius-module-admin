@@ -144,7 +144,7 @@ add name="hobe-fleet-rollback" interval={{ SAFEMODE_ROLLBACK_DELAY }} \
     on-event=(":log warning \"hobe-fleet: rollback fired (no cancel within {{ SAFEMODE_ROLLBACK_DELAY }})\"; /system backup load name=hobe-fleet-pre-apply") \
     policy=read,write,policy,test,password,sensitive \
     comment="hobe-fleet-rollback-guard"
-:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) — script must run to completion to cancel it"
+:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) - script must run to completion to cancel it"
 
 # ---- 0b. DNS bootstrap (so :resolve works in section 2b) ----
 # If the CHR has no DNS servers configured yet, set a public fallback.
@@ -244,7 +244,14 @@ set [find comment="hobe-fleet-data"] endpoint-address=$proxyIP endpoint-port={{ 
 # ---- 3. RADIUS client → the central proxy (FLEET-CONSTANT) -
 /radius
 remove [find comment="hobe-fleet-radius"]
-add service=ppp,login address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
+# service=ppp ONLY. We deliberately do NOT enable `login` here — that
+# would let a RADIUS Access-Accept authenticate router admin login,
+# which is exactly the privilege escalation the hardening blocks
+# everywhere else in this script (scoped REST-only API user, /ip
+# service ssh/winbox restricted to wg-mgmt, no public WebFig). The
+# central proxy is for PPP/VPN user auth + accounting + CoA, NOT for
+# RouterOS admin auth.
+add service=ppp address={{ PROXY_WG_ADDR }} secret="{{ CHR_SHARED_SECRET }}" \
     authentication-port=1812 accounting-port=1813 \
     src-address={{ WG_DATA_ADDR_IP }} timeout=3s \
     comment="hobe-fleet-radius"
@@ -519,11 +526,11 @@ remove [find comment~"^drop public input"]
 :local wipedCount 0
 :foreach r in=[find chain=input] do={
     :local c [/ip firewall filter get $r comment]
-    :log info ("hobe-fleet: input-chain clean-rebuild — removing rule comment=" . $c)
+    :log info ("hobe-fleet: input-chain clean-rebuild - removing rule comment=" . $c)
     :set wipedCount ($wipedCount + 1)
 }
 :if ($wipedCount > 0) do={
-    :log warning ("hobe-fleet: input chain clean-rebuild — " . $wipedCount . " prior rule(s) removed; re-emitting authoritative set")
+    :log warning ("hobe-fleet: input chain clean-rebuild - " . $wipedCount . " prior rule(s) removed; re-emitting authoritative set")
 }
 remove [find chain=input]
 # forward + output chains are NOT touched here. Our own tagged rules
@@ -761,7 +768,7 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
             comment="hobe-fleet-api-managed"
         :log info ("hobe-fleet: refreshed group binding on existing managed user {{ API_USER }}")
     } else={
-        :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber it. Pick a non-conflicting username from the panel's «إعدادات بنية الأسطول» page; auto-provisioned defaults already avoid every RouterOS built-in.")
+        :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row - refusing to clobber it. Pick a non-conflicting username from the panel's fleet-infra settings page; auto-provisioned defaults already avoid every RouterOS built-in.")
     }
 }
 
@@ -826,7 +833,7 @@ sign hobe-fleet-api-cert ca=hobe-fleet-ca
     }
 }
 :if ($certReady = false) do={
-    :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s — www-ssl will NOT bind on this run; re-run /import to retry."
+    :log error "hobe-fleet: hobe-fleet-api-cert not ready after 15s - www-ssl will NOT bind on this run; re-run /import to retry."
 }
 
 # www-ssl = REST API over HTTPS. address= is the SOURCE-IP ACL —
@@ -904,7 +911,7 @@ set ftp     disabled=yes
 :if ($mgmtReachable) do={
     :log info ("hobe-fleet: wg-mgmt reachable; ssh+winbox ACL = " . $mgmtAddrACL)
 } else={
-    :log warning ("hobe-fleet: wg-mgmt NOT reachable yet, but operator-IP allow is set; ssh+winbox ACL = " . $mgmtAddrACL . " — WinBox remains reachable from those sources.")
+    :log warning ("hobe-fleet: wg-mgmt NOT reachable yet, but operator-IP allow is set; ssh+winbox ACL = " . $mgmtAddrACL . " - WinBox remains reachable from those sources.")
 }
 {% else %}
 # OPERATOR_ADMIN_IPS is NOT set → run the original verify-then-restrict
@@ -913,28 +920,38 @@ set ftp     disabled=yes
 :if ($mgmtReachable) do={
     /ip service set ssh    address=$mgmtAddrACL disabled=no
     /ip service set winbox address=$mgmtAddrACL disabled=no
-    :log info ("hobe-fleet: wg-mgmt verified reachable — ssh+winbox restricted to " . $mgmtAddrACL)
+    :log info ("hobe-fleet: wg-mgmt verified reachable - ssh+winbox restricted to " . $mgmtAddrACL)
 } else={
-    /ip service set ssh    disabled=no
-    /ip service set winbox disabled=no
+    # EMERGENCY-ADMIN BRANCH: wg-mgmt is unreachable AND OPERATOR_ADMIN_IPS
+    # is unset (the outer Jinja else branch). We must open BOTH layers -
+    # the firewall (chain=input accept) AND the service-layer ACL - else
+    # /ip service ssh/winbox address=PANEL_WG_ADDR/32 (set above) still
+    # silently blocks the operator even though the firewall accepts the
+    # SYN. Both layers must allow the same source or emergency access
+    # fails. Source = 0.0.0.0/0 here ONLY because OPERATOR_ADMIN_IPS is
+    # unset (no narrower source we can trust). The matching branch with
+    # OPERATOR_ADMIN_IPS set lives in the outer Jinja if-true branch
+    # above and uses the union ACL (PANEL/32 + operator IPs) - NEVER 0/0.
+    /ip service set ssh    address=0.0.0.0/0 disabled=no
+    /ip service set winbox address=0.0.0.0/0 disabled=no
     /ip firewall filter
     :if ([:len [find comment="hobe-fleet-fw-temp-emergency-admin"]] = 0) do={
         add chain=input action=accept protocol=tcp dst-port=22,8291 \
             place-before=[find comment="hobe-fleet-fw-drop-last"] \
             comment="hobe-fleet-fw-temp-emergency-admin"
     }
-    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR — ssh/winbox kept OPEN and TEMP emergency-admin rule active. Either (a) set OPERATOR_ADMIN_IPS on the panel and re-export the script, or (b) fix wg-mgmt on the panel and re-import. Recovery: VPS provider console → /system script run hobe-open-winbox (opens WinBox for 15m)."
-    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN + TEMP emergency-admin rule active. Recovery break-glass: VPS console → /system script run hobe-open-winbox"
+    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR - ssh/winbox kept OPEN (service ACL 0.0.0.0/0 + TEMP emergency-admin firewall accept) so the operator is NEVER locked out. Either (a) set OPERATOR_ADMIN_IPS on the panel and re-export the script, or (b) fix wg-mgmt on the panel and re-import. Recovery: VPS provider console -> /system script run hobe-open-winbox (opens WinBox for 15m)."
+    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN (service ACL 0.0.0.0/0) + TEMP emergency-admin rule. Recovery break-glass: VPS console -> /system script run hobe-open-winbox"
 }
 {% endif %}
 
 # ── operator-facing summary print ───────────────────────────────────
 {% if OPERATOR_ADMIN_IPS|default('') %}
-:log warning ("hobe-fleet: Management ACL applied — ssh/winbox accept from PANEL/32 + OPERATOR_ADMIN_IPS=" . "{{ OPERATOR_ADMIN_IPS }}" . ". Public WinBox/SSH from any other source is BLOCKED.")
-:put ("hobe-fleet: ssh+winbox ACL = PANEL_WG_ADDR/32 + OPERATOR_ADMIN_IPS (" . "{{ OPERATOR_ADMIN_IPS }}" . "). Break-glass: VPS console → /system script run hobe-open-winbox (15 min open WinBox, auto-close).")
+:log warning ("hobe-fleet: Management ACL applied - ssh/winbox accept from PANEL/32 + OPERATOR_ADMIN_IPS=" . "{{ OPERATOR_ADMIN_IPS }}" . ". Public WinBox/SSH from any other source is BLOCKED. Public WebFig is NOT supported - use wg-mgmt REST or the WinBox break-glass.")
+:put ("hobe-fleet: ssh+winbox ACL = PANEL_WG_ADDR/32 + OPERATOR_ADMIN_IPS (" . "{{ OPERATOR_ADMIN_IPS }}" . "). After hardening, public WebFig is NOT supported. Break-glass: VPS console -> /system script run hobe-open-winbox (or hobe-open-webfig) - 15 min open, auto-close.")
 {% else %}
-:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only (OPERATOR_ADMIN_IPS not set). Public WinBox/SSH will NOT work after hardening. Break-glass: VPS console → /system script run hobe-open-winbox (opens WinBox 15 min, auto-close)."
-:put "hobe-fleet WARNING: ssh+winbox restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only. Break-glass: VPS console → /system script run hobe-open-winbox"
+:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only (OPERATOR_ADMIN_IPS not set). Public WinBox/SSH and public WebFig will NOT work after hardening. Use wg-mgmt REST or the WinBox break-glass. Break-glass: VPS console -> /system script run hobe-open-winbox (opens WinBox 15 min, auto-close); /system script run hobe-open-webfig (opens public WebFig 15 min, auto-close)."
+:put "hobe-fleet WARNING: ssh+winbox restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only. After hardening, public WebFig is NOT supported. Use wg-mgmt REST or the WinBox break-glass. VPS console -> /system script run hobe-open-winbox (or hobe-open-webfig)."
 {% endif %}
 {% else %}
 # Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
@@ -1035,7 +1052,53 @@ set ftp     disabled=yes
         source=":log warning \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; /ip service set winbox address=\"{{ closeACL }}\" disabled=no; /ip service set ssh address=\"{{ closeACL }}\" disabled=no; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored\""
 }
 
-:log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox). Run from VPS provider console if locked out."
+# ── (3) hobe-open-webfig - temporarily expose public WebFig (HTTPS 8443) ──
+# After hardening, /ip service www-ssl is bound to PANEL_WG_ADDR/32 — i.e.
+# WebFig (the browser UI) is reachable ONLY from the panel over wg-mgmt.
+# That is by design. If the operator needs the browser UI from his own
+# machine (e.g. to debug a certificate import that REST can't do via the
+# scoped policy), he runs this script from the VPS provider console:
+#
+#     /system script run hobe-open-webfig
+#
+# Effect (15 minutes):
+#   * /ip service www-ssl address=0.0.0.0/0 disabled=no port={{ API_PORT|default(8443) }}
+#   * firewall accept tcp/{{ API_PORT|default(8443) }} above drop-last (tagged)
+#   * scheduler auto-revert in 15m via hobe-close-webfig (literal interval=15m)
+# Auto-revert restores the hardened ACL: www-ssl address=PANEL_WG_ADDR/32.
+# Same idempotent add-or-set pattern as the WinBox pair above; same group
+# policy. The hardened-state ACL is the PANEL/32 ONLY (no operator-IP
+# union for WebFig - WebFig stays panel-only by design, even when the
+# operator's IPs are allowed for ssh/winbox).
+:if ([:len [find name="hobe-open-webfig"]] = 0) do={
+    add name="hobe-open-webfig" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; :put \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; /ip service set www-ssl address=\"0.0.0.0/0\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass-webfig\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port={{ API_PORT|default(8443) }} place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass-webfig\" }; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; add name=\"hobe-close-webfig-auto\" interval=15m on-event=\"/system script run hobe-close-webfig\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-webfig-auto\""
+} else={
+    set [find name="hobe-open-webfig"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; :put \"hobe-fleet break-glass: opening public WebFig for 15 minutes\"; /ip service set www-ssl address=\"0.0.0.0/0\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass-webfig\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port={{ API_PORT|default(8443) }} place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass-webfig\" }; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; add name=\"hobe-close-webfig-auto\" interval=15m on-event=\"/system script run hobe-close-webfig\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-webfig-auto\""
+}
+
+# ── (4) hobe-close-webfig - immediate re-restrict www-ssl to PANEL/32 ──
+# Restores the hardened state: www-ssl ACL = PANEL_WG_ADDR/32 only;
+# removes the break-glass firewall accept; cancels the auto-revert
+# scheduler. Run manually for an early close.
+:if ([:len [find name="hobe-close-webfig"]] = 0) do={
+    add name="hobe-close-webfig" \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing public WebFig; restoring hardened ACL\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored on www-ssl\""
+} else={
+    set [find name="hobe-close-webfig"] \
+        comment="hobe-fleet-break-glass" \
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing public WebFig; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing public WebFig; restoring hardened ACL\"; /ip service set www-ssl address=\"{{ PANEL_WG_ADDR }}/32\" disabled=no port={{ API_PORT|default(8443) }}; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass-webfig\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-webfig-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored on www-ssl\""
+}
+
+:log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox / hobe-open-webfig / hobe-close-webfig). Run from VPS provider console if locked out. After hardening, public WebFig is NOT supported - use wg-mgmt REST or these break-glass scripts."
 
 # ============================================================
 # 12. SELF-LOCKOUT GUARD — CANCEL (we made it through cleanly)
@@ -1045,7 +1108,7 @@ set ftp     disabled=yes
 # armed in §0a; without this line the CHR would auto-revert at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
 :do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
 :do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
-:log info "hobe-fleet: rollback guard CANCELLED — apply complete"
+:log info "hobe-fleet: rollback guard CANCELLED - apply complete"
 
 # ============================================================
 # 13. POST-IMPORT VALIDATION DUMP
@@ -1054,7 +1117,7 @@ set ftp     disabled=yes
 # final on-CHR state without needing a separate inspection session.
 :put ""
 :put "==================================================================="
-:put "  hobe-fleet validation — post-import state on this CHR"
+:put "  hobe-fleet validation - post-import state on this CHR"
 :put "==================================================================="
 :put ""
 :put "[/ip service print detail]"
@@ -1076,24 +1139,30 @@ set ftp     disabled=yes
 /system script print where name~"hobe-"
 :put ""
 :put "==================================================================="
-:put "  MANUAL-ACCESS GUARANTEE — how to reach WinBox manually"
+:put "  MANUAL-ACCESS GUARANTEE - how to reach WinBox manually"
 :put "==================================================================="
 {% if OPERATOR_ADMIN_IPS|default('') %}
 :put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 + your"
 :put "     configured OPERATOR_ADMIN_IPS ({{ OPERATOR_ADMIN_IPS }})."
 {% else %}
 :put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 only."
-:put "     (OPERATOR_ADMIN_IPS is empty — set it on the panel under"
-:put "     «إعدادات بنية الأسطول → IPs الإدارة» to allow WinBox"
+:put "     (OPERATOR_ADMIN_IPS is empty - set it on the panel under"
+:put "     fleet-infra settings -> admin IPs, to allow WinBox"
 :put "     from your own IP, then re-export this script.)"
 {% endif %}
 :put "  2) BREAK-GLASS (if locked out): open the VPS provider"
-:put "     console (Hetzner / NovoServe VNC or Serial) — it bypasses"
-:put "     the network firewall entirely — and run:"
+:put "     console (Hetzner / NovoServe VNC or Serial) - it bypasses"
+:put "     the network firewall entirely - and run:"
 :put "         /system script run hobe-open-winbox"
 :put "     WinBox opens for 15 minutes, then auto-closes."
 :put "     Close early with: /system script run hobe-close-winbox"
-:put "  3) Production management path is wg-mgmt (private control"
+:put "  3) WEBFIG (browser UI): after hardening, public WebFig is NOT"
+:put "     supported. Use wg-mgmt REST or, in a pinch, run:"
+:put "         /system script run hobe-open-webfig"
+:put "     WebFig opens on https://<public-ip>:{{ API_PORT|default(8443) }} for 15"
+:put "     minutes, then auto-closes (back to PANEL/32 only)."
+:put "     Close early with: /system script run hobe-close-webfig"
+:put "  4) Production management path is wg-mgmt (private control"
 :put "     plane). The panel uses it for REST polls + provisioning."
 :put "==================================================================="
 :put ""

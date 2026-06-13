@@ -389,15 +389,22 @@ class TestInvariant6WgMgmtVerifyGate:
         assert re.search(r":if \(\$mgmtReachable\) do=\{", script), script
 
     def test_fallback_keeps_ssh_winbox_open_and_logs_a_warning(self):
-        """If wg-mgmt is unreachable, the script must NOT lock down
-        ssh/winbox. It must add a TEMP emergency-admin firewall rule
-        (tagged so the next clean run sweeps it) and warn the operator."""
+        """If wg-mgmt is unreachable, the script must NOT lock the
+        operator out. Since fix/chr-script-review-remaining the fallback
+        opens BOTH layers:
+          * /ip service set ssh    address=0.0.0.0/0 disabled=no
+          * /ip service set winbox address=0.0.0.0/0 disabled=no
+          * a tagged firewall accept for tcp:22,8291 above drop-last.
+        Pre-fix the service-layer ACL stayed at PANEL_WG_ADDR/32 and the
+        firewall accept was silently blocked at the listener — the real
+        lockout bug item 2 of the review fixed.
+        """
         script = _render()
-        assert "/ip service set ssh    disabled=no" in script, (
-            "fallback must keep ssh open"
+        assert "/ip service set ssh    address=0.0.0.0/0 disabled=no" in script, (
+            "fallback must widen ssh service ACL (not just the firewall)"
         )
-        assert "/ip service set winbox disabled=no" in script, (
-            "fallback must keep winbox open"
+        assert "/ip service set winbox address=0.0.0.0/0 disabled=no" in script, (
+            "fallback must widen winbox service ACL (not just the firewall)"
         )
         assert (
             'comment="hobe-fleet-fw-temp-emergency-admin"' in script

@@ -156,7 +156,11 @@ def test_our_own_drop_rule_still_exists_below():
 
 def test_radius_points_at_proxy_with_chr_src_address():
     script = _render()
-    line_start = script.index("add service=ppp,login")
+    # service=ppp ONLY (not ppp,login) since fix/chr-script-review-remaining —
+    # RADIUS authenticates PPP/VPN users, NOT router admin login. The
+    # specific anti-`login` pin lives in
+    # tests/fleet_p3/test_chr_script_review_remaining.py.
+    line_start = script.index("add service=ppp ")
     chunk = script[line_start:line_start + 300]
     assert "address=10.98.0.1" in chunk          # the proxy data-plane IP
     assert "src-address=10.98.0.11" in chunk     # the CHR's own data IP

@@ -109,10 +109,35 @@ def test_ip_address_remove_before_add_both_tunnels():
 
 def test_radius_entry_tagged_and_removed_first():
     """Brief said: add stable `comment="hobe-fleet"` to the /radius row and
-    remove by that tag before re-adding. Stronger tag used: hobe-fleet-radius."""
+    remove by that tag before re-adding. Stronger tag used: hobe-fleet-radius.
+
+    Updated for fix/chr-script-review-remaining: service=ppp only
+    (no ',login'). A documentation comment block now lives between
+    the remove and the add lines, so we test the ORDER (remove first,
+    then add) rather than expecting them on adjacent lines.
+    """
     script = _render().replace(" \\\n", " ")
-    assert "/radius\nremove [find comment=\"hobe-fleet-radius\"]\nadd service=ppp,login " in script, \
-        "/radius entry must be remove-by-tag then re-add with comment=\"hobe-fleet-radius\""
+    lines = script.splitlines()
+    radius_dir = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == "/radius"),
+        -1,
+    )
+    assert radius_dir >= 0, "/radius directive missing"
+    rem_idx = next(
+        (i for i, ln in enumerate(lines)
+         if i > radius_dir
+         and ln.strip() == 'remove [find comment="hobe-fleet-radius"]'),
+        -1,
+    )
+    add_idx = next(
+        (i for i, ln in enumerate(lines)
+         if i > rem_idx
+         and ln.lstrip().startswith("add service=ppp ")
+         and 'comment="hobe-fleet-radius"' in script[script.index(lines[i]):script.index(lines[i]) + 600]),
+        -1,
+    )
+    assert rem_idx > radius_dir, "remove of hobe-fleet-radius must follow /radius"
+    assert add_idx > rem_idx, "add must follow remove (idempotent re-add)"
     assert 'comment="hobe-fleet-radius"' in script, "/radius add must carry the tag"
 
 
@@ -240,7 +265,8 @@ def test_remove_appears_before_add_for_every_managed_resource():
         ('remove [find name="wg-data"]',                    "add name=wg-data "),
         ('remove [find interface="wg-mgmt"]',               "add interface=wg-mgmt "),
         ('remove [find interface="wg-data"]',               "add interface=wg-data "),
-        ('remove [find comment="hobe-fleet-radius"]',       "add service=ppp,login"),
+        # service=ppp ONLY (no ',login') since fix/chr-script-review-remaining.
+        ('remove [find comment="hobe-fleet-radius"]',       "add service=ppp "),
         ('remove [find name="hobe-ike"]',                   "add name=hobe-ike "),
         ('remove [find name="hobe-prop"]',                  "add name=hobe-prop "),
         ('remove [find name="hobe-mc"]',                    "add name=hobe-mc "),

@@ -381,7 +381,9 @@ class TestCleanRebuildInputChain:
         so the post-import audit shows what was replaced."""
         script = _render()
         assert ":foreach r in=[find chain=input] do=" in script
-        assert "input-chain clean-rebuild — removing rule comment=" in script
+        # ASCII hyphen (was em-dash before fix/chr-script-review-remaining
+        # ASCII sweep — RouterOS can choke on non-ASCII in :log strings).
+        assert "input-chain clean-rebuild - removing rule comment=" in script
 
     def test_forward_and_output_chains_are_NOT_touched(self):
         """The clean rebuild applies ONLY to the input chain — never to

@@ -884,6 +884,14 @@
           هذا السكربت يحتوي على مفاتيح WireGuard خاصّة بهذه العقدة تحديداً (IP عام،
           هوية، مفاتيح). لا تشاركه ولا تطبّقه على أي مايكروتيك آخر.
         </div>
+        <div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.75">
+          <i class="fa-solid fa-shield-halved"></i>
+          <strong>بعد التطبيق، WebFig العامّة (المتصفّح) لن تعمل.</strong>
+          الإدارة عبر <code dir="ltr">wg-mgmt</code> REST من اللوحة فقط (الحالة المُحصَّنة).
+          إن احتجت WebFig مؤقّتاً للتصفّح: من وحدة تحكّم مزوّد VPS نفّذ
+          <code dir="ltr">/system script run hobe-open-webfig</code> — تُفتح 15 دقيقة ثم تُغلق آلياً.
+          نفس الشيء لـ WinBox: <code dir="ltr">/system script run hobe-open-winbox</code>.
+        </div>
         <ol style="margin:0;padding-inline-start:22px">
           <li>افتح <strong>Winbox</strong> أو <strong>WebFig</strong> أو SSH على مايكروتيك CHR الجديد.</li>
           <li><strong>الطريقة الأسرع:</strong> اضغط «نسخ» أعلاه، افتح <code dir="ltr">/system/script/</code> أو
