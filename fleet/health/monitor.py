@@ -403,7 +403,13 @@ def _resolve_target(node: FleetChrNode) -> PingTarget:
         chr_id=int(node.id),
         name=node.name or "",
         host=host,
-        port=int(node.routeros_api_port or 8729),
+        # fix/api-service-port-consistency — fallback is 8443 (REST over
+        # www-ssl), NEVER 8729 (binary api-ssl, which the unified script
+        # explicitly disables). The 8729 literal here was vestigial —
+        # the monitor's primary probe is ICMP (no TCP dial), but the
+        # misleading default invited drift between the script-enabled
+        # transport and the panel's dial port. Keep every fallback 8443.
+        port=int(node.routeros_api_port or 8443),
     )
 
 
