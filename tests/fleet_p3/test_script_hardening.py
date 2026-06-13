@@ -155,16 +155,29 @@ def test_our_own_drop_rule_still_exists_below():
 
 
 def test_radius_points_at_proxy_with_chr_src_address():
+    """owner review fix #4: /radius add carries service=ppp (NOT
+    service=ppp,login) so a compromised proxy can't authorise router
+    admin login on the CHR."""
     script = _render()
-    # service=ppp ONLY (not ppp,login) since fix/chr-script-review-remaining —
-    # RADIUS authenticates PPP/VPN users, NOT router admin login. The
-    # specific anti-`login` pin lives in
-    # tests/fleet_p3/test_chr_script_review_remaining.py.
     line_start = script.index("add service=ppp ")
     chunk = script[line_start:line_start + 300]
     assert "address=10.98.0.1" in chunk          # the proxy data-plane IP
     assert "src-address=10.98.0.11" in chunk     # the CHR's own data IP
     assert 'comment="hobe-fleet-radius"' in chunk
+    # And `,login` must NOT be on the RADIUS service= line.
+    assert "service=ppp,login" not in script
+
+
+def test_radius_service_does_not_authorise_router_login():
+    """Pin the security boundary: RADIUS is for SUBSCRIBER PPP only."""
+    script = _render()
+    # `service=` must include `ppp` and only `ppp` on the radius row.
+    import re as _re
+    m = _re.search(r"add service=([a-z,]+) address=", script)
+    assert m, "no /radius add ... service= line in render"
+    assert m.group(1) == "ppp", (
+        f"RADIUS service= must be `ppp` only; got {m.group(1)!r} (drop `,login`)"
+    )
 
 
 # ── key-identity audit trail ─────────────────────────────────────────────

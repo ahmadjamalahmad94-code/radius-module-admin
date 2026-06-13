@@ -16,7 +16,7 @@ syntactically-broken RouterOS lines like::
 
     add interface=wg-mgmt public-key=""        ← RouterOS: expected end of command
         endpoint-address= endpoint-port=51820   ← endpoint-address has no value
-    add service=ppp,login address=10.98.0.1 secret=""
+    add service=ppp address=10.98.0.1 secret=""
 
 The owner discovered this the hard way on his first real install.
 
