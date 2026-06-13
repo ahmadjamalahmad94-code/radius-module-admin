@@ -552,15 +552,30 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 #                 uses; the unified script disables SSH/WinBox/FTP/web/
 #                 telnet for this user at the /ip service layer too)
 #
-# Explicitly NOT granted: api (binary), ssh, winbox, ftp, web,
-# password (no user-mgmt), policy (no /system/scripts), sniff, test,
-# romon, dude, tikapp. If a future panel call needs a new policy,
-# justify in the renderer's POLICY constant + bump the comment here.
+# DENIED by omission (RouterOS rule): api (binary), ssh, winbox, ftp,
+# web, telnet, password (no user-mgmt), policy (no /system/scripts),
+# sniff, test, romon, dude, tikapp, local — everything NOT in the
+# granted list above stays denied. If a future panel call needs a new
+# policy, justify it in the renderer's audit + add it to the granted
+# list below.
+#
+# LIVE INCIDENT (fix/chr-group-policy-granted-only — chr-vpn-3,
+# WinBox 4.1):
+#   Script Error: input does not match any value of policy
+#   (/user/group/add (policy); line 391)
+# Root cause: RouterOS v7 `/user group add policy=` accepts a
+# comma-separated list of GRANTED policy names ONLY. `!negation`
+# tokens (e.g. `!ssh`) are NOT valid input — RouterOS denies any
+# UNLISTED policy by default, so deny-by-omission is the only
+# correct form. The previous policy carried `!api,!ssh,...,!tikapp`
+# and the parser errored on the first `!` token, leaving the group
+# unprovisioned → /user add referenced a non-existent group →
+# import halted. Fix: granted-only tokens.
 /user group
 remove [find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"]
 add name="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
-    policy=read,write,sensitive,reboot,rest-api,!api,!ssh,!winbox,!ftp,!web,!password,!policy,!sniff,!test,!romon,!dude,!tikapp \
-    comment="hobe-fleet: scoped panel management user group"
+    policy=read,write,sensitive,reboot,rest-api \
+    comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
 
 # User row — idempotent. We ONLY manage our own row (recognised by the
 # ``hobe-fleet-api-managed`` comment) so a built-in like ``admin`` is

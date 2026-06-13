@@ -64,13 +64,25 @@ _BASE_CFG = {
     "CHR_SHARED_SECRET": "central-shared-secret-from-panel-xxxxxxxx",
 }
 
-#: The exact policy string the script must emit. Order of the granted
-#: policies matters for byte-for-byte readback parsing in tests; order
-#: of the denied (!) policies is fixed for the same reason.
-EXPECTED_POLICY = (
-    "read,write,sensitive,reboot,rest-api,"
-    "!api,!ssh,!winbox,!ftp,!web,!password,!policy,"
-    "!sniff,!test,!romon,!dude,!tikapp"
+#: The exact policy string the script must emit — GRANTED ONLY.
+#:
+#: LIVE INCIDENT (fix/chr-group-policy-granted-only): RouterOS v7
+#: ``/user group add policy=`` accepts a comma-separated list of
+#: GRANTED policy names ONLY. ``!negation`` tokens are NOT valid
+#: input — RouterOS denies any UNLISTED policy by default, so
+#: deny-by-omission is the only correct form. A previous version
+#: emitted ``...,!api,!ssh,...,!tikapp`` and the parser errored with
+#: «input does not match any value of policy» on chr-vpn-3
+#: (WinBox 4.1), leaving the group unprovisioned + the import
+#: halted. This test pins the granted-only shape.
+EXPECTED_POLICY = "read,write,sensitive,reboot,rest-api"
+
+#: Policies that MUST stay denied. We assert they DON'T appear in
+#: the policy list (deny-by-omission). They also must NOT appear
+#: with a ``!`` prefix — that's a syntax error on /user group add.
+DENIED_POLICIES = (
+    "api", "ssh", "winbox", "ftp", "web", "password",
+    "policy", "sniff", "test", "romon", "dude", "tikapp",
 )
 
 EXPECTED_GROUP_NAME = "hobe-fleet-mgmt"
@@ -120,25 +132,44 @@ class TestScopedGroupPolicy:
         """Spelled out per-policy so a single-token swap (e.g. dropping
         ``write``) is caught with a clear failure."""
         script = _render()
+        granted_tokens = EXPECTED_POLICY.split(",")
         for granted in ("read", "write", "sensitive", "reboot", "rest-api"):
-            assert granted in EXPECTED_POLICY.split(",")[:5], granted
-            assert f",{granted}," in f",{EXPECTED_POLICY}," or \
-                   EXPECTED_POLICY.startswith(f"{granted},") or \
-                   EXPECTED_POLICY.endswith(f",{granted}"), granted
-            assert granted in script
+            assert granted in granted_tokens, granted
+            assert f"policy={EXPECTED_POLICY}" in script.replace(" \\\n    ", " ")
 
-    def test_group_denies_forbidden_policies(self, provider_app):
-        """Explicit denials — the ! prefix must appear for each. A
-        v7 build that defaults a deny to allow when unspecified would
-        otherwise leak ssh/winbox/etc."""
-        forbidden = (
-            "api", "ssh", "winbox", "ftp", "web", "password",
-            "policy", "sniff", "test", "romon", "dude", "tikapp",
-        )
+    def test_group_policy_has_no_negation_tokens(self, provider_app):
+        """fix/chr-group-policy-granted-only — RouterOS v7
+        ``/user group add policy=`` errors with «input does not
+        match any value of policy» on the FIRST ``!`` token. The
+        rendered policy value must contain NO ``!`` at all."""
         script = _render()
-        for deny in forbidden:
-            assert f"!{deny}" in EXPECTED_POLICY, deny
-            assert f"!{deny}" in script, deny
+        # Extract the joined add-line and pull the policy= value.
+        flat = script.replace(" \\\n    ", " ").replace(" \\\n", " ")
+        add_line = next(
+            ln for ln in flat.splitlines()
+            if ln.startswith(f'add name="{EXPECTED_GROUP_NAME}"')
+        )
+        import re
+        m = re.search(r'policy=([^\s]+)', add_line)
+        assert m, f"could not extract policy= value from: {add_line!r}"
+        policy_value = m.group(1)
+        assert "!" not in policy_value, (
+            f"policy value must NOT contain `!` (RouterOS rejects negation "
+            f"tokens on /user group add); got: {policy_value!r}"
+        )
+        assert policy_value == EXPECTED_POLICY, (
+            f"policy value must equal {EXPECTED_POLICY!r}; got: {policy_value!r}"
+        )
+
+    def test_group_denies_forbidden_policies_by_omission(self, provider_app):
+        """RouterOS denies any UNLISTED policy by default — we assert
+        the forbidden tokens are simply ABSENT from the granted list."""
+        granted_tokens = set(EXPECTED_POLICY.split(","))
+        for deny in DENIED_POLICIES:
+            assert deny not in granted_tokens, (
+                f"policy {deny!r} must NOT be granted "
+                f"(deny-by-omission); got policy={EXPECTED_POLICY}"
+            )
 
     def test_group_is_not_a_builtin(self, provider_app):
         """The group name must NOT collide with any built-in v7 group
