@@ -122,6 +122,10 @@
   .fd-badge--off{background:#eef1f6;color:#475569;}
   .fd-badge--prov{background:#eef2ff;color:#4338ca;}
   .fd-badge--unk{background:#f1ecfe;color:#7c3aed;}
+  /* feat/active-node-view-script-reimport — drift-warning badge. */
+  .fd-badge--reimport{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
+  .fd-badge--reimport i{font-size:10px;animation:fd-spin-slow 3s linear infinite;}
+  @keyframes fd-spin-slow{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 
   /* ── per-row action buttons (modern, compact) ──────────────────────── */
   .fd-rowbtn{
@@ -134,6 +138,17 @@
   .fd-rowbtn.fd-check-one:hover{background:var(--fdx-brand-soft);border-color:#c7d2fe;}
   .fd-rowbtn.fd-poll-metrics{color:#0e7490;border-color:#cffafe;}
   .fd-rowbtn.fd-poll-metrics:hover{background:#ecfeff;border-color:#a5f3fc;}
+  /* feat/active-node-view-script-reimport — node-keyed view-script
+     button. Default: subdued, identical to fd-check-one. When the
+     node has needs_reimport=True it gets the loud reimport variant
+     so the operator can't miss the key-drift call to action. */
+  .fd-rowbtn.fd-node-view-script{color:#047857;border-color:#bbf7d0;}
+  .fd-rowbtn.fd-node-view-script:hover{background:#ecfdf5;border-color:#86efac;}
+  .fd-rowbtn--reimport{
+    color:#9a3412 !important;border-color:#fb923c !important;background:#fff7ed !important;
+    box-shadow:0 0 0 2px rgba(251,146,60,.18);
+  }
+  .fd-rowbtn--reimport:hover{background:#ffedd5 !important;border-color:#f97316 !important;}
   .fd-rowbtn[disabled]{opacity:.5;cursor:not-allowed;}
   .fd-rowbtn .fa-spinner{display:none;}
   .fd-rowbtn.is-busy .fa-rotate,.fd-rowbtn.is-busy .fa-rotate-icon,.fd-rowbtn.is-busy .fa-bolt,.fd-rowbtn.is-busy .fa-chart-line{display:none;}
@@ -846,9 +861,16 @@
         data-advance-url="{{ url_for('admin_fleet_onboarding.advance', job_id=0) }}"
         data-delete-url="{{ url_for('admin_fleet_onboarding.delete_job', job_id=0) }}" defer></script>
 
-{# Script-view modal — opens when an operator clicks «عرض السكربت». #}
+{# Script-view modal — opens when an operator clicks «عرض السكربت».
+   feat/active-node-view-script-reimport — the JS now binds two
+   button classes:
+     * .fd-pj-view-script (pending-card path) → data-script-url
+     * .fd-node-view-script (active-node path) → data-node-script-url
+   Both routes return the same JSON envelope. #}
 <script src="{{ url_for('static', filename='js/admin_fleet_script_view.js') }}"
-        data-script-url="{{ url_for('admin_fleet_onboarding.view_script', job_id=0) }}" defer></script>
+        data-script-url="{{ url_for('admin_fleet_onboarding.view_script', job_id=0) }}"
+        data-node-script-url="{{ url_for('admin_fleet_onboarding.view_node_script', node_id=0) }}"
+        defer></script>
 
 <div id="fd-script-modal" role="dialog" aria-modal="true" aria-labelledby="fd-sm-title"
      style="position:fixed;inset:0;z-index:1100;display:none;align-items:flex-start;justify-content:center;background:rgba(15,23,42,.45);overflow-y:auto;padding:24px 16px">
@@ -1204,6 +1226,17 @@
             {% if n.status == 'disabled' %}<span class="fd-badge fd-badge--off" title="مُعطّلة يدوياً">يدوياً</span>
             {% elif n.status == 'provisioning' %}<span class="fd-badge fd-badge--prov">تجهيز</span>{% endif %}
             {% if n.drain %}<span class="fd-badge fd-badge--off" title="لا تستقبل جلسات جديدة">منزوحة</span>{% endif %}
+            {# feat/active-node-view-script-reimport — surface the
+               needs_reimport flag set by the periodic wg-mgmt autosync
+               when the panel key drifts. The «عرض السكربت» button below
+               is highlighted in the same case so the operator can fetch
+               the freshly-rendered script with the corrected key. #}
+            {% if n.needs_reimport %}
+              <span class="fd-badge fd-badge--reimport"
+                    title="تغيّر مفتاح اللوحة العام — السكربت الحالي على هذه العقدة قديم. أعد استيراد السكربت المُولّد حديثاً.">
+                <i class="fa-solid fa-rotate"></i> بحاجة لإعادة استيراد السكربت
+              </span>
+            {% endif %}
             {% if h.last_transition %}<div class="fd-mini" data-cell="health-transition">آخر تحوّل: <span class="mono">{{ h.last_transition }}</span></div>{% endif %}
           </div>
         </header>
@@ -1256,6 +1289,20 @@
             </button>
             <button type="button" class="fd-rowbtn fd-poll-metrics" data-node-id="{{ n.id }}" data-node-name="{{ n.name }}" data-url="{{ url_for('fleet_ui.fleet_chr_node_poll_metrics_now', node_id=n.id) }}" title="قراءة المقاييس من RouterOS الآن">
               <i class="fa-solid fa-chart-line"></i><i class="fa-solid fa-spinner fa-spin"></i> مقاييس
+            </button>
+            {# feat/active-node-view-script-reimport — node-keyed
+               «عرض السكربت». Always present so the operator can re-view
+               + re-import an ACTIVE node's script anytime (key rotation,
+               config change, troubleshooting). Highlighted when
+               needs_reimport=True so the drift case is impossible to
+               miss; the hint title sits above the button on hover. #}
+            <button type="button"
+                    class="fd-rowbtn fd-node-view-script{% if n.needs_reimport %} fd-rowbtn--reimport{% endif %}"
+                    data-node-id="{{ n.id }}" data-node-name="{{ n.name }}"
+                    title="{% if n.needs_reimport %}تغيّر مفتاح اللوحة — أعد استيراد السكربت المُولّد حديثاً.{% else %}عرض / نسخ / تنزيل سكربت RouterOS لهذه العقدة{% endif %}">
+              <i class="fa-solid fa-code"></i>
+              <i class="fa-solid fa-spinner fa-spin"></i>
+              عرض السكربت
             </button>
             <a class="fd-rowbtn" href="{{ url_for('fleet_ui.chr_node_edit', node_id=n.id) }}" title="تعديل بيانات العقدة">
               <i class="fa-solid fa-pen-to-square"></i> تعديل

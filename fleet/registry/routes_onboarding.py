@@ -461,6 +461,76 @@ def _safe_filename(name: str) -> str:
     return (cleaned or f"chr-job-{0}").lower()
 
 
+def _render_job_to_response_payload(job: OnboardingJob):
+    """Shared render pipeline used by both the job-keyed view_script and
+    the new node-keyed view_node_script.
+
+    Runs the same path as the original view_script:
+      * status-gate against _SCRIPT_VIEW_OK_STATUSES + chr_id check;
+      * build bindings (errors propagate as the right HTTP code);
+      * defence-in-depth bindings_check;
+      * render via the configured renderer.
+
+    Returns either a `(jsonify(...), status_code)` tuple to short-circuit
+    OR a dict `{"job": job, "script": str, "bindings": dict, "node_name": str,
+    "filename": str}` for the caller to wrap. The caller decides the
+    final JSON shape (job-keyed adds `job_id`; node-keyed adds `node_id`)
+    so the two routes stay distinct + auditable.
+    """
+    if job.status not in _SCRIPT_VIEW_OK_STATUSES:
+        return jsonify({
+            "ok": False, "error": "script_unavailable",
+            "message": (
+                f"السكربت غير متاح بعد — الحالة الحالية «{job.status}». "
+                f"اضغط «متابعة» على البطاقة لدفع الجوب حتى مرحلة توليد "
+                f"السكربت ثم أعد المحاولة."),
+        }), 400
+    if not job.chr_id:
+        return jsonify({
+            "ok": False, "error": "script_unavailable",
+            "message": (
+                "لا توجد عقدة CHR مرتبطة بهذه المهمة بعد، فلا يمكن توليد "
+                "السكربت. ادفع الجوب أولاً عبر «متابعة»."),
+        }), 400
+    service = build_service()
+    try:
+        bindings = service._build_bindings(job)
+    except OnboardingDependencyError as exc:
+        return jsonify({"ok": False, "error": "dependency_unavailable",
+                        "message": str(exc)}), 503
+    except OnboardingError as exc:
+        return jsonify({"ok": False, "error": "onboarding_error",
+                        "message": str(exc)}), 400
+    from fleet.registry.script_bindings_check import check_bindings, summary_ar
+    missing = check_bindings(bindings)
+    if missing:
+        return jsonify({
+            "ok": False,
+            "error": "bindings_incomplete",
+            "message": summary_ar(missing),
+            "missing": [
+                {"key": m.key, "label_ar": m.label_ar, "setup_hint_ar": m.setup_hint_ar}
+                for m in missing
+            ],
+        }), 412
+    try:
+        script = service.renderer.render(bindings)
+    except Exception as exc:  # noqa: BLE001 — never leak the body in errors
+        return jsonify({"ok": False, "error": "internal_error",
+                        "message": f"تعذّر توليد السكربت: {exc}"}), 500
+    node_name = (job.form_input or {}).get("name") or f"chr-job-{job.id}"
+    filename = f"{_safe_filename(node_name)}.rsc"
+    # Successful render → clear any stale «بانتظار» error on the job.
+    service._clear_job_error(job)
+    return {
+        "job": job,
+        "script": script,
+        "bindings": bindings,
+        "node_name": node_name,
+        "filename": filename,
+    }
+
+
 @bp.get("/jobs/<int:job_id>/script")
 @super_admin_required
 def view_script(job_id: int):
@@ -535,90 +605,112 @@ def view_script(job_id: int):
                 ),
                 "job_id": job_id,
             }), 404
-    if job.status not in _SCRIPT_VIEW_OK_STATUSES:
-        return jsonify({
-            "ok": False, "error": "script_unavailable",
-            "message": (
-                f"السكربت غير متاح بعد — الحالة الحالية «{job.status}». "
-                f"اضغط «متابعة» على البطاقة لدفع الجوب حتى مرحلة توليد "
-                f"السكربت ثم أعد المحاولة."),
-        }), 400
-    if not job.chr_id:
-        return jsonify({
-            "ok": False, "error": "script_unavailable",
-            "message": (
-                "لا توجد عقدة CHR مرتبطة بهذه المهمة بعد، فلا يمكن توليد "
-                "السكربت. ادفع الجوب أولاً عبر «متابعة»."),
-        }), 400
-
-    service = build_service()
-    try:
-        # The renderer is pure (no DB writes, no vault writes); calling it
-        # again is safe + cheap. We bypass service.render_script() to avoid
-        # re-advancing the state machine — that would error from any state
-        # past script_generated.
-        bindings = service._build_bindings(job)
-    except OnboardingDependencyError as exc:
-        return jsonify({"ok": False, "error": "dependency_unavailable",
-                        "message": str(exc)}), 503
-    except OnboardingError as exc:
-        return jsonify({"ok": False, "error": "onboarding_error",
-                        "message": str(exc)}), 400
-
-    # Defence in depth — re-validate even on an old job that already has
-    # ``status = script_generated`` from before the bindings check landed.
-    # The owner's first install came from exactly such a job; we refuse to
-    # serve a syntactically-broken .rsc again.
-    from fleet.registry.script_bindings_check import check_bindings, summary_ar
-    missing = check_bindings(bindings)
-    if missing:
-        return jsonify({
-            "ok": False,
-            "error": "bindings_incomplete",
-            "message": summary_ar(missing),
-            "missing": [
-                {"key": m.key, "label_ar": m.label_ar, "setup_hint_ar": m.setup_hint_ar}
-                for m in missing
-            ],
-        }), 412   # Precondition Required — operator must wire panel/proxy/secret first
-
-    try:
-        script = service.renderer.render(bindings)
-    except Exception as exc:  # noqa: BLE001 — never leak the body in errors
-        return jsonify({"ok": False, "error": "internal_error",
-                        "message": f"تعذّر توليد السكربت: {exc}"}), 500
-
-    node_name = (job.form_input or {}).get("name") or f"chr-job-{job.id}"
-    filename = f"{_safe_filename(node_name)}.rsc"
-
-    # The script rendered cleanly + passed the bindings gate → every
-    # prerequisite is in place now. Drop any stale «بانتظار إعداد …» error
-    # stamped on a PRIOR failed attempt (e.g. before the panel WG key was
-    # set) so the pending-onboardings card stops contradicting the «جاهز»
-    # banner. No-op when there's no error.
-    service._clear_job_error(job)
-
-    # Audit — record the VIEW (not the body). The audit row's `summary`
-    # is operator-facing; the body never appears anywhere except the
-    # JSON response we're about to return.
+    result = _render_job_to_response_payload(job)
+    if isinstance(result, tuple):
+        return result   # short-circuit response from the helper
     audit(
         "fleet_onboarding_script_view",
         "fleet_onboarding",
-        str(job.id),
-        f"تم عرض سكربت RouterOS للعقدة «{node_name}» (الجوب #{job.id})",
-        metadata={"chr_id": job.chr_id, "status": job.status,
-                  "script_sha256": job.generated_script_ref},
+        str(result["job"].id),
+        f"تم عرض سكربت RouterOS للعقدة «{result['node_name']}» (الجوب #{result['job'].id})",
+        metadata={"chr_id": result["job"].chr_id, "status": result["job"].status,
+                  "script_sha256": result["job"].generated_script_ref},
     )
     db.session.commit()
-
     return jsonify({
         "ok": True,
-        "job_id": job.id,
-        "node_name": node_name,
-        "status": job.status,
-        "filename": filename,
-        "script": script,
-        "sha256": job.generated_script_ref,
+        "job_id": result["job"].id,
+        "node_name": result["node_name"],
+        "status": result["job"].status,
+        "filename": result["filename"],
+        "script": result["script"],
+        "sha256": result["job"].generated_script_ref,
+    })
+
+
+@bp.get("/chr-nodes/<int:node_id>/script")
+@super_admin_required
+def view_node_script(node_id: int):
+    """Re-render the per-CHR .rsc keyed by NODE id (not job id).
+
+    feat/active-node-view-script-reimport — the original
+    ``view_script`` is job-keyed, so once a node leaves the pending
+    tab («نشطة») the operator has no way to re-view + re-import the
+    script. That's the missing piece for the key-rotation flow: the
+    periodic wg-mgmt autosync (fleet/sync/wg_mgmt_autosync.py) flips
+    ``needs_reimport=True`` on active nodes when the panel key drifts,
+    but there was no UI to fetch the freshly-rendered script with the
+    corrected key.
+
+    Resolution:
+      * load FleetChrNode(node_id);
+      * find the latest renderable OnboardingJob with chr_id=node.id
+        (includes status='active' — that's exactly the case the
+        owner needs);
+      * render via the shared pipeline + return the same JSON shape
+        as ``view_script`` plus a ``node_id`` echo so the front-end
+        can disambiguate the two callers.
+    """
+    from fleet.registry.models_chr import FleetChrNode
+    node = db.session.get(FleetChrNode, int(node_id))
+    if node is None:
+        return jsonify({
+            "ok": False, "error": "not_found",
+            "message": (
+                "العقدة غير موجودة — على الأرجح حُذفت بعد فتح الصفحة. "
+                "أعد تحميل اللوحة لمشاهدة الحالة الحالية."
+            ),
+            "node_id": node_id,
+        }), 404
+    sibling_job = (
+        OnboardingJob.query
+        .filter(OnboardingJob.chr_id == node.id)
+        .filter(OnboardingJob.status.in_(_SCRIPT_VIEW_OK_STATUSES))
+        .order_by(OnboardingJob.id.desc())
+        .first()
+    )
+    if sibling_job is None:
+        return jsonify({
+            "ok": False, "error": "orphan_node",
+            "message": (
+                f"العقدة #{node.id} «{node.name}» موجودة لكن لا توجد "
+                f"مهمة تسجيل قابلة للعرض مرتبطة بها — على الأرجح "
+                f"حُذفت المهمة لاحقاً. شغّل «نظّف المهملات» لإزالة "
+                f"العقدة المعزولة ثم أضِفها من جديد عبر المعالج."
+            ),
+            "node_id": node.id, "node_name": node.name,
+        }), 410
+    result = _render_job_to_response_payload(sibling_job)
+    if isinstance(result, tuple):
+        return result
+    audit(
+        "fleet_node_script_view",
+        "fleet_chr_node",
+        str(node.id),
+        f"تم عرض سكربت RouterOS للعقدة «{node.name}» (عقدة #{node.id})",
+        metadata={
+            "chr_id": node.id,
+            "job_id": result["job"].id,
+            "status": result["job"].status,
+            "script_sha256": result["job"].generated_script_ref,
+            "needs_reimport_before": bool(node.needs_reimport),
+        },
+    )
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "node_id": node.id,
+        "job_id": result["job"].id,
+        "node_name": result["node_name"],
+        "status": result["job"].status,
+        "filename": result["filename"],
+        "script": result["script"],
+        "sha256": result["job"].generated_script_ref,
+        # Surface the re-import flag so the modal can show a banner
+        # if the operator opened the script because of an autosync
+        # key-drift event. We DO NOT auto-clear it here — clearance
+        # waits for the next autosync handshake confirmation.
+        "needs_reimport": bool(node.needs_reimport),
     })
 
 

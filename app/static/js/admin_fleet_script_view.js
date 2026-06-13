@@ -18,9 +18,18 @@
   })();
   const TEMPLATE = scriptTag.dataset.scriptUrl
     || "/admin/fleet/onboarding/jobs/0/script";
+  // feat/active-node-view-script-reimport — a second template URL for
+  // the node-keyed route so the JS can show the script for an ACTIVE
+  // node (whose job is past the pending tab). Falls back to deriving
+  // a node URL from the job URL pattern if the page didn't pass one
+  // explicitly. Both routes return the same JSON shape — only the id
+  // and the URL prefix differ.
+  const NODE_TEMPLATE = scriptTag.dataset.nodeScriptUrl
+    || "/admin/fleet/onboarding/chr-nodes/0/script";
 
-  function urlFor(id) {
-    return TEMPLATE.replace(/\/0\/script$/, "/" + encodeURIComponent(id) + "/script");
+  function urlFor(id, kind) {
+    const template = (kind === "node") ? NODE_TEMPLATE : TEMPLATE;
+    return template.replace(/\/0\/script$/, "/" + encodeURIComponent(id) + "/script");
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -189,11 +198,14 @@
 
   // ────────────────────────────────────────────────────────────────────
   // Open + load
+  //   kind: "job" (pending-card route) | "node" (active-node route).
+  //   Both routes return the same JSON shape — only the URL differs.
   // ────────────────────────────────────────────────────────────────────
-  async function openFor(jobId, nodeName) {
+  async function openFor(id, nodeName, kind) {
+    kind = kind || "job";
     if (!modal) return;
     // Reset display state.
-    if (titleEl)    titleEl.textContent    = "سكربت RouterOS — " + (nodeName || "#" + jobId);
+    if (titleEl)    titleEl.textContent    = "سكربت RouterOS — " + (nodeName || "#" + id);
     if (filenameEl) filenameEl.textContent = "—";
     if (statusEl)   statusEl.textContent   = "جارٍ التحميل";
     if (shaEl)      shaEl.textContent      = "—";
@@ -204,7 +216,7 @@
     openModal();
 
     try {
-      const res = await fetch(urlFor(jobId), {
+      const res = await fetch(urlFor(id, kind), {
         method: "GET",
         headers: { "Accept": "application/json" },
       });
@@ -223,7 +235,11 @@
       if (bytesEl)    bytesEl.textContent    = String(currentScript.length);
       if (importEl)   importEl.textContent   = "/import file=" + (body.filename || "<filename>.rsc");
       setDownload(body.filename || "node.rsc", currentScript);
-      toast("success", "تم تحميل السكربت — مُولّد لهذه العقدة فقط.");
+      let okMsg = "تم تحميل السكربت — مُولّد لهذه العقدة فقط.";
+      if (kind === "node" && body.needs_reimport) {
+        okMsg = "تم تحميل السكربت الجديد بعد تصحيح مفتاح اللوحة — أعد استيراده على هذه العقدة.";
+      }
+      toast("success", okMsg);
     } catch (_err) {
       if (scriptEl) scriptEl.textContent = "(خطأ شبكي)";
       toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 7000 });
@@ -232,12 +248,22 @@
 
   // ────────────────────────────────────────────────────────────────────
   // Wire the per-row buttons.
+  //   .fd-pj-view-script (pending-card path) — keyed by data-job-id.
+  //   .fd-node-view-script (active-node path) — keyed by data-node-id.
+  // Both flow through the same modal.
   // ────────────────────────────────────────────────────────────────────
   document.querySelectorAll(".fd-pj-view-script").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id   = btn.dataset.jobId;
       const name = btn.dataset.jobName || ("#" + id);
-      openFor(id, name);
+      openFor(id, name, "job");
+    });
+  });
+  document.querySelectorAll(".fd-node-view-script").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id   = btn.dataset.nodeId;
+      const name = btn.dataset.nodeName || ("#" + id);
+      openFor(id, name, "node");
     });
   });
 })();
