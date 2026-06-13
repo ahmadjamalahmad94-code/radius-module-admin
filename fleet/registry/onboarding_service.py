@@ -338,6 +338,22 @@ _FLEET_CONST_DEFAULTS: dict[str, Any] = {
     "API_USER": "",
     "API_PASSWORD": "",
     "API_PORT": 8443,
+    # feat/chr-auto-scoped-mgmt-user — dedicated SCOPED management user
+    # group. The unified script's §11 creates this group with exactly the
+    # policies the panel needs and binds the panel user to it:
+    #
+    #   read        — system_resource, /interface, /ppp/active, etc.
+    #   write       — PUT/PATCH on /ppp/{secret,profile}, /ip/pool,
+    #                 /ip/ipsec/*, /interface/wireguard{,/peers}
+    #   sensitive   — required to write ppp/secret password=, ipsec PSK,
+    #                 wireguard peer private-key=
+    #   reboot      — /system/reboot from the CHR console
+    #   rest-api    — the only login channel the panel uses
+    #
+    # Explicitly NOT granted: api (binary), ssh, winbox, ftp, web,
+    # password (no user-mgmt), policy (no /system/scripts), sniff,
+    # test, romon, dude, tikapp.
+    "API_GROUP": "hobe-fleet-mgmt",
     # ── shared client pool + PPP profile (feat/chr-unified-provisioning-
     # complete). Same name + ranges on every node so a subscriber roaming
     # between CHRs keeps the same Framed-IP and the same profile (§10.2).
