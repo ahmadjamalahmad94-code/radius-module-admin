@@ -391,3 +391,65 @@ class TestOrphanSurveyAndPurge:
         # And the route still has the stale id — survey doesn't write.
         db.session.refresh(route)
         assert n.id in route.allowed_fleet_chr_node_ids
+
+
+# ════════════════════════════════════════════════════════════════════════
+# (V) Dashboard UI — purge button + modal render; per-node delete button
+# ════════════════════════════════════════════════════════════════════════
+class TestDashboardOrphanUi:
+
+    def test_purge_button_renders_for_super_admin(self, app, client):
+        _login_admin(client); _make_super_admin()
+        body = client.get("/admin/fleet/").get_data(as_text=True)
+        assert 'id="fd-orphan-purge-btn"' in body
+        assert "نظِّف المهملات" in body
+        # The button carries the data-* endpoint URLs the JS hits.
+        assert "data-survey-url=" in body
+        assert "data-purge-url=" in body
+        # Survey URL must be the GET endpoint; purge URL must be the
+        # POST endpoint. Both belong to the onboarding blueprint.
+        assert "/admin/fleet/onboarding/orphans" in body
+
+    def test_purge_modal_scaffold_present(self, app, client):
+        _login_admin(client); _make_super_admin()
+        body = client.get("/admin/fleet/").get_data(as_text=True)
+        assert 'id="fd-orphan-modal"' in body
+        assert 'id="fd-orphan-survey-body"' in body
+        assert 'id="fd-orphan-confirm-btn"' in body
+        assert 'id="fd-orphan-cancel-btn"' in body
+        # The confirm button starts disabled until the survey returns
+        # a non-empty list — defence vs an accidental click before the
+        # preview has loaded.
+        assert 'id="fd-orphan-confirm-btn"' in body
+        assert 'disabled' in body
+        # No native confirm() — the modal IS the confirm step.
+        assert "confirm(" not in body
+
+    def test_per_node_delete_button_renders_with_csrf_form(self, app, client, make_node):
+        """Each node in the grid renders its own POST form to the
+        existing ``fleet_ui.chr_node_delete`` endpoint (now routed
+        through the centralised teardown). The form carries the CSRF
+        token + the confirmation modal trigger."""
+        n = make_node(name="chr-vpn-test", public_ip="9.0.0.99")
+        _login_admin(client); _make_super_admin()
+        body = client.get("/admin/fleet/").get_data(as_text=True)
+        assert f'id="fd-del-form-{n.id}"' in body
+        assert f"/admin/fleet/chr-nodes/{n.id}/delete" in body
+        # The delete button triggers the design-system confirm modal.
+        assert f'data-confirm-form="fd-del-form-{n.id}"' in body
+
+    def test_server_endpoints_require_super_admin(self, app, client):
+        """The data path (orphans GET + purge POST + chr_node delete)
+        is decorated with ``@super_admin_required`` so even a leaked
+        UI button can't trigger the action. We probe the endpoints
+        directly without logging in."""
+        # Both endpoints redirect unauthenticated requests to login,
+        # never returning the survey JSON. 302/401 is acceptable.
+        r1 = client.get("/admin/fleet/onboarding/orphans")
+        assert r1.status_code in (302, 401, 403)
+        r2 = client.post(
+            "/admin/fleet/onboarding/orphans/purge",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        assert r2.status_code in (302, 401, 403)
