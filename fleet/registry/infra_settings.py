@@ -87,6 +87,18 @@ _INFRA_KEYS = (
     # it up without rotation. Reusing PANEL_WG_PUBKEY would have conflated
     # the wg-mgmt and wg-radius keys.
     "PANEL_RADIUS_WG_PUBKEY",
+    # fix/chr-hardening-safe-firewall-order — OPTIONAL list of the
+    # operator's management source IPs/CIDRs (comma-separated). When
+    # non-empty the rendered RouterOS script:
+    #   1. emits a SCOPED accept for tcp:22,8291 on the WAN from those
+    #      sources (in addition to wg-mgmt 10.99.0.1/32) — so WinBox
+    #      remains reachable from the owner's own IP.
+    #   2. unions the ssh/winbox `/ip service address=` ACL with those
+    #      CIDRs so the listener itself accepts them.
+    # NEVER 0.0.0.0/0 — the point is the owner's IP is allowed; the
+    # public internet is not. Empty ⇒ wg-mgmt-only + temp-emergency
+    # fallback (the prior behaviour).
+    "OPERATOR_ADMIN_IPS",
 )
 
 #: Subset whose stored value is a Fernet ciphertext that must be decrypted
@@ -143,6 +155,7 @@ _LABELS_AR = {
     "CHR_SHARED_SECRET": "السر المشترك لـ RADIUS (CHR ↔ Proxy)",
     "SSTP_CERT_NAME":    "اسم شهادة SSTP على CHR",
     "IKE_CERT_NAME":     "اسم شهادة IKEv2 على CHR",
+    "OPERATOR_ADMIN_IPS": "IPs الإدارة (WinBox/SSH من جهازك — اختياري)",
 }
 
 
@@ -376,6 +389,55 @@ def _validate_pubkey(value: str, field_label: str) -> str:
     return value
 
 
+def _validate_admin_ips(value: str, field_label: str) -> str:
+    """Validate + normalise a comma-separated list of IP / CIDR literals.
+
+    Empty input is allowed (returns ""). Each non-empty token must parse
+    as ``ipaddress.ip_network`` (host-bit-masking off — strict). A bare
+    IP without ``/mask`` becomes ``/32`` (v4) or ``/128`` (v6). The
+    return value is the deduplicated, whitespace-stripped, comma-joined
+    list ready to splice into a RouterOS ``src-address=`` literal and
+    into ``/ip service set ... address=``. We REJECT 0.0.0.0/0 (or
+    ::/0) — the whole point of this field is "the owner's specific
+    addresses, not the public internet"; allowing the catch-all here
+    would silently undo the lockdown.
+    """
+    import ipaddress as _ip
+
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for piece in raw.replace(";", ",").split(","):
+        tok = piece.strip()
+        if not tok:
+            continue
+        try:
+            net = _ip.ip_network(tok, strict=False)
+        except (ValueError, TypeError) as exc:
+            raise InfraSettingsError(
+                f"{field_label}: «{tok}» ليس عنواناً صالحاً (مثال: "
+                "1.2.3.4 أو 1.2.3.0/24)."
+            ) from exc
+        if net.prefixlen == 0:
+            raise InfraSettingsError(
+                f"{field_label}: مرفوض ‎0.0.0.0/0 — لا تفتح الإدارة "
+                "للعالم. أدخل عنوان مزوّد إنترنتك تحديداً."
+            )
+        norm = str(net)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        tokens.append(norm)
+    if len(tokens) > 16:
+        raise InfraSettingsError(
+            f"{field_label}: الحد الأقصى 16 عنواناً/نطاقاً — استخدم "
+            "نطاقاً أوسع (مثال: ‎1.2.3.0/24) بدلاً من عدّ عناوين منفردة."
+        )
+    return ",".join(tokens)
+
+
 def _validate_cert_name(value: str, field_label: str) -> str:
     value = (value or "").strip()
     if not value:
@@ -445,6 +507,21 @@ def generate_chr_shared_secret() -> str:
     plaintext = "".join(secrets.choice(alphabet) for _ in range(48))
     set_chr_shared_secret(plaintext)
     return plaintext
+
+
+def set_operator_admin_ips(value: str) -> None:
+    """Persist OPERATOR_ADMIN_IPS — the owner's management source list.
+
+    Empty input clears the row (back to wg-mgmt-only + temp-emergency
+    fallback). Non-empty is normalised + validated by
+    :func:`_validate_admin_ips` (rejects 0.0.0.0/0, dedupes, caps at 16
+    tokens). The value is plaintext (no Fernet) — it's not a secret;
+    it's the operator's own public IP, which leaks anyway from any
+    traceroute.
+    """
+    clean = _validate_admin_ips(value, _LABELS_AR["OPERATOR_ADMIN_IPS"])
+    _raw_set("OPERATOR_ADMIN_IPS", clean)
+    db.session.commit()
 
 
 def set_cert_name(template_var: str, value: str) -> None:

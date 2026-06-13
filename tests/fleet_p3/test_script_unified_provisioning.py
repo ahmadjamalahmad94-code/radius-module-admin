@@ -547,7 +547,14 @@ class TestRenderSmoke:
         assert "{%" not in out and "%}" not in out
 
     def test_quote_balance_on_every_line(self):
-        for lineno, line in enumerate(_render().splitlines(), start=1):
+        """Quote balance per LOGICAL line — backslash continuations
+        joined, multi-line ``source="..."`` script bodies in §11b
+        (break-glass) stripped (they're one RouterOS token spanning
+        many text lines)."""
+        import re as _re
+        flat = _render().replace(" \\\n", " ").replace("\\\n", "")
+        flat = _re.sub(r'source="(?:[^"\\]|\\.)*"', 'source=""', flat, flags=_re.DOTALL)
+        for lineno, line in enumerate(flat.splitlines(), start=1):
             assert line.count('"') % 2 == 0, (
                 f"L{lineno} has odd number of double-quotes: {line!r}"
             )

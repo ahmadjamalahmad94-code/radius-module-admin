@@ -336,21 +336,26 @@ class TestInvariant5MgmtRestrictedToPanelWg:
         assert "dst-port=8443" in api, api
 
     def test_service_hardening_uses_panel_wg_addr_for_ssh_winbox_www_ssl(self):
-        """In the success branch of the wg-mgmt-verify gate, ssh + winbox
-        are restricted to PANEL/32. www-ssl is restricted unconditionally
-        (its REST handler is the panel poller — never opens to WAN)."""
-        flat = _flatten(_render())
-        # www-ssl line — single configured invocation, /32 scoped.
+        """In the success branch of the wg-mgmt-verify gate, ssh +
+        winbox are restricted via the `$mgmtAddrACL` local — which is
+        `PANEL/32` when OPERATOR_ADMIN_IPS is unset, or the union
+        `PANEL/32,<operator-ips>` when set. www-ssl is restricted
+        unconditionally to PANEL/32 (its REST handler is the panel
+        poller; the operator never logs in there)."""
+        script = _render()
+        flat = _flatten(script)
+        # www-ssl line — single configured invocation, PANEL/32 scoped.
         assert re.search(
             r"set www-ssl[^\n]+address=10\.99\.0\.1/32", flat
         ), "www-ssl must be address-scoped to PANEL_WG_ADDR/32"
-        # ssh + winbox — restricted in the success branch.
-        assert re.search(
-            r"/ip service set ssh\s+address=10\.99\.0\.1/32", flat
-        ), "ssh must be restricted to PANEL_WG_ADDR/32 (success branch)"
-        assert re.search(
-            r"/ip service set winbox\s+address=10\.99\.0\.1/32", flat
-        ), "winbox must be restricted to PANEL_WG_ADDR/32 (success branch)"
+        # The mgmt ACL local is set to PANEL/32 in the default
+        # (OPERATOR_ADMIN_IPS empty) render.
+        assert ':local mgmtAddrACL "10.99.0.1/32"' in script, (
+            "missing mgmtAddrACL = PANEL_WG_ADDR/32 (default render)"
+        )
+        # ssh + winbox consume that local on the success branch.
+        assert "/ip service set ssh    address=$mgmtAddrACL" in flat
+        assert "/ip service set winbox address=$mgmtAddrACL" in flat
 
     def test_api_and_telnet_and_ftp_disabled(self):
         flat = _flatten(_render())
@@ -403,15 +408,16 @@ class TestInvariant6WgMgmtVerifyGate:
         ), "missing operator warning in fallback"
 
     def test_probe_precedes_ssh_winbox_restriction_in_script_text(self):
-        """The probe code MUST appear before any `/ip service set ssh
-        address=` line that restricts ssh/winbox — script-text order
-        equals execution order on RouterOS."""
-        script = _render()
-        probe_pos = script.index(
+        """The wg-mgmt probe + the `:local mgmtReachable` flag MUST
+        appear before any `/ip service set ssh address=$mgmtAddrACL`
+        line that restricts ssh/winbox — script-text order equals
+        execution order on RouterOS."""
+        flat = _render().replace(" \\\n", " ")
+        probe_pos = flat.index(
             "/ping address=10.99.0.1 interface=wg-mgmt count=3 as-value"
         )
-        restrict_pos = script.index(
-            "/ip service set ssh    address=10.99.0.1/32"
+        restrict_pos = flat.index(
+            "/ip service set ssh    address=$mgmtAddrACL"
         )
         assert probe_pos < restrict_pos, (
             "wg-mgmt probe must precede the ssh restriction"

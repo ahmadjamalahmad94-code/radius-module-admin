@@ -405,6 +405,73 @@
   </form>
 </div>
 
+{# ─── 4b. Manual-access IPs for WinBox / SSH (OPTIONAL) ─── #}
+{# fix/chr-hardening-safe-firewall-order — the owner asked: «لازم
+   أقدر أفوت ع WinBox مش ينمنع خالص». When this list is non-empty
+   the rendered script:
+     1) emits a scoped firewall accept for tcp:22,8291 on ether1 from
+        these sources (alongside the wg-mgmt accept from PANEL/32);
+     2) unions the ssh/winbox /ip service `address=` ACL with those
+        CIDRs so the listeners themselves accept those sources.
+   Empty list ⇒ wg-mgmt-only + temp-emergency fallback (the prior
+   default). NEVER 0.0.0.0/0. #}
+<div class="fi-card">
+  <div class="fi-card-head">
+    <div class="fi-card-title">
+      <i class="fa-solid fa-user-shield"></i> IPs الإدارة (WinBox/SSH من جهازك)
+    </div>
+    {% set op_view = view|selectattr('key','equalto','OPERATOR_ADMIN_IPS')|first %}
+    {% if op_view and op_view.is_set %}
+      <span class="fi-pill fi-pill--ok"
+            style="margin-inline-start:auto;background:#dcfce7;color:#15803d;
+                   padding:2px 10px;border-radius:999px;font-size:11px;font-weight:800">
+        مُفعَّل
+      </span>
+    {% else %}
+      <span class="fi-pill"
+            style="margin-inline-start:auto;background:#e5e7eb;color:#6b7280;
+                   padding:2px 10px;border-radius:999px;font-size:11px;font-weight:800">
+        اختياري
+      </span>
+    {% endif %}
+  </div>
+  <div class="fi-card-sub">
+    قائمة عناوين الـ IP أو نطاقات (CIDR) التي تريد أن تظلّ منها قادراً
+    على الوصول إلى <strong>WinBox</strong> و <strong>SSH</strong> على
+    كل CHR — مثل عنوان مزوّد إنترنتك. مفصولة بفواصل:
+    <code dir="ltr">1.2.3.4, 5.6.7.0/24</code>.
+    <br>
+    <strong>اتركها فارغة</strong> إذا كنت تستخدم
+    <code dir="ltr">wg-mgmt</code> فقط — حينها يُطبَّق القفل الكامل
+    تلقائياً بعد التحقّق من اتصال <code dir="ltr">wg-mgmt</code>.
+    <br>
+    <em>قاعدة أمان:</em> ‎0.0.0.0/0 مرفوض — اذكر عناوينك تحديداً، لا
+    تفتح الإدارة للعالم.
+    <br>
+    <strong style="color:#b45309">منفذ طوارئ (لا يُحجَب أبداً):</strong>
+    إذا فقدت الوصول، افتح <em>وحدة تحكّم المزوّد</em>
+    (Hetzner / NovoServe VNC أو Serial — تتجاوز الـ firewall كاملاً)
+    وشغّل من سطر RouterOS:
+    <code dir="ltr">/system script run hobe-open-winbox</code> —
+    يفتح WinBox لمدة 15 دقيقة ثم يُعيد القفل تلقائياً. السكربت موجود
+    على كل CHR (يُحدَّث مع كل استيراد).
+  </div>
+
+  <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_operator_admin_ips') }}">
+    {{ csrf_input() }}
+    <div class="fi-field">
+      <label for="operator_admin_ips">عناوين الإدارة (مفصولة بفواصل)</label>
+      <input type="text" id="operator_admin_ips" name="operator_admin_ips"
+             value="{{ op_view.masked if op_view and op_view.is_set else '' }}"
+             placeholder="(فارغ = wg-mgmt فقط) مثال: 1.2.3.4, 5.6.7.0/24"
+             dir="ltr" autocomplete="off">
+    </div>
+    <button type="submit" class="fi-btn fi-btn--primary">
+      <i class="fa-solid fa-floppy-disk"></i> حفظ IPs الإدارة
+    </button>
+  </form>
+</div>
+
 {# ─── Live-metrics API credentials (read-only RouterOS user) ─── #}
 {% if metrics_creds is defined %}
 <div class="fi-card">

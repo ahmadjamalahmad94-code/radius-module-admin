@@ -413,7 +413,7 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
     src-address={{ CLIENT_SUPERNET }} comment="hobe-fleet-nat-egress" ;# e.g. 10.0.0.0/8
 
 # ============================================================
-# 9. SURGICAL FIREWALL (input chain) — see header comment for full spec.
+# 9. SURGICAL FIREWALL (input chain) — clean rebuild, place-before order.
 # ============================================================
 # LIVE INCIDENT (fix/chr-hardening-safe-firewall-order — chr-vpn-3):
 #   A foreign rule `chain=input action=drop in-interface=ether1` (added
@@ -424,15 +424,24 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
 #   to hoist our allows to the top, but foreign drops interleaved
 #   between the moves still beat us in first-match order.
 #
-# THE NEW APPROACH — three guarantees:
+# OWNER PRINCIPLE («لازم السكربت ينظف أي شي قبله — طالما بده يكتب
+# بمكان، ينظف قبل ما يكتب»): every section the script WRITES first
+# REMOVES the conflicting prior state. For the INPUT chain on a
+# dedicated fleet CHR (which we fully own) that means a CLEAN REBUILD:
+# wipe every existing input rule and re-emit our authoritative ordered
+# set. forward / output / nat chains are NOT touched beyond our own
+# hobe-fleet-* tagged rules (see §8 nat / §9z below).
 #
-#   1. Sweep our rules + a precise set of FOREIGN known-bad patterns
-#      before rebuilding. Patterns: any rule with comment matching
-#      ^TEMP|^drop public input, plus any unlabeled
-#      `chain=input action=drop in-interface=ether1` with no protocol
-#      and no dst-port (truly broad public drops). Operator rules with
-#      legitimate selectors (protocol=tcp dst-port=22 etc.) are
-#      preserved.
+# Safety: the §0a 3-min self-lockout rollback is armed BEFORE this
+# wipe runs, so a mid-rebuild session drop reverts to the prior
+# working firewall.
+#
+# THE NEW APPROACH — four guarantees:
+#
+#   1. CLEAN REBUILD of the INPUT chain only. `remove [find chain=input]`
+#      wipes every existing input rule (ours + foreign + temp + duplicate),
+#      then we re-emit our authoritative ordered set fresh. No risk of
+#      stale operator rules surviving between adds.
 #
 #   2. Anchor `hobe-fleet-fw-drop-last` is added FIRST. Every other
 #      rule is added with a place-before pointing at that anchor, so
@@ -441,15 +450,18 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
 #      interleaved foreign rules.
 #
 #   3. Re-running the script is BYTE-IDENTICAL output and converges to
-#      the same effective order with zero duplicates (the regex sweep
-#      catches every prior hobe-fleet-fw-* rule including the temp
-#      emergency-admin rule when one was added by a previous run).
+#      the same effective order with zero duplicates (the input wipe
+#      is total; the authoritative set is deterministic from bindings).
+#
+#   4. forward + output chains NOT touched. Only our tagged nat rule
+#      in §8 is replaced (remove-by-comment, then add).
 #
 # Effective order on the CHR (top → bottom):
 #   conntrack accept            ← rule 0, first match
 #   conntrack=invalid drop
 #   wg-mgmt mgmt accept (PANEL)
 #   wg-mgmt api-ssl 8443 accept (PANEL, if API user provisioned)
+#   operator-IP ssh+winbox accept (if OPERATOR_ADMIN_IPS set)
 #   wg-data RADIUS auth/acct accept (PROXY) — if radius_transport role
 #   wg-data CoA accept (PROXY) — if radius_transport role
 #   WAN wg-mgmt udp 51820 accept
@@ -459,20 +471,28 @@ add chain=srcnat action=masquerade out-interface={{ WAN_IFACE }} \
 #   no-public-radius drop (1812/1813/3799 on non-wg-data ifaces)
 #   drop-last                   ← rule N, final deny
 #
-# ─── Step 1: sweep ours + known-bad foreign patterns ────────────────
+# ─── Step 1: CLEAN REBUILD — wipe the input chain entirely ──────────
 /ip firewall filter
-# Our own tagged rules: a single regex remove catches every state
-# (the temp-emergency-admin rule added by a previous fallback run too).
+#
+# Pre-wipe documentation sweeps. These remove statements are now
+# REDUNDANT with the clean rebuild below — `remove [find chain=input]`
+# subsumes every comment-pattern remove. We keep them as:
+#   (a) self-documenting INTENT — names every bad shape this script
+#       protects against (foreign broad drops, TEMP-labelled allows,
+#       our own prior tagged rules);
+#   (b) audit-log fidelity — RouterOS logs the matched count per
+#       remove, so a re-import shows exactly what patterns existed
+#       before the clean rebuild swept them.
+# A remove against an empty find is a no-op, so these are free.
 remove [find comment~"^hobe-fleet-fw-"]
-# Foreign rules with the known-bad temp labels.
 remove [find comment~"^TEMP allow"]
 remove [find comment~"^TEMP-"]
 remove [find comment~"^drop public input"]
-# Broad foreign drops on in-interface=ether1 with NO additional
+# Broad foreign drops on in-interface=ether1 with no additional
 # selectors — these are the operator-added blanket drops that ended
 # up above our allows on chr-vpn-3. We walk the matching rules and
 # only remove the truly-broad ones (no protocol, no dst-port,
-# no src-address) so operator drops with legitimate selectors stay.
+# no src-address). Logged for the post-import audit.
 :foreach r in=[find chain=input action=drop in-interface={{ WAN_IFACE }}] do={
     :local c [get $r comment]
     :local proto [/ip firewall filter get $r protocol]
@@ -486,6 +506,29 @@ remove [find comment~"^drop public input"]
         remove $r
     }
 }
+#
+# Total wipe of whatever survived. The §0a rollback scheduler armed
+# BEFORE this line is the safety net: if anything below halts the
+# script, the CHR reverts to the pre-apply snapshot at
+# T+{{ SAFEMODE_ROLLBACK_DELAY }} and the prior firewall comes back.
+#
+# We log what we removed (count + the comment of each rule) before the
+# wipe so the post-import audit log shows exactly what the script
+# replaced — useful when reviewing the diff between operator-edited
+# state and the authoritative re-render.
+:local _wiped 0
+:foreach r in=[find chain=input] do={
+    :local c [/ip firewall filter get $r comment]
+    :log info ("hobe-fleet: input-chain clean-rebuild — removing rule comment=" . $c)
+    :set _wiped ($_wiped + 1)
+}
+:if ($_wiped > 0) do={
+    :log warning ("hobe-fleet: input chain clean-rebuild — " . $_wiped . " prior rule(s) removed; re-emitting authoritative set")
+}
+remove [find chain=input]
+# forward + output chains are NOT touched here. Our own tagged rules
+# in those chains (currently none in the input chain rewrite — see §8
+# for nat) are managed by their own remove-by-comment blocks above.
 
 # ─── Step 2: drop-last anchor FIRST ─────────────────────────────────
 # Lands at the end of the table; every subsequent add uses a
@@ -521,6 +564,20 @@ add chain=input in-interface=wg-mgmt src-address={{ PANEL_WG_ADDR }}/32 \
     protocol=tcp dst-port={{ API_PORT|default(8443) }} \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-api-ssl"
+{% endif %}
+
+{% if OPERATOR_ADMIN_IPS|default('') %}
+# (C") Operator manual-access — WinBox + SSH from the owner's source
+#      IP(s) on the WAN. This is the «أقدر أفوت ع WinBox» rule:
+#      WinBox/SSH remain reachable from those specific addresses even
+#      after wg-mgmt is the primary management path. The list is
+#      sanitised on the panel (CIDR-parsed, 0.0.0.0/0 rejected, capped
+#      at 16 tokens) so we splice it verbatim into src-address=.
+add chain=input in-interface={{ WAN_IFACE }} \
+    src-address={{ OPERATOR_ADMIN_IPS }} \
+    protocol=tcp dst-port=22,8291 \
+    place-before=[find comment="hobe-fleet-fw-drop-last"] \
+    action=accept comment="hobe-fleet-fw-operator-admin"
 {% endif %}
 
 {% if 'radius_transport' in ROLES %}
@@ -786,22 +843,45 @@ set www     disabled=yes  ;# plain HTTP stays off
 set telnet  disabled=yes
 set ftp     disabled=yes
 
-# ─── WG-MGMT-FIRST SAFETY GATE ──────────────────────────────────────
-# Restricting ssh/winbox to PANEL_WG_ADDR/32 makes them ONLY reachable
-# from the panel over wg-mgmt. That's the secure final state — but it
-# silently locks the operator out if wg-mgmt isn't actually up yet
-# (e.g. panel hasn't added this CHR as a wg-mgmt peer on its host).
+# ─── WG-MGMT-FIRST SAFETY GATE + MANUAL-ACCESS UNION ────────────────
+# Hardened ssh/winbox source-IP ACL = the UNION of:
+#   * the panel over wg-mgmt:   PANEL_WG_ADDR/32        (always)
+#   * the owner's source IPs:   OPERATOR_ADMIN_IPS      (if set)
 #
-# So we verify wg-mgmt is REACHABLE first, then apply. If the ping
-# fails, we keep ssh/winbox open + add a clearly-tagged TEMPORARY
-# emergency-admin firewall rule (matches the regex sweep at §9 so the
-# next clean re-import will remove it automatically), and :log a
-# warning. The operator fixes the panel side, re-imports, and the
-# next pass applies the lockdown.
+# That way WinBox is NEVER fully blocked: the owner can manage from
+# his own IP even when wg-mgmt is down. NEVER 0.0.0.0/0 — the panel
+# validator rejects it.
 #
-# The 3-min self-lockout rollback scheduler armed in §0a is still the
-# second safety net underneath this — even a verify false-positive
-# rolls back if the operator's session dies.
+# We still verify wg-mgmt is REACHABLE before applying the restriction.
+# Two cases:
+#
+#   (a) wg-mgmt reachable → apply the union ACL on ssh + winbox.
+#       This is the secure final state.
+#
+#   (b) wg-mgmt unreachable (panel hasn't added this CHR as a wg-mgmt
+#       peer yet) →
+#         - if OPERATOR_ADMIN_IPS is SET: still apply the union, so the
+#           owner reaches WinBox/SSH from his own IP while the panel
+#           side is fixed. No temp-emergency rule needed (the operator
+#           accept rule emitted in §9 handles it).
+#         - if OPERATOR_ADMIN_IPS is UNSET: keep ssh/winbox listening
+#           on default + add a comment-tagged TEMP emergency-admin
+#           firewall rule (cleaned on next clean run). Warn the
+#           operator + tell him the break-glass path (provider VPS
+#           console → /system script run hobe-open-winbox — see §11b).
+#
+# The 3-min self-lockout rollback scheduler armed in §0a is the second
+# safety net underneath this gate — a verify false-positive that cuts
+# the session still recovers.
+
+# Compose the address ACL. RouterOS /ip service accepts a comma-
+# separated address list — we splice PANEL/32 with the operator IPs.
+{% if OPERATOR_ADMIN_IPS|default('') %}
+:local mgmtAddrACL "{{ PANEL_WG_ADDR }}/32,{{ OPERATOR_ADMIN_IPS }}"
+{% else %}
+:local mgmtAddrACL "{{ PANEL_WG_ADDR }}/32"
+{% endif %}
+
 :local mgmtReachable false
 :do {
     :local pres [/ping address={{ PANEL_WG_ADDR }} interface=wg-mgmt count=3 as-value]
@@ -816,16 +896,25 @@ set ftp     disabled=yes
     }
 } on-error={}
 
+{% if OPERATOR_ADMIN_IPS|default('') %}
+# OPERATOR_ADMIN_IPS is set → always apply the union ACL, regardless of
+# wg-mgmt state. WinBox stays reachable from the owner's IP either way.
+/ip service set ssh    address=$mgmtAddrACL disabled=no
+/ip service set winbox address=$mgmtAddrACL disabled=no
 :if ($mgmtReachable) do={
-    /ip service set ssh    address={{ PANEL_WG_ADDR }}/32 disabled=no
-    /ip service set winbox address={{ PANEL_WG_ADDR }}/32 disabled=no
-    :log info "hobe-fleet: wg-mgmt verified reachable — ssh+winbox restricted to PANEL_WG_ADDR/32"
+    :log info ("hobe-fleet: wg-mgmt reachable; ssh+winbox ACL = " . $mgmtAddrACL)
 } else={
-    # wg-mgmt is not yet a working management path. DO NOT fully lock
-    # the operator out. Keep ssh/winbox listening on default + open a
-    # comment-tagged TEMPORARY firewall accept for 22/8291 so the
-    # operator can still reach the CHR. The comment matches the §9
-    # regex sweep so the next import removes it automatically.
+    :log warning ("hobe-fleet: wg-mgmt NOT reachable yet, but operator-IP allow is set; ssh+winbox ACL = " . $mgmtAddrACL . " — WinBox remains reachable from those sources.")
+}
+{% else %}
+# OPERATOR_ADMIN_IPS is NOT set → run the original verify-then-restrict
+# flow. On wg-mgmt failure keep ssh/winbox open + add a temp emergency
+# rule + warn the operator (with break-glass instructions).
+:if ($mgmtReachable) do={
+    /ip service set ssh    address=$mgmtAddrACL disabled=no
+    /ip service set winbox address=$mgmtAddrACL disabled=no
+    :log info ("hobe-fleet: wg-mgmt verified reachable — ssh+winbox restricted to " . $mgmtAddrACL)
+} else={
     /ip service set ssh    disabled=no
     /ip service set winbox disabled=no
     /ip firewall filter
@@ -834,12 +923,19 @@ set ftp     disabled=yes
             place-before=[find comment="hobe-fleet-fw-drop-last"] \
             comment="hobe-fleet-fw-temp-emergency-admin"
     }
-    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR — ssh/winbox kept OPEN and TEMP emergency-admin rule active. After confirming wg-mgmt is up on the panel (add this CHR as a wg-mgmt peer + re-sync), re-import this script to apply the lockdown."
-    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN + TEMP emergency-admin rule active. Fix wg-mgmt on the panel + re-import to lock down."
+    :log warning "hobe-fleet: wg-mgmt NOT reachable from this CHR — ssh/winbox kept OPEN and TEMP emergency-admin rule active. Either (a) set OPERATOR_ADMIN_IPS on the panel and re-export the script, or (b) fix wg-mgmt on the panel and re-import. Recovery: VPS provider console → /system script run hobe-open-winbox (opens WinBox for 15m)."
+    :put "WARNING hobe-fleet: wg-mgmt NOT reachable yet. ssh/winbox kept OPEN + TEMP emergency-admin rule active. Recovery break-glass: VPS console → /system script run hobe-open-winbox"
 }
+{% endif %}
 
-:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32. Public WebFig/Winbox will NOT work after hardening. The production management path is wg-mgmt."
-:put "hobe-fleet WARNING: Management services restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32. Public WebFig/Winbox will NOT work. Production management path is wg-mgmt."
+# ── operator-facing summary print ───────────────────────────────────
+{% if OPERATOR_ADMIN_IPS|default('') %}
+:log warning ("hobe-fleet: Management ACL applied — ssh/winbox accept from PANEL/32 + OPERATOR_ADMIN_IPS=" . "{{ OPERATOR_ADMIN_IPS }}" . ". Public WinBox/SSH from any other source is BLOCKED.")
+:put ("hobe-fleet: ssh+winbox ACL = PANEL_WG_ADDR/32 + OPERATOR_ADMIN_IPS (" . "{{ OPERATOR_ADMIN_IPS }}" . "). Break-glass: VPS console → /system script run hobe-open-winbox (15 min open WinBox, auto-close).")
+{% else %}
+:log warning "hobe-fleet: Management services are restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only (OPERATOR_ADMIN_IPS not set). Public WinBox/SSH will NOT work after hardening. Break-glass: VPS console → /system script run hobe-open-winbox (opens WinBox 15 min, auto-close)."
+:put "hobe-fleet WARNING: ssh+winbox restricted to wg-mgmt {{ PANEL_WG_ADDR }}/32 only. Break-glass: VPS console → /system script run hobe-open-winbox"
+{% endif %}
 {% else %}
 # Live-metrics API user skipped: API_USER and/or API_PASSWORD not set on
 # the panel. The dashboard will keep showing «لا توجد قياسات» for CPU /
@@ -848,6 +944,119 @@ set ftp     disabled=yes
 {% endif %}
 
 # CHR_PUBLIC_IP for this node (egress identity, documented for ops): {{ CHR_PUBLIC_IP }}
+
+# ============================================================
+# 11b. BREAK-GLASS MANUAL ACCESS — provider-console recovery scripts
+# ============================================================
+# Owner: «لازم يكون في طريقة دخول يدوي للـWinBox». There must always
+# be a guaranteed manual recovery path that the network firewall can
+# NEVER block — because the recovery is initiated from the VPS
+# provider's console (Hetzner / NovoServe VNC / Serial) which is a
+# console session on the VM, not an IP session. That session bypasses
+# /ip firewall filter entirely; it talks to the RouterOS shell
+# directly. From that shell the operator runs:
+#
+#     /system script run hobe-open-winbox
+#
+# …and WinBox opens for 15 minutes (then auto-reverts to the hardened
+# state). For an explicit close: /system script run hobe-close-winbox.
+#
+# Idempotency: scripts are managed ADD-OR-SET by name (same pattern
+# as /user group in §11). Clean-before-write — if the row exists we
+# overwrite its source; if not we add it. Re-imports converge.
+#
+# Why this is safe:
+#   * The script source is the SCRIPT'S WORK — it widens winbox only
+#     TEMPORARILY (15 min) and schedules its own revert. If the
+#     operator forgets, the scheduler re-tightens automatically.
+#   * The scripts are bound to the panel's mgmt group
+#     (`hobe-fleet-mgmt`) — only a logged-in admin can run them.
+#   * Running them is an EXPLICIT operator action; nothing on the
+#     CHR triggers them on its own.
+#
+# Visible to the operator via /system script print (also shown in
+# the §13 validation dump).
+/system script
+# ── (1) hobe-open-winbox — temporarily widen WinBox for recovery ──
+:if ([:len [find name="hobe-open-winbox"]] = 0) do={
+    add name="hobe-open-winbox" \
+        comment="hobe-fleet-break-glass" \
+        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
+        source=":local revertMin 15\n\
+:log warning (\"hobe-fleet break-glass: hobe-open-winbox running — WinBox will be open for \" . \$revertMin . \" minutes\")\n\
+:put (\"hobe-fleet break-glass: opening WinBox for \" . \$revertMin . \" minutes\")\n\
+/ip service set winbox address=\"0.0.0.0/0\" disabled=no\n\
+/ip service set ssh    address=\"0.0.0.0/0\" disabled=no\n\
+/ip firewall filter\n\
+:if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={\n\
+    add chain=input action=accept protocol=tcp dst-port=22,8291 \\\n\
+        place-before=[find comment=\"hobe-fleet-fw-drop-last\"] \\\n\
+        comment=\"hobe-fleet-fw-break-glass\"\n\
+}\n\
+/system scheduler\n\
+:do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n\
+add name=\"hobe-close-winbox-auto\" interval=(\$revertMin . \"m\") start-time=startup \\\n\
+    comment=\"hobe-fleet-break-glass\" \\\n\
+    on-event=\"/system script run hobe-close-winbox\"\n\
+:log warning (\"hobe-fleet break-glass: auto-revert in \" . \$revertMin . \"m via hobe-close-winbox-auto\")\n"
+} else={
+    set [find name="hobe-open-winbox"] \
+        comment="hobe-fleet-break-glass" \
+        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
+        source=":local revertMin 15\n\
+:log warning (\"hobe-fleet break-glass: hobe-open-winbox running — WinBox will be open for \" . \$revertMin . \" minutes\")\n\
+:put (\"hobe-fleet break-glass: opening WinBox for \" . \$revertMin . \" minutes\")\n\
+/ip service set winbox address=\"0.0.0.0/0\" disabled=no\n\
+/ip service set ssh    address=\"0.0.0.0/0\" disabled=no\n\
+/ip firewall filter\n\
+:if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={\n\
+    add chain=input action=accept protocol=tcp dst-port=22,8291 \\\n\
+        place-before=[find comment=\"hobe-fleet-fw-drop-last\"] \\\n\
+        comment=\"hobe-fleet-fw-break-glass\"\n\
+}\n\
+/system scheduler\n\
+:do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n\
+add name=\"hobe-close-winbox-auto\" interval=(\$revertMin . \"m\") start-time=startup \\\n\
+    comment=\"hobe-fleet-break-glass\" \\\n\
+    on-event=\"/system script run hobe-close-winbox\"\n\
+:log warning (\"hobe-fleet break-glass: auto-revert in \" . \$revertMin . \"m via hobe-close-winbox-auto\")\n"
+}
+
+# ── (2) hobe-close-winbox — immediate re-restrict to the hardened state ──
+{% if OPERATOR_ADMIN_IPS|default('') %}
+:local _closeACL "{{ PANEL_WG_ADDR }}/32,{{ OPERATOR_ADMIN_IPS }}"
+{% else %}
+:local _closeACL "{{ PANEL_WG_ADDR }}/32"
+{% endif %}
+:if ([:len [find name="hobe-close-winbox"]] = 0) do={
+    add name="hobe-close-winbox" \
+        comment="hobe-fleet-break-glass" \
+        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
+        source=(":log warning \"hobe-fleet break-glass: hobe-close-winbox running — re-restricting WinBox/SSH ACL\"\n" . \
+                ":put \"hobe-fleet break-glass: closing WinBox — restoring hardened ACL\"\n" . \
+                "/ip service set winbox address=\"" . $_closeACL . "\" disabled=no\n" . \
+                "/ip service set ssh    address=\"" . $_closeACL . "\" disabled=no\n" . \
+                "/ip firewall filter\n" . \
+                ":do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}\n" . \
+                "/system scheduler\n" . \
+                ":do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n" . \
+                ":log warning \"hobe-fleet break-glass: hardened state restored\"\n")
+} else={
+    set [find name="hobe-close-winbox"] \
+        comment="hobe-fleet-break-glass" \
+        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
+        source=(":log warning \"hobe-fleet break-glass: hobe-close-winbox running — re-restricting WinBox/SSH ACL\"\n" . \
+                ":put \"hobe-fleet break-glass: closing WinBox — restoring hardened ACL\"\n" . \
+                "/ip service set winbox address=\"" . $_closeACL . "\" disabled=no\n" . \
+                "/ip service set ssh    address=\"" . $_closeACL . "\" disabled=no\n" . \
+                "/ip firewall filter\n" . \
+                ":do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}\n" . \
+                "/system scheduler\n" . \
+                ":do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n" . \
+                ":log warning \"hobe-fleet break-glass: hardened state restored\"\n")
+}
+
+:log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox). Run from VPS provider console if locked out."
 
 # ============================================================
 # 12. SELF-LOCKOUT GUARD — CANCEL (we made it through cleanly)
@@ -883,6 +1092,31 @@ set ftp     disabled=yes
 :put ""
 :put "[/log print where message~\"hobe-fleet\"]"
 /log print where message~"hobe-fleet"
+:put ""
+:put "[/system script print where name~\"hobe-\"]"
+/system script print where name~"hobe-"
+:put ""
+:put "==================================================================="
+:put "  MANUAL-ACCESS GUARANTEE — how to reach WinBox manually"
+:put "==================================================================="
+{% if OPERATOR_ADMIN_IPS|default('') %}
+:put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 + your"
+:put "     configured OPERATOR_ADMIN_IPS ({{ OPERATOR_ADMIN_IPS }})."
+{% else %}
+:put "  1) NORMAL: WinBox/SSH allowed from PANEL_WG_ADDR/32 only."
+:put "     (OPERATOR_ADMIN_IPS is empty — set it on the panel under"
+:put "     «إعدادات بنية الأسطول → IPs الإدارة» to allow WinBox"
+:put "     from your own IP, then re-export this script.)"
+{% endif %}
+:put "  2) BREAK-GLASS (if locked out): open the VPS provider"
+:put "     console (Hetzner / NovoServe VNC or Serial) — it bypasses"
+:put "     the network firewall entirely — and run:"
+:put "         /system script run hobe-open-winbox"
+:put "     WinBox opens for 15 minutes, then auto-closes."
+:put "     Close early with: /system script run hobe-close-winbox"
+:put "  3) Production management path is wg-mgmt (private control"
+:put "     plane). The panel uses it for REST polls + provisioning."
+:put "==================================================================="
 :put ""
 :put "==================================================================="
 :put "  hobe-fleet apply finished."

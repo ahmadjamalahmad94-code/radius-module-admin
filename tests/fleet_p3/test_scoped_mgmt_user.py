@@ -457,7 +457,22 @@ class TestRenderSmoke:
         assert "{{" not in out and "}}" not in out
 
     def test_quote_balance(self, provider_app):
-        for lineno, line in enumerate(_render().splitlines(), 1):
+        """RouterOS string literals must close on the same logical line —
+        we check by joining backslash line-continuations and skipping
+        multi-line `source=` script bodies (the break-glass scripts in
+        §11b legitimately span many text lines as a single quoted
+        source= literal).
+        """
+        out = _render()
+        # Join backslash line continuations (`... \` + newline → space).
+        flat = out.replace(" \\\n", " ").replace("\\\n", "")
+        # Strip multi-line `source="..."` literals (§11b break-glass
+        # script bodies) — they're single quoted strings whose embedded
+        # `\n\` markers span text lines but are one RouterOS token.
+        # Match `source="` through the closing unescaped `"`.
+        import re as _re
+        flat = _re.sub(r'source="(?:[^"\\]|\\.)*"', 'source=""', flat, flags=_re.DOTALL)
+        for lineno, line in enumerate(flat.splitlines(), 1):
             assert line.count('"') % 2 == 0, (
                 f"L{lineno} odd quotes: {line!r}"
             )
