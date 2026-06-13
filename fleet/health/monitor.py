@@ -633,8 +633,9 @@ def run_once(
     Parameters
     ----------
     pinger
-        Pluggable probe transport. Defaults to :class:`TcpConnectPinger`.
-        Tests inject a deterministic fake.
+        Pluggable probe transport. Defaults to :class:`IcmpPinger` (ICMP
+        echo over the wg-mgmt control plane — see ``_default_pinger`` and
+        ``_resolve_target``). Tests inject a deterministic fake.
     now
         Override the wall clock — used by the test suite to simulate the
         5-minute hysteresis window without sleeping. Defaults to

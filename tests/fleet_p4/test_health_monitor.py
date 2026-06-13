@@ -249,6 +249,45 @@ def test_run_once_skips_disabled_nodes_on_cron_path(app):
     assert fake.seen[0].chr_id == enabled.id
 
 
+def test_probe_targets_wg_mgmt_ip_not_public_and_marks_up(app):
+    """Decision: health rides the CONTROL PLANE (wg-mgmt), never the public IP.
+
+    A node with both IPs set is probed at its ``wg_mgmt_ip`` (10.99.0.11) over
+    the panel's wg-mgmt tunnel — the public IP is never touched (probing it
+    would be insecure + firewall-blocked). A reachable node flips unknown→up.
+    """
+    node = _make_node("chr-vpn-1")
+    node.public_ip = "178.105.244.112"   # the real chr-vpn-1 front door
+    node.wg_mgmt_ip = "10.99.0.11"       # the control-plane address
+    db.session.commit()
+
+    fake = _FakePinger()  # default OK == a reachable CHR over the tunnel
+    run_once(pinger=fake, now=_t(0))
+
+    # The probe went to the wg-mgmt IP, and NEVER to the public IP.
+    assert fake.seen, "the node must have been probed"
+    assert fake.seen[0].host == "10.99.0.11"
+    assert all(t.host != "178.105.244.112" for t in fake.seen)
+
+    # unknown → up on the first successful probe; node.status mirrored.
+    health = db.session.get(FleetChrHealth, node.id)
+    assert health.state == "up"
+    assert db.session.get(FleetChrNode, node.id).status == "up"
+
+
+def test_probe_falls_back_to_public_ip_only_when_mgmt_ip_empty(app):
+    """The public IP is a LAST-RESORT fallback — used only when there is no
+    wg-mgmt IP (e.g. a legacy/pre-fleet row), never in preference to it."""
+    node = _make_node("legacy-node")
+    node.public_ip = "5.6.7.8"
+    node.wg_mgmt_ip = ""
+    db.session.commit()
+
+    fake = _FakePinger()
+    run_once(pinger=fake, now=_t(0))
+    assert fake.seen and fake.seen[0].host == "5.6.7.8"
+
+
 def test_full_up_to_down_to_up_replay_with_hysteresis(app):
     """The headline test: replay a real timeline, assert each transition
     fires on exactly the expected second."""
