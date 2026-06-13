@@ -619,6 +619,116 @@ def fleet_troubleshoot_node_json(node_id: int):
     return jsonify({"ok": True, "view": build_view(node).to_dict()})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# feat/data-chr-management-page — «إدارة عقد البيانات»
+# ════════════════════════════════════════════════════════════════════════
+@bp.get("/data-nodes")
+@super_admin_required
+def fleet_data_nodes_index():
+    """«إدارة عقد البيانات» — per-CHR data-role designation +
+    connections list + visual chain + create-link short-cut.
+
+    Reuses:
+      * app.services.node_roles for the role set
+      * app.services.access_connections.radius_link_preview (via JS)
+      * the existing POST /admin/access-connections/ppp as the
+        create-link target (we just pre-fill fleet_chr_node_id +
+        tunnel_type=sstp into the form action).
+    """
+    from app.models import Customer
+    from fleet.ui.data_nodes_view import build_all_views
+    views = build_all_views()
+    customers = (
+        Customer.query
+        .order_by(Customer.company_name.asc())
+        .limit(500)
+        .all()
+    )
+    return render_template(
+        "admin/fleet/data_nodes.html",
+        views=views,
+        customers=customers,
+    )
+
+
+@bp.post("/data-nodes/<int:node_id>/roles")
+@super_admin_required
+def fleet_data_node_save_roles(node_id: int):
+    """Replace the node's role set. Body: JSON ``{roles: [...]}``.
+
+    On a real change we flip ``needs_reimport=True`` so the operator
+    knows the on-CHR script is now stale relative to the panel's
+    role set (the unified script gates services by role at render
+    time — see fleet/registry/templates/chr_unified.rsc.j2).
+    """
+    from app.services import node_roles as nr
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    requested = body.get("roles")
+    if not isinstance(requested, list):
+        return jsonify({"ok": False, "error": "bad_request",
+                        "message": "roles يجب أن تكون قائمة."}), 400
+    # Filter to known roles; everything else is dropped silently by
+    # node_roles.set_roles (it logs once).
+    before = sorted(nr.enabled_roles(node))
+    after_set = nr.set_roles(node, [str(r) for r in requested], commit=False)
+    after = sorted(after_set)
+    changed = before != after
+    if changed:
+        # The on-CHR script is gated by role — every role flip makes
+        # the imported script stale. The autosync's needs_reimport
+        # mechanic is the right place to surface that.
+        node.needs_reimport = True
+        db.session.add(node)
+    db.session.commit()
+    audit(
+        "fleet_data_node_roles_changed",
+        "fleet_chr_node",
+        str(node.id),
+        f"تغيير أدوار العقدة «{node.name}»: {before} → {after}",
+        {"before": before, "after": after,
+         "needs_reimport": bool(node.needs_reimport)},
+    )
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "node_id": node.id,
+        "roles": after,
+        "changed": changed,
+        "needs_reimport": bool(node.needs_reimport),
+    })
+
+
+@bp.get("/data-nodes/<int:node_id>.json")
+@super_admin_required
+def fleet_data_node_json(node_id: int):
+    """JSON view for a single data CHR — used by the live refresh."""
+    from fleet.ui.data_nodes_view import build_view_for
+    v = build_view_for(node_id)
+    if v is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({
+        "ok": True,
+        "view": {
+            "node_id": v.node_id,
+            "name": v.name,
+            "public_ip": v.public_ip,
+            "wg_mgmt_ip": v.wg_mgmt_ip,
+            "status": v.status,
+            "needs_reimport": v.needs_reimport,
+            "roles": list(v.roles),
+            "is_data": v.is_data,
+            "is_data_only": v.is_data_only,
+            "connection_count": v.connection_count,
+            "connections": [c.to_dict() for c in v.connections],
+            "allowed_realms": list(v.allowed_realms),
+        },
+    })
+
+
 @bp.get("/onboarding/new")
 @login_required
 def onboarding_wizard():

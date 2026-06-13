@@ -1,0 +1,447 @@
+{% extends "admin/base_new.html" %}
+
+{% block title %}إدارة عقد البيانات — CHR Fleet{% endblock %}
+
+{% block crumbs %}
+  <span class="ar-breadcrumb-sep" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+  <a href="{{ url_for('fleet_ui.fleet_dashboard') }}" class="ar-breadcrumb-item">أسطول CHR</a>
+{% endblock %}
+{% block page_breadcrumb %}إدارة عقد البيانات{% endblock %}
+
+{% block head_extra %}
+<style>
+  .dn-hero {
+    background: linear-gradient(135deg,#0f172a 0%,#0e7490 100%);
+    border-radius:18px;padding:22px 26px;color:#fff;margin-block-end:18px;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    box-shadow:0 20px 36px -22px rgba(15,23,42,.55);
+  }
+  .dn-hero-icon{
+    width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.16);
+    border:2px solid rgba(255,255,255,.32);display:flex;align-items:center;justify-content:center;font-size:22px;
+  }
+  .dn-hero-title{font-size:22px;font-weight:800;line-height:1.2;}
+  .dn-hero-sub{font-size:13px;color:rgba(255,255,255,.82);margin-top:6px;max-width:820px;line-height:1.75;}
+
+  .dn-summary{display:flex;gap:10px;flex-wrap:wrap;margin-block-end:16px;}
+  .dn-summary .card{
+    flex:1 1 180px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 16px;
+  }
+  .dn-summary .num{font-size:26px;font-weight:800;color:#0f172a;line-height:1;}
+  .dn-summary .lbl{font-size:12px;color:#64748b;margin-top:4px;}
+  .dn-summary .card.data .num{color:#0e7490;}
+  .dn-summary .card.conn .num{color:#047857;}
+  .dn-summary .card.warn .num{color:#9a3412;}
+
+  .dn-node{
+    background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px 20px;margin-block-end:14px;
+  }
+  .dn-node--data{border-color:#bae6fd;box-shadow:0 0 0 3px rgba(14,165,233,.08) inset;}
+  .dn-node--reimport{border-color:#fed7aa;box-shadow:0 0 0 3px rgba(251,146,60,.10) inset;}
+  .dn-node-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block-end:12px;border-block-end:1px dashed #e5e7eb;margin-block-end:12px;}
+  .dn-node-name{font-size:17px;font-weight:800;color:#0f172a;}
+  .dn-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:700;}
+  .dn-pill.ok    {background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;}
+  .dn-pill.warn  {background:#fffbeb;color:#92400e;border:1px solid #fde68a;}
+  .dn-pill.muted {background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;}
+  .dn-pill.data  {background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;}
+  .dn-pill.reimport{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
+
+  .dn-role-toggles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 14px;margin:10px 0 14px;font-size:13px;color:#0f172a;}
+  .dn-role-toggles label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+  .dn-role-toggles input[type=checkbox]{width:18px;height:18px;cursor:pointer;}
+  .dn-roles-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-block-end:14px;}
+  .dn-btn{
+    display:inline-flex;align-items:center;gap:6px;height:32px;padding-inline:12px;border-radius:8px;
+    font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid #e5e7eb;background:#fff;color:#0f172a;
+  }
+  .dn-btn:hover{background:#f8fafc;}
+  .dn-btn--primary{color:#0e7490;border-color:#a5f3fc;background:#ecfeff;}
+  .dn-btn--primary:hover{background:#cffafe;}
+  .dn-btn--create{color:#047857;border-color:#bbf7d0;background:#ecfdf5;}
+  .dn-btn--create:hover{background:#d1fae5;}
+  .dn-btn--mute{color:#475569;}
+  .dn-roles-msg{font-size:12px;color:#64748b;}
+
+  .dn-conn-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;color:#1f2937;}
+  .dn-conn-table thead th{
+    text-align:start;font-weight:700;color:#475569;background:#f8fafc;
+    padding:8px 10px;border-block-end:1px solid #e5e7eb;font-size:11.5px;
+  }
+  .dn-conn-table tbody td{padding:10px;border-block-end:1px solid #f1f5f9;vertical-align:top;}
+  .dn-conn-table tbody tr:last-child td{border-block-end:none;}
+  .dn-status{font-weight:700;}
+  .dn-status.s-active{color:#047857;}
+  .dn-status.s-pending{color:#a16207;}
+  .dn-status.s-revoked,.dn-status.s-failed,.dn-status.s-suspended{color:#b91c1c;}
+  .dn-status.s-unknown{color:#64748b;}
+
+  /* The visual chain — 5 segments + arrows. Reuse the same intent as
+     the access-connections RADIUS chain widget; the strings come from
+     data_nodes_view._chain_for so the markup stays declarative. */
+  .dn-chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:11.5px;color:#475569;}
+  .dn-chain .seg{
+    padding:4px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc;color:#0f172a;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;font-weight:600;
+  }
+  .dn-chain .seg.proxy{background:#eef2ff;border-color:#c7d2fe;color:#3730a3;}
+  .dn-chain .seg.node{background:#ecfeff;border-color:#a5f3fc;color:#0e7490;}
+  .dn-chain .seg.radius{background:#ecfdf5;border-color:#a7f3d0;color:#065f46;}
+  .dn-chain .arrow{color:#94a3b8;}
+
+  .dn-conn-empty{padding:14px;color:#64748b;font-size:13px;text-align:center;border:1px dashed #e5e7eb;border-radius:10px;background:#fafafa;}
+
+  .dn-create-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:end;padding:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;margin-block-end:14px;}
+  .dn-create-form label{font-size:12px;font-weight:700;color:#0f172a;display:block;margin-block-end:4px;}
+  .dn-create-form select,.dn-create-form input{height:36px;padding:0 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:13px;width:100%;}
+  .dn-create-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .dn-chain-preview{font-size:12px;color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 10px;margin-top:6px;line-height:1.6;}
+
+  .dn-empty{padding:32px 20px;text-align:center;color:#64748b;border:1px dashed #e5e7eb;border-radius:14px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="dn-hero">
+  <div class="dn-hero-icon"><i class="fa-solid fa-database"></i></div>
+  <div>
+    <div class="dn-hero-title">إدارة عقد البيانات</div>
+    <div class="dn-hero-sub">
+      اختر أي CHR يحمل دور <b>نقل RADIUS</b> (data) — يصبح هذه العقدة قناة بيانات بين راديوس
+      العميل وميكروتيك المشترك. من هنا أيضاً تُنشئ «روابط RADIUS عبر SSTP» على عقدة بيانات
+      محددة، وتتابع جميع الاتصالات المنشأة عبرها مع تفاصيل السلسلة الكاملة وحالتها الحيّة.
+    </div>
+  </div>
+</section>
+
+{% set data_count   = views|selectattr('is_data')|list|length %}
+{% set conn_total   = views|map(attribute='connection_count')|sum %}
+{% set reimport_n   = views|selectattr('needs_reimport')|list|length %}
+<div class="dn-summary">
+  <div class="card"><div class="num">{{ views|length }}</div><div class="lbl">إجمالي عقد الأسطول</div></div>
+  <div class="card data"><div class="num">{{ data_count }}</div><div class="lbl">تحمل دور البيانات</div></div>
+  <div class="card conn"><div class="num">{{ conn_total }}</div><div class="lbl">روابط SSTP منشأة</div></div>
+  <div class="card{% if reimport_n %} warn{% endif %}">
+    <div class="num">{{ reimport_n }}</div>
+    <div class="lbl">عقد بحاجة لإعادة استيراد السكربت</div>
+  </div>
+</div>
+
+{# Hidden CSRF form — the role-toggle fetch posts JSON, so we ship the
+   token through the X-CSRFToken header (matches the rest of the
+   admin JS — see fix/orphan-purge-csrf-header). #}
+<form id="dn-csrf-form" style="display:none">{{ csrf_input() }}</form>
+
+{% if not views %}
+  <div class="dn-empty">
+    لا توجد عقد CHR مُسجَّلة بعد. أضف عقدة من
+    <a href="{{ url_for('fleet_ui.onboarding_wizard') }}">معالج الإضافة</a>.
+  </div>
+{% endif %}
+
+{% for v in views %}
+<article class="dn-node{% if v.is_data %} dn-node--data{% endif %}{% if v.needs_reimport %} dn-node--reimport{% endif %}"
+         data-node-id="{{ v.node_id }}" data-node-name="{{ v.name }}">
+
+  <header class="dn-node-head">
+    <div class="dn-node-name">
+      <i class="fa-solid fa-server" style="color:#64748b"></i>
+      {{ v.name }}
+    </div>
+    {% if v.is_data_only %}
+      <span class="dn-pill data" title="هذه العقدة مخصّصة فقط لنقل RADIUS">data-only</span>
+    {% elif v.is_data %}
+      <span class="dn-pill data">data + VPN</span>
+    {% else %}
+      <span class="dn-pill muted">VPN فقط (بلا نقل RADIUS)</span>
+    {% endif %}
+    <span class="dn-pill {% if v.status == 'up' %}ok{% elif v.status == 'disabled' %}muted{% else %}warn{% endif %}">
+      {{ v.status }}
+    </span>
+    {% if v.needs_reimport %}
+      <span class="dn-pill reimport" title="تغيّر مفتاح اللوحة أو الأدوار — السكربت على العقدة قديم">
+        <i class="fa-solid fa-rotate"></i> بحاجة لإعادة استيراد السكربت
+      </span>
+    {% endif %}
+    <span class="dn-pill muted" dir="ltr">{{ v.public_ip }}</span>
+    <span class="dn-pill muted" dir="ltr">wg-mgmt {{ v.wg_mgmt_ip }}</span>
+  </header>
+
+  {# ─── PART 1: role toggles ─── #}
+  <div class="dn-roles-actions">
+    <strong style="font-size:13px;color:#0f172a">أدوار هذه العقدة:</strong>
+    <span class="dn-roles-msg" data-dn-msg></span>
+  </div>
+  <div class="dn-role-toggles">
+    {% set role_labels = {
+      'radius_transport': 'نقل RADIUS (data)',
+      'vpn_sstp': 'SSTP (VPN)',
+      'vpn_pptp': 'PPTP (VPN)',
+      'vpn_ipsec': 'IPsec / IKEv2 (VPN)',
+      'vpn_wireguard': 'WireGuard (VPN)'
+    } %}
+    {% for role in ['radius_transport','vpn_sstp','vpn_pptp','vpn_ipsec','vpn_wireguard'] %}
+      <label>
+        <input type="checkbox" class="dn-role-check"
+               data-role="{{ role }}"
+               {% if role in v.roles %}checked{% endif %}>
+        {{ role_labels[role] }}
+        {% if role == 'radius_transport' %}
+          <i class="fa-solid fa-database" style="color:#0e7490;font-size:11px"
+             title="هذا هو الدور الذي يجعل العقدة «عقدة بيانات»"></i>
+        {% endif %}
+      </label>
+    {% endfor %}
+  </div>
+  <div class="dn-roles-actions">
+    <button type="button" class="dn-btn dn-btn--primary" data-dn-save-roles>
+      <i class="fa-solid fa-floppy-disk"></i> حفظ الأدوار
+    </button>
+    <button type="button" class="dn-btn dn-btn--mute" data-dn-data-only
+            title="ضع هذه العقدة في وضع نقل RADIUS فقط (تعطيل خدمات VPN)">
+      <i class="fa-solid fa-database"></i> اجعلها data-only
+    </button>
+    <span class="dn-roles-msg">تغيير الأدوار يضع علامة «بحاجة لإعادة استيراد» — السكربت مُولّد بناءً على الأدوار.</span>
+  </div>
+
+  {# ─── PART 2: create a new SSTP «رابط RADIUS» from THIS data CHR ─── #}
+  {% if v.is_data %}
+  <form method="post" action="{{ url_for('admin_access.create_ppp') }}"
+        class="dn-create-form"
+        data-dn-create-form
+        data-node-id="{{ v.node_id }}"
+        data-preview-url="{{ url_for('admin_access.api_radius_link_preview') }}">
+    {{ csrf_input() }}
+    <input type="hidden" name="tunnel_type" value="sstp">
+    <input type="hidden" name="fleet_chr_node_id" value="{{ v.node_id }}">
+    <input type="hidden" name="max_connections" value="1">
+    <div>
+      <label>العميل المستهدف</label>
+      <select name="customer_id" required data-dn-customer-pick>
+        <option value="">— اختر عميلاً —</option>
+        {% for c in customers %}
+          <option value="{{ c.id }}">{{ c.company_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>السرعة (Mbps) — اختياري</label>
+      <input type="number" name="speed_mbps" min="0" step="1" placeholder="مثال: 100">
+    </div>
+    <div class="dn-create-actions">
+      <button type="submit" class="dn-btn dn-btn--create">
+        <i class="fa-solid fa-plus"></i> إنشاء رابط RADIUS عبر هذه العقدة
+      </button>
+      <a href="{{ url_for('admin_access.index') }}" class="dn-btn dn-btn--mute"
+         title="نموذج الإنشاء الكامل في «اتصالات الوصول» (خيارات متقدمة)">
+        خيارات متقدمة…
+      </a>
+    </div>
+    <div class="dn-chain-preview" data-dn-chain-preview
+         style="grid-column:1/-1">
+      اختر عميلاً لمعاينة سلسلة RADIUS الكاملة قبل الإنشاء.
+    </div>
+  </form>
+  {% endif %}
+
+  {# ─── PART 3: connections list — every SSTP tunnel routed through THIS CHR ─── #}
+  <div style="margin-top:6px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-block-end:8px">
+      <strong style="font-size:13px;color:#0f172a">اتصالات SSTP عبر هذه العقدة:</strong>
+      <span class="dn-pill muted">{{ v.connection_count }}</span>
+      {% if v.allowed_realms %}
+        <span style="font-size:11.5px;color:#475569">مسارات Realm مسموحة عبرها:</span>
+        {% for realm in v.allowed_realms %}
+          <span class="dn-pill muted" dir="ltr">{{ realm }}</span>
+        {% endfor %}
+      {% endif %}
+    </div>
+    {% if not v.connections %}
+      <div class="dn-conn-empty">
+        لا توجد روابط RADIUS عبر هذه العقدة بعد.
+        {% if v.is_data %}استخدم النموذج أعلاه لإنشاء أوّل رابط.{% else %}فعِّل دور <b>نقل RADIUS</b> أولاً.{% endif %}
+      </div>
+    {% else %}
+      <table class="dn-conn-table">
+        <thead>
+          <tr>
+            <th>العميل / Realm</th>
+            <th>اسم النفق</th>
+            <th>السلسلة</th>
+            <th>الحالة</th>
+            <th>السرعة</th>
+            <th>آخر سماع</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in v.connections %}
+          <tr data-tunnel-id="{{ c.tunnel_id }}">
+            <td>
+              <div style="font-weight:700;color:#0f172a">{{ c.customer_name or '—' }}</div>
+              <div style="font-size:11.5px;color:#475569" dir="ltr">
+                realm: {{ c.realm or '—' }}
+                {% if c.realm_route_status %}
+                  · مسار: <span class="dn-pill {% if c.realm_route_status == 'active' %}ok{% else %}warn{% endif %}">{{ c.realm_route_status }}</span>
+                {% endif %}
+              </div>
+              <div style="font-size:11.5px;color:#475569" dir="ltr">
+                radius: {{ c.radius_target or '—' }}
+              </div>
+            </td>
+            <td><span class="mono" dir="ltr">{{ c.username }}</span></td>
+            <td>
+              <div class="dn-chain" aria-label="سلسلة RADIUS الكاملة">
+                <span class="seg">{{ c.chain[0] }}</span>
+                <span class="arrow">→</span>
+                <span class="seg">{{ c.chain[1] }}</span>
+                <span class="arrow">→</span>
+                <span class="seg node">{{ c.chain[2] }}</span>
+                <span class="arrow">→</span>
+                <span class="seg proxy">{{ c.chain[3] }}</span>
+                <span class="arrow">→</span>
+                <span class="seg radius">{{ c.chain[4] }}</span>
+              </div>
+              {% if c.last_error %}
+                <div style="margin-top:4px;color:#b91c1c;font-size:11.5px"><i class="fa-solid fa-triangle-exclamation"></i> {{ c.last_error }}</div>
+              {% endif %}
+            </td>
+            <td>
+              {% set s_class = {
+                'active':'s-active','pending':'s-pending',
+                'revoked':'s-revoked','failed':'s-failed','suspended':'s-suspended'
+              }.get(c.tunnel_status, 's-unknown') %}
+              <span class="dn-status {{ s_class }}">{{ c.tunnel_status or 'غير معروف' }}</span>
+              <div style="font-size:11.5px;color:#475569">
+                {% if c.delivery_status == 'delivered' %}<i class="fa-solid fa-circle-check" style="color:#047857"></i> سُلِّمت بيانات الاعتماد{% else %}بانتظار التسليم{% endif %}
+              </div>
+              <div style="font-size:11.5px;color:#475569">
+                {% if c.chr_provisioned %}<i class="fa-solid fa-circle-check" style="color:#0e7490"></i> منشأ على CHR{% else %}<i class="fa-regular fa-circle"></i> ليس على CHR بعد{% endif %}
+              </div>
+            </td>
+            <td>
+              {% if c.download_mbps or c.upload_mbps %}
+                <span class="mono" dir="ltr">{{ c.download_mbps or '?' }}↓ / {{ c.upload_mbps or '?' }}↑ Mbps</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if c.realm_last_seen_at %}
+                <span class="mono" dir="ltr" title="آخر heartbeat من الوكيل لهذه الـrealm">{{ c.realm_last_seen_at }}</span>
+              {% else %}
+                <span class="dn-pill muted" title="لم يصل بعد heartbeat من الوكيل المركزي بهذا الـrealm">غير متوفّرة بعد</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</article>
+{% endfor %}
+
+<script>
+(function(){
+  "use strict";
+  function csrf(){
+    var el = document.querySelector('#dn-csrf-form input[name="_csrf_token"]');
+    return el ? el.value : "";
+  }
+  function toast(msg, kind){
+    // Tiny toast surface; ESC-dismissable. Avoids native alert per project rule.
+    var host = document.getElementById("dn-toast-host");
+    if (!host){
+      host = document.createElement("div");
+      host.id = "dn-toast-host";
+      host.style.cssText = "position:fixed;inset-inline-end:18px;bottom:18px;z-index:1100;display:flex;flex-direction:column;gap:8px;max-width:340px";
+      document.body.appendChild(host);
+    }
+    var n = document.createElement("div");
+    n.style.cssText = "background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;box-shadow:0 18px 30px -16px rgba(15,23,42,.25);font-size:13px;color:#0f172a;display:flex;gap:8px;align-items:flex-start";
+    var color = kind === "error" ? "#b91c1c" : kind === "warn" ? "#b45309" : "#047857";
+    n.innerHTML = '<i class="fa-solid fa-circle-info" style="color:'+color+';margin-top:2px"></i><div style="flex:1"></div>';
+    n.children[1].textContent = msg || "";
+    host.appendChild(n);
+    setTimeout(function(){ if (n.parentNode) n.parentNode.removeChild(n); }, 5000);
+  }
+
+  // ─── Part 1: role-toggle save ───────────────────────────────────────
+  document.querySelectorAll(".dn-node").forEach(function(card){
+    var nodeId = card.dataset.nodeId;
+    var saveBtn = card.querySelector("[data-dn-save-roles]");
+    var dataOnlyBtn = card.querySelector("[data-dn-data-only]");
+    var msg = card.querySelector("[data-dn-msg]");
+
+    function currentRoles(){
+      return Array.from(card.querySelectorAll(".dn-role-check"))
+        .filter(function(cb){ return cb.checked; })
+        .map(function(cb){ return cb.dataset.role; });
+    }
+    function setRoles(roles){
+      card.querySelectorAll(".dn-role-check").forEach(function(cb){
+        cb.checked = roles.indexOf(cb.dataset.role) >= 0;
+      });
+    }
+    function post(roles){
+      if (msg) msg.textContent = "جارٍ الحفظ…";
+      return fetch("/admin/fleet/data-nodes/" + encodeURIComponent(nodeId) + "/roles", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrf(),
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({ roles: roles })
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(data){
+          if (!data || !data.ok){
+            toast(data && data.message || "تعذّر حفظ الأدوار.", "error");
+            if (msg) msg.textContent = "فشل الحفظ.";
+            return;
+          }
+          if (msg) msg.textContent = data.changed ? "تم الحفظ — العقدة بحاجة لإعادة استيراد السكربت." : "لا تغيير.";
+          toast(data.changed ? "تم حفظ الأدوار — أعد استيراد السكربت لتفعيلها على العقدة." : "لا تغيير على الأدوار.", "info");
+          // Reload after a short delay so the «بحاجة لإعادة استيراد» pill + summary
+          // reflect the change. JS-only refresh would require re-rendering many
+          // small bits — a full reload is simpler + matches the rest of the panel.
+          if (data.changed) setTimeout(function(){ window.location.reload(); }, 900);
+        })
+        .catch(function(){ toast("خطأ شبكي — لم يصل الطلب لخادم اللوحة.", "error"); });
+    }
+    if (saveBtn) saveBtn.addEventListener("click", function(){ post(currentRoles()); });
+    if (dataOnlyBtn) dataOnlyBtn.addEventListener("click", function(){
+      setRoles(["radius_transport"]);
+      post(["radius_transport"]);
+    });
+  });
+
+  // ─── Part 2: chain-preview tied to the customer pick ────────────────
+  document.querySelectorAll("[data-dn-create-form]").forEach(function(form){
+    var nodeId = form.dataset.nodeId;
+    var url = form.dataset.previewUrl;
+    var pick = form.querySelector("[data-dn-customer-pick]");
+    var pv = form.querySelector("[data-dn-chain-preview]");
+    if (!pick || !pv || !url) return;
+    function refresh(){
+      var cid = pick.value;
+      if (!cid){
+        pv.textContent = "اختر عميلاً لمعاينة سلسلة RADIUS الكاملة قبل الإنشاء.";
+        return;
+      }
+      pv.textContent = "جارٍ معاينة السلسلة…";
+      fetch(url + "?customer_id=" + encodeURIComponent(cid) + "&fleet_chr_node_id=" + encodeURIComponent(nodeId), {
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(data){
+          if (!data){ pv.textContent = "تعذّر معاينة السلسلة."; return; }
+          var prefix = data.ok ? "✓ " : "⚠ ";
+          pv.textContent = prefix + (data.message || "");
+        })
+        .catch(function(){ pv.textContent = "تعذّر معاينة السلسلة (خطأ شبكي)."; });
+    }
+    pick.addEventListener("change", refresh);
+  });
+})();
+</script>
+{% endblock %}
