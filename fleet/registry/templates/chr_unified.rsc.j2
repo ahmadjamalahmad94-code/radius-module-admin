@@ -527,25 +527,55 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 #   3. ACL DIRECTION: source-IP ACL points at the PANEL's wg-mgmt IP,
 #      not the CHR's own — so the panel itself isn't blocked.
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
-# LIVE INCIDENT (fix/chr-unified-wg-mgmt-key-bootstrap):
-# Provisioning a user that conflicts with a RouterOS built-in user
-# (``admin``, ``root``, ``support``, ``operator``) is a no-op:
-# ``/user remove [find name="admin"]`` is BLOCKED on most v7 builds
-# (last full-group member), and the subsequent ``add`` then errors
-# with «user with such name already exists». The script keeps running,
-# but the built-in admin retains its ORIGINAL password — not the one
-# the panel saved on /admin/fleet/infrastructure. Panel REST polls
-# then fail with auth_failed → wg_verify reports rest_failed → wizard
-# stuck. The renderer normalises ``API_USER`` to ``hobe-panel`` BEFORE
-# this template is rendered when a reserved name is detected; this
-# block is the second line of defence.
+# feat/chr-auto-scoped-mgmt-user — dedicated SCOPED management user.
+#
+# The owner's idea: «بدل ما ينتظر مني أحط admin أو hobe-panel — ليش
+# السكربت ما يكون فيه إنشاء يوزر إدارة موحّد، بينشئ بصلاحيات معيّنة حسب
+# الحاجة». So the script ALWAYS provisions a dedicated user bound to a
+# DEDICATED group with the EXACT policy set the panel needs — never the
+# default ``read`` / ``full`` / ``write`` groups, never a built-in
+# RouterOS user. Renderer auto-mints user+password if no operator
+# override was set; reserved built-in names (admin/root/support/
+# operator) are substituted to HARD_DEFAULT_USER upstream so this
+# block never has to clobber a built-in row.
+#
+# Policy set — see fleet/registry/onboarding_service.py for the audit
+# of every REST call the panel actually makes. Granted:
+#
+#   read        — system/resource, /interface, /ppp/active, etc.
+#   write       — PUT/PATCH on /ppp/{secret,profile}, /ip/pool, /ip/ipsec/*,
+#                 /interface/wireguard{,/peers}
+#   sensitive   — required to write ppp/secret password=, ipsec PSK,
+#                 wireguard peer private-key=
+#   reboot      — /system/reboot from the CHR console «إعادة التشغيل»
+#   rest-api    — login via REST API (the only login channel the panel
+#                 uses; the unified script disables SSH/WinBox/FTP/web/
+#                 telnet for this user at the /ip service layer too)
+#
+# Explicitly NOT granted: api (binary), ssh, winbox, ftp, web,
+# password (no user-mgmt), policy (no /system/scripts), sniff, test,
+# romon, dude, tikapp. If a future panel call needs a new policy,
+# justify in the renderer's POLICY constant + bump the comment here.
+/user group
+remove [find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"]
+add name="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
+    policy=read,write,sensitive,reboot,rest-api,!api,!ssh,!winbox,!ftp,!web,!password,!policy,!sniff,!test,!romon,!dude,!tikapp \
+    comment="hobe-fleet: scoped panel management user group"
+
+# User row — idempotent. We ONLY manage our own row (recognised by the
+# ``hobe-fleet-api-managed`` comment) so a built-in like ``admin`` is
+# never clobbered. The renderer normalises API_USER off reserved names
+# upstream; this find-by-comment is belt-and-braces.
 /user
-remove [find name="{{ API_USER }}" group=read comment="hobe-fleet-api-readonly"]
+remove [find name="{{ API_USER }}" comment="hobe-fleet-api-managed"]
 :if ([:len [/user find name="{{ API_USER }}"]] = 0) do={
-    /user add name="{{ API_USER }}" group=read password="{{ API_PASSWORD }}" \
-        comment="hobe-fleet-api-readonly"
+    /user add name="{{ API_USER }}" \
+        group="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
+        password="{{ API_PASSWORD }}" \
+        comment="hobe-fleet-api-managed"
+    :log info ("hobe-fleet: created user {{ API_USER }} in scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
 } else={
-    :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber a built-in user. Set a non-reserved username on the panel's «إعدادات بنية الأسطول» page.")
+    :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber it. Pick a non-conflicting username from the panel's «إعدادات بنية الأسطول» page; auto-provisioned defaults already avoid every RouterOS built-in.")
 }
 
 # Self-signed PKI for www-ssl: a tiny local CA + a leaf signed by it.

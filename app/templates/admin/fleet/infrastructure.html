@@ -426,15 +426,22 @@
     {% endif %}
   </div>
   <div class="fi-card-sub">
-    تستخدمها اللوحة لقراءة قياسات RouterOS الحيّة (المعالج، الجلسات، النطاق)
-    عبر <code dir="ltr">wg-mgmt</code>. عند الحفظ يُضيف سكربت التزويد الموحّد
-    على CHR مستخدماً قارئاً (<code dir="ltr">group=read</code>) بنفس اسم
-    المستخدم وكلمة المرور هنا، ويفتح <code dir="ltr">api-ssl</code> على
-    <code dir="ltr">wg-mgmt</code> فقط — لا يُفتح على WAN أبداً.
+    <strong>تلقائي — لا حاجة لإدخال شيء.</strong>
+    سكربت التزويد الموحّد <em>دائمًا</em> يُنشئ مستخدم إدارة مخصّصًا
+    (<code dir="ltr">hobe-panel</code>) في مجموعة صلاحيات مقيَّدة
+    (<code dir="ltr">hobe-fleet-mgmt</code>) تحوي بالضبط ما تحتاجه اللوحة:
+    <code dir="ltr">read,write,sensitive,reboot,rest-api</code> — لا
+    <code dir="ltr">full</code>، لا <code dir="ltr">password</code>، لا
+    <code dir="ltr">ssh/winbox/ftp</code>. عند أوّل توليد مفاتيح لعقدة جديدة
+    تُولَّد كلمة مرور قوية تلقائيًا، تُخزَّن مشفّرة (Fernet) على صفّ العقدة،
+    ويستخدمها قارئ المقاييس عبر <code dir="ltr">wg-mgmt</code> فقط.
     <br>
     <small style="opacity:.8">
-      كلمة المرور تُخزَّن مشفّرةً (Fernet) ولا تظهر مرة أخرى. اتركها
-      فارغة عند الحفظ للإبقاء على الكلمة الحالية.
+      <strong>هذا الحقل اختياري لمستخدم متقدّم فقط.</strong> اتركه فارغًا
+      لتعتمد على الافتراضي التلقائي (الموصى به). إن أدخلت اسمًا، فالأسماء
+      المحجوزة (<code>admin</code>، <code>root</code>، <code>support</code>،
+      <code>operator</code>) تُستبدَل تلقائيًا بـ <code>hobe-panel</code> لتجنّب
+      تعارضات RouterOS المدمجة.
     </small>
   </div>
   <form method="post" action="{{ url_for('fleet_ui.fleet_infra_save_metrics_creds') }}">

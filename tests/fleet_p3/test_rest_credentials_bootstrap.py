@@ -115,8 +115,13 @@ class TestAutoMintOnFreshNode:
         )
         assert "in-interface=wg-mgmt" in api_rule
         assert "dst-port=8443" in api_rule
-        # The user is created with the hard-default name and read group
-        assert f'add name="{HARD_DEFAULT_USER}" group=read' in script
+        # The user is created with the hard-default name. feat/chr-auto-
+        # scoped-mgmt-user binds it to the dedicated `hobe-fleet-mgmt`
+        # group (least-privilege) rather than the broad built-in `read`
+        # group. We check via the line-continuation-joined view.
+        flat = script.replace(" \\\n        ", " ").replace(" \\\n", " ")
+        assert f'/user add name="{HARD_DEFAULT_USER}"' in flat
+        assert 'group="hobe-fleet-mgmt"' in flat
 
     def test_minted_password_is_strong(self, provider_app):
         """24-byte token_urlsafe ⇒ ~32-char URL-safe alphabet. Guards
@@ -176,7 +181,11 @@ class TestAutoMintRespectsExistingCreds:
         job = svc.create_draft(_form(), auto_advance=False)
         svc.generate_keys(job)
         _, script = svc.render_script(job)
-        assert 'add name="ops-poller" group=read' in script
+        # feat/chr-auto-scoped-mgmt-user — user is bound to the
+        # dedicated scoped group, not the built-in `read` group.
+        flat = script.replace(" \\\n        ", " ").replace(" \\\n", " ")
+        assert '/user add name="ops-poller"' in flat
+        assert 'group="hobe-fleet-mgmt"' in flat
         assert 'add name="hobe-panel"' not in script
 
 
@@ -255,9 +264,12 @@ class TestReservedUsernameSubstitution:
         svc.generate_keys(job)
         _, script = svc.render_script(job)
 
-        # Script provisions HARD_DEFAULT_USER, NOT the reserved name.
-        assert f'add name="{HARD_DEFAULT_USER}" group=read' in script
-        assert f'add name="{reserved}" group=read' not in script
+        # Script provisions HARD_DEFAULT_USER, NOT the reserved name —
+        # bound to the dedicated scoped group (feat/chr-auto-scoped-mgmt-user).
+        flat = script.replace(" \\\n        ", " ").replace(" \\\n", " ")
+        assert f'/user add name="{HARD_DEFAULT_USER}"' in flat
+        assert 'group="hobe-fleet-mgmt"' in flat
+        assert f'/user add name="{reserved}"' not in flat
 
     def test_node_row_carries_substituted_user(self, provider_app):
         """The panel poller reads creds via ``credentials_for(node)`` —
@@ -288,8 +300,12 @@ class TestReservedUsernameSubstitution:
         job = svc.create_draft(_form(), auto_advance=False)
         svc.generate_keys(job)
         _, script = svc.render_script(job)
-        assert 'add name="ops-poller" group=read' in script
-        assert f'add name="{HARD_DEFAULT_USER}" group=read' not in script
+        # feat/chr-auto-scoped-mgmt-user — operator's safe name preserved,
+        # bound to the scoped group.
+        flat = script.replace(" \\\n        ", " ").replace(" \\\n", " ")
+        assert '/user add name="ops-poller"' in flat
+        assert 'group="hobe-fleet-mgmt"' in flat
+        assert f'/user add name="{HARD_DEFAULT_USER}"' not in flat
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -348,4 +364,6 @@ class TestCertReadyPollWait:
         # The script checks `[:len [/user find name="..."]] = 0` before add
         # so it doesn't clobber a built-in / existing user.
         assert ':if ([:len [/user find name=' in script
-        assert "refusing to clobber a built-in user" in script
+        # feat/chr-auto-scoped-mgmt-user rephrased the guard message but
+        # kept the same intent: refuse to clobber a foreign row.
+        assert "refusing to clobber it" in script

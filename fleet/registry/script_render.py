@@ -152,6 +152,9 @@ class RouterosTemplateConfig:
     api_user: str = ""
     api_password: str = ""
     api_port: int = 8443
+    # feat/chr-auto-scoped-mgmt-user — dedicated scoped management user
+    # group (see the unified template §11 for the policy audit).
+    api_group: str = "hobe-fleet-mgmt"
 
     # ── shared client pool + PPP profile (feat/chr-unified-provisioning-complete)
     # Same name + ranges on every node so a subscriber roaming/failing-
@@ -322,6 +325,7 @@ def build_bindings(
         "API_USER":            template_cfg.api_user,
         "API_PASSWORD":        template_cfg.api_password,
         "API_PORT":            template_cfg.api_port,
+        "API_GROUP":           template_cfg.api_group,
         # ── shared client pool + PPP profile (single source of truth) ──────
         "IP_POOL_NAME":         template_cfg.ip_pool_name,
         "IP_POOL_RANGES":       template_cfg.ip_pool_ranges,
@@ -457,6 +461,10 @@ def render_from_bindings(bindings: dict[str, Any], *, env: Environment | None = 
     enriched.setdefault("WG_USERS_PORT", 51822)
     enriched.setdefault("WG_USERS_ADDR", "10.51.0.1/24")
     enriched.setdefault("SAFEMODE_ROLLBACK_DELAY", "3m")
+    # feat/chr-auto-scoped-mgmt-user — dedicated scoped management group
+    # (see the unified template §11 + the policy audit in
+    # fleet/registry/onboarding_service.py for the rationale).
+    enriched.setdefault("API_GROUP", "hobe-fleet-mgmt")
     _assert_no_reserved_subnet_collision(enriched)
     jinja_env = env if env is not None else _build_env()
     template = jinja_env.get_template(_TEMPLATE_NAME)
