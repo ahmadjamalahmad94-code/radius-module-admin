@@ -856,10 +856,26 @@
 
     <div style="padding:18px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <i class="fa-solid fa-code" style="color:#047857"></i>
-      <div style="flex:1">
+      <div style="flex:1;min-width:160px">
         <div id="fd-sm-title" style="font-weight:800;font-size:16px;color:#0f172a">سكربت RouterOS لعقدة CHR</div>
         <div id="fd-sm-sub" style="font-size:12px;color:#6b7280;margin-top:2px">يتم توليده على اللوحة. النسخة أدناه خاصّة بهذه العقدة فقط.</div>
       </div>
+      {# fix/script-modal-buttons-reachable — duplicate copy/download
+         into the header so they're reachable even when the install
+         instructions push the lower bar off-screen. New ids; the JS
+         wires both pairs to the same handlers (see
+         admin_fleet_script_view.js BUTTON_ID_SETS). #}
+      <button type="button" id="fd-sm-copy-top" class="fd-pj-btn"
+              style="color:#1e40af;border-color:#1e40af">
+        <i class="fa-solid fa-copy fd-pj-icon"></i>
+        <i class="fa-solid fa-check" style="display:none;color:#047857"></i>
+        نسخ
+      </button>
+      <a id="fd-sm-download-top" href="#" class="fd-pj-btn" download
+         style="color:#047857;border-color:#047857;text-decoration:none">
+        <i class="fa-solid fa-download fd-pj-icon"></i>
+        تنزيل .rsc
+      </a>
       <button type="button" id="fd-sm-close" aria-label="إغلاق"
               style="background:transparent;border:none;cursor:pointer;color:#6b7280;font-size:18px">
         <i class="fa-solid fa-xmark"></i>
@@ -872,8 +888,11 @@
       <div><strong>SHA-256:</strong> <span class="mono" id="fd-sm-sha" style="font-family:ui-monospace,Menlo,monospace;color:#6b7280">—</span></div>
     </div>
 
-    {# ─── Install instructions — clear Arabic step-by-step ─── #}
-    <details open style="border-bottom:1px solid #e5e7eb">
+    {# ─── Install instructions — clear Arabic step-by-step ───
+       fix/script-modal-buttons-reachable: CLOSED by default so the
+       copy/download buttons + the script `<pre>` stay above the fold.
+       Operator clicks the summary to expand when they need the steps. #}
+    <details style="border-bottom:1px solid #e5e7eb">
       <summary style="cursor:pointer;padding:14px 20px;font-weight:800;font-size:14px;color:#0f172a;background:#f0f9ff;border-bottom:1px solid #bae6fd;display:flex;align-items:center;gap:8px">
         <i class="fa-solid fa-circle-info" style="color:#0284c7"></i>
         كيف أُثبّت السكربت على المايكروتيك؟

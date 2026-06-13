@@ -76,8 +76,18 @@
   const scriptEl   = document.getElementById("fd-sm-script");
   const bytesEl    = document.getElementById("fd-sm-bytes");
   const importEl   = document.getElementById("fd-sm-import-cmd");
-  const copyBtn    = document.getElementById("fd-sm-copy");
-  const dlBtn      = document.getElementById("fd-sm-download");
+  // fix/script-modal-buttons-reachable — TWO copy + TWO download buttons:
+  // one pair in the modal header (always visible above the fold) and one
+  // pair in the body above the script <pre> (legacy position). Both pairs
+  // share the same handlers; either can be clicked.
+  const copyBtns = [
+    document.getElementById("fd-sm-copy"),
+    document.getElementById("fd-sm-copy-top"),
+  ].filter(Boolean);
+  const dlBtns = [
+    document.getElementById("fd-sm-download"),
+    document.getElementById("fd-sm-download-top"),
+  ].filter(Boolean);
   const closeBtn   = document.getElementById("fd-sm-close");
   const doneBtn    = document.getElementById("fd-sm-done");
 
@@ -125,8 +135,21 @@
   // ────────────────────────────────────────────────────────────────────
   // Copy + download
   // ────────────────────────────────────────────────────────────────────
-  if (copyBtn) {
-    copyBtn.addEventListener("click", async () => {
+  // fix/script-modal-buttons-reachable — bind BOTH copy buttons
+  // (header + body) to the same handler so either is clickable.
+  function flashCopyBtn(btn) {
+    const ic = btn.querySelector(".fd-pj-icon");
+    const ok = btn.querySelector(".fa-check");
+    if (ic) ic.style.display = "none";
+    if (ok) ok.style.display = "inline-block";
+    setTimeout(() => {
+      if (ic) ic.style.display = "";
+      if (ok) ok.style.display = "none";
+    }, 1500);
+  }
+
+  copyBtns.forEach((btn) => {
+    btn.addEventListener("click", async () => {
       if (!currentScript) return;
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -141,29 +164,27 @@
           document.execCommand("copy");
           sel.removeAllRanges();
         }
-        // Swap the icon to a green checkmark for ~1.5s to confirm.
-        const ic = copyBtn.querySelector(".fd-pj-icon");
-        const ok = copyBtn.querySelector(".fa-check");
-        if (ic) ic.style.display = "none";
-        if (ok) ok.style.display = "inline-block";
+        // Flash BOTH copy buttons so the operator gets feedback no matter
+        // which one they clicked.
+        copyBtns.forEach(flashCopyBtn);
         toast("success", "تم نسخ السكربت إلى الحافظة.");
-        setTimeout(() => {
-          if (ic) ic.style.display = "";
-          if (ok) ok.style.display = "none";
-        }, 1500);
       } catch (_err) {
         toast("error", "تعذّر النسخ التلقائي — حدّد النص يدوياً ثم Ctrl+C.", { ttl: 6000 });
       }
     });
-  }
+  });
 
   function setDownload(filename, body) {
-    if (!dlBtn) return;
+    if (!dlBtns.length) return;
     clearBlob();
     const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
     currentBlobUrl = URL.createObjectURL(blob);
-    dlBtn.href = currentBlobUrl;
-    dlBtn.download = filename || "chr-node.rsc";
+    // Mirror the same href + filename onto every download button so the
+    // header copy and the body copy both produce identical downloads.
+    dlBtns.forEach((b) => {
+      b.href = currentBlobUrl;
+      b.download = filename || "chr-node.rsc";
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -178,7 +199,8 @@
     if (shaEl)      shaEl.textContent      = "—";
     if (scriptEl)   scriptEl.textContent   = "— جارٍ التحميل —";
     if (bytesEl)    bytesEl.textContent    = "—";
-    if (dlBtn)      { dlBtn.href = "#"; dlBtn.removeAttribute("download"); }
+    // Reset BOTH download buttons (header + body) when a new modal opens.
+    dlBtns.forEach((b) => { b.href = "#"; b.removeAttribute("download"); });
     openModal();
 
     try {
