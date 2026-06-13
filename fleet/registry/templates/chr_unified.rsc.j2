@@ -516,14 +516,14 @@ remove [find comment~"^drop public input"]
 # wipe so the post-import audit log shows exactly what the script
 # replaced — useful when reviewing the diff between operator-edited
 # state and the authoritative re-render.
-:local _wiped 0
+:local wipedCount 0
 :foreach r in=[find chain=input] do={
     :local c [/ip firewall filter get $r comment]
     :log info ("hobe-fleet: input-chain clean-rebuild — removing rule comment=" . $c)
-    :set _wiped ($_wiped + 1)
+    :set wipedCount ($wipedCount + 1)
 }
-:if ($_wiped > 0) do={
-    :log warning ("hobe-fleet: input chain clean-rebuild — " . $_wiped . " prior rule(s) removed; re-emitting authoritative set")
+:if ($wipedCount > 0) do={
+    :log warning ("hobe-fleet: input chain clean-rebuild — " . $wipedCount . " prior rule(s) removed; re-emitting authoritative set")
 }
 remove [find chain=input]
 # forward + output chains are NOT touched here. Our own tagged rules
@@ -976,84 +976,63 @@ set ftp     disabled=yes
 #
 # Visible to the operator via /system script print (also shown in
 # the §13 validation dump).
+{# fix/chr-script-syntax-355 — single-line source bodies.
+
+   RouterOS lesson learned from chr-vpn-2 import: `\n\` inside a quoted
+   `source="..."` is NOT a "newline + line-continuation" pair —
+   backslash-at-EOL is RouterOS line continuation OUTSIDE strings only.
+   Inside a quoted string the trailing `\` followed by a real newline
+   is invalid and trips the parser. Same goes for arithmetic in
+   scheduler `interval=` — it wants a literal time, not `($x . "m")`.
+
+   Robust shape (this is what's now emitted):
+     source="cmd1; cmd2; cmd3; ..."
+   one logical line, `;` separates statements, no embedded newlines,
+   no leading-underscore locals, literal `interval=15m`.
+#}
+{% if OPERATOR_ADMIN_IPS|default('') -%}
+{%- set closeACL = PANEL_WG_ADDR ~ '/32,' ~ OPERATOR_ADMIN_IPS -%}
+{%- else -%}
+{%- set closeACL = PANEL_WG_ADDR ~ '/32' -%}
+{%- endif %}
 /system script
 # ── (1) hobe-open-winbox — temporarily widen WinBox for recovery ──
+# Body (single line, `;` separated):
+#   1. log + put the operator-facing notice
+#   2. widen ssh + winbox /ip service ACL to 0.0.0.0/0
+#   3. add a tagged firewall accept for tcp:22,8291 above drop-last
+#      (only if not already present — idempotent)
+#   4. remove any stale auto-revert scheduler, then arm a fresh one
+#      with interval=15m calling hobe-close-winbox on tick
 :if ([:len [find name="hobe-open-winbox"]] = 0) do={
     add name="hobe-open-winbox" \
         comment="hobe-fleet-break-glass" \
-        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
-        source=":local revertMin 15\n\
-:log warning (\"hobe-fleet break-glass: hobe-open-winbox running — WinBox will be open for \" . \$revertMin . \" minutes\")\n\
-:put (\"hobe-fleet break-glass: opening WinBox for \" . \$revertMin . \" minutes\")\n\
-/ip service set winbox address=\"0.0.0.0/0\" disabled=no\n\
-/ip service set ssh    address=\"0.0.0.0/0\" disabled=no\n\
-/ip firewall filter\n\
-:if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={\n\
-    add chain=input action=accept protocol=tcp dst-port=22,8291 \\\n\
-        place-before=[find comment=\"hobe-fleet-fw-drop-last\"] \\\n\
-        comment=\"hobe-fleet-fw-break-glass\"\n\
-}\n\
-/system scheduler\n\
-:do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n\
-add name=\"hobe-close-winbox-auto\" interval=(\$revertMin . \"m\") start-time=startup \\\n\
-    comment=\"hobe-fleet-break-glass\" \\\n\
-    on-event=\"/system script run hobe-close-winbox\"\n\
-:log warning (\"hobe-fleet break-glass: auto-revert in \" . \$revertMin . \"m via hobe-close-winbox-auto\")\n"
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
 } else={
     set [find name="hobe-open-winbox"] \
         comment="hobe-fleet-break-glass" \
-        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
-        source=":local revertMin 15\n\
-:log warning (\"hobe-fleet break-glass: hobe-open-winbox running — WinBox will be open for \" . \$revertMin . \" minutes\")\n\
-:put (\"hobe-fleet break-glass: opening WinBox for \" . \$revertMin . \" minutes\")\n\
-/ip service set winbox address=\"0.0.0.0/0\" disabled=no\n\
-/ip service set ssh    address=\"0.0.0.0/0\" disabled=no\n\
-/ip firewall filter\n\
-:if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={\n\
-    add chain=input action=accept protocol=tcp dst-port=22,8291 \\\n\
-        place-before=[find comment=\"hobe-fleet-fw-drop-last\"] \\\n\
-        comment=\"hobe-fleet-fw-break-glass\"\n\
-}\n\
-/system scheduler\n\
-:do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n\
-add name=\"hobe-close-winbox-auto\" interval=(\$revertMin . \"m\") start-time=startup \\\n\
-    comment=\"hobe-fleet-break-glass\" \\\n\
-    on-event=\"/system script run hobe-close-winbox\"\n\
-:log warning (\"hobe-fleet break-glass: auto-revert in \" . \$revertMin . \"m via hobe-close-winbox-auto\")\n"
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; :put \"hobe-fleet break-glass: opening WinBox for 15 minutes\"; /ip service set winbox address=\"0.0.0.0/0\" disabled=no; /ip service set ssh address=\"0.0.0.0/0\" disabled=no; /ip firewall filter; :if ([:len [find comment=\"hobe-fleet-fw-break-glass\"]] = 0) do={ add chain=input action=accept protocol=tcp dst-port=22,8291 place-before=[find comment=\"hobe-fleet-fw-drop-last\"] comment=\"hobe-fleet-fw-break-glass\" }; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; add name=\"hobe-close-winbox-auto\" interval=15m on-event=\"/system script run hobe-close-winbox\" comment=\"hobe-fleet-break-glass\"; :log warning \"hobe-fleet break-glass: auto-revert in 15m via hobe-close-winbox-auto\""
 }
 
-# ── (2) hobe-close-winbox — immediate re-restrict to the hardened state ──
-{% if OPERATOR_ADMIN_IPS|default('') %}
-:local _closeACL "{{ PANEL_WG_ADDR }}/32,{{ OPERATOR_ADMIN_IPS }}"
-{% else %}
-:local _closeACL "{{ PANEL_WG_ADDR }}/32"
-{% endif %}
+# ── (2) hobe-close-winbox — immediate re-restrict to hardened state ──
+# Body (single line, `;` separated):
+#   1. log + put the operator-facing notice
+#   2. restore ssh + winbox /ip service ACL to the hardened union
+#      (PANEL_WG_ADDR/32 plus OPERATOR_ADMIN_IPS if set — baked at
+#      render time so this script needs no panel round-trip)
+#   3. remove the break-glass firewall rule + the auto-revert scheduler
 :if ([:len [find name="hobe-close-winbox"]] = 0) do={
     add name="hobe-close-winbox" \
         comment="hobe-fleet-break-glass" \
-        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
-        source=(":log warning \"hobe-fleet break-glass: hobe-close-winbox running — re-restricting WinBox/SSH ACL\"\n" . \
-                ":put \"hobe-fleet break-glass: closing WinBox — restoring hardened ACL\"\n" . \
-                "/ip service set winbox address=\"" . $_closeACL . "\" disabled=no\n" . \
-                "/ip service set ssh    address=\"" . $_closeACL . "\" disabled=no\n" . \
-                "/ip firewall filter\n" . \
-                ":do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}\n" . \
-                "/system scheduler\n" . \
-                ":do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n" . \
-                ":log warning \"hobe-fleet break-glass: hardened state restored\"\n")
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; /ip service set winbox address=\"{{ closeACL }}\" disabled=no; /ip service set ssh address=\"{{ closeACL }}\" disabled=no; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored\""
 } else={
     set [find name="hobe-close-winbox"] \
         comment="hobe-fleet-break-glass" \
-        policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon \
-        source=(":log warning \"hobe-fleet break-glass: hobe-close-winbox running — re-restricting WinBox/SSH ACL\"\n" . \
-                ":put \"hobe-fleet break-glass: closing WinBox — restoring hardened ACL\"\n" . \
-                "/ip service set winbox address=\"" . $_closeACL . "\" disabled=no\n" . \
-                "/ip service set ssh    address=\"" . $_closeACL . "\" disabled=no\n" . \
-                "/ip firewall filter\n" . \
-                ":do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}\n" . \
-                "/system scheduler\n" . \
-                ":do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}\n" . \
-                ":log warning \"hobe-fleet break-glass: hardened state restored\"\n")
+        policy=read,write,policy,test,reboot,sensitive \
+        source=":log warning \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; :put \"hobe-fleet break-glass: closing WinBox; restoring hardened ACL\"; /ip service set winbox address=\"{{ closeACL }}\" disabled=no; /ip service set ssh address=\"{{ closeACL }}\" disabled=no; /ip firewall filter; :do { remove [find comment=\"hobe-fleet-fw-break-glass\"] } on-error={}; /system scheduler; :do { remove [find name=\"hobe-close-winbox-auto\"] } on-error={}; :log warning \"hobe-fleet break-glass: hardened ACL restored\""
 }
 
 :log info "hobe-fleet: break-glass scripts provisioned (hobe-open-winbox / hobe-close-winbox). Run from VPS provider console if locked out."
