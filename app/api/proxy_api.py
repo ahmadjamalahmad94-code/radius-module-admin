@@ -416,6 +416,96 @@ def routing_table():
 # Heartbeat / status
 # ──────────────────────────────────────────────────────────────────────────────
 
+#: WireGuard public key shape: 43 base64 chars + '=' padding -> 44 total.
+#: Same validator as ``fleet.registry.infra_settings._validate_pubkey``, but
+#: we don't import that one to avoid raising on a malformed heartbeat field
+#: (the ingest path treats invalid as "reject + keep stored", not as a
+#: heartbeat-rejecting error).
+import re as _re  # noqa: E402 — local to this section, never used elsewhere
+_WG_PUBKEY_RE = _re.compile(r"^[A-Za-z0-9+/]{43}=$")
+
+
+def _adopt_proxy_wg_pubkey_from_heartbeat(body: dict) -> None:
+    """Adopt the proxy's LIVE wg-data pubkey when it differs from stored.
+
+    fix/panel-ingest-proxy-wg-pubkey — closes the proxy-side half of
+    BUG B (the panel-side half reads the live PANEL_WG_PUBKEY from the
+    local wg sudo-helper inside ``OnboardingService._build_bindings``).
+
+    Behaviour:
+      * Empty / missing  -> no-op (proxy unprivileged / iface absent).
+      * Malformed value  -> no-op + warning log (we never adopt a key
+        that wouldn't validate via the same regex the manual UI uses).
+      * Equal to stored  -> no-op (idempotent, hot path stays cheap).
+      * Different + valid -> persist via ``set_proxy_pubkey`` (which
+        runs the same validator) AND emit a structured audit-log row
+        so the rotation is reviewable.
+
+    NEVER raises; the heartbeat path catches any unexpected exception
+    upstream so a malformed body can never knock the heartbeat ack out.
+    """
+    raw = body.get("proxy_wg_data_pubkey")
+    if raw is None:
+        return
+    candidate = str(raw).strip()
+    if not candidate:
+        return
+    if not _WG_PUBKEY_RE.match(candidate):
+        current_app.logger.warning(
+            "heartbeat: rejected malformed proxy_wg_data_pubkey from "
+            "proxy_id=%s (length=%d) — keeping stored PROXY_WG_PUBKEY",
+            body.get("proxy_id", "?"), len(candidate),
+        )
+        return
+
+    try:
+        from fleet.registry.infra_settings import (
+            get_fleet_const as _get_const,
+            set_proxy_pubkey as _set_proxy,
+        )
+    except Exception:  # noqa: BLE001 — branch w/o fleet.registry (legacy)
+        return
+
+    stored = (_get_const("PROXY_WG_PUBKEY") or "").strip()
+    if stored == candidate:
+        return
+
+    # Adopt the live key.
+    _set_proxy(candidate)
+    current_app.logger.warning(
+        "heartbeat: adopted live proxy_wg_data_pubkey from proxy_id=%s "
+        "old=%s… new=%s…",
+        body.get("proxy_id", "?"),
+        (stored[:8] if stored else "<unset>"),
+        candidate[:8],
+    )
+    # Audit trail. The rotation is operator-visible: the audit row
+    # carries the old + new pubkeys (they are NOT secrets — wg public
+    # keys are designed to be shared) so the owner can spot an
+    # unexpected proxy-host key change in /admin/audit.
+    try:
+        from app.auth.routes import audit as _audit
+        _audit(
+            "fleet_infra_proxy_pubkey_auto_adopted",
+            "fleet_infra",
+            entity_id="PROXY_WG_PUBKEY",
+            summary=(
+                f"تبنّى مفتاح wg-data الحيّ من البروكسي "
+                f"({body.get('proxy_id', '?')}): "
+                f"{(stored or '<unset>')} → {candidate}"
+            ),
+            metadata={
+                "source": "proxy_heartbeat",
+                "proxy_id": body.get("proxy_id", ""),
+                "old_pubkey": stored,
+                "new_pubkey": candidate,
+            },
+        )
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — audit is best-effort
+        db.session.rollback()
+
+
 @bp.post("/heartbeat")
 def heartbeat():
     """Accept a heartbeat from the proxy agent with optional metrics.
@@ -430,14 +520,37 @@ def heartbeat():
       "requests_rejected": 80,
       "requests_error": 20,
       "active_realms": ["client1", "client5"],
-      "realms_not_found": ["unknown1"]
+      "realms_not_found": ["unknown1"],
+      "proxy_wg_data_pubkey": "ProxyLiveWgPubkey44charsBase64=="  # optional
     }
+
+    ``proxy_wg_data_pubkey`` (fix/panel-ingest-proxy-wg-pubkey): the
+    LIVE wg-data public key the proxy is using RIGHT NOW. The panel
+    ADOPTS it into ``Setting fleet.infra.PROXY_WG_PUBKEY`` when it
+    differs from the stored value -- closing the proxy-side half of
+    BUG B (the panel half reads the live PANEL_WG_PUBKEY from the
+    local wg sudo-helper). Empty/missing = no signal, keep stored.
+    Invalid = rejected, keep stored.
     """
     denied = _auth_required()
     if denied:
         return denied
 
     body = request.get_json(silent=True) or {}
+
+    # ── Ingest the proxy's LIVE wg-data pubkey (BUG B, wg-data side) ──
+    # Every CHR script renders PROXY_WG_PUBKEY from
+    # ``Setting fleet.infra.PROXY_WG_PUBKEY``; without this ingest, a
+    # rotated key on the proxy host leaves every NEW CHR script trusting
+    # a stale key, the same failure mode chr-vpn-1/2 hit on the panel
+    # side. Heartbeat-driven adoption keeps the Setting in lockstep with
+    # the proxy without operator intervention. Idempotent.
+    try:
+        _adopt_proxy_wg_pubkey_from_heartbeat(body)
+    except Exception:  # noqa: BLE001 — never crash a heartbeat on adoption
+        current_app.logger.exception(
+            "heartbeat: proxy_wg_data_pubkey adoption raised; ignoring"
+        )
     # Log to app logger — can be wired to Prometheus/Loki in future
     current_app.logger.info(
         "radius-proxy heartbeat | id=%s routes=%s reqs=%s accepted=%s rejected=%s",
