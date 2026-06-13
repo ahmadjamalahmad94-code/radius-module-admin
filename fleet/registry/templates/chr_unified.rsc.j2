@@ -571,18 +571,44 @@ add chain=input action=drop comment="hobe-fleet-fw-drop-last"
 # and the parser errored on the first `!` token, leaving the group
 # unprovisioned → /user add referenced a non-existent group →
 # import halted. Fix: granted-only tokens.
+# LIVE INCIDENT (fix/chr-group-idempotent-no-remove — chr-vpn-3):
+#   Script Error: failure: group has some users (/user/group/remove)
+# Root cause: ``/user group remove`` REFUSES to delete a group that
+# still has members. On a fresh install the group has no users so
+# remove succeeds; on every RE-IMPORT the group already carries
+# ``hobe-panel`` (added later in this same block on the previous
+# run), so the remove fails and the import halts.
+#
+# Fix: ADD-OR-SET. If the group is absent we ``add`` it; if it's
+# present we ``set`` it to the same policy + comment. ``set`` does
+# not need the group to be empty, so re-imports work without ever
+# removing a populated row.
 /user group
-remove [find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"]
-add name="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
-    policy=read,write,sensitive,reboot,rest-api \
-    comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
+:if ([:len [/user group find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"]] = 0) do={
+    /user group add name="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
+        policy=read,write,sensitive,reboot,rest-api \
+        comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
+    :log info ("hobe-fleet: created scoped user group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
+} else={
+    /user group set [find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"] \
+        policy=read,write,sensitive,reboot,rest-api \
+        comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
+    :log info ("hobe-fleet: refreshed policy on existing scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
+}
 
-# User row — idempotent. We ONLY manage our own row (recognised by the
-# ``hobe-fleet-api-managed`` comment) so a built-in like ``admin`` is
-# never clobbered. The renderer normalises API_USER off reserved names
-# upstream; this find-by-comment is belt-and-braces.
+# User row — ADD-OR-SET, no remove. On first install the row is
+# absent; on every re-import it already exists in the scoped group.
+# We ``set`` the group + comment but NEVER touch ``password=`` —
+# the panel's stored ciphertext from generate_keys IS the source of
+# truth (panel-mints-panel-knows). Rotating the password here would
+# break the script↔row match the first /user add already pinned.
+#
+# Find-by-comment guard: we only manage our OWN row (the
+# ``hobe-fleet-api-managed`` comment). A built-in row at the same
+# name (admin/root/…) is untouched — the renderer substitutes
+# reserved names off API_USER upstream so the second branch
+# below is belt-and-braces only.
 /user
-remove [find name="{{ API_USER }}" comment="hobe-fleet-api-managed"]
 :if ([:len [/user find name="{{ API_USER }}"]] = 0) do={
     /user add name="{{ API_USER }}" \
         group="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
@@ -590,7 +616,14 @@ remove [find name="{{ API_USER }}" comment="hobe-fleet-api-managed"]
         comment="hobe-fleet-api-managed"
     :log info ("hobe-fleet: created user {{ API_USER }} in scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
 } else={
-    :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber it. Pick a non-conflicting username from the panel's «إعدادات بنية الأسطول» page; auto-provisioned defaults already avoid every RouterOS built-in.")
+    :if ([:len [/user find name="{{ API_USER }}" comment="hobe-fleet-api-managed"]] > 0) do={
+        /user set [find name="{{ API_USER }}" comment="hobe-fleet-api-managed"] \
+            group="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
+            comment="hobe-fleet-api-managed"
+        :log info ("hobe-fleet: refreshed group binding on existing managed user {{ API_USER }}")
+    } else={
+        :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row — refusing to clobber it. Pick a non-conflicting username from the panel's «إعدادات بنية الأسطول» page; auto-provisioned defaults already avoid every RouterOS built-in.")
+    }
 }
 
 # Self-signed PKI for www-ssl: a tiny local CA + a leaf signed by it.

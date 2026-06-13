@@ -195,18 +195,27 @@ class TestBinaryApiDisabled:
     def test_granted_policy_includes_rest_api_not_api(self, provider_app):
         """The granted policy must align with the ENABLED transport:
         ``rest-api`` (REST over www-ssl, what the panel dials), NOT
-        ``api`` (the binary protocol we explicitly disable)."""
+        ``api`` (the binary protocol we explicitly disable).
+
+        feat/chr-group-idempotent-no-remove wraps the group provision
+        in a find-len guard so both `/user group add` and
+        `/user group set` carry the policy — we check both."""
         script, _ = _render()
-        flat = script.replace(" \\\n    ", " ")
-        add_line = next(
+        # Tolerant continuation join + strip comments so a doc comment
+        # like `/user group add policy=` doesn't false-match.
+        flat = re.sub(r" \\\n\s*", " ", script)
+        text = "\n".join(
             ln for ln in flat.splitlines()
-            if ln.startswith('add name="hobe-fleet-mgmt"')
+            if not ln.lstrip().startswith("#")
         )
-        m = re.search(r"policy=(\S+)", add_line)
-        granted = set(m.group(1).split(","))
-        assert "rest-api" in granted, granted
-        # And the binary login token MUST NOT be granted.
-        assert "api" not in granted, granted
+        policies = re.findall(
+            r"/user group (?:add|set) [^\n]*?policy=(\S+)", text,
+        )
+        assert policies, "no /user group add/set policy= line found"
+        for policy_value in policies:
+            granted = set(policy_value.split(","))
+            assert "rest-api" in granted, granted
+            assert "api" not in granted, granted
 
 
 # ════════════════════════════════════════════════════════════════════════
