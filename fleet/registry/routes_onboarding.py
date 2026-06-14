@@ -16,7 +16,15 @@ in-memory collaborator fakes.
 """
 from __future__ import annotations
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    jsonify,
+    render_template,
+    request,
+    url_for,
+)
 
 from app.auth.routes import audit, login_required, super_admin_required
 from app.extensions import db
@@ -846,6 +854,190 @@ def download_node_script(node_id: int):
         },
     )
     return resp
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# fix/view-script-dedicated-page — standalone full-page script viewer
+# ════════════════════════════════════════════════════════════════════════════
+# The floating «عرض السكربت» modal kept failing for the owner despite a
+# string of fixes (event delegation, pause-poll, page-level modal,
+# textarea). We stop fighting the modal-vs-live-poll renderer entirely:
+# «عرض السكربت» now opens a DEDICATED full page in a NEW TAB that renders
+# the script as plain readable text — its own minimal template (NOT the
+# dashboard layout) so there is NO live_poll.js, NO polling, NO heavy
+# modal CSS. It cannot be broken by the dashboard renderer/poll.
+#
+# Same render path as the .rsc download (_render_job_to_response_payload)
+# so viewed == downloaded == imported. Orphan / missing node / render-
+# dependency failures degrade GRACEFULLY: the page shows the error text
+# instead of a 500/503.
+
+
+def _script_view_page(node, sibling_job, *, download_url: str) -> Response:
+    """Render the standalone script-view page for a resolved node+job.
+
+    Always returns 200 with a human page — render failures are shown
+    inline (the operator opened a tab to READ something; a blank
+    500/503 helps nobody). The HTTP status stays 200 so the new tab
+    always shows content; the page body carries the precise reason.
+    """
+    node_name = getattr(node, "name", "") or f"node-{getattr(node, 'id', '?')}"
+    result = _render_job_to_response_payload(sibling_job)
+    if isinstance(result, tuple):
+        # (jsonify(...), status) error from the shared pipeline — show
+        # the Arabic reason on the page instead of crashing the tab.
+        _resp, _status = result
+        body = _resp.get_json() or {}
+        msg = body.get("message") or body.get("error") or "تعذّر توليد السكربت."
+        html = render_template(
+            "admin/fleet/script_view_page.html",
+            node_name=node_name,
+            script=None,
+            error_message=msg,
+            error_code=body.get("error", "unknown"),
+            http_status=_status,
+            download_url=download_url,
+            filename="",
+        )
+        return Response(
+            html, status=200, mimetype="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"},
+        )
+
+    # Audit the view (distinct from the JSON modal action + the download).
+    try:
+        audit(
+            "fleet_node_script_view_page",
+            "fleet_chr_node",
+            str(getattr(node, "id", "") or ""),
+            f"عرض صفحة سكربت RouterOS للعقدة «{node_name}» (صفحة مستقلة)",
+            metadata={
+                "chr_id": getattr(node, "id", None),
+                "job_id": result["job"].id,
+                "status": result["job"].status,
+            },
+        )
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — audit must never break the viewer
+        db.session.rollback()
+
+    html = render_template(
+        "admin/fleet/script_view_page.html",
+        node_name=result["node_name"],
+        script=result["script"],
+        error_message=None,
+        error_code=None,
+        http_status=200,
+        download_url=download_url,
+        filename=result["filename"],
+    )
+    return Response(
+        html, status=200, mimetype="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"},
+    )
+
+
+@bp.get("/chr-nodes/<int:node_id>/script/view")
+@super_admin_required
+def view_node_script_page(node_id: int):
+    """Standalone full-page script viewer keyed by NODE id (active cards)."""
+    node = db.session.get(FleetChrNode, int(node_id))
+    if node is None:
+        html = render_template(
+            "admin/fleet/script_view_page.html",
+            node_name=f"#{node_id}", script=None,
+            error_message=(
+                "العقدة غير موجودة — على الأرجح حُذفت بعد فتح اللوحة. "
+                "أعد تحميل اللوحة."
+            ),
+            error_code="not_found", http_status=404,
+            download_url="", filename="",
+        )
+        return Response(html, status=404, mimetype="text/html; charset=utf-8")
+    sibling_job = (
+        OnboardingJob.query
+        .filter(OnboardingJob.chr_id == node.id)
+        .filter(OnboardingJob.status.in_(_SCRIPT_VIEW_OK_STATUSES))
+        .order_by(OnboardingJob.id.desc())
+        .first()
+    )
+    if sibling_job is None:
+        html = render_template(
+            "admin/fleet/script_view_page.html",
+            node_name=node.name, script=None,
+            error_message=(
+                f"العقدة #{node.id} «{node.name}» موجودة لكن لا توجد مهمة "
+                f"تسجيل قابلة للعرض مرتبطة بها — على الأرجح حُذفت المهمة. "
+                f"شغّل «نظّف المهملات» ثم أعِد الإضافة عبر المعالج."
+            ),
+            error_code="orphan_node", http_status=410,
+            download_url="", filename="",
+        )
+        return Response(html, status=410, mimetype="text/html; charset=utf-8")
+    download_url = url_for(
+        "admin_fleet_onboarding.download_node_script", node_id=node.id
+    )
+    return _script_view_page(node, sibling_job, download_url=download_url)
+
+
+@bp.get("/jobs/<int:job_id>/script/view")
+@super_admin_required
+def view_job_script_page(job_id: int):
+    """Standalone full-page script viewer keyed by JOB id (pending cards).
+
+    Resolves the same way as the JSON ``view_script``: try the job
+    directly, then fall back to a FleetChrNode whose id collides (stale
+    button). The download link prefers the node-keyed .rsc route when a
+    chr_id is known, else the job is shown without a download anchor.
+    """
+    job = db.session.get(OnboardingJob, int(job_id))
+    node = None
+    if job is None:
+        # Fallback: the id might be a FleetChrNode id (stale pending card).
+        node = db.session.get(FleetChrNode, int(job_id))
+        if node is not None:
+            job = (
+                OnboardingJob.query
+                .filter(OnboardingJob.chr_id == node.id)
+                .filter(OnboardingJob.status.in_(_SCRIPT_VIEW_OK_STATUSES))
+                .order_by(OnboardingJob.id.desc())
+                .first()
+            )
+    if job is None:
+        html = render_template(
+            "admin/fleet/script_view_page.html",
+            node_name=f"#{job_id}", script=None,
+            error_message=(
+                "المهمة غير موجودة — على الأرجح اكتملت أو حُذفت. أعد تحميل "
+                "اللوحة لمشاهدة الحالة الحالية."
+            ),
+            error_code="job_not_found", http_status=404,
+            download_url="", filename="",
+        )
+        return Response(html, status=404, mimetype="text/html; charset=utf-8")
+    if node is None and job.chr_id:
+        node = db.session.get(FleetChrNode, job.chr_id)
+    download_url = ""
+    if node is not None:
+        download_url = url_for(
+            "admin_fleet_onboarding.download_node_script", node_id=node.id
+        )
+    # The viewer only needs a name for the header; synthesize one if the
+    # job has no linked node yet.
+    view_node = node or _SimpleNode(
+        id=job.chr_id or 0,
+        name=(job.form_input or {}).get("name") or f"job-{job.id}",
+    )
+    return _script_view_page(view_node, job, download_url=download_url)
+
+
+class _SimpleNode:
+    """Tiny stand-in so _script_view_page can render a job with no
+    linked FleetChrNode row (name + id are all it reads)."""
+
+    def __init__(self, *, id: int, name: str) -> None:
+        self.id = id
+        self.name = name
 
 
 # ════════════════════════════════════════════════════════════════════════════

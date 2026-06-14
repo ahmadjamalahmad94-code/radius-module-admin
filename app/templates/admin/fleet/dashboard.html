@@ -855,12 +855,15 @@
           </button>
         {% endif %}
         {% if j.has_script %}
-          <button type="button" class="pj-btn pj-btn--script fd-pj-view-script"
-                  data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
-                  title="عرض / نسخ / تنزيل سكربت RouterOS لهذه العقدة">
-            <i class="fa-solid fa-code fd-pj-icon"></i>
-            <i class="fa-solid fa-spinner fa-spin"></i> عرض السكربت
-          </button>
+          {# fix/view-script-dedicated-page — opens the standalone viewer
+             page in a NEW TAB (no modal, no live-poll, cannot freeze). #}
+          <a class="pj-btn pj-btn--script fd-pj-view-script"
+             href="{{ url_for('admin_fleet_onboarding.view_job_script_page', job_id=j.id) }}"
+             target="_blank" rel="noopener"
+             data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
+             title="عرض سكربت RouterOS في صفحة مستقلة (تبويب جديد)">
+            <i class="fa-solid fa-code fd-pj-icon"></i> عرض السكربت
+          </a>
         {% endif %}
         <button type="button" class="pj-btn pj-btn--delete fd-pj-delete"
                 data-job-id="{{ j.id }}" data-job-name="{{ j.name }}"
@@ -1341,14 +1344,17 @@
                config change, troubleshooting). Highlighted when
                needs_reimport=True so the drift case is impossible to
                miss; the hint title sits above the button on hover. #}
-            <button type="button"
-                    class="fd-rowbtn fd-node-view-script{% if n.needs_reimport %} fd-rowbtn--reimport{% endif %}"
-                    data-node-id="{{ n.id }}" data-node-name="{{ n.name }}"
-                    title="{% if n.needs_reimport %}تغيّر مفتاح اللوحة — أعد استيراد السكربت المُولّد حديثاً.{% else %}عرض / نسخ / تنزيل سكربت RouterOS لهذه العقدة{% endif %}">
+            {# fix/view-script-dedicated-page — «عرض السكربت» now opens a
+               STANDALONE full page in a NEW TAB (no modal, no live-poll,
+               cannot freeze). target=_blank + rel=noopener. #}
+            <a class="fd-rowbtn fd-node-view-script{% if n.needs_reimport %} fd-rowbtn--reimport{% endif %}"
+               href="{{ url_for('admin_fleet_onboarding.view_node_script_page', node_id=n.id) }}"
+               target="_blank" rel="noopener"
+               data-node-id="{{ n.id }}" data-node-name="{{ n.name }}"
+               title="{% if n.needs_reimport %}تغيّر مفتاح اللوحة — أعد استيراد السكربت المُولّد حديثاً.{% else %}عرض سكربت RouterOS في صفحة مستقلة (تبويب جديد){% endif %}">
               <i class="fa-solid fa-code"></i>
-              <i class="fa-solid fa-spinner fa-spin"></i>
               عرض السكربت
-            </button>
+            </a>
             {# fix/direct-script-download-and-freeze — direct download
                anchor. Plain <a download href=...>: zero JS, zero modal,
                zero live-poll involvement → cannot freeze the renderer.
