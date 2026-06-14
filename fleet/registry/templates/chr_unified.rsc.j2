@@ -422,23 +422,60 @@ set enabled=no
 {% endif %}
 
 {% if 'vpn_sstp' in ROLES %}
-# ---- 6. SSTP server (role: vpn_sstp; TLS 443) ----------------
-{# Cert-conditional: SSTP requires a TLS cert pre-imported on the CHR. We
-   skip the whole sub-section when no cert name is configured on the panel
-   -- emitting `certificate=` empty would fail with "input does not match
-   any value of certificate". The "RADIUS link" SSTP for the customer NAS
-   to dial in shares this same listener; both end-users AND the customer
-   NAS authenticate via the RADIUS client above, distinguished by user. #}
-{% if SSTP_CERT_NAME %}
-/interface sstp-server server
-set enabled=yes port=443 authentication=mschap2 \
-    certificate={{ SSTP_CERT_NAME }} tls-version=only-1.2 \
-    default-profile={{ PPP_PROFILE_NAME }} verify-client-certificate=no
-{% else %}
-# SSTP skipped: no TLS certificate configured on the panel yet.
-# Set SSTP_CERT_NAME in /admin/fleet config (and pre-install the matching
-# /certificate row on each CHR) to enable the SSTP server block here.
+# ---- 6. SSTP server (role: vpn_sstp; TLS {{ SSTP_PORT|default(443) }}) ----
+# feat/chr-sstp-enduser -- end-user SSTP VPN. SSTP needs a TLS server
+# cert. Two modes:
+#   * DEFAULT (no SSTP_CERT_NAME configured) -> the script AUTO-CREATES a
+#     DEDICATED self-signed cert `hobe-sstp-cert` (CN = this CHR's public
+#     IP) here. It is SEPARATE from `hobe-fleet-api-cert` (that one is
+#     bound to www-ssl/wg-mgmt REST and scoped to PANEL/32 -- never reuse
+#     it for a public-facing listener). Self-signed works for clients
+#     that skip server-cert verification (MikroTik SSTP client with
+#     verify-server-certificate=no, and most SSTP apps). Native Windows
+#     SSTP requires a TRUSTED chain -> that's the optional ACME phase
+#     later; the cert NAME / common-name stay panel-overridable.
+#   * OVERRIDE -> set SSTP_CERT_NAME in the panel to use a cert you
+#     pre-installed on the CHR (e.g. a real Let's Encrypt cert). The
+#     auto-create is then skipped and your cert is used verbatim.
+{% set _SSTP_CERT = SSTP_CERT_NAME or 'hobe-sstp-cert' %}
+{% if not SSTP_CERT_NAME %}
+# Auto-create the dedicated self-signed SSTP cert (idempotent: remove
+# then add+sign). `sign` with NO ca= produces a self-signed leaf that
+# carries its own private key -- exactly what an SSTP server needs.
+/certificate
+remove [find name="hobe-sstp-cert"]
+add name=hobe-sstp-cert common-name="{{ CHR_PUBLIC_IP }}" \
+    days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server
+sign hobe-sstp-cert
+:delay 5s
+# Poll-wait until the cert is fully signed (carries invalid-after) before
+# assigning it -- same break-free, flag-gated pattern as the www-ssl
+# cert above (a bare `set certificate=` on an unsigned cert errors
+# silently and leaves SSTP disabled on slow CHRs).
+:local sstpCertReady false
+:for i from=1 to=15 do={
+    :if (!$sstpCertReady) do={
+        :do {
+            :local c [/certificate find name="hobe-sstp-cert"]
+            :if ([:len $c] > 0) do={
+                :local exp [/certificate get $c invalid-after]
+                :if ([:typeof $exp] != "nothing" && [:tostr $exp] != "") do={
+                    :set sstpCertReady true
+                }
+            }
+        } on-error={}
+        :if (!$sstpCertReady) do={ :delay 1s }
+    }
+}
+:if ($sstpCertReady = false) do={
+    :log error "hobe-fleet: hobe-sstp-cert not ready after 15s -- SSTP will NOT bind on this run; re-run /import to retry."
+}
 {% endif %}
+/interface sstp-server server
+set enabled=yes port={{ SSTP_PORT|default(443) }} authentication=mschap2 \
+    certificate={{ _SSTP_CERT }} tls-version=only-1.2 \
+    default-profile={{ PPP_PROFILE_NAME }} verify-client-certificate=no
+:log info "hobe-fleet: SSTP server enabled on port {{ SSTP_PORT|default(443) }} (cert={{ _SSTP_CERT }}); end-user logins authenticate via RADIUS (service=ppp)"
 {% else %}
 /interface sstp-server server
 set enabled=no
@@ -729,8 +766,12 @@ add chain=input in-interface={{ WAN_IFACE }} protocol=udp dst-port=51821 \
 {% endif %}
 
 # (F) Role-gated public VPN service ports.
-{% if 'vpn_sstp' in ROLES and SSTP_CERT_NAME %}
-add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port=443 \
+# feat/chr-sstp-enduser -- open the SSTP port whenever the role is on.
+# No longer gated on SSTP_CERT_NAME: the SSTP block now AUTO-CREATES a
+# dedicated self-signed cert (hobe-sstp-cert) when vpn_sstp is enabled,
+# so the listener is always up for the role and the port must accept.
+{% if 'vpn_sstp' in ROLES %}
+add chain=input in-interface={{ WAN_IFACE }} protocol=tcp dst-port={{ SSTP_PORT|default(443) }} \
     place-before=[find comment="hobe-fleet-fw-drop-last"] \
     action=accept comment="hobe-fleet-fw-sstp"
 {% endif %}

@@ -202,22 +202,30 @@ def test_set_based_blocks_unchanged():
 # ─── cert-conditional skips must still work ─────────────────────────────────
 
 def test_cert_conditional_skips_preserved():
-    """The `{% if SSTP_CERT_NAME %}` and `{% if IKE_CERT_NAME %}` gates must
-    still skip the relevant blocks when cert names are empty."""
+    """feat/chr-sstp-enduser CHANGED the SSTP gate: SSTP is no longer
+    skipped when SSTP_CERT_NAME is empty — the vpn_sstp role now
+    AUTO-CREATES a dedicated self-signed cert. The IKEv2 cert-conditional
+    (`{% if IKE_CERT_NAME %}`) is UNCHANGED and still skips the IKEv2
+    peer/identity when empty."""
     script = _render(SSTP_CERT_NAME="", IKE_CERT_NAME="")
-    assert "/interface sstp-server server" not in script, \
-        "SSTP block should be skipped when SSTP_CERT_NAME is empty"
+    # SSTP now RENDERS (role on) with the auto-created dedicated cert.
+    assert "/interface sstp-server server" in script, \
+        "SSTP block must render for vpn_sstp even when SSTP_CERT_NAME is empty"
+    assert "add name=hobe-sstp-cert" in script, \
+        "vpn_sstp with no custom cert must auto-create hobe-sstp-cert"
+    assert "certificate=hobe-sstp-cert" in script
+    # IKEv2 peer/identity STILL gated on IKE_CERT_NAME (unchanged by M1).
     assert "/ip ipsec identity\nadd auth-method=eap-radius" not in script.replace(" \\\n", " "), \
         "IPsec identity add should be skipped when IKE_CERT_NAME is empty"
     assert "/ip ipsec peer\nadd name=hobe-peer" not in script, \
         "IPsec peer add should be skipped when IKE_CERT_NAME is empty"
-    # Cleanup lines for these blocks SHOULD still be emitted so a CHR that
+    # Cleanup lines for the IKE blocks SHOULD still be emitted so a CHR that
     # previously had certs (and the blocks) gets them swept on re-import.
     assert 'remove [find peer="hobe-peer"]' in script
     assert 'remove [find name="hobe-peer"]' in script
-    # SSTP firewall accept stays gated on SSTP_CERT_NAME (no cert ⇒
-    # no listener so no public 443 accept).
-    assert "hobe-fleet-fw-sstp" not in script
+    # SSTP firewall accept now opens whenever vpn_sstp is on (the cert is
+    # auto-created, so the listener is always up for the role).
+    assert "hobe-fleet-fw-sstp" in script
     # owner review fix #3 -- the IKE 500/4500 firewall accept is no
     # longer gated on IKE_CERT_NAME. The cert gates the IKEv2 SERVER
     # block in §7, not the WAN-side firewall accept; if the cert isn't
