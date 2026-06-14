@@ -222,7 +222,16 @@ def _validate_create_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], s
             "public_ipv6": (str(payload.get("public_ipv6") or "").strip() or None),
             "wg_mgmt_ip": str(payload["wg_mgmt_ip"]).strip()[:45],
             "wg_mgmt_pubkey": str(payload["wg_mgmt_pubkey"]).strip(),
-            "routeros_api_port": _to_int(payload.get("routeros_api_port")) or 8729,
+            # fix/script-service-get-guard-foreach -- was 8729 (binary
+            # api-ssl) which left rows pointing at the disabled binary
+            # API on port 8729. The metrics collector subsequently dialed
+            # https://<wg_mgmt_ip>:8729/rest/ which RouterOS logged as
+            # "login failure for user hobe-panel via api" (REST is
+            # categorised under the api umbrella in v7 auth logs even
+            # when no rest-api policy is in play). Default to 8443
+            # (www-ssl REST) to match the column default + the unified
+            # script's listener; explicit caller overrides still win.
+            "routeros_api_port": _to_int(payload.get("routeros_api_port")) or 8443,
             "coa_port": _to_int(payload.get("coa_port")) or 3799,
             "max_sessions": _to_int(payload["max_sessions"]),
             "link_speed_mbps": _to_int(payload["link_speed_mbps"]),

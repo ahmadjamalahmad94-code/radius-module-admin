@@ -1296,22 +1296,40 @@ set ftp     disabled=yes
 
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
 # (5) www-ssl enabled on port {{ API_PORT|default(8443) }} scoped to PANEL/32.
-# fix/script-service-get-guard -- length-guard the find result BEFORE
-# calling /ip service get on it. RouterOS halts the script with an
-# invalid-internal-item-number error when get runs against an empty
-# or invalid item ref; the surrounding :do {} on-error={} does NOT
-# catch this class of error. Same pattern below for check (12).
+# fix/script-service-get-guard-foreach -- the live halt on chr-vpn-2
+# was NOT an empty find: /ip service find name="X" can return MULTIPLE
+# items when an operator is actively connected via that service (the
+# DYNAMIC current-connection row coexists with the STATIC service row).
+# `get` on a multi-item ref raises invalid-internal-item-number, NOT
+# catchable by :do on-error in some paths. The :len > 0 guard from
+# the previous revision is therefore insufficient.
+#
+# RouterOS-safe pattern: walk /ip service, accept ONLY the non-dynamic
+# (static) item matching the desired name. Each per-item get is wrapped
+# in :do on-error={} so a malformed dynamic row can never halt the
+# foreach. Documented in docs/fleet/CHR_PROVISIONING_SERVICE_LOOKUP_BUG.md.
 :local wwwSslOk false
-:local svc [/ip service find name="www-ssl"]
-:if ([:len $svc] > 0) do={
+:local wwwSvc ""
+:foreach s in=[/ip service find] do={
     :do {
-        :local enabled [/ip service get $svc disabled]
-        :local port [/ip service get $svc port]
-        :local addr [/ip service get $svc address]
+        :if ([/ip service get $s name] = "www-ssl") do={
+            :if ([:tostr [/ip service get $s dynamic]] != "true") do={
+                :set wwwSvc $s
+            }
+        }
+    } on-error={}
+}
+:if ([:len [:tostr $wwwSvc]] > 0) do={
+    :do {
+        :local enabled [/ip service get $wwwSvc disabled]
+        :local port [/ip service get $wwwSvc port]
+        :local addr [/ip service get $wwwSvc address]
         :if ([:tostr $enabled] = "false" && [:tonum $port] = {{ API_PORT|default(8443) }} && [:find [:tostr $addr] "{{ PANEL_WG_ADDR }}"] >= 0) do={
             :set wwwSslOk true
         }
     } on-error={}
+} else={
+    :log warning "hobe-fleet: static www-ssl service not found; skipping check (5)"
 }
 :if (!$wwwSslOk) do={
     :set hobeRollbackOk false
@@ -1365,15 +1383,30 @@ set ftp     disabled=yes
 
 # (12) No public WinBox open unless emergency mode active. In normal
 #      mode /ip service winbox address must NOT be 0.0.0.0/0.
-# fix/script-service-get-guard -- length-guard the find result BEFORE
-# `get` to avoid invalid-internal-item-number halts when winbox isn't
-# a known service (defensive; on RouterOS v7 it always is, but we
-# never want this validation gate to be the thing that breaks the
-# import).
+# fix/script-service-get-guard-foreach -- this was the EXACT line that
+# halted the owner's import. /ip service find name="winbox" returned
+# TWO items: the static service row AND a dynamic current-connection
+# row (the operator was connected via WinBox at the time, visible as
+# "15 D c name=winbox ... remote=..." in /ip service print). `get` on
+# a multi-item ref raises invalid-internal-item-number, NOT catchable
+# by :do on-error. The foreach-skip-dynamic walk below picks only the
+# static row so the import never halts mid-validation. See docs/fleet/
+# CHR_PROVISIONING_SERVICE_LOOKUP_BUG.md.
 :local winboxAddr ""
-:local wbSvc [/ip service find name="winbox"]
-:if ([:len $wbSvc] > 0) do={
+:local wbSvc ""
+:foreach s in=[/ip service find] do={
+    :do {
+        :if ([/ip service get $s name] = "winbox") do={
+            :if ([:tostr [/ip service get $s dynamic]] != "true") do={
+                :set wbSvc $s
+            }
+        }
+    } on-error={}
+}
+:if ([:len [:tostr $wbSvc]] > 0) do={
     :do { :set winboxAddr [/ip service get $wbSvc address] } on-error={}
+} else={
+    :log warning "hobe-fleet: static winbox service not found; skipping check (12)"
 }
 :if (!$breakGlassActive && [:find [:tostr $winboxAddr] "0.0.0.0/0"] >= 0) do={
     # Tolerate the emergency-admin branch (wg-mgmt unreachable +

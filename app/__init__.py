@@ -161,8 +161,47 @@ def create_app(config_object=None, **overrides) -> Flask:
             init_database(app)
 
     _start_workers(app)
+    _warm_onboarding_lazy_imports(app)
 
     return app
+
+
+def _warm_onboarding_lazy_imports(app: Flask) -> None:
+    """Eager-import the sibling Phase-3 modules that fleet.registry.
+    onboarding_service.py looks up via importlib.import_module on demand.
+
+    Background: the .rsc direct-download route + the JSON view route
+    share the same _render_job_to_response_payload helper. Its only
+    503 source is OnboardingDependencyError, which is raised when
+    importlib fails on one of those sibling modules. Under multi-
+    worker gunicorn, a freshly-spawned worker hadn't warmed sys.modules
+    yet — the FIRST request to hit it got 503 even though every
+    subsequent request (and every request on already-warm workers)
+    returned 200. The owner saw exactly that pattern: JSON 200 on one
+    worker, .rsc 503 on a sibling worker fractions of a second later.
+
+    The fix is to import every sibling at create_app() time so EVERY
+    worker has them resident before serving its first request. Failures
+    are logged + swallowed (a missing sibling becomes the same
+    503-with-actionable-message we used to fall back to).
+    """
+    siblings = [
+        "fleet.registry.wg_keys",
+        "fleet.registry.secrets_vault",
+        "fleet.registry.script_render",
+        "fleet.registry.bootstrap_push",
+        "fleet.registry.script_bindings_check",
+    ]
+    for mod in siblings:
+        try:
+            import importlib
+            importlib.import_module(mod)
+        except Exception:  # noqa: BLE001 — eager warm, never crash boot
+            app.logger.exception(
+                "onboarding lazy-import warm-up failed for %s — "
+                "the .rsc download route may 503 on first request to "
+                "any worker that needs this module", mod,
+            )
 
 
 def _start_workers(app: Flask) -> None:
@@ -699,6 +738,32 @@ def ensure_schema_compatibility(app: Flask) -> None:
             from fleet.sync.backfill import backfill_wg_data_pubkeys
             backfill_wg_data_pubkeys()
         except Exception:  # noqa: BLE001 — schema heal must never crash boot
+            db.session.rollback()
+        # fix/script-service-get-guard-foreach — old POST /fleet/chr-nodes
+        # body defaulted routeros_api_port to 8729 (the binary api-ssl
+        # port) instead of 8443 (REST/www-ssl). Rows created with that
+        # default keep dialing 8729 forever, producing recurring "login
+        # failure for user hobe-panel via api" CHR auth-log noise (the
+        # collector hits HTTPS against a port speaking the binary
+        # protocol). Self-heal the legacy default to the correct REST
+        # port. Explicit operator overrides (anything that isn't the bad
+        # default) are left alone.
+        try:
+            from fleet.registry.models_chr import FleetChrNode as _Fc
+            healed = (
+                _Fc.query
+                .filter(_Fc.routeros_api_port == 8729)
+                .update({_Fc.routeros_api_port: 8443},
+                        synchronize_session=False)
+            )
+            if healed:
+                db.session.commit()
+                logging.getLogger(__name__).info(
+                    "fleet_chr_nodes: healed %d row(s) with stale "
+                    "routeros_api_port=8729 (binary api-ssl) -> 8443 (REST)",
+                    healed,
+                )
+        except Exception:  # noqa: BLE001 — never crash boot on a heal
             db.session.rollback()
 
     # ProxyRealmRoute — fleet allow-list column. (Pre-step-6 schemas had a

@@ -1,38 +1,47 @@
-"""fix/script-service-get-guard — no unguarded `get [find ...]` in the .rsc.
+"""fix/script-service-get-guard-foreach — /ip service get must use the
+foreach-skip-dynamic resolver, never raw `find name=`.
 
-Live blocker on the owner's chr-vpn-2: the §12 rollback-validation block
-hit ``:local winboxAddr [/ip service get [find name=winbox] address]``
-and RouterOS halted the import with::
+REFINED root cause (owner's live diagnosis on chr-vpn-2):
+  ``[find name=winbox]`` was NOT empty — it returned MULTIPLE items:
+  the STATIC service row AND a DYNAMIC current-connection row (the
+  operator was actively connected via WinBox at the moment of import,
+  visible as ``15 D c name=winbox ... remote=...`` in ``/ip service
+  print``). ``/ip service get`` against a multi-item ref raises
+  «invalid internal item number» exactly like the empty-find case,
+  and ``:do {} on-error={}`` does NOT catch it. So the previous
+  ``[:len $ref] > 0`` guard is INSUFFICIENT — multi-match still halts
+  the script.
 
-    Script Error: invalid internal item number (/ip/service/get; line 1100)
-
-The surrounding ``:do {} on-error={}`` does NOT catch this class of
-error — RouterOS aborts the script even past a try, so the §12
-rollback-CANCEL never ran and the 3-minute self-lockout reverted the
-import. The CHR was stuck in the pre-script state.
-
-Root cause: any ``/path get [find ...]`` where the ``find`` returns an
-empty internal ref. The defensive shape is ALWAYS::
-
-    :local ref [/path find name="x"]
-    :if ([:len $ref] > 0) do={
-        :local val [/path get $ref field]
+RouterOS-safe pattern (the only correct shape for /ip service):
+    :local svc ""
+    :foreach s in=[/ip service find] do={
+        :do {
+            :if ([/ip service get $s name] = "winbox") do={
+                :if ([:tostr [/ip service get $s dynamic]] != "true") do={
+                    :set svc $s
+                }
+            }
+        } on-error={}
+    }
+    :if ([:len [:tostr $svc]] > 0) do={
+        :local addr [/ip service get $svc address]
+        ... use it ...
     }
 
-This test renders the full script for two distinct CHRs (so both the
-mgmt-only and the radius_transport-on variants are covered) and
-asserts no unguarded ``get [find`` pattern appears. The renderer's
-``StrictUndefined`` would have caught a missing binding, but it can't
-catch a hand-written defensive-pattern regression. This test is the
-backstop.
+This test renders the full script + asserts:
+  * NO ``/ip service get`` ever wraps a raw ``[find ...]`` expression
+    (the multi-match landmine);
+  * every ``/ip service get`` call binds to a foreach-loop variable
+    (``$s``) or a foreach-captured static ref;
+  * the foreach-skip-dynamic block IS present (so we can't accidentally
+    delete the safety harness and still pass).
 
-Secondary contracts pinned here:
-  * every ``/ip service find name=...`` quotes the service name (an
-    unquoted ``find name=winbox`` accepted by RouterOS, but the quoted
-    form is the documented-stable shape and matches the rest of the
-    codebase);
-  * each guarded site uses ``[:len $... ] > 0`` (or ``[:len [/...]] > 0``)
-    so the guard text itself is greppable + auditable.
+Wireguard ``find`` callers are pinned by sibling tests because they
+target peers/interfaces, not /ip service (no dynamic connection rows
+to multi-match against). The length-guard pattern remains correct
+there.
+
+See docs/fleet/CHR_PROVISIONING_SERVICE_LOOKUP_BUG.md.
 """
 from __future__ import annotations
 
@@ -122,23 +131,52 @@ class TestNoUnguardedGetFind:
 # ════════════════════════════════════════════════════════════════════════
 class TestGuardShape:
 
-    def test_every_ip_service_get_is_preceded_by_a_length_guard(self, fleet_cfg):
-        """For each `/ip service get $var ...` call, the SAME script
-        must also contain a `[:len $var] > 0` guard (any line)."""
+    def test_no_get_wraps_raw_find_for_ip_service(self, fleet_cfg):
+        """REFINED contract — /ip service get [find ...] must NEVER
+        appear. That's the exact multi-match landmine that halted
+        chr-vpn-2's import (static service row + dynamic connection
+        row → multi-item ref → invalid internal item number)."""
         script = _render(fleet_cfg)
-        # Find all `/ip service get $local field` patterns and pull
-        # the local-var name.
-        gets = re.findall(r"/ip service get \$(\w+)\s", script)
-        assert gets, (
-            "no `/ip service get $var` calls present — guard pattern "
-            "must be used so this test is meaningful"
+        offenders = [
+            (i + 1, line)
+            for i, line in enumerate(script.splitlines())
+            if re.search(r"/ip service get \[\s*find\b", line)
+        ]
+        assert offenders == [], (
+            "/ip service get [find ...] survives in the rendered script "
+            "— this is the multi-match landmine. Replace with the "
+            "foreach-skip-dynamic harness. Offending lines:\n"
+            + "\n".join(f"  L{n}: {l!r}" for n, l in offenders[:20])
         )
+
+    def test_foreach_skip_dynamic_resolver_present(self, fleet_cfg):
+        """The walk over /ip service find filtering out dynamic
+        connection rows MUST appear in the rendered script — without
+        it any /ip service get becomes a multi-match landmine."""
+        script = _render(fleet_cfg)
+        assert ":foreach s in=[/ip service find] do=" in script, (
+            "the foreach-skip-dynamic resolver for /ip service is "
+            "missing from the rendered script"
+        )
+        assert "/ip service get $s dynamic" in script, (
+            "the dynamic-skip predicate (`get $s dynamic` != true) is "
+            "missing — the foreach without it doesn't solve multi-match"
+        )
+
+    def test_ip_service_get_only_binds_to_foreach_safe_refs(self, fleet_cfg):
+        """Every /ip service get $var ... must bind to either the
+        foreach iter var `$s` OR a static ref captured INSIDE that
+        foreach via `:set <var> $s`."""
+        script = _render(fleet_cfg)
+        gets = re.findall(r"/ip service get \$(\w+)\s", script)
+        assert gets, "no /ip service get $var calls — test is moot"
+        captured = set(re.findall(r":set\s+(\w+)\s+\$s\b", script))
+        captured.add("s")
         for var in set(gets):
-            guard = re.compile(r":len \$" + re.escape(var) + r"\] > 0")
-            assert guard.search(script), (
-                f"`/ip service get ${var} ...` appears with no matching "
-                f"`[:len ${var}] > 0` guard — the find result could be "
-                f"empty, and the get would halt the script"
+            assert var in captured, (
+                f"/ip service get ${var} doesn't bind to the foreach "
+                f"iter var or a foreach-captured static ref. Allowed: "
+                f"{sorted(captured)!r}"
             )
 
     def test_every_wg_peers_get_is_preceded_by_a_length_guard(self, fleet_cfg):
