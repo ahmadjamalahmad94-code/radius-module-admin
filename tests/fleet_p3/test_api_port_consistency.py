@@ -192,10 +192,17 @@ class TestBinaryApiDisabled:
         script, _ = _render()
         assert "set api-ssl disabled=yes" in script
 
-    def test_granted_policy_includes_rest_api_not_api(self, provider_app):
-        """The granted policy must align with the ENABLED transport:
-        ``rest-api`` (REST over www-ssl, what the panel dials), NOT
-        ``api`` (the binary protocol we explicitly disable).
+    def test_granted_policy_includes_rest_api_and_api_with_services_off(self, provider_app):
+        """fix/chr-rest-wireguard-permission — the safety property is
+        SERVICE-level, not POLICY-level. The granted policy carries
+        BOTH ``rest-api`` (REST login over www-ssl, what the panel
+        dials) AND ``api`` (the API DATA-ACCESS policy that REST shares
+        — required to read /interface/wireguard/peers over REST; without
+        it the live panel got HTTP 500 «not allowed (9)»). What keeps
+        the binary protocol shut is that the api + api-ssl SERVICES are
+        DISABLED at /ip service (asserted by the sibling tests above),
+        NOT the absence of the policy bit. So we assert: rest-api AND
+        api are granted, and (belt) the services are disabled.
 
         feat/chr-group-idempotent-no-remove wraps the group provision
         in a find-len guard so both `/user group add` and
@@ -215,7 +222,10 @@ class TestBinaryApiDisabled:
         for policy_value in policies:
             granted = set(policy_value.split(","))
             assert "rest-api" in granted, granted
-            assert "api" not in granted, granted
+            assert "api" in granted, granted
+        # The actual safety guarantee: the binary services are OFF.
+        assert "set api     disabled=yes" in script or "set api disabled=yes" in script
+        assert "set api-ssl disabled=yes" in script
 
 
 # ════════════════════════════════════════════════════════════════════════

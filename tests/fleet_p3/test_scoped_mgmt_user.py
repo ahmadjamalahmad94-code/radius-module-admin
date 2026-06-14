@@ -75,13 +75,22 @@ _BASE_CFG = {
 #: «input does not match any value of policy» on chr-vpn-3
 #: (WinBox 4.1), leaving the group unprovisioned + the import
 #: halted. This test pins the granted-only shape.
-EXPECTED_POLICY = "read,write,sensitive,reboot,rest-api"
+# fix/chr-rest-wireguard-permission — `api` is now GRANTED. REST shares
+# RouterOS's API permission layer; reading the secret-bearing
+# /interface/wireguard/peers menu over REST is gated on the `api` policy
+# in addition to read+sensitive+rest-api (the live panel got HTTP 500
+# {"detail":"std failure: not allowed (9)"} without it). Granting it is
+# SAFE: the binary api/api-ssl SERVICES stay disabled at /ip service, so
+# the policy bit only governs the already-authenticated REST session.
+EXPECTED_POLICY = "read,write,sensitive,reboot,rest-api,api"
 
 #: Policies that MUST stay denied. We assert they DON'T appear in
 #: the policy list (deny-by-omission). They also must NOT appear
 #: with a ``!`` prefix — that's a syntax error on /user group add.
+#: NB: `api` is NO LONGER here — it's required for REST wireguard reads
+#: (see EXPECTED_POLICY above); the api SERVICE stays disabled instead.
 DENIED_POLICIES = (
-    "api", "ssh", "winbox", "ftp", "web", "password",
+    "ssh", "winbox", "ftp", "web", "password",
     "policy", "sniff", "test", "romon", "dude", "tikapp",
 )
 
@@ -142,7 +151,7 @@ class TestScopedGroupPolicy:
         ``write``) is caught with a clear failure."""
         script = _render()
         granted_tokens = EXPECTED_POLICY.split(",")
-        for granted in ("read", "write", "sensitive", "reboot", "rest-api"):
+        for granted in ("read", "write", "sensitive", "reboot", "rest-api", "api"):
             assert granted in granted_tokens, granted
             assert f"policy={EXPECTED_POLICY}" in script.replace(" \\\n    ", " ")
 
@@ -226,7 +235,7 @@ class TestScopedGroupPolicy:
         assert ':if ([:len [/user group find name="hobe-fleet-mgmt"]] = 0) do={' in script
         assert "/user group set [find name=" in script
         # Both branches carry the same policy + comment.
-        assert script.count("policy=read,write,sensitive,reboot,rest-api") >= 2
+        assert script.count("policy=read,write,sensitive,reboot,rest-api,api") >= 2
 
 
 # ════════════════════════════════════════════════════════════════════════

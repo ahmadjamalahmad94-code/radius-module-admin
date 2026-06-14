@@ -105,9 +105,55 @@ def verify_node_wg_identity(node: FleetChrNode, *, client_factory=None) -> WgVer
     # Error»» instead of a generic «خطأ داخلي في CHR». Previously the
     # operator was stuck without knowing WHICH REST call failed; the
     # owner spent the previous live cycle chasing this exact gap.
+    # fix/chr-rest-wireguard-permission — request ONLY the non-secret
+    # fields we use. We never need the peer preshared-key or the
+    # interface private-key, so they never traverse REST (defense-in-
+    # depth on top of the `api` policy the unified script now grants for
+    # the /interface/wireguard/peers read).
+    _PEER_FIELDS = [
+        "public-key", "comment", "last-handshake",
+        "current-endpoint-address", "endpoint-address", "rx", "tx",
+    ]
+    _IFACE_FIELDS = ["name", "public-key"]
+    # fix/chr-rest-wireguard-permission — ONE bounded retry on a bare
+    # auth_failed. Live finding: right after an /import the CHR logs a
+    # single «login failure for user hobe-panel via api» while the
+    # `/user set password` + www-ssl cert swap + service restart settle
+    # (the steady state is then a 200 or a permission error, proving the
+    # creds are accepted). There is NO second wrong-credential code path
+    # — both this check and the metrics poller resolve creds through the
+    # same credentials_for(node). So this is a transient cert-swap race;
+    # a single short-backoff retry turns the operator-facing troubleshoot
+    # from a false-negative into a pass. We retry ONLY auth_failed (other
+    # errors fail fast) and only ONCE, so a genuinely wrong password
+    # still surfaces quickly. The background poller self-heals on its
+    # next cadence and needs no retry.
+    import time as _time
+
+    def _read_wg():
+        p = client.list_wireguard_peers(
+            interface="wg-mgmt", proplist=_PEER_FIELDS,
+        ) or []
+        i = client.find_wireguard_interface(
+            "wg-mgmt", proplist=_IFACE_FIELDS,
+        ) or {}
+        return p, i
+
     try:
-        peers = client.list_wireguard_peers(interface="wg-mgmt") or []
-        iface = client.find_wireguard_interface("wg-mgmt") or {}
+        try:
+            peers, iface = _read_wg()
+        except RouterOSError as first:
+            if (first.code or "") == "auth_failed":
+                logger.info(
+                    "wg_verify: auth_failed for node %s on first attempt "
+                    "(likely cert-swap/www-ssl restart race right after "
+                    "import) — retrying once after short backoff",
+                    node.name,
+                )
+                _time.sleep(1.2)
+                peers, iface = _read_wg()
+            else:
+                raise
     except RouterOSError as exc:
         endpoint = exc.endpoint_label()
         status = exc.http_status

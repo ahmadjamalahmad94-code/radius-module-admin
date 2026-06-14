@@ -181,3 +181,71 @@ earlier noise was already fixed + self-healed in main.
    `/api/proxy/wg-peers`.
 5. Confirm in `/log print where message~"hobe-fleet"`: the new
    `this CHR wg-data pubkey ... = <key>` line is present.
+
+---
+
+## Follow-up — REST wireguard read PERMISSION (branch `fix/chr-rest-wireguard-permission`)
+
+After the password converged (REST now authenticates), one blocker
+remained from the live troubleshoot:
+
+```
+GET /rest/interface/wireguard/peers
+→ HTTP 500 {"detail":"std failure: not allowed (9)","error":500,"message":"Internal Server Error"}
+```
+
+`std failure: not allowed (9)` is a RouterOS **permission** denial
+(authenticated but **un**authorized; RouterOS wraps permission errors as
+HTTP 500). The `hobe-panel` group had `read,write,sensitive,reboot,
+rest-api` — enough to read `system/resource` etc., but **not** to read
+the secret-bearing `/interface/wireguard/peers` menu over REST.
+
+### Root cause
+RouterOS REST is built on the **same API permission layer** as the
+binary API. Reading the wireguard peer/interface menus (which carry key
+material) over REST is gated on the **`api` policy** in addition to
+`read` + `sensitive` + `rest-api`. General reads (system/resource) don't
+require it, which is why only the wireguard path failed.
+
+### Fix
+1. **Generator §11** — grant the group the `api` policy:
+   `read,write,sensitive,reboot,rest-api,api` (both the add and set
+   branches). **This does NOT widen the attack surface**: the binary
+   `api` + `api-ssl` **services** stay `disabled=yes` at `/ip service`,
+   so no 8728/8729 session can be established regardless of the policy
+   bit — it only governs what the already-authenticated REST session may
+   read.
+2. **Panel hardening** (`app/services/routeros_client.py` +
+   `fleet/health/wg_verify.py`) — the wireguard REST reads now request a
+   non-secret `.proplist` (`public-key,comment,last-handshake,
+   current-endpoint-address,endpoint-address,rx,tx` for peers;
+   `name,public-key` for the interface). Private/preshared keys never
+   traverse REST. `.proplist` is a field selector, not the server-side
+   `?interface=` filter that earlier 500'd, so the fetch-all-then-filter
+   pattern is preserved.
+
+### The 12:19 "login failure ... via api" line
+A single `login failure for user hobe-panel via api` was logged at
+12:19:01, ~46s after the password converged at 12:18:15. Analysis:
+**transient cert-swap race** — during `/import` the script runs
+`/user set ... password=`, re-signs `hobe-fleet-api-cert`, and restarts
+`www-ssl`; a poll landing in that window is briefly refused. There is
+**no second wrong-credential code path**: both `wg_verify` and the
+metrics collector resolve credentials through the same
+`credentials_for(node)` (one Fernet-encrypted secret on the node row),
+and the steady state afterward is a *permission* error, not an auth
+error — proving the creds are accepted. RouterOS labels REST auth
+failures "via api"; api/api-ssl services are disabled, so this is REST,
+not a legacy probe.
+
+Mitigation: `wg_verify` now retries the wireguard read **once** on a
+bare `auth_failed` after a 1.2s backoff (operator-facing troubleshoot
+only — turns a cert-swap-race false-negative into a pass). Non-auth
+errors (the permission case) are **not** retried, so a real failure
+surfaces immediately. The background metrics poller self-heals on its
+next cadence and needs no retry.
+
+### Verify on 7.21.x
+After re-export + re-import, `GET /rest/interface/wireguard/peers`
+returns 200 (the group now carries `api`); the troubleshoot wg-mgmt key
+check goes green; `/ip service` still shows `api`/`api-ssl` disabled.

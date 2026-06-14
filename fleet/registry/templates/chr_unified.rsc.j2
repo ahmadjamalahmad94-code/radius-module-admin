@@ -816,16 +816,36 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 #   sensitive   -- required to write ppp/secret password=, ipsec PSK,
 #                 wireguard peer private-key=
 #   reboot      -- /system/reboot from the CHR console "(reboot)"
-#   rest-api    -- login via REST API (the only login channel the panel
-#                 uses; the unified script disables SSH/WinBox/FTP/web/
-#                 telnet for this user at the /ip service layer too)
+#   rest-api    -- HTTP login channel for REST (the only login channel
+#                 the panel uses; the unified script disables SSH/WinBox/
+#                 FTP/web/telnet for this user at the /ip service layer too)
+#   api         -- API DATA-ACCESS policy. fix/chr-rest-wireguard-permission:
+#                 REST is built on RouterOS's API permission layer; reading
+#                 the SECRET-bearing /interface/wireguard/peers menu over
+#                 REST is gated on the `api` policy IN ADDITION to read +
+#                 sensitive + rest-api. With only read,write,sensitive,
+#                 reboot,rest-api the live panel got HTTP 500
+#                 {"detail":"std failure: not allowed (9)"} -- a RouterOS
+#                 PERMISSION denial (authenticated but unauthorized) -- on
+#                 GET /rest/interface/wireguard/peers (last-handshake read
+#                 in wg_verify). Granting `api` is SAFE + does NOT widen the
+#                 attack surface: the binary API + api-ssl SERVICES stay
+#                 DISABLED at /ip service (api disabled=yes / api-ssl
+#                 disabled=yes below), so no 8728/8729 session can ever be
+#                 established regardless of this policy bit -- the bit only
+#                 governs what the already-authenticated REST session may
+#                 READ. The panel ALSO restricts its wireguard REST reads
+#                 to a non-secret .proplist (public-key/endpoint/handshake/
+#                 rx/tx) so private/preshared keys are never pulled over the
+#                 wire (defense-in-depth, see app/services/routeros_client.py).
 #
-# DENIED by omission (RouterOS rule): api (binary), ssh, winbox, ftp,
-# web, telnet, password (no user-mgmt), policy (no /system/scripts),
-# sniff, test, romon, dude, tikapp, local -- everything NOT in the
-# granted list above stays denied. If a future panel call needs a new
-# policy, justify it in the renderer's audit + add it to the granted
-# list below.
+# DENIED by omission (RouterOS rule): ssh, winbox, ftp, web, telnet,
+# password (no user-mgmt), policy (no /system/scripts), sniff, test,
+# romon, dude, tikapp, local -- everything NOT in the granted list above
+# stays denied. (The `api` POLICY is granted for REST data access; the
+# binary `api`/`api-ssl` SERVICES remain disabled at /ip service.) If a
+# future panel call needs a new policy, justify it in the renderer's
+# audit + add it to the granted list below.
 #
 # LIVE INCIDENT (fix/chr-group-policy-granted-only -- chr-vpn-3,
 # WinBox 4.1):
@@ -854,12 +874,12 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 /user group
 :if ([:len [/user group find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"]] = 0) do={
     /user group add name="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
-        policy=read,write,sensitive,reboot,rest-api \
+        policy=read,write,sensitive,reboot,rest-api,api \
         comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
     :log info ("hobe-fleet: created scoped user group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
 } else={
     /user group set [find name="{{ API_GROUP|default('hobe-fleet-mgmt') }}"] \
-        policy=read,write,sensitive,reboot,rest-api \
+        policy=read,write,sensitive,reboot,rest-api,api \
         comment="hobe-fleet: scoped panel management user group (granted-only; everything else denied by omission)"
     :log info ("hobe-fleet: refreshed policy on existing scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
 }

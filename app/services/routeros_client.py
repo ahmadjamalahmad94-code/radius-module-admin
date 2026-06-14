@@ -548,7 +548,9 @@ class RouterOSClient:
     # Each peer carries the client's public-key + the allowed-address list it can
     # claim. All helpers idempotent — they search before they create.
 
-    def find_wireguard_interface(self, name: str) -> dict[str, Any] | None:
+    def find_wireguard_interface(
+        self, name: str, *, proplist: list[str] | None = None,
+    ) -> dict[str, Any] | None:
         # fix/chr-rest-500-and-api-auth — RouterOS v7 REST returns HTTP
         # 500 «Internal Server Error» on `GET /rest/interface/wireguard?
         # name=X` on at least some builds (the field-incident CHR was
@@ -558,7 +560,15 @@ class RouterOSClient:
         # — Internal Server Error» with no hint as to which endpoint.
         # The robust pattern is to fetch the bare list (which works
         # uniformly across v7 builds) and filter client-side.
-        rows = self._request("GET", "interface/wireguard")
+        #
+        # fix/chr-rest-wireguard-permission — optional `.proplist` so a
+        # READ-ONLY caller (wg_verify) requests ONLY the non-secret
+        # fields it needs (name, public-key) and never pulls the
+        # interface private-key over REST. `.proplist` is a field
+        # selector (not a server-side filter), so it does NOT re-trigger
+        # the `?interface=`-filter 500 the fetch-all pattern avoids.
+        params = {".proplist": ",".join(proplist)} if proplist else None
+        rows = self._request("GET", "interface/wireguard", params=params)
         if isinstance(rows, dict):
             rows = [rows]
         if not isinstance(rows, list):
@@ -597,14 +607,29 @@ class RouterOSClient:
                 return refetched
         return created if isinstance(created, dict) else {"name": name}
 
-    def list_wireguard_peers(self, *, interface: str | None = None) -> list[dict[str, Any]]:
+    def list_wireguard_peers(
+        self, *, interface: str | None = None, proplist: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         # fix/chr-rest-500-and-api-auth — same fetch-all-then-filter
         # treatment as find_wireguard_interface above. The server-side
         # `?interface=X` filter on this endpoint also 500s on the live
         # CHR; fetching the bare list returns the same peers in every
         # build we've seen, and an in-memory filter on `interface`
         # equals is trivially correct.
-        rows = self._as_list(self._request("GET", "interface/wireguard/peers"))
+        #
+        # fix/chr-rest-wireguard-permission — optional `.proplist` so a
+        # READ-ONLY caller (wg_verify) requests ONLY the non-secret peer
+        # fields it needs (public-key/endpoint/handshake/rx/tx) and never
+        # pulls the peer preshared-key over REST. If `.proplist` is set
+        # we must keep `interface` in it so the client-side filter still
+        # works.
+        params = None
+        if proplist:
+            cols = list(proplist)
+            if interface and "interface" not in cols:
+                cols.append("interface")
+            params = {".proplist": ",".join(cols)}
+        rows = self._as_list(self._request("GET", "interface/wireguard/peers", params=params))
         if interface:
             rows = [r for r in rows if str(r.get("interface") or "") == interface]
         return rows
