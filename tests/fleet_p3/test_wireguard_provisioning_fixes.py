@@ -87,12 +87,29 @@ class TestBugAEndpointNeverEmpty:
 
     def test_post_setup_validation_block_renders(self):
         """Section 2d asserts both peer endpoint-address fields are
-        non-empty AFTER setup and flips hobeWgValidationOk on miss."""
+        non-empty AFTER setup and flips hobeWgValidationOk on miss.
+
+        fix/script-service-get-guard reshaped the inline
+        `[/interface wireguard peers get [find comment=...] endpoint-
+        address]` into a length-guarded two-step
+        `:local ref [... find comment=...]` + `... get $ref endpoint-
+        address` so an empty find can't halt the import. Pin both the
+        find AND the resulting get separately."""
         script = _render()
         assert ":global hobeWgValidationOk true" in script
         assert ":global hobeWgValidationDetail" in script
-        assert 'comment="hobe-fleet-mgmt"] endpoint-address' in script
-        assert 'comment="hobe-fleet-data"] endpoint-address' in script
+        # Length-guarded shape — separate find + get on the ref.
+        assert (
+            '/interface wireguard peers find comment="hobe-fleet-mgmt"'
+            in script
+        ), "wg-mgmt peer find missing from section 2d"
+        assert (
+            '/interface wireguard peers find comment="hobe-fleet-data"'
+            in script
+        ), "wg-data peer find missing from section 2d"
+        # Both gets pull endpoint-address from the guarded local ref.
+        assert "get $mgmtPeerRef endpoint-address" in script
+        assert "get $dataPeerRef endpoint-address" in script
         # The miss path flips the global to false + logs error.
         assert ":set hobeWgValidationOk false" in script
         assert "hobe-fleet: BUG A" in script

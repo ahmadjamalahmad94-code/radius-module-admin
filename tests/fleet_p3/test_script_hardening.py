@@ -188,8 +188,12 @@ def test_pubkey_audit_log_lines_render_with_real_keys():
     assert ("wg-mgmt peer expects PANEL pubkey = PANEL" + "p" * 38 + "=") in script
     assert ("wg-data peer expects PROXY pubkey = PROXY" + "q" * 38 + "=") in script
     # The CHR's own pubkey is read live on the device (not a binding).
+    # fix/script-service-get-guard reshaped the inline `get [find ...]`
+    # into a length-guarded `find` -> ref -> `get $ref` pair so an
+    # empty find can't halt the import. Pin both halves.
     assert "this CHR wg-mgmt pubkey (give to panel)" in script
-    assert '[/interface wireguard get [find name="wg-mgmt"] public-key]' in script
+    assert '/interface wireguard find name="wg-mgmt"' in script
+    assert "get $hobeMgmtIf public-key" in script
 
 
 # ── generation refuses on missing fleet values ───────────────────────────

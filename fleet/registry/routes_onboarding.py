@@ -764,12 +764,54 @@ def download_node_script(node_id: int):
             "node_id": node.id, "node_name": node.name,
         }), 410
 
+    # fix/script-service-get-guard — best-effort retry once on
+    # OnboardingDependencyError. Both this route and view_node_script
+    # share the same _render_job_to_response_payload pipeline; the
+    # owner saw the JSON route return 200 while this route returned
+    # 503 milliseconds later — symptom of a TRANSIENT sibling-module
+    # import flicker (the only path that raises OnboardingDepError).
+    # A second attempt re-enters with the imports now warm in
+    # sys.modules and almost always succeeds.
     result = _render_job_to_response_payload(sibling_job)
     if isinstance(result, tuple):
-        # The shared pipeline returned a (json, status) error — surface
-        # it as JSON so the operator (or a curl) sees the structured
-        # reason, not a half-rendered .rsc.
-        return result
+        _resp, _status = result
+        if _status == 503:
+            current_app.logger.warning(
+                "download_node_script(node=%s): 503 on first attempt — "
+                "retrying once (likely transient sibling-import flicker)",
+                node.id,
+            )
+            result = _render_job_to_response_payload(sibling_job)
+    if isinstance(result, tuple):
+        # Still failed after retry — surface a TEXT/PLAIN attachment
+        # with the Arabic reason in the body so the operator's Save
+        # dialog produces a human-readable .rsc.txt rather than a
+        # JSON blob shoved into a .rsc filename.
+        _resp, _status = result
+        body = _resp.get_json() or {}
+        msg = body.get("message") or body.get("error") or "تعذّر توليد السكربت."
+        text = (
+            f"# تعذّر توليد سكربت RouterOS للعقدة "
+            f"«{node.name}» (#{node.id})\n"
+            f"# السبب: {msg}\n"
+            f"# error_code: {body.get('error', 'unknown')}\n"
+            f"# HTTP status: {_status}\n"
+            f"#\n"
+            f"# هذه ليست عملية تنزيل ناجحة — لا تستورد هذا الملف.\n"
+            f"# أعد المحاولة بعد دقائق، أو افتح صفحة العقدة لمزيد من التفاصيل.\n"
+        )
+        return Response(
+            text,
+            status=_status,
+            mimetype="text/plain; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{_safe_filename(node.name)}.error.txt"'
+                ),
+                "Cache-Control": "no-store, no-cache, must-revalidate, private",
+                "Pragma": "no-cache",
+            },
+        )
 
     script_bytes = result["script"]
     filename = result["filename"]  # safe, already sanitised

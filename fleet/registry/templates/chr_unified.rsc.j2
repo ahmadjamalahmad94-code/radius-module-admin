@@ -264,7 +264,15 @@ $hobeSetEndpoint "hobe-fleet-data" $proxyIP {{ PROXY_WG_PORT }} "{{ PROXY_WG_HOS
 # gate in section 12 will read (and refuse to cancel the rollback).
 :global hobeWgValidationOk true
 :global hobeWgValidationDetail ""
-:local mgmtEp [/interface wireguard peers get [find comment="hobe-fleet-mgmt"] endpoint-address]
+# fix/script-service-get-guard -- length-guard every wg peer find before
+# get; if the peer creation step above misfired the find returns empty
+# and the unguarded get halted the import with an invalid-internal-
+# item-number error (RouterOS aborts even past a try/on-error here).
+:local mgmtPeerRef [/interface wireguard peers find comment="hobe-fleet-mgmt"]
+:local mgmtEp ""
+:if ([:len $mgmtPeerRef] > 0) do={
+    :set mgmtEp [/interface wireguard peers get $mgmtPeerRef endpoint-address]
+}
 :if ([:len [:tostr $mgmtEp]] = 0) do={
     :log error "hobe-fleet: BUG A - wg-mgmt peer endpoint-address is EMPTY after setup. No handshake will ever occur."
     :set hobeWgValidationOk false
@@ -273,7 +281,11 @@ $hobeSetEndpoint "hobe-fleet-data" $proxyIP {{ PROXY_WG_PORT }} "{{ PROXY_WG_HOS
     :log info ("hobe-fleet: wg-mgmt endpoint-address OK = " . $mgmtEp)
 }
 {% if 'radius_transport' in ROLES %}
-:local dataEp [/interface wireguard peers get [find comment="hobe-fleet-data"] endpoint-address]
+:local dataPeerRef [/interface wireguard peers find comment="hobe-fleet-data"]
+:local dataEp ""
+:if ([:len $dataPeerRef] > 0) do={
+    :set dataEp [/interface wireguard peers get $dataPeerRef endpoint-address]
+}
 :if ([:len [:tostr $dataEp]] = 0) do={
     :log error "hobe-fleet: BUG A - wg-data peer endpoint-address is EMPTY after setup. No RADIUS will ever flow."
     :set hobeWgValidationOk false
@@ -291,7 +303,15 @@ $hobeSetEndpoint "hobe-fleet-data" $proxyIP {{ PROXY_WG_PORT }} "{{ PROXY_WG_HOS
 {% if 'radius_transport' in ROLES %}
 :log info ("hobe-fleet: wg-data peer expects PROXY pubkey = {{ PROXY_WG_PUBKEY }}")
 {% endif %}
-:log info ("hobe-fleet: this CHR wg-mgmt pubkey (give to panel) = " . [/interface wireguard get [find name="wg-mgmt"] public-key])
+# fix/script-service-get-guard -- length-guard the wg interface lookup
+# before get; if the wg-mgmt interface creation step above misfired
+# the find returns empty and the unguarded get halts the import.
+:local hobeMgmtIf [/interface wireguard find name="wg-mgmt"]
+:if ([:len $hobeMgmtIf] > 0) do={
+    :log info ("hobe-fleet: this CHR wg-mgmt pubkey (give to panel) = " . [/interface wireguard get $hobeMgmtIf public-key])
+} else={
+    :log error "hobe-fleet: wg-mgmt interface MISSING after setup -- pubkey log skipped"
+}
 
 {% if 'radius_transport' in ROLES %}
 # ---- 3. RADIUS client -> the central proxy (FLEET-CONSTANT) -
@@ -456,7 +476,15 @@ remove [find name="wg-users"]
 add name=wg-users listen-port={{ WG_USERS_PORT }} comment="hobe-fleet-users"
 /ip address
 add interface=wg-users address={{ WG_USERS_ADDR }} comment="hobe-fleet-users"
-:log info ("hobe-fleet: wg-users public key (give to panel) = " . [/interface wireguard get [find name="wg-users"] public-key])
+# fix/script-service-get-guard -- length-guard the wg interface lookup
+# before get; if the wg-users add above misfired the find returns empty
+# and the unguarded get halts the import.
+:local hobeUsersIf [/interface wireguard find name="wg-users"]
+:if ([:len $hobeUsersIf] > 0) do={
+    :log info ("hobe-fleet: wg-users public key (give to panel) = " . [/interface wireguard get $hobeUsersIf public-key])
+} else={
+    :log error "hobe-fleet: wg-users interface MISSING after setup -- pubkey log skipped"
+}
 {% else %}
 /interface wireguard
 remove [find name="wg-users"]
@@ -1192,13 +1220,21 @@ set ftp     disabled=yes
 }
 
 # (2) wg-mgmt has either a handshake OR a ping to the panel works.
+# fix/script-service-get-guard -- length-guard the peer find BEFORE get;
+# if the peer add at section 2 misfired, the unguarded get would halt
+# the import with an invalid-internal-item-number error and block the
+# rollback-cancel below from ever running -- exactly the failure mode
+# the rollback gate is supposed to PROTECT against.
 :local mgmtAlive false
-:do {
-    :local lh [/interface wireguard peers get [find comment="hobe-fleet-mgmt"] last-handshake]
-    :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
-        :set mgmtAlive true
-    }
-} on-error={}
+:local mgmtPeerRefHs [/interface wireguard peers find comment="hobe-fleet-mgmt"]
+:if ([:len $mgmtPeerRefHs] > 0) do={
+    :do {
+        :local lh [/interface wireguard peers get $mgmtPeerRefHs last-handshake]
+        :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
+            :set mgmtAlive true
+        }
+    } on-error={}
+}
 :if (!$mgmtAlive) do={
     :do {
         :local pres [/ping address={{ PANEL_WG_ADDR }} interface=wg-mgmt count=3 as-value]
@@ -1218,20 +1254,28 @@ set ftp     disabled=yes
 
 {% if 'radius_transport' in ROLES %}
 # (3) wg-data peer endpoint-address non-empty (re-check after section 2d).
-:local dataEp [/interface wireguard peers get [find comment="hobe-fleet-data"] endpoint-address]
+# fix/script-service-get-guard -- length-guard the peer find BEFORE get.
+:local dataPeerRefV12 [/interface wireguard peers find comment="hobe-fleet-data"]
+:local dataEp ""
+:if ([:len $dataPeerRefV12] > 0) do={
+    :set dataEp [/interface wireguard peers get $dataPeerRefV12 endpoint-address]
+}
 :if ([:len [:tostr $dataEp]] = 0) do={
     :set hobeRollbackOk false
     :set hobeRollbackReason ($hobeRollbackReason . " (3) wg-data endpoint empty")
 }
 
 # (4) wg-data alive: handshake OR ping to proxy.
+# fix/script-service-get-guard -- same length-guard as check (2).
 :local dataAlive false
-:do {
-    :local lh [/interface wireguard peers get [find comment="hobe-fleet-data"] last-handshake]
-    :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
-        :set dataAlive true
-    }
-} on-error={}
+:if ([:len $dataPeerRefV12] > 0) do={
+    :do {
+        :local lh [/interface wireguard peers get $dataPeerRefV12 last-handshake]
+        :if ([:typeof $lh] != "nothing" && [:tostr $lh] != "" && [:tostr $lh] != "never") do={
+            :set dataAlive true
+        }
+    } on-error={}
+}
 :if (!$dataAlive) do={
     :do {
         :local pres [/ping address={{ PROXY_WG_ADDR }} interface=wg-data count=3 as-value]
@@ -1252,16 +1296,23 @@ set ftp     disabled=yes
 
 {% if (API_USER|default('')) and (API_PASSWORD|default('')) %}
 # (5) www-ssl enabled on port {{ API_PORT|default(8443) }} scoped to PANEL/32.
+# fix/script-service-get-guard -- length-guard the find result BEFORE
+# calling /ip service get on it. RouterOS halts the script with an
+# invalid-internal-item-number error when get runs against an empty
+# or invalid item ref; the surrounding :do {} on-error={} does NOT
+# catch this class of error. Same pattern below for check (12).
 :local wwwSslOk false
-:do {
-    :local svc [/ip service find name=www-ssl]
-    :local enabled [/ip service get $svc disabled]
-    :local port [/ip service get $svc port]
-    :local addr [/ip service get $svc address]
-    :if ([:tostr $enabled] = "false" && [:tonum $port] = {{ API_PORT|default(8443) }} && [:find [:tostr $addr] "{{ PANEL_WG_ADDR }}"] >= 0) do={
-        :set wwwSslOk true
-    }
-} on-error={}
+:local svc [/ip service find name="www-ssl"]
+:if ([:len $svc] > 0) do={
+    :do {
+        :local enabled [/ip service get $svc disabled]
+        :local port [/ip service get $svc port]
+        :local addr [/ip service get $svc address]
+        :if ([:tostr $enabled] = "false" && [:tonum $port] = {{ API_PORT|default(8443) }} && [:find [:tostr $addr] "{{ PANEL_WG_ADDR }}"] >= 0) do={
+            :set wwwSslOk true
+        }
+    } on-error={}
+}
 :if (!$wwwSslOk) do={
     :set hobeRollbackOk false
     :set hobeRollbackReason ($hobeRollbackReason . " (5) www-ssl not enabled/scoped on {{ API_PORT|default(8443) }}")
@@ -1314,7 +1365,16 @@ set ftp     disabled=yes
 
 # (12) No public WinBox open unless emergency mode active. In normal
 #      mode /ip service winbox address must NOT be 0.0.0.0/0.
-:local winboxAddr [/ip service get [find name=winbox] address]
+# fix/script-service-get-guard -- length-guard the find result BEFORE
+# `get` to avoid invalid-internal-item-number halts when winbox isn't
+# a known service (defensive; on RouterOS v7 it always is, but we
+# never want this validation gate to be the thing that breaks the
+# import).
+:local winboxAddr ""
+:local wbSvc [/ip service find name="winbox"]
+:if ([:len $wbSvc] > 0) do={
+    :do { :set winboxAddr [/ip service get $wbSvc address] } on-error={}
+}
 :if (!$breakGlassActive && [:find [:tostr $winboxAddr] "0.0.0.0/0"] >= 0) do={
     # Tolerate the emergency-admin branch (wg-mgmt unreachable +
     # OPERATOR_ADMIN_IPS unset) which intentionally opens both layers.
