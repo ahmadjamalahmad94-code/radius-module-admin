@@ -399,7 +399,7 @@ add name="{{ IP_POOL_NAME }}" ranges="{{ IP_POOL_RANGES }}" comment="hobe-fleet-
 # guarantees the framed IP is also valid post-roam.
 add name="{{ PPP_PROFILE_NAME }}" local-address={{ GW_LOCAL_ADDR }} \
     remote-address="{{ IP_POOL_NAME }}" \
-    use-encryption=required dns-server={{ DNS_PUSH }} \
+    use-encryption={{ PPP_ENCRYPTION|default('required') }} dns-server={{ DNS_PUSH }} \
     only-one=yes comment="hobe-fleet-ppp"
 # Built-in default-encryption stays in sync as a safety mirror; CHR-level
 # defaults (RouterOS pre-creates `default-encryption`) still need their
@@ -444,7 +444,7 @@ set enabled=no
 # carries its own private key -- exactly what an SSTP server needs.
 /certificate
 remove [find name="hobe-sstp-cert"]
-add name=hobe-sstp-cert common-name="{{ CHR_PUBLIC_IP }}" \
+add name=hobe-sstp-cert common-name="{{ SSTP_CERT_CN|default(CHR_PUBLIC_IP) }}" \
     days-valid=3650 key-usage=digital-signature,key-encipherment,tls-server
 sign hobe-sstp-cert
 :delay 5s

@@ -190,6 +190,16 @@ class FleetChrNode(TimestampMixin, db.Model):
     # the dashboard's spare-capacity readout.
     roles_json = db.Column(db.Text, nullable=False, default="[]", server_default="[]")
 
+    # feat/chr-conn-config-panel — per-CHR end-user CONNECTION config as a
+    # JSON blob (pool ranges, DNS, PPP gateway/encryption, SSTP port +
+    # cert mode/name/CN). Empty/missing ⇒ the fleet-constant defaults
+    # apply (back-compat). The renderer (_build_bindings) overlays these
+    # onto the template bindings so the on-CHR script reflects per-node
+    # choices instead of the hardcoded template values. Read/written ONLY
+    # via app/services/node_conn_config.py (validation lives there).
+    conn_config_json = db.Column(db.Text, nullable=False, default="{}",
+                                 server_default="{}")
+
     # ── live denormalized snapshot (updated by the metrics loop) ──────────────
     status = db.Column(db.String(16), nullable=False, default="provisioning")
     cpu_pct = db.Column(db.Numeric(5, 2))                             # latest CPU %

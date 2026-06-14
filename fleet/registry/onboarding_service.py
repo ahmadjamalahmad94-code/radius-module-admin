@@ -932,6 +932,39 @@ class OnboardingService:
                 "vpn_ipsec", "vpn_wireguard",
             }
 
+        # feat/chr-conn-config-panel — overlay the per-CHR end-user
+        # CONNECTION config onto the fleet-constant bindings so the
+        # rendered script reflects the operator's panel choices (pool
+        # range / DNS / PPP gateway+encryption / SSTP port+cert) instead
+        # of the hardcoded template defaults. An empty blob ⇒ DEFAULTS,
+        # which equal the prior fleet-constant values, so a node never
+        # touched in the UI renders byte-identically to before. Never
+        # breaks onboarding: any error keeps the existing fleet-const
+        # bindings already set above.
+        try:
+            from app.services.node_conn_config import get_conn_config
+            cc = get_conn_config(node)
+            bindings["IP_POOL_RANGES"] = cc["pool_ranges"]
+            bindings["DNS_PUSH"] = cc["dns"]
+            bindings["GW_LOCAL_ADDR"] = cc["gw_local_addr"]
+            bindings["PPP_ENCRYPTION"] = cc["encryption"]
+            bindings["SSTP_PORT"] = int(cc["sstp_port"])
+            # SSTP cert: custom mode pins SSTP_CERT_NAME (template uses it
+            # verbatim + skips the auto-create). auto mode leaves
+            # SSTP_CERT_NAME empty so the template auto-creates the
+            # dedicated self-signed cert. The CN override (or "" ⇒ the
+            # template falls back to CHR_PUBLIC_IP).
+            if cc["sstp_cert_mode"] == "custom" and cc["sstp_cert_name"]:
+                bindings["SSTP_CERT_NAME"] = cc["sstp_cert_name"]
+            else:
+                bindings["SSTP_CERT_NAME"] = ""
+            bindings["SSTP_CERT_CN"] = cc["sstp_cert_cn"] or node.public_ip
+        except Exception:  # noqa: BLE001 — never break onboarding on a config probe
+            logger.warning(
+                "onboarding: conn-config overlay failed for node=%s; "
+                "using fleet-constant defaults", getattr(node, "name", "?"),
+            )
+
         # API user provisioning (live-metrics poller). Resolution: per-node
         # override on the FleetChrNode row beats Setting layer beats the
         # fleet defaults from routeros_creds. We render the PLAINTEXT

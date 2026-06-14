@@ -29,12 +29,17 @@ from typing import Iterable
 RESERVED_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
     ipaddress.IPv4Network("10.98.0.0/24"),  # wg-data
     ipaddress.IPv4Network("10.99.0.0/24"),  # wg-mgmt
+    # feat/chr-conn-config-panel — wg-users (end-user WireGuard server
+    # gateway pool, WG_USERS_ADDR=10.51.0.1/24). An end-user PPP pool or
+    # PPP gateway that lands here would collide with the WG users plane.
+    ipaddress.IPv4Network("10.51.0.0/24"),  # wg-users
 )
 
 #: Human-readable labels for the UI / error messages (Arabic).
 RESERVED_LABELS_AR: dict[str, str] = {
     "10.98.0.0/24": "شبكة wg-data المحجوزة لنفق RADIUS بين الوكيل والـ CHR",
     "10.99.0.0/24": "شبكة wg-mgmt المحجوزة لقناة التحكم بين اللوحة والـ CHR",
+    "10.51.0.0/24": "شبكة wg-users المحجوزة لخادم WireGuard للمستخدمين على الـ CHR",
 }
 
 

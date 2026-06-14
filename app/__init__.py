@@ -730,6 +730,9 @@ def ensure_schema_compatibility(app: Flask) -> None:
             # helper absent at render time).
             "control_wg_public_key_snapshot": "TEXT NOT NULL DEFAULT ''",
             "proxy_wg_public_key_snapshot": "TEXT NOT NULL DEFAULT ''",
+            # feat/chr-conn-config-panel: per-CHR end-user connection config
+            # (pool/DNS/PPP/SSTP) JSON blob; '{}' ⇒ fleet-constant defaults.
+            "conn_config_json": "TEXT NOT NULL DEFAULT '{}'",
         })
         # Backfill wg_data_pubkey from the onboarding job refs for rows that
         # predate the column. Best-effort + idempotent: only touches rows that

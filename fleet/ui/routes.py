@@ -702,6 +702,79 @@ def fleet_data_node_save_roles(node_id: int):
     })
 
 
+@bp.get("/data-nodes/<int:node_id>/conn-config")
+@super_admin_required
+def fleet_data_node_get_conn_config(node_id: int):
+    """Return the EFFECTIVE per-CHR end-user connection config (defaults
+    overlaid with stored values) for the panel modal to pre-fill."""
+    from app.services.node_conn_config import DEFAULTS, get_conn_config
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({
+        "ok": True,
+        "node_id": node.id,
+        "config": get_conn_config(node),
+        "defaults": DEFAULTS,
+    })
+
+
+@bp.post("/data-nodes/<int:node_id>/conn-config")
+@super_admin_required
+def fleet_data_node_save_conn_config(node_id: int):
+    """Validate + persist the per-CHR end-user connection config.
+
+    feat/chr-conn-config-panel — the operator tunes the pool/DNS/PPP/SSTP
+    settings from the «إدارة عقد البيانات» modal. Validation (reserved-
+    subnet overlap, port/CN sanity) is enforced SERVER-SIDE in
+    node_conn_config.set_conn_config, never trusting the UI. A real change
+    flips ``needs_reimport`` (the script bakes these values at render
+    time, so the on-CHR copy is stale until re-import)."""
+    from app.services.node_conn_config import (
+        ConnConfigError, get_conn_config, set_conn_config,
+    )
+    node = db.session.get(FleetChrNode, node_id)
+    if node is None:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    partial = body.get("config")
+    if not isinstance(partial, dict):
+        return jsonify({"ok": False, "error": "bad_request",
+                        "message": "config يجب أن يكون كائناً."}), 400
+
+    before = get_conn_config(node)
+    try:
+        after = set_conn_config(node, partial, commit=False)
+    except ConnConfigError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": "invalid_config",
+                        "message": str(exc)}), 400
+
+    changed = before != after
+    if changed:
+        node.needs_reimport = True
+        db.session.add(node)
+    db.session.commit()
+    if changed:
+        audit(
+            "fleet_data_node_conn_config_changed",
+            "fleet_chr_node",
+            str(node.id),
+            f"تغيير إعدادات اتصال العقدة «{node.name}»",
+            {"before": before, "after": after,
+             "needs_reimport": bool(node.needs_reimport)},
+        )
+        db.session.commit()
+    return jsonify({
+        "ok": True,
+        "node_id": node.id,
+        "config": after,
+        "changed": changed,
+        "needs_reimport": bool(node.needs_reimport),
+    })
+
+
 @bp.get("/data-nodes/<int:node_id>.json")
 @super_admin_required
 def fleet_data_node_json(node_id: int):

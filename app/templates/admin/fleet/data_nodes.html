@@ -201,7 +201,12 @@
             title="ضع هذه العقدة في وضع نقل RADIUS فقط (تعطيل خدمات VPN)">
       <i class="fa-solid fa-database"></i> اجعلها data-only
     </button>
-    <span class="dn-roles-msg">تغيير الأدوار يضع علامة «بحاجة لإعادة استيراد» — السكربت مُولّد بناءً على الأدوار.</span>
+    <button type="button" class="dn-btn dn-btn--primary" data-dn-conn-config
+            data-node-id="{{ v.node_id }}" data-node-name="{{ v.name }}"
+            title="ضبط نطاق العناوين وDNS وملف PPP ومنفذ/شهادة SSTP لهذه العقدة">
+      <i class="fa-solid fa-sliders"></i> إعدادات الاتصال
+    </button>
+    <span class="dn-roles-msg">تغيير الأدوار أو الإعدادات يضع علامة «بحاجة لإعادة استيراد» — السكربت مُولّد بناءً عليها.</span>
   </div>
 
   {# ─── PART 2: create a new SSTP «رابط RADIUS» from THIS data CHR ─── #}
@@ -339,6 +344,94 @@
 </article>
 {% endfor %}
 
+{# ─── feat/chr-conn-config-panel: per-CHR connection-config modal ───
+   ONE page-level modal, opened by «إعدادات الاتصال» on any node card.
+   Pre-filled from GET .../conn-config; saved via POST. Design-system
+   styling + the page's toast (no native alert/confirm). #}
+<div id="dn-cc-modal" class="dn-cc-overlay" hidden>
+  <div class="dn-cc-dialog" role="dialog" aria-modal="true" aria-labelledby="dn-cc-title">
+    <div class="dn-cc-head">
+      <span id="dn-cc-title"><i class="fa-solid fa-sliders"></i> إعدادات الاتصال — <b data-dn-cc-node>—</b></span>
+      <button type="button" class="dn-cc-x" data-dn-cc-close aria-label="إغلاق">&times;</button>
+    </div>
+    <div class="dn-cc-body">
+      <p class="dn-cc-note">تُطبَّق هذه القيم على اتصالات المستخدمين (SSTP/PPTP/L2TP). تغييرها يضع علامة «بحاجة لإعادة استيراد».</p>
+      <label class="dn-cc-fld">
+        <span>نطاق عناوين المستخدمين (pool)</span>
+        <input type="text" data-cc="pool_ranges" dir="ltr" placeholder="10.50.0.10-10.50.255.254">
+        <small>خارج 10.98/10.99/10.51 المحجوزة. صيغة: A-B أو قائمة مفصولة بفواصل.</small>
+      </label>
+      <label class="dn-cc-fld">
+        <span>خوادم DNS المدفوعة</span>
+        <input type="text" data-cc="dns" dir="ltr" placeholder="1.1.1.1,1.0.0.1">
+      </label>
+      <label class="dn-cc-fld">
+        <span>عنوان بوابة PPP (local-address)</span>
+        <input type="text" data-cc="gw_local_addr" dir="ltr" placeholder="10.0.0.1">
+      </label>
+      <label class="dn-cc-fld">
+        <span>التشفير (use-encryption)</span>
+        <select data-cc="encryption">
+          <option value="required">required (مطلوب)</option>
+          <option value="yes">yes</option>
+          <option value="no">no</option>
+        </select>
+      </label>
+      <hr class="dn-cc-sep">
+      <label class="dn-cc-fld">
+        <span>منفذ SSTP</span>
+        <input type="number" data-cc="sstp_port" dir="ltr" min="1" max="65535" placeholder="443">
+      </label>
+      <label class="dn-cc-fld">
+        <span>شهادة SSTP</span>
+        <select data-cc="sstp_cert_mode">
+          <option value="auto">تلقائية موقّعة ذاتياً (hobe-sstp-cert)</option>
+          <option value="custom">مخصّصة (مثبّتة على الـ CHR)</option>
+        </select>
+      </label>
+      <label class="dn-cc-fld" data-cc-when="custom" hidden>
+        <span>اسم الشهادة المخصّصة</span>
+        <input type="text" data-cc="sstp_cert_name" dir="ltr" placeholder="my-letsencrypt-cert">
+      </label>
+      <label class="dn-cc-fld">
+        <span>الاسم الشائع للشهادة (CN) — اختياري</span>
+        <input type="text" data-cc="sstp_cert_cn" dir="ltr" placeholder="(فارغ = عنوان الـ CHR العام)">
+        <small>اتركه فارغاً ليستخدم عنوان الـ CHR العام تلقائياً.</small>
+      </label>
+      <div class="dn-cc-err" data-dn-cc-err hidden></div>
+    </div>
+    <div class="dn-cc-foot">
+      <button type="button" class="dn-btn dn-btn--mute" data-dn-cc-close>إلغاء</button>
+      <button type="button" class="dn-btn dn-btn--primary" data-dn-cc-save>
+        <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات
+      </button>
+    </div>
+  </div>
+</div>
+<style>
+  .dn-cc-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;
+    align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:1000;overflow:auto;}
+  .dn-cc-overlay[hidden]{display:none;}
+  .dn-cc-dialog{background:#fff;border-radius:14px;width:min(560px,100%);
+    box-shadow:0 24px 60px rgba(2,6,23,.35);overflow:hidden;}
+  .dn-cc-head{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;background:#f8fafc;border-block-end:1px solid #e5e7eb;font-weight:700;color:#0f172a;}
+  .dn-cc-x{border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:#64748b;}
+  .dn-cc-body{padding:16px 18px;max-height:64vh;overflow:auto;}
+  .dn-cc-note{margin:0 0 12px;font-size:12.5px;color:#64748b;}
+  .dn-cc-fld{display:block;margin-block-end:12px;font-size:13px;color:#0f172a;}
+  .dn-cc-fld>span{display:block;font-weight:600;margin-block-end:5px;}
+  .dn-cc-fld input,.dn-cc-fld select{width:100%;padding:8px 10px;border:1px solid #cbd5e1;
+    border-radius:8px;font-size:13px;background:#fff;}
+  .dn-cc-fld small{display:block;color:#94a3b8;font-size:11.5px;margin-block-start:4px;}
+  .dn-cc-sep{border:0;border-top:1px dashed #e5e7eb;margin:14px 0;}
+  .dn-cc-err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;
+    padding:8px 10px;font-size:12.5px;margin-block-start:8px;}
+  .dn-cc-err[hidden]{display:none;}
+  .dn-cc-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;
+    background:#f8fafc;border-block-start:1px solid #e5e7eb;}
+</style>
+
 <script>
 (function(){
   "use strict";
@@ -442,6 +535,86 @@
     }
     pick.addEventListener("change", refresh);
   });
+
+  // ─── Part 3: per-CHR connection-config modal ────────────────────────
+  // feat/chr-conn-config-panel. ONE modal, opened by «إعدادات الاتصال»
+  // on any card; pre-filled via GET, saved via POST. Server-side
+  // validation is authoritative — we just surface its Arabic error.
+  var modal = document.getElementById("dn-cc-modal");
+  if (modal) {
+    var fields = ["pool_ranges","dns","gw_local_addr","encryption",
+                  "sstp_port","sstp_cert_mode","sstp_cert_name","sstp_cert_cn"];
+    var nodeLabel = modal.querySelector("[data-dn-cc-node]");
+    var errBox = modal.querySelector("[data-dn-cc-err]");
+    var saveBtn = modal.querySelector("[data-dn-cc-save]");
+    var customWrap = modal.querySelector('[data-cc-when="custom"]');
+    var modeSel = modal.querySelector('[data-cc="sstp_cert_mode"]');
+    var activeNodeId = null;
+
+    function fieldEl(name){ return modal.querySelector('[data-cc="' + name + '"]'); }
+    function showErr(m){ if (errBox){ errBox.textContent = m || ""; errBox.hidden = !m; } }
+    function syncCustom(){
+      if (customWrap) customWrap.hidden = (modeSel && modeSel.value !== "custom");
+    }
+    function close(){ modal.hidden = true; activeNodeId = null; showErr(""); }
+    function open(nodeId, nodeName){
+      activeNodeId = nodeId;
+      if (nodeLabel) nodeLabel.textContent = nodeName || ("#" + nodeId);
+      showErr("");
+      fetch("/admin/fleet/data-nodes/" + encodeURIComponent(nodeId) + "/conn-config", {
+        credentials: "same-origin", headers: { "Accept": "application/json" }
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(data){
+          if (!data || !data.ok){ toast("تعذّر جلب الإعدادات.", "error"); return; }
+          var cfg = data.config || {};
+          fields.forEach(function(f){
+            var el = fieldEl(f);
+            if (el) el.value = (cfg[f] === undefined || cfg[f] === null) ? "" : cfg[f];
+          });
+          syncCustom();
+          modal.hidden = false;
+        })
+        .catch(function(){ toast("خطأ شبكي — تعذّر جلب الإعدادات.", "error"); });
+    }
+    function save(){
+      if (activeNodeId == null) return;
+      var cfg = {};
+      fields.forEach(function(f){ var el = fieldEl(f); if (el) cfg[f] = el.value; });
+      showErr("");
+      if (saveBtn) saveBtn.disabled = true;
+      fetch("/admin/fleet/data-nodes/" + encodeURIComponent(activeNodeId) + "/conn-config", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf(), "Accept": "application/json" },
+        body: JSON.stringify({ config: cfg })
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(data){
+          if (!data || !data.ok){
+            showErr(data && data.message || "تعذّر حفظ الإعدادات.");
+            return;
+          }
+          toast(data.changed ? "تم حفظ إعدادات الاتصال — أعد استيراد السكربت لتفعيلها." : "لا تغيير على الإعدادات.", "info");
+          close();
+          if (data.changed) setTimeout(function(){ window.location.reload(); }, 900);
+        })
+        .catch(function(){ showErr("خطأ شبكي — لم يصل الطلب لخادم اللوحة."); })
+        .then(function(){ if (saveBtn) saveBtn.disabled = false; });
+    }
+
+    document.querySelectorAll("[data-dn-conn-config]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        open(btn.dataset.nodeId, btn.dataset.nodeName);
+      });
+    });
+    if (modeSel) modeSel.addEventListener("change", syncCustom);
+    if (saveBtn) saveBtn.addEventListener("click", save);
+    modal.querySelectorAll("[data-dn-cc-close]").forEach(function(b){
+      b.addEventListener("click", close);
+    });
+    modal.addEventListener("click", function(e){ if (e.target === modal) close(); });
+    document.addEventListener("keydown", function(e){
+      if (e.key === "Escape" && !modal.hidden) close();
+    });
+  }
 })();
 </script>
 {% endblock %}
