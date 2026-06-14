@@ -16,7 +16,7 @@ in-memory collaborator fakes.
 """
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from app.auth.routes import audit, login_required, super_admin_required
 from app.extensions import db
@@ -712,6 +712,98 @@ def view_node_script(node_id: int):
         # waits for the next autosync handshake confirmation.
         "needs_reimport": bool(node.needs_reimport),
     })
+
+
+@bp.get("/chr-nodes/<int:node_id>/script.rsc")
+@super_admin_required
+def download_node_script(node_id: int):
+    """Direct file download of the per-CHR .rsc — no JSON, no modal, no JS.
+
+    fix/direct-script-download-and-freeze — the JSON+modal path
+    (``view_node_script``) was live-blocked: Chrome's renderer froze
+    while the ~900-line / ~61KB script `<pre>` was open + the dashboard
+    poll competed for the main thread, so the operator could not click
+    «نسخ» / «تنزيل .rsc».
+
+    This route bypasses the entire modal pipeline: a plain HTTP GET
+    on a normal anchor with the ``download`` attribute streams the
+    file straight to disk. Cannot freeze. Cannot rely on a
+    JavaScript handler. Cannot be killed by a live-poll tick.
+
+    Resolution path is the SAME as ``view_node_script`` (find latest
+    renderable OnboardingJob for the node, render via the shared
+    pipeline), but the response is ``text/plain`` with
+    ``Content-Disposition: attachment`` so the browser saves the file.
+
+    Error envelope: we still need to return SOMETHING readable when
+    the renderer can't produce a script — falling back to a
+    short-text .txt download with the Arabic reason in the body so
+    the operator's File Saved dialog shows the failure cause without
+    requiring JS or a modal.
+    """
+    node = db.session.get(FleetChrNode, int(node_id))
+    if node is None:
+        return jsonify({
+            "ok": False, "error": "not_found",
+            "message": "العقدة غير موجودة.", "node_id": node_id,
+        }), 404
+    sibling_job = (
+        OnboardingJob.query
+        .filter(OnboardingJob.chr_id == node.id)
+        .filter(OnboardingJob.status.in_(_SCRIPT_VIEW_OK_STATUSES))
+        .order_by(OnboardingJob.id.desc())
+        .first()
+    )
+    if sibling_job is None:
+        return jsonify({
+            "ok": False, "error": "orphan_node",
+            "message": (
+                f"العقدة #{node.id} «{node.name}» موجودة لكن لا توجد "
+                f"مهمة تسجيل قابلة للعرض مرتبطة بها."
+            ),
+            "node_id": node.id, "node_name": node.name,
+        }), 410
+
+    result = _render_job_to_response_payload(sibling_job)
+    if isinstance(result, tuple):
+        # The shared pipeline returned a (json, status) error — surface
+        # it as JSON so the operator (or a curl) sees the structured
+        # reason, not a half-rendered .rsc.
+        return result
+
+    script_bytes = result["script"]
+    filename = result["filename"]  # safe, already sanitised
+    # Audit — record the DOWNLOAD (not the body).
+    audit(
+        "fleet_node_script_download",
+        "fleet_chr_node",
+        str(node.id),
+        f"تم تنزيل سكربت RouterOS للعقدة «{node.name}» (مباشر)",
+        metadata={
+            "chr_id": node.id,
+            "job_id": result["job"].id,
+            "status": result["job"].status,
+            "script_sha256": result["job"].generated_script_ref,
+            "needs_reimport_before": bool(node.needs_reimport),
+            "transport": "direct_download",
+        },
+    )
+    db.session.commit()
+
+    resp = Response(
+        script_bytes,
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            # filename is `<node>.rsc`; the `attachment` disposition
+            # forces a Save-As dialog rather than rendering the body.
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # Defence: never let any proxy / browser cache the script
+            # body (it carries plaintext private keys).
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+        },
+    )
+    return resp
 
 
 # ════════════════════════════════════════════════════════════════════════════

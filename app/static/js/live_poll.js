@@ -86,6 +86,31 @@
     if (typeof window !== "undefined" && window.__hobePausePoll === true) return true;
     const body = (typeof document !== "undefined") ? document.body : null;
     if (body && body.dataset && body.dataset.pollPaused === "1") return true;
+    // fix/direct-script-download-and-freeze — belt-and-braces DOM
+    // check. The previous fix relied on the modal calling pausePoll()
+    // before display:flex, but live debugging showed
+    // window.__hobePausePoll stayed falsy on the owner's panel even
+    // with the modal open (a second handler / a future modal could
+    // bypass the flag plumbing). Reading the modal's computed display
+    // directly catches every open path -- if any known heavy modal
+    // is visible, we pause unconditionally.
+    if (typeof document !== "undefined" && document.getElementById) {
+      const sel = ["#fd-script-modal", "#fd-pj-confirm", "#fd-orphan-modal"];
+      for (let i = 0; i < sel.length; i++) {
+        const el = document.getElementById(sel[i].slice(1));
+        if (!el) continue;
+        // Inline style is the cheap path (the modal toggles
+        // style.display = "flex" / "none"). getComputedStyle is the
+        // slow path; only fall back to it when inline isn't set.
+        const inline = el.style && el.style.display;
+        if (inline && inline !== "none") return true;
+        if (!inline && typeof window !== "undefined" && window.getComputedStyle) {
+          try {
+            if (window.getComputedStyle(el).display !== "none") return true;
+          } catch (_e) { /* hostile env -- fall through */ }
+        }
+      }
+    }
     return false;
   }
 
@@ -196,6 +221,15 @@
     schedule(ms) {
       this.clear();
       if (this.paused) return;
+      // fix/direct-script-download-and-freeze — if the external pause
+      // signal flipped on between the previous tick finishing and this
+      // schedule call, do NOT arm a new timer. The next resume event
+      // will re-arm.
+      if (isExternalPaused()) {
+        this.paused = true;
+        this.renderIndicator();
+        return;
+      }
       this.timer = setTimeout(() => this.tick(), ms);
     }
 

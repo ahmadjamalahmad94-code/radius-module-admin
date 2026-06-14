@@ -188,6 +188,16 @@
     }, 1500);
   }
 
+  // fix/direct-script-download-and-freeze — the script display element
+  // is now a <textarea readonly> (cheaper layout than a 900-line <pre>).
+  // Writes go via .value; the legacy .textContent fallback covers any
+  // future swap back to a <pre> or a <code> element.
+  function setScriptText(value) {
+    if (!scriptEl) return;
+    if ("value" in scriptEl) scriptEl.value = value;
+    else scriptEl.textContent = value;
+  }
+
   copyBtns.forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (!currentScript) return;
@@ -195,14 +205,24 @@
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(currentScript);
         } else {
-          // Fallback for HTTP / older browsers: select the <pre> and execCommand.
-          const range = document.createRange();
-          range.selectNodeContents(scriptEl);
-          const sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-          document.execCommand("copy");
-          sel.removeAllRanges();
+          // Fallback for HTTP / older browsers: a <textarea> has a
+          // native .select() that beats Range / Selection on perf
+          // AND works on iOS Safari without contentEditable hacks.
+          // Keeps a Range fallback for the case where the element
+          // somehow isn't a textarea (defensive).
+          if (scriptEl && typeof scriptEl.select === "function") {
+            scriptEl.focus();
+            scriptEl.select();
+            document.execCommand("copy");
+          } else if (scriptEl) {
+            const range = document.createRange();
+            range.selectNodeContents(scriptEl);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand("copy");
+            sel.removeAllRanges();
+          }
         }
         // Flash BOTH copy buttons so the operator gets feedback no matter
         // which one they clicked.
@@ -240,7 +260,7 @@
     if (filenameEl) filenameEl.textContent = "—";
     if (statusEl)   statusEl.textContent   = "جارٍ التحميل";
     if (shaEl)      shaEl.textContent      = "—";
-    if (scriptEl)   scriptEl.textContent   = "— جارٍ التحميل —";
+    setScriptText("— جارٍ التحميل —");
     if (bytesEl)    bytesEl.textContent    = "—";
     // Reset BOTH download buttons (header + body) when a new modal opens.
     dlBtns.forEach((b) => { b.href = "#"; b.removeAttribute("download"); });
@@ -254,7 +274,7 @@
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) {
         const reason = body.message || body.error || ("HTTP " + res.status);
-        if (scriptEl) scriptEl.textContent = "(لم يُحمَّل السكربت)";
+        setScriptText("(لم يُحمَّل السكربت)");
         toast("error", "تعذّر تحميل السكربت: " + reason, { ttl: 8000 });
         return;
       }
@@ -262,7 +282,7 @@
       if (filenameEl) filenameEl.textContent = body.filename || "node.rsc";
       if (statusEl)   statusEl.textContent   = STATUS_AR[body.status] || body.status || "—";
       if (shaEl)      shaEl.textContent      = body.sha256 || "—";
-      if (scriptEl)   scriptEl.textContent   = currentScript;
+      setScriptText(currentScript);
       if (bytesEl)    bytesEl.textContent    = String(currentScript.length);
       if (importEl)   importEl.textContent   = "/import file=" + (body.filename || "<filename>.rsc");
       setDownload(body.filename || "node.rsc", currentScript);
@@ -272,7 +292,7 @@
       }
       toast("success", okMsg);
     } catch (_err) {
-      if (scriptEl) scriptEl.textContent = "(خطأ شبكي)";
+      setScriptText("(خطأ شبكي)");
       toast("error", "خطأ شبكي — تعذّر الوصول لخادم اللوحة.", { ttl: 7000 });
     }
   }
