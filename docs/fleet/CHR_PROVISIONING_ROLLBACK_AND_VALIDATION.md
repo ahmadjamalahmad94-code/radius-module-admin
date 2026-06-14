@@ -249,3 +249,109 @@ next cadence and needs no retry.
 After re-export + re-import, `GET /rest/interface/wireguard/peers`
 returns 200 (the group now carries `api`); the troubleshoot wg-mgmt key
 check goes green; `/ip service` still shows `api`/`api-ssl` disabled.
+
+---
+
+## wg-data peer-publishing pipeline (branch `fix/wg-data-peer-publish-pipeline`)
+
+### Live evidence
+chr-vpn-2 wg-data peer: **no `last-handshake`, rx=0**, tx=5.5KiB; `/ping
+10.98.0.1` = 100% loss. The CHR sends WG handshake initiations (tx>0)
+but receives nothing back (rx=0) → the **proxy is not responding** → the
+proxy has not added this CHR's wg-data peer
+(`QyVOMA0/nByaNl9D85VD60xuMFFui90sS1W0IdOuuFE=`, allowed-ips
+`10.98.0.12/32`).
+
+### VERDICT — it is a PROXY-DEPLOY gap, not a panel gap
+
+**Does the panel mint the wg-data key or learn it from the CHR?**
+It **MINTS** it. `OnboardingService.generate_keys` mints BOTH keypairs
+(`data = self.key_provider.generate_keypair()`), vaults the private key,
+and persists the public key on the node row
+(`fleet_chr_nodes.wg_data_pubkey`). The unified script bakes
+`private-key="{{ WG_DATA_PRIVKEY }}"` on `wg-data`, so the CHR never
+self-generates the key — its on-device wg-data pubkey is deterministic
+from the panel-minted private key and therefore **equals** the panel's
+stored `wg_data_pubkey`.
+
+Consequences:
+* **NOT a "panel can't learn the key" gap (c).** The panel never reads
+  the wg-data key from the CHR, so the `not allowed (9)` REST-permission
+  bug is **irrelevant** to wg-data publishing. (That bug only affected
+  the wg-mgmt *verification read*, now fixed.)
+* **NOT a panel-publish gap (a)** when the row carries the pubkey. Proven
+  end-to-end in `tests/.../test_wg_data_peer_publish_pipeline.py`: a
+  provisioning node with `wg_data_pubkey` set appears in
+  `desired_proxy_peers()` AND in `GET /api/proxy/wg-peers` with
+  `public_key=QyVOMA0/…` + `allowed_ips=["10.98.0.12/32"]`.
+* **IS a proxy-deploy gap (b).** The panel publishes correctly; the
+  **proxy** (separate repo `radius-proxy`, host `178.105.251.67`) must
+  POLL `GET /api/proxy/wg-peers` and apply the peer set to its `wg-data`
+  interface. The owner deployed the control panel (`be28aa6`/`07a3e43`)
+  but the proxy was not pulled+restarted, so its poll loop is stale /
+  not applying the new peer.
+
+### Live confirmation on the panel (no proxy access needed)
+Open the CHR troubleshoot page — a new row **«نشر peer الـ wg-data
+للوكيل (proxy)»** shows, from the panel DB:
+`pubkey=QyVOMA0/…… allowed-ips=10.98.0.12/32 will_publish=نعم` (GREEN).
+A GREEN row here + rx=0 on the CHR ⇒ the gap is the proxy. (RED here ⇒ a
+panel-side gap — fix that first.)
+
+### Remediation for the owner
+1. **No re-import needed** for this (the CHR's local wg-data config is
+   already correct; the panel already publishes the peer).
+2. **Deploy the proxy** on `178.105.251.67` so its wg-peers poll loop
+   runs the latest code and applies the peer. Exact commands (confirm
+   the repo path + systemd unit name on the proxy host — the proxy lives
+   in `radius-proxy@arch/chr-fleet-blueprint`):
+   ```bash
+   # on 178.105.251.67, as the proxy deploy user:
+   cd /opt/radius-proxy            # <-- confirm path
+   git pull --ff-only
+   sudo systemctl restart radius-proxy   # <-- confirm unit: `systemctl list-units | grep -i proxy`
+   sudo systemctl status  radius-proxy
+   # then watch it poll + apply:
+   journalctl -u radius-proxy -f | grep -i "wg-peers\|wg-data\|peer"
+   ```
+3. **Verify the proxy actually pulled the peer set** (from the proxy
+   host) — this also rules out an HMAC/secret mismatch:
+   ```bash
+   # RADIUS_PROXY_SHARED_SECRET must match the panel's
+   # /admin/settings/platform value:
+   curl -s -H "X-Proxy-Token: <ts>:<nonce>:<hmac>" \
+        https://<panel-host>/api/proxy/wg-peers | jq '.peers[] | select(.public_key|startswith("QyVOMA0"))'
+   # expect: {"public_key":"QyVOMA0/…","allowed_ips":["10.98.0.12/32"],"endpoint":null}
+   wg show wg-data            # expect a peer with that pubkey + 10.98.0.12/32
+   ```
+4. **Proxy host network checks** (rx=0 can also be a dropped inbound):
+   * `wg-data` interface up + listening on **UDP 51821**;
+   * host firewall allows inbound **UDP/51821** (`ufw allow 51821/udp`
+     or the cloud SG);
+   * no stale/duplicate peer already claiming `10.98.0.12/32` (the proxy
+     reconciler should treat `peers` as the complete set and remove
+     strays — confirm it does).
+
+### Acceptance (verify live after the proxy deploy)
+* `wg show wg-data` on the proxy lists `QyVOMA0/…` with a **recent
+  handshake**;
+* `/ping 10.98.0.1` from the CHR = 0% loss; `/ping 10.98.0.12` from the
+  proxy = 0% loss;
+* the CHR's wg-data peer shows `last-handshake` + rx>0;
+* the panel troubleshoot goes fully green.
+
+### "login failure ... via api"
+Already analyzed in the section above — a transient cert-swap race, not a
+second credential path; no panel/proxy job uses legacy binary API (the
+panel is REST-only over www-ssl:8443, api/api-ssl services disabled). The
+`wg_verify` one-shot retry-on-auth_failed (1.2s backoff) absorbs the
+post-import transient; the metrics poller self-heals on cadence.
+
+### Files changed (panel side)
+| File | Change |
+|---|---|
+| `fleet/ui/troubleshoot_view.py` | new «نشر peer الـ wg-data للوكيل» row via `preflight_wg_data` — surfaces publish state live (green panel ⇒ proxy gap; red ⇒ panel gap) |
+| `tests/fleet_p3/test_wg_data_peer_publish_pipeline.py` | NEW — proves `desired_proxy_peers()` + `/api/proxy/wg-peers` publish the peer; troubleshoot row green/red |
+
+The proxy-side poll/apply lives in the separate `radius-proxy` repo and
+is delivered by the deploy command above, not by a panel code change.

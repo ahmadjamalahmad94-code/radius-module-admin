@@ -210,6 +210,60 @@ def build_view(node: FleetChrNode) -> NodeTroubleshootView:
         severity="ok" if proxy_recognised else "error",
     ))
 
+    # 4b. wg-data PEER PUBLISH to the proxy (the live 2026-06 blocker:
+    #     CHR sends wg-data handshakes but rx=0 because the proxy never
+    #     added this CHR's wg-data peer). This row answers, from the
+    #     panel's own DB, whether the panel WILL publish the peer at
+    #     GET /api/proxy/wg-peers (pubkey + 10.98.0.X/32). It cleanly
+    #     separates the two failure classes:
+    #       * row GREEN but no handshake on the CHR ⇒ the PANEL side is
+    #         correct; the PROXY hasn't polled+applied — deploy/restart
+    #         radius-proxy (it owns the wg-peers poll loop).
+    #       * row RED ⇒ a panel-side gap (missing wg-data pubkey / node
+    #         not eligible) — fix here before touching the proxy.
+    try:
+        from fleet.sync.preflight import preflight_wg_data
+        pf = preflight_wg_data(node)
+        pf_ok = pf.state == "ok"
+        if pf_ok:
+            pf_detail = (
+                "اللوحة تنشر هذا الـ peer للوكيل عبر /api/proxy/wg-peers. "
+                "إذا بقي rx=0 / لا مصافحة على الـ CHR رغم أن هذا الصف أخضر، "
+                "فالنقص في الوكيل (radius-proxy) — يجب سحب أحدث كود وإعادة "
+                "تشغيل خدمة الوكيل كي يستطلع /api/proxy/wg-peers ويضيف الـ peer."
+            )
+        elif pf.state == "pending_remote":
+            pf_detail = (
+                "محلياً سليم لكن العقدة مُصرَّفة/معطّلة فلا تُنشر عمداً. " +
+                " ".join(pf.reasons)
+            )
+        else:  # blocked
+            pf_detail = " ".join(pf.reasons)
+        pf_value = (
+            f"pubkey={(node.wg_data_pubkey or '—')[:16]}… "
+            f"allowed-ips={pf.allowed_ip or '—'} "
+            f"will_publish={'نعم' if pf.will_publish else 'لا'}"
+        )
+        rows.append(CheckRow(
+            key="wg_data_peer_publish",
+            label_ar="نشر peer الـ wg-data للوكيل (proxy)",
+            ok=pf_ok,
+            value=pf_value,
+            detail_ar="" if pf_ok else pf_detail,
+            severity="ok" if pf_ok else ("warn" if pf.state == "pending_remote" else "error"),
+        ))
+        if pf.state == "blocked":
+            blockers.append("wg_data_peer_not_publishable")
+    except Exception as exc:  # noqa: BLE001 — never break the page
+        rows.append(CheckRow(
+            key="wg_data_peer_publish",
+            label_ar="نشر peer الـ wg-data للوكيل (proxy)",
+            ok=False,
+            value="preflight_unavailable",
+            detail_ar=f"تعذّر حساب حالة النشر: {exc}",
+            severity="warn",
+        ))
+
     # 5. wg-mgmt KEY identity (panel ↔ CHR). Optional — needs creds.
     key_ok, key_code, key_msg = _try_wg_verify(node)
     if key_ok is None:
