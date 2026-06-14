@@ -171,12 +171,18 @@ class TestUserReimportSafe:
             in script
         )
 
-    def test_user_set_branch_does_not_rotate_password(self, provider_app):
-        """panel-mints-panel-knows: the password lives on the node row
-        (Fernet-encrypted) from generate_keys. The script's add branch
-        bakes that password into /user add on first install; the set
-        branch must NOT carry ``password=`` so re-imports preserve the
-        original (avoiding any chance of mismatch with the row)."""
+    def test_user_set_branch_converges_password(self, provider_app):
+        """fix/chr-rollback-wgdata-rest — REVERSED from the old contract.
+
+        panel-mints-panel-knows means the panel IS the source of truth,
+        so the script must CONVERGE the CHR password to the panel-known
+        secret on EVERY import, in BOTH branches. The previous behavior
+        (set branch omits password=) was the live root cause of «login
+        failure for user hobe-panel via api»: a pre-existing hobe-panel
+        row kept a STALE password ≠ the panel's REST secret, so REST
+        auth on www-ssl:8443 was rejected. The set branch now carries
+        password= so the on-CHR secret always matches what the panel
+        dials with."""
         script = _render(provider_app)
         flat = script.replace(" \\\n        ", " ").replace(" \\\n    ", " ").replace(" \\\n", " ")
         # Find the /user set line (managed-comment branch).
@@ -185,13 +191,16 @@ class TestUserReimportSafe:
             if "/user set [find name=" in ln
             and 'comment="hobe-fleet-api-managed"' in ln
         )
-        assert "password=" not in set_line, (
-            "/user set on the managed row must NOT include password= — "
-            "rotating breaks the panel-mints-panel-knows invariant. Got:\n"
+        assert "password=" in set_line, (
+            "/user set on the managed row MUST include password= so the "
+            "CHR secret converges to the panel-known value (fixes the "
+            "via-api REST auth failure on a stale password). Got:\n"
             f"  {set_line!r}"
         )
         # And it must bind to the scoped group.
         assert 'group="hobe-fleet-mgmt"' in set_line
+        # Determinism (same password every render) is covered by
+        # TestSimulatedReimport.test_two_renders_emit_identical_user_blocks.
 
 
 class TestSimulatedReimport:

@@ -238,10 +238,11 @@ class TestBugFValidationGate:
         assert "rollback LEFT ARMED" in script
 
     @pytest.mark.parametrize("check_name", [
-        "(1)",  # endpoint validation
-        "(2) wg-mgmt no handshake",
+        "(1)",  # endpoint validation (LOCAL, rollback-gating)
+        # (2) + (4) are now REMOTE-PENDING (handshake), see the
+        # classification-split test below — they no longer say
+        # "no handshake AND no ping" as a rollback reason.
         "(3) wg-data endpoint empty",
-        "(4) wg-data no handshake",
         "(5) www-ssl not enabled",
         "(6) firewall hobe-fleet-fw-api-ssl missing",
         "(7) firewall hobe-fleet-fw-drop-last missing",
@@ -251,15 +252,39 @@ class TestBugFValidationGate:
         "(11) break-glass open but auto-close scheduler missing",
         "(12) public winbox open without emergency mode",
     ])
-    def test_all_12_checks_render(self, check_name):
-        """Each of the 12 validation checks names a specific failure
-        signature in its failure-reason text so the operator can read
+    def test_all_local_checks_render(self, check_name):
+        """Each LOCAL (rollback-gating) validation check names a specific
+        failure signature in its reason text so the operator can read
         :log error/print and know exactly which check tripped."""
         script = _render()
         assert check_name in script, (
             f"validation check {check_name!r} not present in rendered "
             "rollback gate — incomplete BUG F coverage"
         )
+
+    def test_handshake_checks_are_remote_pending_not_rollback(self):
+        """fix/chr-rollback-wgdata-rest — checks (2) wg-mgmt and (4)
+        wg-data liveness must NOT gate the rollback. A missing handshake
+        when local config is correct means the panel/proxy hasn't added
+        this CHR's peer YET (remote-pending) — reverting would destroy
+        correct local config. They feed hobePendingRemote, never
+        hobeRollbackOk."""
+        script = _render()
+        # The pending channel exists.
+        assert ":global hobePendingRemote false" in script
+        assert "hobePendingReason" in script
+        # Checks 2 + 4 set the PENDING flag, not the rollback flag.
+        assert "(2) wg-mgmt local config OK but NO handshake" in script
+        assert "(4) wg-data local config OK but NO handshake" in script
+        # The old rollback-gating phrasing is GONE.
+        assert "(2) wg-mgmt no handshake AND no ping" not in script, (
+            "check (2) still gates the rollback — it must be remote-pending"
+        )
+        assert "(4) wg-data no handshake AND no ping" not in script, (
+            "check (4) still gates the rollback — it must be remote-pending"
+        )
+        # The pending block explicitly says it is NOT reverting.
+        assert "NOT reverting" in script
 
 
 # ════════════════════════════════════════════════════════════════════════

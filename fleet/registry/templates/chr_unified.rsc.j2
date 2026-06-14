@@ -140,11 +140,31 @@
 :delay 1s
 /system scheduler
 remove [find name="hobe-fleet-rollback"]
+# fix/chr-rollback-wgdata-rest -- the previous on-event used
+#   /system backup load name=hobe-fleet-pre-apply
+# which in scheduler context errors with: missing value(s) of
+# argument(s) password (RouterOS 7.21.x requires the password arg
+# even for an unencrypted backup) AND, because interval= makes the
+# scheduler RECURRING, it fired every {{ SAFEMODE_ROLLBACK_DELAY }}
+# FOREVER -- logging "rollback fired" + "executing script failed"
+# ~20 times on chr-vpn-2 without ever restoring or self-removing.
+#
+# Redesign -- ONE-SHOT, valid, self-removing, bounded:
+#   1. The on-event's FIRST action removes THIS scheduler, so it can
+#      NEVER fire twice regardless of what follows (removing the
+#      currently-running scheduler does not abort the running event).
+#   2. The restore uses the correct non-interactive form
+#      `password=""` (satisfies the required arg for the
+#      dont-encrypt=yes backup).
+#   3. The restore is wrapped in :do/on-error -- if backup load is
+#      unsupported/erroring on this build, we log a precise actionable
+#      reason and STOP (already self-removed). Break-glass access stays
+#      active for manual recovery; we never loop.
 add name="hobe-fleet-rollback" interval={{ SAFEMODE_ROLLBACK_DELAY }} \
-    on-event=(":log warning \"hobe-fleet: rollback fired (no cancel within {{ SAFEMODE_ROLLBACK_DELAY }})\"; /system backup load name=hobe-fleet-pre-apply") \
+    on-event=(":log warning \"hobe-fleet: rollback fired -- restoring pre-apply snapshot (one-shot)\"; /system scheduler remove [find name=hobe-fleet-rollback]; :do { /system backup load name=hobe-fleet-pre-apply password=\"\" } on-error={ :log error \"hobe-fleet: rollback restore FAILED -- backup load errored on this build. Scheduler already self-removed; NOT retrying. Break-glass access remains active for manual recovery.\" }") \
     policy=read,write,policy,test,password,sensitive \
-    comment="hobe-fleet-rollback-guard"
-:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window) -- script must run to completion to cancel it"
+    comment="hobe-fleet-rollback-guard (one-shot self-removing)"
+:log info "hobe-fleet: rollback guard armed ({{ SAFEMODE_ROLLBACK_DELAY }} window, ONE-SHOT) -- script must run to completion to cancel it; if it fires it self-removes after one attempt"
 
 # ---- 0b. DNS bootstrap (so :resolve works in section 2b) ----
 # If the CHR has no DNS servers configured yet, set a public fallback.
@@ -312,6 +332,23 @@ $hobeSetEndpoint "hobe-fleet-data" $proxyIP {{ PROXY_WG_PORT }} "{{ PROXY_WG_HOS
 } else={
     :log error "hobe-fleet: wg-mgmt interface MISSING after setup -- pubkey log skipped"
 }
+{% if 'radius_transport' in ROLES %}
+# fix/chr-rollback-wgdata-rest -- SMOKING GUN #2: the script logged the
+# wg-mgmt + wg-users pubkeys but NEVER the wg-DATA pubkey, so the
+# operator had no way to confirm the proxy was given the right key to
+# peer. The panel ALREADY persists this CHR's wg-data pubkey on the
+# node row at mint time (it mints the keypair) and publishes it at
+# GET /api/proxy/wg-peers with allowed-ips {{ WG_DATA_ADDR_IP }}/32 --
+# but logging it on the CHR closes the diagnostic loop: the operator
+# can eyeball that the on-CHR wg-data pubkey == the one the proxy must
+# trust. Same length-guard pattern as wg-mgmt above.
+:local hobeDataIf [/interface wireguard find name="wg-data"]
+:if ([:len $hobeDataIf] > 0) do={
+    :log info ("hobe-fleet: this CHR wg-data pubkey (proxy must peer this with allowed-ips {{ WG_DATA_ADDR_IP }}/32) = " . [/interface wireguard get $hobeDataIf public-key])
+} else={
+    :log error "hobe-fleet: wg-data interface MISSING after setup -- pubkey log skipped"
+}
+{% endif %}
 
 {% if 'radius_transport' in ROLES %}
 # ---- 3. RADIUS client -> the central proxy (FLEET-CONSTANT) -
@@ -829,10 +866,21 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
 
 # User row -- ADD-OR-SET, no remove. On first install the row is
 # absent; on every re-import it already exists in the scoped group.
-# We ``set`` the group + comment but NEVER touch ``password=`` --
-# the panel's stored ciphertext from generate_keys IS the source of
-# truth (panel-mints-panel-knows). Rotating the password here would
-# break the script<->row match the first /user add already pinned.
+#
+# fix/chr-rollback-wgdata-rest -- SMOKING GUN #3: the SET branch used
+# to refresh group + comment but DELIBERATELY NOT password=, on the
+# theory that "the first /user add already pinned it". That theory is
+# WRONG and was the cause of the live 'login failure for user
+# hobe-panel via api' (RouterOS logs REST auth failures as via-api):
+#   * the user row can pre-exist from an EARLIER import that baked a
+#     DIFFERENT generated password, OR the panel rotated the stored
+#     secret -- and the SET branch then left the CHR password STALE,
+#     diverging from what the panel dials with over REST www-ssl:8443.
+# The panel is the single source of truth (panel-mints-panel-knows) so
+# the script MUST converge the CHR password to {{ API_USER }}'s
+# panel-known secret on EVERY import. We therefore set password= in
+# BOTH branches. This guarantees:
+#   CHR hobe-panel password == panel-stored secret == panel REST creds.
 #
 # Find-by-comment guard: we only manage our OWN row (the
 # ``hobe-fleet-api-managed`` comment). A built-in row at the same
@@ -845,13 +893,14 @@ add chain=input protocol=udp dst-port=1812,1813,3799 action=drop \
         group="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
         password="{{ API_PASSWORD }}" \
         comment="hobe-fleet-api-managed"
-    :log info ("hobe-fleet: created user {{ API_USER }} in scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }}")
+    :log info ("hobe-fleet: created user {{ API_USER }} in scoped group {{ API_GROUP|default('hobe-fleet-mgmt') }} (password set to panel secret)")
 } else={
     :if ([:len [/user find name="{{ API_USER }}" comment="hobe-fleet-api-managed"]] > 0) do={
         /user set [find name="{{ API_USER }}" comment="hobe-fleet-api-managed"] \
             group="{{ API_GROUP|default('hobe-fleet-mgmt') }}" \
+            password="{{ API_PASSWORD }}" \
             comment="hobe-fleet-api-managed"
-        :log info ("hobe-fleet: refreshed group binding on existing managed user {{ API_USER }}")
+        :log info ("hobe-fleet: refreshed managed user {{ API_USER }} -- group + password re-converged to panel secret (fixes REST via-api login failure on stale password)")
     } else={
         :log warning ("hobe-fleet: user {{ API_USER }} exists and is NOT our managed row -- refusing to clobber it. Pick a non-conflicting username from the panel's "Settings -> Fleet Infrastructure" page; auto-provisioned defaults already avoid every RouterOS built-in.")
     }
@@ -1212,19 +1261,39 @@ set ftp     disabled=yes
 # skipped and the rollback fires at T+{{ SAFEMODE_ROLLBACK_DELAY }}.
 :global hobeRollbackOk true
 :global hobeRollbackReason ""
+# fix/chr-rollback-wgdata-rest -- CLASSIFICATION SPLIT.
+#
+# The rollback exists to UNDO a LOCAL break that locks the admin out
+# (broken firewall, missing service, mangled local config). It must
+# NOT fire for a REMOTE-PENDING condition: when this CHR's local
+# config is correct but the panel host (wg-mgmt) or the proxy
+# (wg-data) has not yet added THIS CHR's peer, there is simply no
+# handshake YET. Reverting in that case would DESTROY the correct
+# local config the remote side is about to start talking to -- the
+# exact wrong move. Those conditions self-heal:
+#   * wg-mgmt peer: panel autosync reconcile_panel_host() (every ~2m)
+#   * wg-data peer: proxy polls GET /api/proxy/wg-peers and adds it
+#
+# So handshake/ping liveness (old checks 2 + 4) is now tracked in a
+# SEPARATE pending-remote channel that is REPORTED but never arms the
+# rollback. Only LOCAL checks (endpoint present, firewall, services,
+# break-glass) gate the rollback.
+:global hobePendingRemote false
+:global hobePendingReason ""
 
-# (1) wg-mgmt peer endpoint-address non-empty (BUG A signal).
+# (1) wg-mgmt peer endpoint-address non-empty (BUG A signal) -- LOCAL.
 :if (!$hobeWgValidationOk) do={
     :set hobeRollbackOk false
     :set hobeRollbackReason ("(1) endpoint validation: " . $hobeWgValidationDetail)
 }
 
-# (2) wg-mgmt has either a handshake OR a ping to the panel works.
+# (2) wg-mgmt liveness: handshake OR ping to the panel -- REMOTE-PENDING.
 # fix/script-service-get-guard -- length-guard the peer find BEFORE get;
 # if the peer add at section 2 misfired, the unguarded get would halt
-# the import with an invalid-internal-item-number error and block the
-# rollback-cancel below from ever running -- exactly the failure mode
-# the rollback gate is supposed to PROTECT against.
+# the import with an invalid-internal-item-number error.
+# fix/chr-rollback-wgdata-rest -- a missing handshake here means the
+# PANEL host has not added this CHR's wg-mgmt peer yet (remote pending),
+# NOT a local failure. It is recorded as pending, NOT rollback-gating.
 :local mgmtAlive false
 :local mgmtPeerRefHs [/interface wireguard peers find comment="hobe-fleet-mgmt"]
 :if ([:len $mgmtPeerRefHs] > 0) do={
@@ -1248,8 +1317,11 @@ set ftp     disabled=yes
     } on-error={}
 }
 :if (!$mgmtAlive) do={
-    :set hobeRollbackOk false
-    :set hobeRollbackReason ($hobeRollbackReason . " (2) wg-mgmt no handshake AND no ping to {{ PANEL_WG_ADDR }}")
+    :set hobePendingRemote true
+    :set hobePendingReason ($hobePendingReason . " (2) wg-mgmt local config OK but NO handshake/ping to {{ PANEL_WG_ADDR }} yet -- likely panel host hasn't added this CHR's wg-mgmt peer (self-heals via panel autosync); NOT reverting")
+    :log warning "hobe-fleet: wg-mgmt no handshake yet -- local config present; awaiting panel-side peer (remote pending, NOT a local failure, NOT reverting)"
+} else={
+    :log info "hobe-fleet: wg-mgmt handshake/ping OK"
 }
 
 {% if 'radius_transport' in ROLES %}
@@ -1265,8 +1337,16 @@ set ftp     disabled=yes
     :set hobeRollbackReason ($hobeRollbackReason . " (3) wg-data endpoint empty")
 }
 
-# (4) wg-data alive: handshake OR ping to proxy.
+# (4) wg-data liveness: handshake OR ping to proxy -- REMOTE-PENDING.
 # fix/script-service-get-guard -- same length-guard as check (2).
+# fix/chr-rollback-wgdata-rest -- THIS was the live (4) wg-data no-
+# handshake that left the broken rollback armed forever. A missing
+# wg-data handshake means the PROXY has not added this CHR's wg-data
+# peer yet (allowed-ips 10.98.0.X/32). The panel publishes that peer
+# at GET /api/proxy/wg-peers; the proxy polls + adds it. Until then
+# there is no handshake -- a REMOTE-PENDING state, NOT a local CHR
+# failure. Recorded as pending, NEVER rollback-gating (reverting would
+# wipe the correct local wg-data config).
 :local dataAlive false
 :if ([:len $dataPeerRefV12] > 0) do={
     :do {
@@ -1289,8 +1369,11 @@ set ftp     disabled=yes
     } on-error={}
 }
 :if (!$dataAlive) do={
-    :set hobeRollbackOk false
-    :set hobeRollbackReason ($hobeRollbackReason . " (4) wg-data no handshake AND no ping to {{ PROXY_WG_ADDR }}")
+    :set hobePendingRemote true
+    :set hobePendingReason ($hobePendingReason . " (4) wg-data local config OK but NO handshake/ping to {{ PROXY_WG_ADDR }} yet -- likely proxy hasn't added this CHR's wg-data peer (panel publishes it at /api/proxy/wg-peers; proxy polls + adds); NOT reverting")
+    :log warning "hobe-fleet: wg-data no handshake yet -- local config present; awaiting proxy-side peer (remote pending, NOT a local failure, NOT reverting)"
+} else={
+    :log info "hobe-fleet: wg-data handshake/ping OK"
 }
 {% endif %}
 
@@ -1417,15 +1500,26 @@ set ftp     disabled=yes
     }
 }
 
+# fix/chr-rollback-wgdata-rest -- the cancel decision is now based on
+# LOCAL checks ONLY (hobeRollbackOk). Remote-pending handshake state
+# (hobePendingRemote) is REPORTED but never blocks the cancel, so a
+# clean local apply keeps its config and waits for the panel/proxy to
+# add this CHR's peers instead of reverting every {{ SAFEMODE_ROLLBACK_DELAY }}.
 :if ($hobeRollbackOk) do={
     :do { /system scheduler remove [find name="hobe-fleet-rollback"] } on-error={}
     :do { /file remove [find name="hobe-fleet-pre-apply.backup"] } on-error={}
-    :log info "hobe-fleet: rollback guard CANCELLED -- all 12 validation checks passed."
-    :put "hobe-fleet: validation PASSED -- rollback cancelled. Apply complete."
+    :log info "hobe-fleet: rollback guard CANCELLED -- all LOCAL validation checks passed."
+    :if ($hobePendingRemote) do={
+        :log warning ("hobe-fleet: apply LOCALLY complete but REMOTE peer(s) PENDING --" . $hobePendingReason)
+        :put ("hobe-fleet: validation PASSED locally -- rollback cancelled. PENDING remote peer activation:" . $hobePendingReason)
+        :put "hobe-fleet: this is EXPECTED right after onboarding -- the panel adds the wg-mgmt peer (autosync) and the proxy adds the wg-data peer (polls /api/proxy/wg-peers). Handshake appears within ~2 minutes. No action needed unless it persists."
+    } else={
+        :put "hobe-fleet: validation PASSED -- rollback cancelled. Apply complete (both tunnels handshaking)."
+    }
 } else={
-    :log error ("hobe-fleet: VALIDATION FAILED -- rollback LEFT ARMED. reason=" . $hobeRollbackReason)
-    :put ("hobe-fleet: VALIDATION FAILED -- rollback LEFT ARMED at T+{{ SAFEMODE_ROLLBACK_DELAY }}. Reason:" . $hobeRollbackReason)
-    :put "hobe-fleet: if you do NOT want the CHR to revert, run /system scheduler remove [find name=hobe-fleet-rollback] manually within the window."
+    :log error ("hobe-fleet: LOCAL VALIDATION FAILED -- rollback LEFT ARMED. reason=" . $hobeRollbackReason)
+    :put ("hobe-fleet: LOCAL VALIDATION FAILED -- rollback LEFT ARMED at T+{{ SAFEMODE_ROLLBACK_DELAY }} (ONE-SHOT). Reason:" . $hobeRollbackReason)
+    :put "hobe-fleet: if you do NOT want the CHR to revert, run /system scheduler remove [find name=hobe-fleet-rollback] manually within the window. The guard fires ONCE then self-removes."
 }
 
 # ============================================================

@@ -92,6 +92,22 @@ def collect(node: FleetChrNode, *, wan_iface: str = "ether1",
     try:
         resource = client.system_resource() or {}
     except RouterOSError as exc:
+        # fix/chr-rollback-wgdata-rest (issue 3 part 4) -- make the
+        # transport UNAMBIGUOUS in the panel log. The panel speaks ONLY
+        # REST over https://<host>:<port>/rest/ (there is no binary-API
+        # client anywhere in the codebase). On an auth failure we log
+        # the REST URL + user explicitly so a CHR-side «login failure
+        # for user X via api» line can be matched to a panel-side REST
+        # poll (RouterOS labels REST auth failures "via api"). This
+        # proves the panel is NOT probing legacy api/api-ssl.
+        if (exc.code or "") == "auth_failed":
+            logger.warning(
+                "routeros_collector: REST AUTH FAILED node=%s user=%s "
+                "transport=REST url=https://%s:%s/rest/ -- the CHR's "
+                "hobe-panel password must equal the panel-stored secret "
+                "(NOT a legacy-api probe; panel has no binary-api client)",
+                node.name, creds["user"], creds["host"], creds["port"],
+            )
         return Sample(error=exc.code or "routeros_error",
                       error_detail=str(getattr(exc, "message", ""))[:160])
     except Exception as exc:  # noqa: BLE001 — never crash the poller
