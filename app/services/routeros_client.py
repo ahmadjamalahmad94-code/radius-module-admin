@@ -35,6 +35,14 @@ class RouterOSError(Exception):
 
     الأمان: الصيغة النصية لهذا الاستثناء يجب ألا تحتوي أبدًا كلمة مرور أو جسم
     طلب خام — فقط ``code`` والرسالة العربية المُنسّقة.
+
+    fix/chr-rest-500-and-api-auth — also carries the HTTP method + REST
+    path that produced the failure (``request_method``/``request_path``)
+    + a truncated REST-body excerpt (``response_excerpt``) so the
+    troubleshoot UI can show «GET /rest/interface/wireguard?name=wg-mgmt
+    → 500» instead of the unactionable «Internal Server Error».
+    Secrets in the request body are NEVER stored on the exception
+    (only the response body, which RouterOS authors).
     """
 
     def __init__(
@@ -44,12 +52,25 @@ class RouterOSError(Exception):
         *,
         retryable: bool = False,
         http_status: int | None = None,
+        request_method: str = "",
+        request_path: str = "",
+        response_excerpt: str = "",
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = bool(retryable)
         self.http_status = http_status
+        self.request_method = request_method or ""
+        self.request_path = request_path or ""
+        self.response_excerpt = (response_excerpt or "")[:160]
+
+    def endpoint_label(self) -> str:
+        """Compact «METHOD /rest/<path>» token for log/UI surfaces."""
+        if not self.request_method or not self.request_path:
+            return ""
+        path = self.request_path.lstrip("/")
+        return f"{self.request_method.upper()} /rest/{path}"
 
 
 class RouterOSClient:
@@ -128,14 +149,23 @@ class RouterOSClient:
 
         req = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
         ctx = self._ssl_context()
+        # fix/chr-rest-500-and-api-auth — keep the bare REST path (the
+        # token AFTER /rest/, including any query string) and the
+        # method so RouterOSError can surface «GET /rest/interface/
+        # wireguard?name=wg-mgmt → 500». The body is omitted on
+        # purpose: it may carry private keys / passwords.
+        request_method = method.upper()
+        rest_path = path.lstrip("/")
+        if params:
+            rest_path = rest_path + "?" + urllib.parse.urlencode(params)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as exc:
             # تشخيص آمن: المنهج والمسار والحالة فقط (دون أسرار/جسم) كي نحدّد بالضبط
             # أي نداء REST رُفض (مثلاً 400 على مسار معيّن في وحدة التحكّم).
-            _log.warning("RouterOS REST %s /rest/%s -> HTTP %s", method.upper(), path.lstrip("/"), exc.code)
-            raise self._http_error(exc) from None
+            _log.warning("RouterOS REST %s /rest/%s -> HTTP %s", request_method, rest_path, exc.code)
+            raise self._http_error(exc, method=request_method, path=rest_path) from None
         except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as exc:
             # لا نُدرج تفاصيل النظام الخام (قد تكشف بنية الشبكة)؛ كود عام قابل لإعادة المحاولة.
             reason = getattr(exc, "reason", None)
@@ -144,11 +174,13 @@ class RouterOSClient:
                     "tls_error",
                     "تعذّر إنشاء اتصال TLS آمن مع CHR (تحقق من الشهادة أو عطّل التحقق).",
                     retryable=False,
+                    request_method=request_method, request_path=rest_path,
                 ) from None
             raise RouterOSError(
                 "connect_failed",
                 "تعذّر الاتصال بمضيف CHR (تحقق من العنوان والمنفذ وأن REST مفعّل).",
                 retryable=True,
+                request_method=request_method, request_path=rest_path,
             ) from None
 
         if not raw:
@@ -156,37 +188,71 @@ class RouterOSClient:
         try:
             return json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
-            raise RouterOSError("bad_response", "رد CHR غير صالح (ليس JSON).") from None
+            raise RouterOSError(
+                "bad_response", "رد CHR غير صالح (ليس JSON).",
+                request_method=request_method, request_path=rest_path,
+                response_excerpt=raw[:120].decode("utf-8", errors="replace"),
+            ) from None
 
-    def _http_error(self, exc: urllib.error.HTTPError) -> RouterOSError:
+    def _http_error(
+        self,
+        exc: urllib.error.HTTPError,
+        *,
+        method: str = "",
+        path: str = "",
+    ) -> RouterOSError:
         status = exc.code
         # نحاول قراءة رسالة RouterOS لكن دون كشف أسرار؛ نُبقي الرسالة عربية موجزة.
         detail = ""
+        body_excerpt = ""
         try:
-            payload = json.loads(exc.read().decode("utf-8"))
+            raw_body = exc.read()
+            body_excerpt = raw_body[:160].decode("utf-8", errors="replace")
+            payload = json.loads(raw_body.decode("utf-8"))
             if isinstance(payload, dict):
                 detail = str(payload.get("message") or payload.get("detail") or "")[:160]
         except Exception:  # noqa: BLE001 — أي فشل قراءة لا يجب أن يُخفي الكود الأصلي
-            detail = ""
+            detail = detail or ""
+        endpoint = (f"{method} /rest/{path}" if method and path else "").strip()
         if status in (401, 403):
             return RouterOSError(
                 "auth_failed",
-                "فشل مصادقة CHR (تحقق من اسم المستخدم وكلمة المرور وصلاحياتهما).",
+                "فشل مصادقة CHR (تحقق من اسم المستخدم وكلمة المرور وصلاحياتهما)"
+                + (f" — {endpoint}" if endpoint else "") + ".",
                 http_status=status,
+                request_method=method, request_path=path,
+                response_excerpt=body_excerpt,
             )
         if status == 404:
-            return RouterOSError("not_found", "العنصر المطلوب غير موجود على CHR.", http_status=status)
+            return RouterOSError(
+                "not_found",
+                "العنصر المطلوب غير موجود على CHR"
+                + (f" — {endpoint}" if endpoint else "") + ".",
+                http_status=status,
+                request_method=method, request_path=path,
+                response_excerpt=body_excerpt,
+            )
         if status >= 500:
             return RouterOSError(
                 "chr_server_error",
-                "خطأ داخلي في CHR" + (f" — {detail}" if detail else "") + ".",
+                "خطأ داخلي في CHR"
+                + (f" — {detail}" if detail else "")
+                + (f" — {endpoint}" if endpoint else "")
+                + ".",
                 retryable=True,
                 http_status=status,
+                request_method=method, request_path=path,
+                response_excerpt=body_excerpt,
             )
         return RouterOSError(
             "request_invalid",
-            "طلب غير مقبول من CHR" + (f" — {detail}" if detail else "") + ".",
+            "طلب غير مقبول من CHR"
+            + (f" — {detail}" if detail else "")
+            + (f" — {endpoint}" if endpoint else "")
+            + ".",
             http_status=status,
+            request_method=method, request_path=path,
+            response_excerpt=body_excerpt,
         )
 
     # ───────────────────────── high-level helpers ─────────────────────────
@@ -483,7 +549,24 @@ class RouterOSClient:
     # claim. All helpers idempotent — they search before they create.
 
     def find_wireguard_interface(self, name: str) -> dict[str, Any] | None:
-        return self._find_one("interface/wireguard", {"name": name})
+        # fix/chr-rest-500-and-api-auth — RouterOS v7 REST returns HTTP
+        # 500 «Internal Server Error» on `GET /rest/interface/wireguard?
+        # name=X` on at least some builds (the field-incident CHR was
+        # one). The owner saw the live failure here: wg_verify calls
+        # this, the JSON path returned 500, and the message bubbled up
+        # as «rest_failed: تعذّر القراءة عبر REST — خطأ داخلي في CHR
+        # — Internal Server Error» with no hint as to which endpoint.
+        # The robust pattern is to fetch the bare list (which works
+        # uniformly across v7 builds) and filter client-side.
+        rows = self._request("GET", "interface/wireguard")
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list):
+            return None
+        for row in rows:
+            if isinstance(row, dict) and str(row.get("name") or "") == name:
+                return row
+        return None
 
     def ensure_wireguard_interface(
         self,
@@ -515,8 +598,16 @@ class RouterOSClient:
         return created if isinstance(created, dict) else {"name": name}
 
     def list_wireguard_peers(self, *, interface: str | None = None) -> list[dict[str, Any]]:
-        params = {"interface": interface} if interface else None
-        return self._as_list(self._request("GET", "interface/wireguard/peers", params=params))
+        # fix/chr-rest-500-and-api-auth — same fetch-all-then-filter
+        # treatment as find_wireguard_interface above. The server-side
+        # `?interface=X` filter on this endpoint also 500s on the live
+        # CHR; fetching the bare list returns the same peers in every
+        # build we've seen, and an in-memory filter on `interface`
+        # equals is trivially correct.
+        rows = self._as_list(self._request("GET", "interface/wireguard/peers"))
+        if interface:
+            rows = [r for r in rows if str(r.get("interface") or "") == interface]
+        return rows
 
     def find_wireguard_peer(self, *, interface: str, public_key: str) -> dict[str, Any] | None:
         return self._find_one(

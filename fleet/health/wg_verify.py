@@ -99,13 +99,34 @@ def verify_node_wg_identity(node: FleetChrNode, *, client_factory=None) -> WgVer
     )
 
     # ── read the CHR state over REST ────────────────────────────────────
+    # fix/chr-rest-500-and-api-auth — surface the offending endpoint
+    # + HTTP status + truncated body so the troubleshoot page can show
+    # «rest_failed: GET /rest/interface/wireguard → 500 «Internal Server
+    # Error»» instead of a generic «خطأ داخلي في CHR». Previously the
+    # operator was stuck without knowing WHICH REST call failed; the
+    # owner spent the previous live cycle chasing this exact gap.
     try:
         peers = client.list_wireguard_peers(interface="wg-mgmt") or []
         iface = client.find_wireguard_interface("wg-mgmt") or {}
     except RouterOSError as exc:
+        endpoint = exc.endpoint_label()
+        status = exc.http_status
+        # Build a precise Arabic verdict that names the request, the
+        # status code, the underlying RouterOSError code, AND a short
+        # excerpt of the CHR's response body when present.
+        bits = ["تعذّر القراءة عبر REST"]
+        if endpoint:
+            bits.append(endpoint)
+        if status is not None:
+            bits.append(f"HTTP {status}")
+        bits.append(exc.code or "rest_failed")
+        if exc.response_excerpt:
+            bits.append(f"«{exc.response_excerpt}»")
+        elif exc.message:
+            bits.append(exc.message)
         return WgVerifyResult(
             ok=False, code="rest_failed",
-            message_ar=f"تعذّر القراءة عبر REST: {exc.message}",
+            message_ar=" — ".join(bits),
             panel_pubkey_expected=panel_key,
         )
     except Exception:  # noqa: BLE001 — never crash the caller
