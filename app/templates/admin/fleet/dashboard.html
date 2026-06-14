@@ -224,11 +224,27 @@
   .nc-tile-val .fd-mini{margin-top:2px;}
   .nc-na{color:#b6c0cf;}
 
-  .nc-foot{display:flex;align-items:center;gap:10px;margin-block-start:14px;padding-block-start:13px;
+  /* fix/node-card-actions-responsive — buttons WRAP inside the actions
+     area instead of overflowing horizontally; the parent .node-card
+     has overflow:hidden (for the rounded-corner shadow) which used
+     to clip any button that didn't fit on one line. RTL-correct +
+     responsive at narrow card widths. Priority: nothing hidden,
+     nothing clipped, all 6+ actions reachable on every card width. */
+  .nc-foot{display:flex;align-items:flex-start;gap:10px;margin-block-start:14px;padding-block-start:13px;
     border-block-start:1px solid var(--fdx-line2);flex-wrap:wrap;}
-  .nc-lastseen{flex:1;margin-top:0;display:flex;align-items:center;gap:6px;white-space:nowrap;}
-  .nc-actions{display:flex;gap:8px;}
-  .nc-actions .fd-rowbtn{height:32px;padding-inline:12px;}
+  /* lastseen: shrinkable, min-width:0 lets the ellipsis kick in when
+     space is tight rather than forcing the whole footer wider. */
+  .nc-lastseen{flex:1 1 180px;min-width:0;margin-top:0;display:flex;align-items:center;gap:6px;}
+  /* actions: flex-wrap so individual buttons drop to a second row
+     when they don't all fit; flex:1 1 auto so the whole actions block
+     can OWN a new line below lastseen on narrow cards. */
+  .nc-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:1 1 auto;}
+  /* tighter button shape so 6 fit two-per-line on a 380px card. */
+  .nc-actions .fd-rowbtn{height:30px;padding-inline:10px;font-size:11.5px;gap:5px;}
+  /* the delete <form> wrapper used to be display:inline — switch to
+     contents so it takes no layout space + the inner button flexes
+     like a peer of the other action buttons. */
+  .nc-actions form.fd-delete-form{display:contents;}
 
   /* ── toast ─────────────────────────────────────────────────────────── */
   .fd-toast-host{position:fixed;inset-inline-end:24px;bottom:24px;z-index:120;display:flex;flex-direction:column;gap:10px;max-width:360px;}
@@ -1352,7 +1368,7 @@
               <i class="fa-solid fa-pen-to-square"></i> تعديل
             </a>
             <form method="post" action="{{ url_for('fleet_ui.chr_node_delete', node_id=n.id) }}"
-                  id="fd-del-form-{{ n.id }}" style="display:inline">
+                  id="fd-del-form-{{ n.id }}" class="fd-delete-form">
               {{ csrf_input() }}
               <button type="button" class="fd-rowbtn"
                       style="color:#b91c1c;border-color:#fecaca"
