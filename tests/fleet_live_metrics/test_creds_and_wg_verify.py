@@ -141,7 +141,9 @@ class _FakeClient:
         self._peers = peers
         self._raise = raise_rest
 
-    def list_wireguard_peers(self, *, interface=None):
+    def list_wireguard_peers(self, *, interface=None, proplist=None):
+        # proplist accepted (fix/chr-rest-wireguard-permission): wg_verify
+        # now requests a non-secret field list.
         if self._raise:
             from app.services.routeros_client import RouterOSError
             raise RouterOSError("connect_failed", "تعذّر الاتصال بمضيف CHR.")
@@ -154,7 +156,7 @@ class _FakeClient:
             "rx": "1024", "tx": "2048",
         }]
 
-    def find_wireguard_interface(self, name):
+    def find_wireguard_interface(self, name, *, proplist=None):
         return {"name": name, "public-key": self._iface_key}
 
 

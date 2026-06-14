@@ -1359,13 +1359,26 @@ def fleet_chr_node_poll_metrics_now(node_id: int):
 
     summary = poll_all(collector=_solo_collector)
     row = _node_view_to_payload(get_node_view(node))
+
+    # fix/poll-metrics-not-targeted-toast — poll_all scans EVERY eligible
+    # node; ``_solo_collector`` stamps every NON-target node with the
+    # internal ``not_targeted`` sentinel (so a sibling can never be
+    # silently confused for the requested node — BUG L armour). Those
+    # sentinels are NOT operator-facing errors: the requested node got a
+    # REAL collect. Report ONLY the target node's outcome so the dashboard
+    # toast reflects the clicked node, never a sibling. Without this, an
+    # operator with N>1 nodes always saw a false «تعذّرت القراءة:
+    # not_targeted» warning even when the clicked node read fine, because
+    # the JS surfaced summary.errors[0] (a sibling's sentinel).
+    target_errors = [list(t) for t in summary.errors if t[0] == node.name]
+    target_ok = not target_errors
     return jsonify({
         "ok": True,
         "summary": {
-            "checked": summary.checked,
-            "ok_count": summary.ok_count,
-            "error_count": summary.error_count,
-            "errors": [list(t) for t in summary.errors],
+            "checked": 1,
+            "ok_count": 1 if target_ok else 0,
+            "error_count": len(target_errors),
+            "errors": target_errors,
         },
         "row": row,
     })

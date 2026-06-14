@@ -158,7 +158,7 @@ class TestWgVerifyMessageIsActionable:
         + status + body excerpt, not just say «Internal Server Error»."""
 
         class _FailingClient:
-            def list_wireguard_peers(self, *, interface=None):
+            def list_wireguard_peers(self, *, interface=None, proplist=None):
                 raise RouterOSError(
                     "chr_server_error",
                     "خطأ داخلي في CHR — Internal Server Error — "
@@ -169,7 +169,7 @@ class TestWgVerifyMessageIsActionable:
                     response_excerpt='{"detail":"Internal Server Error"}',
                 )
 
-            def find_wireguard_interface(self, name):
+            def find_wireguard_interface(self, name, *, proplist=None):
                 return {"name": name, "public-key": "X"}
 
         r = verify_node_wg_identity(
