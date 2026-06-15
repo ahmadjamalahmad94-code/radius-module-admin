@@ -1,0 +1,10 @@
+# accel-ppp DATA-connection activation artifacts MUST stay LF:
+#  * they run on Linux VPSes — a CRLF shebang breaks `#!/usr/bin/env bash`;
+#  * cloud-init.yaml is generated and a unit test compares it byte-for-byte,
+#    so its line endings must be stable across checkouts (core.autocrlf safe).
+deploy/accel-ppp/*.sh     text eol=lf
+deploy/accel-ppp/*.yaml   text eol=lf
+deploy/accel-ppp/*.tmpl   text eol=lf
+deploy/accel-ppp/*.md     text eol=lf
+deploy/accel-ppp/**/*.py  text eol=lf
+deploy/accel-ppp/*.py     text eol=lf

@@ -4,26 +4,33 @@
 # HobeRadius — branch feat/data-conn-2c-panel-vps-activation
 #
 # WHAT THIS IS
-#   The operator runs this ONCE on a freshly-provisioned customer RADIUS VPS to
-#   turn it into a DATA-connection BRAS (SSTP / PPTP / L2TP served directly by
-#   accel-ppp — no proxy, no CHR). See docs/design/ACCEL_PPP_DATA_CONNECTIONS.md.
+#   Turns a freshly-provisioned customer RADIUS VPS into a DATA-connection BRAS
+#   (SSTP / PPTP / L2TP served directly by accel-ppp — no proxy, no CHR). It
+#   installs accel-ppp + certbot, renders the config, ISSUES the Let's Encrypt
+#   cert (certbot HTTP-01, after waiting for DNS), wires auto-renewal, and
+#   installs the vps-agent. See deploy/accel-ppp/README.md for the full order.
 #
-#   The licensing panel CANNOT install software on the customer's box, so this
-#   step is manual + one-time. After it runs, the panel's only ongoing job is
-#   to keep clientN.<zone> pointing at this VPS (Cloudflare DNS), which lets the
-#   certbot step below succeed and renew unattended.
+# HOW IT'S DELIVERED
+#   PRIMARY  — cloud-init: paste deploy/accel-ppp/cloud-init.yaml (with your
+#              values filled in) into the provider's user-data field at VPS
+#              creation. First boot runs THIS script → zero-touch activation.
+#   FALLBACK — manual: if the provider has no cloud-init, set the variables
+#              below (or export them) and `sudo bash setup-radius-vps.sh`.
+#   Same script both ways.
+#
+#   The licensing panel creates the subdomain DNS A record (Cloudflare) when the
+#   customer is added with the VPS IP — BEFORE this VPS exists. So by first boot
+#   the record normally already resolves; the cert step still WAITS for DNS
+#   (bounded) to absorb any propagation lag.
 #
 # IDEMPOTENT
 #   Safe to re-run. Every step checks-before-acting (apt install is a no-op when
-#   present; the conf is only rewritten when it changed; certbot won't
-#   re-issue a live cert; systemd units are 'enable --now' which is idempotent).
+#   present; the conf is only rewritten when it changed; certbot
+#   --keep-until-expiring won't reissue a live cert; systemd units use
+#   'enable --now' which is idempotent).
 #
-# USAGE
-#   1. Edit the VARIABLES block below (or export them in the environment).
-#   2. sudo bash setup-radius-vps.sh
-#
-#   Every value you MUST set is marked  # >>> SET ME.
-#   Every item still pending lab validation is marked  # !!! LAB-PENDING.
+# Every value you MUST set is marked  # >>> SET ME.
+# Every item still pending lab validation is marked  # !!! LAB-PENDING.
 # ============================================================================
 set -euo pipefail
 
@@ -43,6 +50,13 @@ RADIUS_SECRET="${RADIUS_SECRET:-}"                 # >>> SET ME  (>= 32 random c
 
 # Email certbot registers for expiry notices.
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@hoberadius.com}"   # >>> SET ME
+
+# Cert/DNS automation knobs. The cert step waits up to DNS_WAIT_TIMEOUT seconds
+# (polling every DNS_WAIT_INTERVAL) for SUBDOMAIN to resolve to VPS_IP before
+# calling certbot, so a first-boot DNS lag doesn't fail the install.
+DNS_WAIT_TIMEOUT="${DNS_WAIT_TIMEOUT:-300}"
+DNS_WAIT_INTERVAL="${DNS_WAIT_INTERVAL:-10}"
+CERTBOT_STAGING="${CERTBOT_STAGING:-0}"            # set 1 to test against LE staging
 
 # End-user IP pool handed out to DATA subscribers (keep clear of fleet reserves
 # 10.51/10.98/10.99 and the VPS's own subnets — see template comments).
@@ -151,45 +165,56 @@ else
 fi
 install -d -m 0755 /var/log/accel-ppp
 
-# ── 3. cert: certbot HTTP-01 against the subdomain ───────────────────────────
-# The panel already created the A record (clientN.<zone> -> VPS_IP). HTTP-01
-# proves control by serving a token over port 80 on this box.
-log "Ensuring certificate for ${SUBDOMAIN}…"
-if [[ -f "$SSTP_CERT_FULLCHAIN" ]]; then
-    log "  cert already present — certbot.timer handles renewal."
-else
-    # --webroot needs a running webserver; --standalone binds :80 itself for
-    # the brief challenge. We use --standalone for a box that isn't serving HTTP
-    # yet (accel-ppp owns 443, not 80). Re-runs are safe (certbot is idempotent).
-    certbot certonly --standalone --non-interactive --agree-tos \
-        --email "$CERTBOT_EMAIL" -d "$SUBDOMAIN" \
-        || die "certbot failed — confirm ${SUBDOMAIN} resolves to ${VPS_IP} and :80 is reachable."
-fi
-
-# ── 4. auto-renew → reload accel-ppp ─────────────────────────────────────────
-# certbot.timer (installed by the apt package) renews silently; this deploy
-# hook makes accel-ppp pick up the fresh cert without a full restart.
-log "Installing certbot deploy hook → accel-ppp reload…"
-install -d -m 0755 "$(dirname "$RELOAD_HOOK")"
-cat > "$RELOAD_HOOK" <<'HOOK'
-#!/usr/bin/env bash
-# Reload accel-ppp after a successful cert renewal so SSTP serves the new chain.
-set -e
-if command -v accel-cmd >/dev/null 2>&1; then
-    accel-cmd reload || systemctl reload accel-ppp || systemctl restart accel-ppp
-else
-    systemctl reload accel-ppp || systemctl restart accel-ppp
-fi
-HOOK
-chmod 0755 "$RELOAD_HOOK"
-
-# ── 5. install + enable the vps-agent ────────────────────────────────────────
+# ── 3. install the vps-agent (needed for the cert step) ──────────────────────
 # The agent applies WireGuard peers + per-peer 5 Mbit tc queues, reads live
-# sessions, and triggers cert renew on demand. It's a SKELETON (see its README);
-# the real OS calls are stubbed behind an executor interface.
+# sessions, and owns the cert automation (DNS-wait + certbot + reload). The
+# WG/tc/session parts are a SKELETON (see its README); the cert + reload logic
+# is unit-tested. Installed BEFORE the cert step because that step calls it.
 log "Installing vps-agent → ${AGENT_DST}…"
 install -d -m 0755 "$AGENT_DST"
 cp -r "$AGENT_SRC/." "$AGENT_DST/"
+AGENT="${AGENT_DST}/vps_agent.py"
+
+# ── 4. cert: wait for DNS, then issue via certbot HTTP-01 (NON-FATAL) ─────────
+# The panel created the A record (clientN.<zone> -> VPS_IP) when the customer
+# was added. The agent WAITS (bounded) for that to resolve to THIS VPS, then
+# runs certbot --standalone (binds :80; accel-ppp owns 443, not 80). HTTP-01
+# proves control. certbot --keep-until-expiring makes re-runs idempotent.
+#
+# IMPORTANT: cert failure is NON-FATAL. We never `die` here — accel-ppp stays
+# installed; fix DNS / reachability and re-run (idempotent). The agent logs a
+# precise, actionable reason.
+log "Ensuring certificate for ${SUBDOMAIN} (waiting up to ${DNS_WAIT_TIMEOUT}s for DNS)…"
+staging_flag=""
+[[ "$CERTBOT_STAGING" == "1" ]] && staging_flag="--staging"
+if [[ -f "$SSTP_CERT_FULLCHAIN" ]]; then
+    log "  cert already present — certbot.timer handles renewal."
+else
+    if python3 "$AGENT" --ensure-cert \
+            --subdomain "$SUBDOMAIN" --vps-ip "$VPS_IP" --email "$CERTBOT_EMAIL" \
+            --timeout "$DNS_WAIT_TIMEOUT" --interval "$DNS_WAIT_INTERVAL" $staging_flag; then
+        log "  certificate issued."
+    else
+        warn "certificate NOT issued yet (see message above). accel-ppp will be"
+        warn "installed without SSTP TLS until you fix DNS/:80 and re-run this script"
+        warn "(or wait for the next certbot.timer run)."
+    fi
+fi
+
+# ── 5. auto-renew → reload accel-ppp ─────────────────────────────────────────
+# certbot.timer (installed by the apt package) renews silently; this deploy
+# hook makes accel-ppp pick up the fresh cert without a full restart. The
+# reload logic lives in the agent (unit-tested) so the hook is a one-liner.
+log "Installing certbot deploy hook → accel-ppp reload…"
+install -d -m 0755 "$(dirname "$RELOAD_HOOK")"
+cat > "$RELOAD_HOOK" <<HOOK
+#!/usr/bin/env bash
+# Reload accel-ppp after a successful cert renewal so SSTP serves the new chain.
+set -e
+python3 "${AGENT}" --reload-accel
+HOOK
+chmod 0755 "$RELOAD_HOOK"
+
 cat > /etc/systemd/system/radius-vps-agent.service <<UNIT
 [Unit]
 Description=HobeRadius VPS agent (accel-ppp DATA connections)
@@ -198,8 +223,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# !!! LAB-PENDING the agent CLI entrypoint + daemon mode are skeleton stubs.
-ExecStart=/usr/bin/python3 ${AGENT_DST}/vps_agent.py --serve --wg-iface ${WG_DATA_IFACE}
+# !!! LAB-PENDING the agent daemon (--serve) loop is a skeleton stub.
+ExecStart=/usr/bin/python3 ${AGENT} --serve --wg-iface ${WG_DATA_IFACE}
 Restart=on-failure
 RestartSec=5
 

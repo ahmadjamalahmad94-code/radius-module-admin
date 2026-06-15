@@ -6,14 +6,21 @@ Runs on the customer's RADIUS VPS. Its jobs (design §1, §5):
   1. Apply a WireGuard DATA peer (RouterOS v7 path) — ``wg set …``.
   2. Apply a per-peer speed cap (5 Mbit default) via ``tc`` HTB on the wg iface.
   3. Read live sessions from accel-ppp (``accel-cmd show sessions``).
-  4. Trigger a cert renew (``certbot renew`` + reload hook).
+  4. Issue + renew the SSTP TLS cert (certbot HTTP-01) — with a bounded
+     wait until the subdomain's DNS A record resolves to THIS VPS first, so a
+     first-boot/cloud-init propagation lag doesn't fail the install.
+  5. Reload accel-ppp so it picks up a fresh cert (the certbot deploy-hook
+     calls this).
 
 DESIGN — TESTABLE SEAM
 ======================
-Every real OS call goes through a :class:`CommandExecutor`. The agent's logic
-(building argv, parsing accel-cmd output, converting Mbit→tc rate) is PURE and
-unit-tested with a :class:`FakeExecutor`; the production :class:`SystemExecutor`
-is the only thing that actually shells out. So CI never touches the OS.
+Every real OS call goes through a :class:`CommandExecutor`; every DNS lookup
+goes through a :class:`Resolver`. The agent's logic (building argv, parsing
+accel-cmd output, the DNS-wait loop, Mbit→tc rate) is PURE and unit-tested with
+a :class:`FakeExecutor` + :class:`FakeResolver` (injected ``sleep``/``clock`` so
+tests never actually wait); the production :class:`SystemExecutor` /
+:class:`SystemResolver` are the only things that touch the OS/network. CI never
+shells out or hits the network.
 
 STATUS: skeleton. The argv we build is best-effort and FLAGGED where it needs
 lab validation. This module may move into the ``radius-module`` repo later
@@ -25,9 +32,11 @@ from __future__ import annotations
 import argparse
 import re
 import shlex
+import socket
 import subprocess
+import time
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 # ── command seam ────────────────────────────────────────────────────────────
@@ -72,6 +81,38 @@ class FakeExecutor:
         self.calls.append(list(argv))
         key = " ".join(argv[:2])
         return self.responses.get(key, CommandResult(0, "", ""))
+
+
+# ── DNS seam ─────────────────────────────────────────────────────────────────
+class Resolver(Protocol):
+    """The single DNS seam. Tests provide a fake; prod uses SystemResolver."""
+    def resolve(self, hostname: str, *, ipv6: bool = False) -> list[str]: ...
+
+
+class SystemResolver:
+    """Real resolver — the ONLY code that hits DNS. Not exercised in CI."""
+    def resolve(self, hostname: str, *, ipv6: bool = False) -> list[str]:
+        family = socket.AF_INET6 if ipv6 else socket.AF_INET
+        try:
+            infos = socket.getaddrinfo(hostname, None, family=family)
+        except socket.gaierror:
+            return []
+        return sorted({info[4][0] for info in infos})
+
+
+class FakeResolver:
+    """Replays canned answers per call (last entry repeats). Used by tests to
+    simulate DNS propagation: e.g. [[], ["9.9.9.9"], ["1.2.3.4"]]."""
+    def __init__(self, sequence: list[list[str]] | None = None) -> None:
+        self._seq = list(sequence or [])
+        self.calls = 0
+
+    def resolve(self, hostname: str, *, ipv6: bool = False) -> list[str]:
+        self.calls += 1
+        if not self._seq:
+            return []
+        idx = min(self.calls - 1, len(self._seq) - 1)
+        return list(self._seq[idx])
 
 
 # ── domain types ──────────────────────────────────────────────────────────--
@@ -232,10 +273,70 @@ def _to_int(value: str) -> int:
         return 0
 
 
+# ── pure: DNS wait + certbot argv ─────────────────────────────────────────--
+@dataclass(frozen=True)
+class DnsWaitResult:
+    ok: bool
+    attempts: int
+    resolved: list[str]
+    detail: str = ""
+
+
+def wait_for_dns(fqdn: str, expected_ip: str, *, resolver: Resolver,
+                 timeout_s: float = 300, interval_s: float = 10,
+                 sleep: Callable[[float], None] = time.sleep,
+                 monotonic: Callable[[], float] = time.monotonic) -> DnsWaitResult:
+    """Poll until ``fqdn`` resolves to ``expected_ip`` (this VPS) or timeout.
+
+    The panel creates the A record (2c) when the customer is added with the VPS
+    IP — which is BEFORE the VPS exists — so normally this returns on the first
+    attempt. The bounded retry only covers propagation lag on a fast first boot.
+
+    Always attempts at least once. Never raises: on timeout it returns
+    ``ok=False`` with an actionable ``detail`` so the caller logs + continues
+    (cert issuance is non-fatal to the boot). ``sleep``/``monotonic`` are
+    injectable so tests run instantly."""
+    ipv6 = ":" in (expected_ip or "")
+    start = monotonic()
+    attempts = 0
+    resolved: list[str] = []
+    while True:
+        attempts += 1
+        resolved = resolver.resolve(fqdn, ipv6=ipv6)
+        if expected_ip in resolved:
+            return DnsWaitResult(True, attempts, resolved,
+                                 f"{fqdn} -> {expected_ip} after {attempts} attempt(s)")
+        if monotonic() - start >= timeout_s:
+            return DnsWaitResult(
+                False, attempts, resolved,
+                f"{fqdn} did not resolve to {expected_ip} within {timeout_s:.0f}s "
+                f"(last seen: {resolved or 'NXDOMAIN'}). Confirm the panel created "
+                f"the Cloudflare A record for this customer's VPS IP.")
+        sleep(interval_s)
+
+
+def build_certbot_argv(fqdn: str, email: str, *, staging: bool = False,
+                       webroot: str = "") -> list[str]:
+    """certbot HTTP-01 issuance argv. ``--keep-until-expiring`` makes re-runs
+    idempotent (no needless reissue). ``--standalone`` binds :80 for the
+    challenge (accel-ppp owns 443, not 80); pass ``webroot`` to use an existing
+    server instead. ``--staging`` for dry-runs against LE staging."""
+    argv = ["certbot", "certonly", "--non-interactive", "--agree-tos",
+            "--keep-until-expiring", "-d", fqdn, "--email", email]
+    if webroot:
+        argv += ["--webroot", "-w", webroot]
+    else:
+        argv += ["--standalone"]
+    if staging:
+        argv += ["--staging"]
+    return argv
+
+
 # ── agent (binds the seam to the logic) ───────────────────────────────────--
 class VpsAgent:
-    def __init__(self, executor: CommandExecutor) -> None:
+    def __init__(self, executor: CommandExecutor, resolver: Resolver | None = None) -> None:
         self._x = executor
+        self._resolver = resolver
 
     def _run_all(self, cmds: list[list[str]]) -> AgentResult:
         ran: list[list[str]] = []
@@ -270,6 +371,49 @@ class VpsAgent:
         setup script) reloads accel-ppp; we run renew and let the hook fire."""
         return self._run_all([["certbot", "renew", "--quiet"]])
 
+    def ensure_cert(self, fqdn: str, expected_ip: str, email: str, *,
+                    timeout_s: float = 300, interval_s: float = 10,
+                    staging: bool = False,
+                    sleep: Callable[[float], None] = time.sleep,
+                    monotonic: Callable[[], float] = time.monotonic) -> AgentResult:
+        """Wait for DNS, then issue the cert (certbot HTTP-01). Non-fatal:
+
+        - DNS never resolves to this VPS within ``timeout_s`` → return ok=False
+          with an actionable detail, WITHOUT calling certbot (no pointless
+          challenge that would just fail).
+        - certbot itself fails → return ok=False with certbot's rc/stderr.
+
+        The caller (setup script) treats a False result as a warning, not a
+        hard boot failure — accel-ppp stays installed and the operator can fix
+        DNS and re-run (idempotent)."""
+        resolver = self._resolver or SystemResolver()
+        wait = wait_for_dns(fqdn, expected_ip, resolver=resolver,
+                            timeout_s=timeout_s, interval_s=interval_s,
+                            sleep=sleep, monotonic=monotonic)
+        if not wait.ok:
+            return AgentResult(False, detail=f"DNS wait failed: {wait.detail}")
+        argv = build_certbot_argv(fqdn, email, staging=staging)
+        res = self._x.run(argv)
+        if not res.ok:
+            return AgentResult(False, commands=[argv],
+                               detail=f"certbot failed (rc={res.returncode}): "
+                                      f"{(res.stderr or res.stdout).strip()}")
+        return AgentResult(True, commands=[argv], detail=f"cert issued for {fqdn}")
+
+    def reload_accel_ppp(self) -> AgentResult:
+        """Reload accel-ppp so it serves a fresh cert. Tries graceful reload
+        first, falls back to a full restart only if both reloads fail. Invoked
+        by the certbot deploy-hook on every renewal."""
+        attempts = [["accel-cmd", "reload"],
+                    ["systemctl", "reload", "accel-ppp"],
+                    ["systemctl", "restart", "accel-ppp"]]
+        ran: list[list[str]] = []
+        for argv in attempts:
+            ran.append(argv)
+            if self._x.run(argv).ok:
+                return AgentResult(True, commands=ran, detail=f"reloaded via {' '.join(argv)}")
+        return AgentResult(False, commands=ran, detail="all reload methods failed")
+
 
 # ── CLI entrypoint (skeleton) ─────────────────────────────────────────────--
 def main(argv: list[str] | None = None) -> int:
@@ -278,9 +422,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wg-iface", default="wg-data")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-sessions", action="store_true")
+    # Cert automation (called by the setup script / certbot deploy-hook).
+    parser.add_argument("--ensure-cert", action="store_true",
+                        help="wait for DNS then issue the LE cert (certbot HTTP-01)")
+    parser.add_argument("--reload-accel", action="store_true",
+                        help="reload accel-ppp (certbot deploy-hook target)")
+    parser.add_argument("--subdomain", default="", help="FQDN, e.g. client5.hoberadius.com")
+    parser.add_argument("--vps-ip", default="", help="this VPS public IP the FQDN must resolve to")
+    parser.add_argument("--email", default="", help="certbot registration email")
+    parser.add_argument("--timeout", type=float, default=300.0, help="DNS-wait timeout (s)")
+    parser.add_argument("--interval", type=float, default=10.0, help="DNS-wait poll interval (s)")
+    parser.add_argument("--staging", action="store_true", help="use LE staging (dry-run)")
     args = parser.parse_args(argv)
 
     agent = VpsAgent(SystemExecutor(dry_run=args.dry_run))
+    if args.reload_accel:
+        res = agent.reload_accel_ppp()
+        print(f"vps-agent reload-accel: {res.detail}")
+        return 0 if res.ok else 1
+    if args.ensure_cert:
+        if not (args.subdomain and args.vps_ip and args.email):
+            print("vps-agent --ensure-cert requires --subdomain, --vps-ip and --email")
+            return 2
+        res = agent.ensure_cert(args.subdomain, args.vps_ip, args.email,
+                                timeout_s=args.timeout, interval_s=args.interval,
+                                staging=args.staging)
+        print(f"vps-agent ensure-cert: {res.detail}")
+        # Exit 1 on failure so the caller can warn; the caller MUST NOT treat
+        # this as a hard boot failure (cert is non-fatal — design decision).
+        return 0 if res.ok else 1
     if args.list_sessions:
         for s in agent.list_active_sessions():
             print(f"{s.username}\t{s.ip}\t{s.iface}\t{s.type}")

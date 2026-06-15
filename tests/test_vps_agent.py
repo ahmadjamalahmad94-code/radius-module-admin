@@ -140,3 +140,119 @@ def test_cli_dry_run_serve_is_clean_stub(capsys):
     rc = va.main(["--serve", "--dry-run"])
     assert rc == 0
     assert "skeleton" in capsys.readouterr().out.lower()
+
+
+# ── cert automation: DNS-wait + certbot + reload ─────────────────────────────
+class _Clock:
+    """Injectable monotonic+sleep so wait_for_dns runs instantly in tests."""
+    def __init__(self):
+        self.t = 0.0
+    def monotonic(self):
+        return self.t
+    def sleep(self, s):
+        self.t += s
+
+
+def test_build_certbot_argv_default_standalone():
+    argv = va.build_certbot_argv("client5.hoberadius.com", "a@b.com")
+    assert argv[:2] == ["certbot", "certonly"]
+    assert "--standalone" in argv and "--keep-until-expiring" in argv
+    assert "-d" in argv and "client5.hoberadius.com" in argv
+    assert "a@b.com" in argv and "--staging" not in argv
+
+
+def test_build_certbot_argv_staging_and_webroot():
+    argv = va.build_certbot_argv("c.x", "a@b.com", staging=True, webroot="/var/www")
+    assert "--staging" in argv
+    assert "--webroot" in argv and "/var/www" in argv and "--standalone" not in argv
+
+
+def test_wait_for_dns_succeeds_after_propagation():
+    clk = _Clock()
+    res = va.wait_for_dns(
+        "client5.hoberadius.com", "1.2.3.4",
+        resolver=va.FakeResolver([["9.9.9.9"], ["1.2.3.4"]]),  # propagates on 2nd poll
+        timeout_s=300, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert res.ok and res.attempts == 2 and "1.2.3.4" in res.resolved
+
+
+def test_wait_for_dns_times_out_nonfatal():
+    clk = _Clock()
+    res = va.wait_for_dns(
+        "client5.hoberadius.com", "1.2.3.4",
+        resolver=va.FakeResolver([["9.9.9.9"]]),   # never the expected IP
+        timeout_s=30, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert not res.ok and res.attempts >= 2
+    assert "did not resolve" in res.detail and "Cloudflare" in res.detail
+
+
+def test_wait_for_dns_ipv6():
+    clk = _Clock()
+    res = va.wait_for_dns(
+        "client9.hoberadius.com", "2001:db8::1",
+        resolver=va.FakeResolver([["2001:db8::1"]]),
+        timeout_s=30, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert res.ok and res.attempts == 1
+
+
+def test_ensure_cert_waits_then_issues():
+    clk = _Clock()
+    fake = va.FakeExecutor()
+    agent = va.VpsAgent(fake, resolver=va.FakeResolver([["9.9.9.9"], ["1.2.3.4"]]))
+    res = agent.ensure_cert("client5.hoberadius.com", "1.2.3.4", "a@b.com",
+                            timeout_s=300, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert res.ok and "issued" in res.detail
+    certbot_calls = [c for c in fake.calls if c[0] == "certbot"]
+    assert len(certbot_calls) == 1 and "--standalone" in certbot_calls[0]
+
+
+def test_ensure_cert_dns_timeout_skips_certbot():
+    clk = _Clock()
+    fake = va.FakeExecutor()
+    agent = va.VpsAgent(fake, resolver=va.FakeResolver([["9.9.9.9"]]))  # never resolves
+    res = agent.ensure_cert("client5.hoberadius.com", "1.2.3.4", "a@b.com",
+                            timeout_s=30, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert not res.ok and "DNS wait failed" in res.detail
+    assert all(c[0] != "certbot" for c in fake.calls)  # certbot never invoked
+
+
+def test_ensure_cert_certbot_failure_is_nonfatal():
+    clk = _Clock()
+    fake = va.FakeExecutor({"certbot certonly": va.CommandResult(1, "", "challenge failed")})
+    agent = va.VpsAgent(fake, resolver=va.FakeResolver([["1.2.3.4"]]))
+    res = agent.ensure_cert("client5.hoberadius.com", "1.2.3.4", "a@b.com",
+                            timeout_s=30, interval_s=10, sleep=clk.sleep, monotonic=clk.monotonic)
+    assert not res.ok and "certbot failed" in res.detail and "challenge failed" in res.detail
+
+
+def test_reload_accel_ppp_prefers_graceful():
+    fake = va.FakeExecutor()  # everything succeeds
+    res = va.VpsAgent(fake).reload_accel_ppp()
+    assert res.ok
+    assert fake.calls == [["accel-cmd", "reload"]]  # stops at first success
+
+
+def test_reload_accel_ppp_falls_back_to_restart():
+    fake = va.FakeExecutor({
+        "accel-cmd reload": va.CommandResult(1, "", "no socket"),
+        "systemctl reload": va.CommandResult(1, "", "not loaded"),
+    })
+    res = va.VpsAgent(fake).reload_accel_ppp()
+    assert res.ok
+    assert [c[0] for c in fake.calls] == ["accel-cmd", "systemctl", "systemctl"]
+    assert fake.calls[-1] == ["systemctl", "restart", "accel-ppp"]
+
+
+def test_reload_accel_ppp_all_fail():
+    fake = va.FakeExecutor({
+        "accel-cmd reload": va.CommandResult(1),
+        "systemctl reload": va.CommandResult(1),
+        "systemctl restart": va.CommandResult(1),
+    })
+    res = va.VpsAgent(fake).reload_accel_ppp()
+    assert not res.ok and "failed" in res.detail
+
+
+def test_cli_ensure_cert_requires_args():
+    # Missing --subdomain/--vps-ip/--email returns 2 BEFORE any network/OS call.
+    assert va.main(["--ensure-cert"]) == 2
