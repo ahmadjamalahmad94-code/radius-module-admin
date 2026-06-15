@@ -63,6 +63,33 @@ Same script, same result.
   `vps_agent.py --reload-accel` so accel-ppp serves the fresh chain (graceful
   reload, full restart only as a last resort).
 
+### Challenge selection + DNS-01 fallback (firewalled :80)
+
+`CERT_CHALLENGE=auto` (default) probes port 80 → **HTTP-01** if reachable, else
+**DNS-01** via the Cloudflare certbot plugin. Force with `CERT_CHALLENGE=http01`
+or `dns01`. HTTP-01 needs nothing secret on the VPS. DNS-01 works when inbound
+:80 is blocked, but has a **security trade-off**:
+
+> **DNS-01 puts a Cloudflare API token on the customer VPS**
+> (`/etc/letsencrypt/cloudflare.ini`, mode 600). Mint a **separate, narrowly
+> scoped** token (`Zone.DNS:Edit` on `hoberadius.com` only) — never reuse the
+> panel's token — and revoke it independently when the VPS is decommissioned.
+> Set `CERT_CHALLENGE=dns01` (or `auto`) **and** `CLOUDFLARE_API_TOKEN=…`.
+
+### Reconcile daemon (WireGuard peers)
+
+`vps_agent.py --serve` fetches the desired wg-peer set from the panel's
+`/wg-peers`-style contract and applies WG peers + per-peer `tc` shapers with a
+**collision-free classid allocator**. It is **safe-by-default**: it removes only
+peers it added — never an operator-added peer. It's enabled only when
+`PEER_SOURCE_URL` is set (else installed but disabled).
+
+### WG data-port clash check
+
+The setup script runs `vps_agent.py --check-wg-port <port>` (parses `ss -lun`)
+and warns clearly if the chosen UDP port is already bound; re-run with a free
+`WG_DATA_PORT`.
+
 ## Files
 
 | File | Role |
@@ -71,17 +98,28 @@ Same script, same result.
 | `build_cloud_init.py` | Regenerates `cloud-init.yaml` from the sources below. |
 | `setup-radius-vps.sh` | The idempotent activation script (both delivery paths). |
 | `accel-ppp.conf.tmpl` | accel-ppp config template (rendered per-VPS). |
-| `agent/` | On-VPS executor: cert automation (tested) + WG/tc/session skeleton. |
+| `agent/` | On-VPS executor: cert automation + reconcile daemon + WG/tc/session logic. |
+| `RUNBOOK.md` | Step-by-step LIVE operator guide (do this for a real customer). |
 
 > `cloud-init.yaml` is generated — never hand-edit the base64 blobs. Edit the
 > sources and run `python3 build_cloud_init.py > cloud-init.yaml` (a unit test
 > enforces they stay in sync).
 
-## LAB-PENDING (before any live customer)
+The full live procedure (with per-step verifies + troubleshooting) is in
+[`RUNBOOK.md`](./RUNBOOK.md).
 
-- exact accel-ppp `Filter-Id` shaper rate form; `Session-Octets-Limit` (227)
-  support on the pinned build; NAS source IP for Disconnect (CoA secret match);
-- the agent's WG-peer/`tc`-shaper classid allocator + the `--serve` daemon loop
-  are skeleton stubs (see [`agent/README.md`](./agent/README.md));
-- confirm `WG_DATA_PORT` does not clash with the mgmt/data WG already on the box;
-- if the provider firewalls port 80, switch certbot to `--webroot` or DNS-01.
+## LAB-PENDING (genuinely needs a live VPS — do NOT guess)
+
+These stay flagged; confirm each on a live box then set the value:
+
+- exact accel-ppp **`Filter-Id`** shaper rate form (symmetric vs rx/tx, kbit vs bit);
+- **`Session-Octets-Limit`** (attr 227) support on the pinned build (else rely on
+  the server-side accounting → Disconnect, already authoritative);
+- **Disconnect NAS source IP** (loopback vs VPS public) so the CoA secret matches;
+- the peer-source **endpoint path + `X-Proxy-Token` HMAC** auth for the reconcile
+  daemon (`HttpPeerSource`);
+- the **`tc` shaper direction** (ingress vs egress) on the live kernel/iproute2.
+
+Done WITHOUT a live VPS (implemented + unit-tested with fakes): the reconcile
+loop, the collision-free classid allocator, the cert challenge selection +
+DNS-01 fallback, and the WG-port clash check.

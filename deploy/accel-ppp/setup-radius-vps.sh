@@ -58,6 +58,20 @@ DNS_WAIT_TIMEOUT="${DNS_WAIT_TIMEOUT:-300}"
 DNS_WAIT_INTERVAL="${DNS_WAIT_INTERVAL:-10}"
 CERTBOT_STAGING="${CERTBOT_STAGING:-0}"            # set 1 to test against LE staging
 
+# ACME challenge: auto (probe :80 → http01, else dns01) | http01 | dns01.
+# DNS-01 is the fallback when inbound :80 is firewalled. It needs a Cloudflare
+# token ON THIS VPS (security trade-off — see README/RUNBOOK). When CERT_CHALLENGE
+# is dns01 or auto AND a token is supplied, we write the certbot CF creds file.
+CERT_CHALLENGE="${CERT_CHALLENGE:-auto}"
+CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"   # only needed for dns01
+CF_DNS_CREDENTIALS="${CF_DNS_CREDENTIALS:-/etc/letsencrypt/cloudflare.ini}"
+
+# Reconcile daemon peer source (the panel's wg-peers contract). When empty the
+# agent service is installed but left DISABLED (no source to reconcile against).
+PEER_SOURCE_URL="${PEER_SOURCE_URL:-}"             # !!! LAB-PENDING exact path + HMAC auth
+PEER_SOURCE_TOKEN="${PEER_SOURCE_TOKEN:-}"
+RECONCILE_INTERVAL="${RECONCILE_INTERVAL:-30}"
+
 # End-user IP pool handed out to DATA subscribers (keep clear of fleet reserves
 # 10.51/10.98/10.99 and the VPS's own subnets — see template comments).
 POOL_GATEWAY="${POOL_GATEWAY:-10.20.0.1}"
@@ -110,12 +124,21 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     accel-ppp certbot wireguard-tools iproute2 python3 >/dev/null
-# NOTE: this VPS issues its OWN cert via certbot HTTP-01 (port 80 must reach
-# this box — that's exactly what the panel's Cloudflare A record guarantees).
-# We do NOT need the Cloudflare DNS plugin here: DNS-01 would only be required
-# for a wildcard, which is out of scope for per-client certs.   # !!! LAB-PENDING
-# If port 80 is firewalled, switch the certbot call in step 4 to --standalone
-# with a brief open, or to the DNS-01/cloudflare plugin.
+# Prefer HTTP-01 (port 80 must reach this box — the panel's Cloudflare A record
+# guarantees the name resolves here). DNS-01 is the fallback when :80 is
+# firewalled; it needs the Cloudflare certbot plugin + a token on this VPS.
+if [[ "$CERT_CHALLENGE" != "http01" ]]; then
+    apt-get install -y --no-install-recommends python3-certbot-dns-cloudflare >/dev/null \
+        || warn "python3-certbot-dns-cloudflare not available — dns01 fallback won't work."
+fi
+# Write the Cloudflare creds file for DNS-01 if a token was supplied (mode 600).
+if [[ "$CERT_CHALLENGE" != "http01" && -n "$CLOUDFLARE_API_TOKEN" ]]; then
+    install -d -m 0755 "$(dirname "$CF_DNS_CREDENTIALS")"
+    umask 077
+    printf 'dns_cloudflare_api_token = %s\n' "$CLOUDFLARE_API_TOKEN" > "$CF_DNS_CREDENTIALS"
+    chmod 600 "$CF_DNS_CREDENTIALS"
+    log "  wrote Cloudflare DNS-01 credentials → ${CF_DNS_CREDENTIALS} (mode 600)."
+fi
 
 # ── 2. render accel-ppp.conf from the template ───────────────────────────────
 # Substitute every {{ VAR }} the template declares. Render to a temp file and
@@ -175,16 +198,26 @@ install -d -m 0755 "$AGENT_DST"
 cp -r "$AGENT_SRC/." "$AGENT_DST/"
 AGENT="${AGENT_DST}/vps_agent.py"
 
-# ── 4. cert: wait for DNS, then issue via certbot HTTP-01 (NON-FATAL) ─────────
-# The panel created the A record (clientN.<zone> -> VPS_IP) when the customer
-# was added. The agent WAITS (bounded) for that to resolve to THIS VPS, then
-# runs certbot --standalone (binds :80; accel-ppp owns 443, not 80). HTTP-01
-# proves control. certbot --keep-until-expiring makes re-runs idempotent.
+# WG data-port clash check (non-fatal): warn clearly if the chosen UDP port is
+# already bound (e.g. by the mgmt/data WG already on the box). The agent parses
+# `ss -lun`; pick a free WG_DATA_PORT if this fires.
+if ! python3 "$AGENT" --check-wg-port "$WG_DATA_PORT" >/dev/null 2>&1; then
+    warn "WG data port udp/${WG_DATA_PORT} appears to be in use:"
+    python3 "$AGENT" --check-wg-port "$WG_DATA_PORT" || true
+    warn "choose a free WG_DATA_PORT (re-run with WG_DATA_PORT=<free port>)."
+fi
+
+# ── 4. cert: select challenge, (wait for DNS,) issue via certbot (NON-FATAL) ──
+# CERT_CHALLENGE=auto probes :80 → HTTP-01 if reachable, else DNS-01 (Cloudflare).
+# HTTP-01: the agent WAITS (bounded) for clientN.<zone> to resolve to THIS VPS
+# (the panel created that A record), then certbot --standalone (binds :80).
+# DNS-01: certbot's Cloudflare plugin writes a TXT record — works when :80 is
+# firewalled. certbot --keep-until-expiring makes re-runs idempotent.
 #
 # IMPORTANT: cert failure is NON-FATAL. We never `die` here — accel-ppp stays
-# installed; fix DNS / reachability and re-run (idempotent). The agent logs a
-# precise, actionable reason.
-log "Ensuring certificate for ${SUBDOMAIN} (waiting up to ${DNS_WAIT_TIMEOUT}s for DNS)…"
+# installed; fix the cause and re-run (idempotent). The agent logs a precise,
+# actionable reason.
+log "Ensuring certificate for ${SUBDOMAIN} (challenge=${CERT_CHALLENGE})…"
 staging_flag=""
 [[ "$CERTBOT_STAGING" == "1" ]] && staging_flag="--staging"
 if [[ -f "$SSTP_CERT_FULLCHAIN" ]]; then
@@ -192,12 +225,14 @@ if [[ -f "$SSTP_CERT_FULLCHAIN" ]]; then
 else
     if python3 "$AGENT" --ensure-cert \
             --subdomain "$SUBDOMAIN" --vps-ip "$VPS_IP" --email "$CERTBOT_EMAIL" \
+            --challenge "$CERT_CHALLENGE" --cf-credentials "$CF_DNS_CREDENTIALS" \
             --timeout "$DNS_WAIT_TIMEOUT" --interval "$DNS_WAIT_INTERVAL" $staging_flag; then
         log "  certificate issued."
     else
         warn "certificate NOT issued yet (see message above). accel-ppp will be"
-        warn "installed without SSTP TLS until you fix DNS/:80 and re-run this script"
-        warn "(or wait for the next certbot.timer run)."
+        warn "installed without SSTP TLS until you fix the cause and re-run this"
+        warn "script (or wait for the next certbot.timer run). For a firewalled :80,"
+        warn "set CERT_CHALLENGE=dns01 + CLOUDFLARE_API_TOKEN and re-run."
     fi
 fi
 
@@ -217,14 +252,17 @@ chmod 0755 "$RELOAD_HOOK"
 
 cat > /etc/systemd/system/radius-vps-agent.service <<UNIT
 [Unit]
-Description=HobeRadius VPS agent (accel-ppp DATA connections)
+Description=HobeRadius VPS agent (accel-ppp DATA connections — reconcile daemon)
 After=network-online.target accel-ppp.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-# !!! LAB-PENDING the agent daemon (--serve) loop is a skeleton stub.
-ExecStart=/usr/bin/python3 ${AGENT} --serve --wg-iface ${WG_DATA_IFACE}
+# Reconcile loop: fetch the desired wg-peer set from the panel and apply WG
+# peers + per-peer tc shapers (collision-free classids), removing only peers
+# the agent itself added. !!! LAB-PENDING: PEER_SOURCE_URL exact path + the
+# X-Proxy-Token HMAC signing (see vps_agent.HttpPeerSource).
+ExecStart=/usr/bin/python3 ${AGENT} --serve --wg-iface ${WG_DATA_IFACE} --peer-source-url ${PEER_SOURCE_URL} --peer-source-token ${PEER_SOURCE_TOKEN} --interval ${RECONCILE_INTERVAL}
 Restart=on-failure
 RestartSec=5
 
@@ -237,9 +275,15 @@ log "Enabling services…"
 systemctl daemon-reload
 systemctl enable --now accel-ppp.service || warn "accel-ppp not started — check ${ACCEL_CONF} + ${SSTP_CERT_FULLCHAIN}."
 systemctl enable certbot.timer >/dev/null 2>&1 || warn "certbot.timer not found — auto-renew may be manual on this distro."
-# The agent is enabled but its daemon mode is a stub; leave it disabled until
-# the agent is finished if you prefer:  systemctl disable radius-vps-agent
-systemctl enable radius-vps-agent.service >/dev/null 2>&1 || warn "vps-agent unit not enabled (skeleton)."
+# Only start the reconcile daemon when a peer source is configured; otherwise
+# install the unit but leave it stopped (it would just refuse with no source).
+if [[ -n "$PEER_SOURCE_URL" ]]; then
+    systemctl enable --now radius-vps-agent.service >/dev/null 2>&1 \
+        || warn "vps-agent reconcile daemon not started — check ${AGENT} --serve."
+else
+    systemctl disable radius-vps-agent.service >/dev/null 2>&1 || true
+    warn "PEER_SOURCE_URL unset → vps-agent reconcile daemon installed but DISABLED."
+fi
 
 log "Done. DATA BRAS active for ${SUBDOMAIN}."
 cat <<SUMMARY
@@ -248,15 +292,16 @@ cat <<SUMMARY
   -------
   subdomain : ${SUBDOMAIN}  ->  ${VPS_IP}
   conf      : ${ACCEL_CONF}
-  cert      : ${SSTP_CERT_FULLCHAIN}
+  cert      : ${SSTP_CERT_FULLCHAIN}  (challenge=${CERT_CHALLENGE})
   renew     : certbot.timer + ${RELOAD_HOOK}
-  agent     : ${AGENT_DST} (skeleton — see README)
+  agent     : ${AGENT_DST}  (reconcile daemon; peer-source=${PEER_SOURCE_URL:-<unset, disabled>})
   pool      : ${POOL_RANGE} (gw ${POOL_GATEWAY})
   wg-data   : ${WG_DATA_IFACE} udp/${WG_DATA_PORT}
 
-  LAB-PENDING before any live customer (see design §8):
-    * exact accel-ppp Filter-Id rate form (shaper)
-    * Session-Octets-Limit (227) support on the pinned accel-ppp build
-    * accel-ppp NAS source IP for Disconnect (CoA secret match)
-    * WG_DATA_PORT must not clash with the mgmt/data WG already on the box
+  LAB-PENDING before any live customer (genuinely needs a live VPS — see RUNBOOK):
+    * exact accel-ppp Filter-Id rate form (shaper)        -> confirm live, then set
+    * Session-Octets-Limit (227) support on the build     -> confirm live, then set
+    * accel-ppp NAS source IP for Disconnect (CoA secret)  -> confirm live, then set
+    * peer-source endpoint path + X-Proxy-Token HMAC auth  -> wire to the panel
+    * tc ingress/egress direction for the per-peer shaper  -> confirm on the kernel
 SUMMARY

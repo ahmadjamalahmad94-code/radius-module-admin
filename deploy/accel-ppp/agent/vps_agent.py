@@ -22,14 +22,17 @@ tests never actually wait); the production :class:`SystemExecutor` /
 :class:`SystemResolver` are the only things that touch the OS/network. CI never
 shells out or hits the network.
 
-STATUS: skeleton. The argv we build is best-effort and FLAGGED where it needs
-lab validation. This module may move into the ``radius-module`` repo later
-(design §1 — "subpackage inside radius-module if we co-locate"); it lives here
-now so the one-time setup script can install something today.
+STATUS: the reconcile loop, collision-free classid allocator, cert challenge
+selection (HTTP-01 / DNS-01 fallback), and WG-port clash check are implemented
++ unit-tested with fakes. The genuinely live-only knobs stay FLAGGED LAB-PENDING
+(exact Filter-Id shaper form, Session-Octets-Limit/227 support, Disconnect NAS
+source IP, and the peer-source HMAC auth + exact tc ingress direction). This
+module may move into the ``radius-module`` repo later (design §1).
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shlex
 import socket
@@ -115,6 +118,31 @@ class FakeResolver:
         return list(self._seq[idx])
 
 
+# ── port-80 reachability seam (certbot challenge selection) ──────────────────
+class Port80Prober(Protocol):
+    """Seam for "can certbot HTTP-01 work here?" Tests provide a fake."""
+    def is_open(self, host: str, *, port: int = 80, timeout: float = 3.0) -> bool: ...
+
+
+class SystemPort80Prober:
+    """Best-effort TCP connect probe. NOTE: a self-probe can't fully prove
+    EXTERNAL reachability (a firewall upstream may still block inbound) — the
+    live RUNBOOK validates that. We use it as the ``auto`` heuristic only."""
+    def is_open(self, host: str, *, port: int = 80, timeout: float = 3.0) -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except OSError:
+            return False
+
+
+class FakePort80Prober:
+    def __init__(self, open_: bool) -> None:
+        self._open = open_
+    def is_open(self, host: str, *, port: int = 80, timeout: float = 3.0) -> bool:
+        return self._open
+
+
 # ── domain types ──────────────────────────────────────────────────────────--
 #: Locked default per-connection speed (design §0: 5–10 Mbit). 5 Mbit = floor.
 DEFAULT_RATE_MBIT = 5
@@ -188,42 +216,109 @@ def mbit_to_kbit(rate_mbit: int) -> int:
     return max(1, int(rate_mbit)) * 1000
 
 
-def build_shaper_argv(spec: WireguardPeerSpec) -> list[list[str]]:
-    """tc HTB commands for a per-peer ``rate_mbit`` cap on the wg interface.
+# ── collision-free classid allocator ─────────────────────────────────────────
+#: tc classids are written ``major:minor`` where BOTH numbers are HEX. The htb
+#: root reserves a default class; we use 0x9999 for it and keep it out of the
+#: allocatable space. Minor range is 1..0xffff.
+HTB_DEFAULT_MINOR = 0x9999
+MIN_MINOR = 0x1
+MAX_MINOR = 0xFFFF
 
-    Egress shaping on the wg iface throttles traffic TOWARD the peer; the
-    matching ingress policer is FLAGGED for lab validation (direction +
-    classid allocation must be confirmed against the live kernel/iproute2).
 
-    The classid is derived from the peer's last IPv4 octet for determinism;
-    real deployment needs a collision-free allocator (lab-pending).
-    """
+class ClassidAllocator:
+    """Hands each peer a UNIQUE tc class minor, with release/reuse.
+
+    Replaces the old last-octet scheme (10.20.0.5 and 10.20.1.5 collided on
+    minor 5). Keyed by the peer's WireGuard public key (stable, unique). The
+    smallest free minor is reused after a ``release`` so the space doesn't
+    leak under churn. Deterministic for a given allocation order; the reconcile
+    loop allocates in sorted-pubkey order so a fresh process is reproducible."""
+
+    def __init__(self, reserved: set[int] | None = None) -> None:
+        self._assigned: dict[str, int] = {}
+        self._used: set[int] = set(reserved or {HTB_DEFAULT_MINOR})
+
+    def allocate(self, key: str) -> int:
+        if key in self._assigned:
+            return self._assigned[key]
+        for n in range(MIN_MINOR, MAX_MINOR + 1):
+            if n not in self._used:
+                self._used.add(n)
+                self._assigned[key] = n
+                return n
+        raise RuntimeError("tc classid space exhausted")
+
+    def minor_for(self, key: str) -> int | None:
+        return self._assigned.get(key)
+
+    def release(self, key: str) -> int | None:
+        n = self._assigned.pop(key, None)
+        if n is not None:
+            self._used.discard(n)
+        return n
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._assigned
+
+    @property
+    def assigned(self) -> dict[str, int]:
+        return dict(self._assigned)
+
+
+def _shaper_match(allowed_ip: str) -> tuple[str, str]:
+    """(protocol, u32-match-keyword) for the peer's address family. IPv6 needs
+    ``protocol ipv6`` + ``match ip6`` — ``protocol ip`` silently fails for v6."""
+    if ":" in (allowed_ip or ""):
+        return "ipv6", "ip6"
+    return "ip", "ip"
+
+
+def build_root_qdisc_argv(iface: str) -> list[str]:
+    """The htb root qdisc. Installed ONCE per interface via ``ensure_root_qdisc``
+    (an `add` only when absent) — never ``replace``, which would wipe the child
+    classes of peers already shaped."""
+    return ["tc", "qdisc", "add", "dev", iface, "root", "handle", "1:", "htb",
+            "default", format(HTB_DEFAULT_MINOR, "x")]
+
+
+def build_peer_shaper_argv(spec: WireguardPeerSpec, minor: int) -> list[list[str]]:
+    """Per-peer tc class + leaf qdisc + filter for ``minor`` (a unique classid
+    minor from :class:`ClassidAllocator`). Uses ``replace`` so re-applying ONE
+    peer is idempotent and never disturbs other peers. The filter ``prio`` is
+    the (unique) minor so the peer's filter can be deleted in isolation."""
     iface = spec.interface
     kbit = mbit_to_kbit(spec.rate_mbit)
-    # Derive a stable minor id from the allowed IP (1..255). LAB-PENDING: a
-    # proper allocator must guarantee uniqueness across concurrent peers.
-    last = spec.allowed_ip.split("/")[0].split(".")[-1] if "." in spec.allowed_ip else "10"
-    try:
-        minor = max(1, min(255, int(last)))
-    except ValueError:
-        minor = 10
-    classid = f"1:{minor}"
-    handle = f"{minor}:"
+    classid = f"1:{minor:x}"
+    handle = f"{minor:x}:"
+    prio = str(minor)
+    proto, match_kw = _shaper_match(spec.allowed_ip)
     return [
-        # Root qdisc (idempotent: 'replace' won't error if it already exists).
-        ["tc", "qdisc", "replace", "dev", iface, "root", "handle", "1:", "htb",
-         "default", "9999"],
         # Per-peer class capped at the plan rate.
         ["tc", "class", "replace", "dev", iface, "parent", "1:", "classid", classid,
          "htb", "rate", f"{kbit}kbit", "ceil", f"{kbit}kbit"],
         # fq_codel under the class for fair queueing within the cap.
         ["tc", "qdisc", "replace", "dev", iface, "parent", classid, "handle", handle,
          "fq_codel"],
-        # Filter peer traffic into the class by destination /32.
-        ["tc", "filter", "replace", "dev", iface, "protocol", "ip", "parent", "1:",
-         "prio", "1", "u32", "match", "ip", "dst", _cidr_for(spec.allowed_ip),
+        # Filter this peer's traffic into the class by destination host route.
+        ["tc", "filter", "replace", "dev", iface, "protocol", proto, "parent", "1:",
+         "prio", prio, "u32", "match", match_kw, "dst", _cidr_for(spec.allowed_ip),
          "flowid", classid],
     ]
+
+
+def build_peer_shaper_delete_argv(iface: str, minor: int) -> list[list[str]]:
+    """Tear down ONE peer's shaper (filter by its unique prio, then class).
+    Targeted — leaves every other peer's shaping intact."""
+    classid = f"1:{minor:x}"
+    return [
+        ["tc", "filter", "del", "dev", iface, "parent", "1:", "prio", str(minor)],
+        ["tc", "class", "del", "dev", iface, "classid", classid],
+    ]
+
+
+def build_wireguard_peer_remove_argv(public_key: str, iface: str) -> list[str]:
+    """Remove a WG peer. ``wg set … peer KEY remove`` is idempotent."""
+    return ["wg", "set", iface, "peer", public_key, "remove"]
 
 
 #: accel-cmd's ``show sessions`` is column-formatted. We parse the common
@@ -315,15 +410,36 @@ def wait_for_dns(fqdn: str, expected_ip: str, *, resolver: Resolver,
         sleep(interval_s)
 
 
-def build_certbot_argv(fqdn: str, email: str, *, staging: bool = False,
-                       webroot: str = "") -> list[str]:
-    """certbot HTTP-01 issuance argv. ``--keep-until-expiring`` makes re-runs
-    idempotent (no needless reissue). ``--standalone`` binds :80 for the
-    challenge (accel-ppp owns 443, not 80); pass ``webroot`` to use an existing
-    server instead. ``--staging`` for dry-runs against LE staging."""
+#: Cert challenge modes (setup knob CERT_CHALLENGE).
+CHALLENGE_HTTP01 = "http01"
+CHALLENGE_DNS01 = "dns01"
+CHALLENGE_AUTO = "auto"
+
+
+def select_challenge(mode: str, *, port80_open: bool) -> str:
+    """Resolve the effective challenge. ``auto`` picks HTTP-01 when port 80 is
+    reachable, else DNS-01. Explicit modes pass through. Unknown → auto."""
+    m = (mode or CHALLENGE_AUTO).strip().lower()
+    if m in (CHALLENGE_HTTP01, CHALLENGE_DNS01):
+        return m
+    return CHALLENGE_HTTP01 if port80_open else CHALLENGE_DNS01
+
+
+def build_certbot_argv(fqdn: str, email: str, *, challenge: str = CHALLENGE_HTTP01,
+                       staging: bool = False, webroot: str = "",
+                       cf_credentials_path: str = "") -> list[str]:
+    """certbot issuance argv. ``--keep-until-expiring`` makes re-runs idempotent.
+
+    - ``http01`` (default): ``--standalone`` binds :80 for the challenge
+      (accel-ppp owns 443, not 80); pass ``webroot`` to use a running server.
+    - ``dns01``: ``--dns-cloudflare`` with a credentials INI (needs the CF token
+      on the VPS — see the README security trade-off). Works when :80 is
+      firewalled. ``--staging`` for dry-runs against LE staging."""
     argv = ["certbot", "certonly", "--non-interactive", "--agree-tos",
             "--keep-until-expiring", "-d", fqdn, "--email", email]
-    if webroot:
+    if challenge == CHALLENGE_DNS01:
+        argv += ["--dns-cloudflare", "--dns-cloudflare-credentials", cf_credentials_path]
+    elif webroot:
         argv += ["--webroot", "-w", webroot]
     else:
         argv += ["--standalone"]
@@ -332,11 +448,123 @@ def build_certbot_argv(fqdn: str, email: str, *, staging: bool = False,
     return argv
 
 
+# ── desired-peer contract (reuse the panel's /wg-peers shape) ────────────────
+@dataclass(frozen=True)
+class DesiredPeer:
+    public_key: str
+    allowed_ip: str
+    rate_mbit: int = DEFAULT_RATE_MBIT
+    name: str = ""
+
+
+def parse_desired_peers(payload: dict, *, default_rate_mbit: int = DEFAULT_RATE_MBIT) -> list[DesiredPeer]:
+    """Parse the documented top-level ``peers`` contract (app/api/proxy_api.py
+    /wg-peers): ``{peers:[{name, public_key, allowed_ips:[...], endpoint,
+    rate_mbit?}]}``. Each peer's first ``allowed_ips`` entry is the host route.
+    Peers missing a public_key or allowed_ips are skipped (the panel surfaces
+    that as a failed sync stage, not a silent gap)."""
+    out: list[DesiredPeer] = []
+    for p in (payload or {}).get("peers", []) or []:
+        if not isinstance(p, dict):
+            continue
+        key = str(p.get("public_key", "")).strip()
+        allowed = p.get("allowed_ips") or []
+        if not key or not allowed:
+            continue
+        rate = p.get("rate_mbit")
+        try:
+            rate = int(rate) if rate is not None else default_rate_mbit
+        except (TypeError, ValueError):
+            rate = default_rate_mbit
+        out.append(DesiredPeer(public_key=key, allowed_ip=str(allowed[0]).strip(),
+                               rate_mbit=rate, name=str(p.get("name", ""))))
+    return out
+
+
+class PeerSource(Protocol):
+    """Seam that yields the desired DATA wg-peer set. Tests provide a fake;
+    prod fetches the panel contract over HTTP."""
+    def fetch_desired(self) -> list[DesiredPeer]: ...
+
+
+class StaticPeerSource:
+    """Fixed desired set — used by tests and for a file-driven daemon."""
+    def __init__(self, peers: list[DesiredPeer]) -> None:
+        self._peers = list(peers)
+    def fetch_desired(self) -> list[DesiredPeer]:
+        return list(self._peers)
+
+
+class HttpPeerSource:
+    """Fetches + parses the panel's wg-peers contract. The ``fetch_json``
+    callable is injected so tests mock the HTTP entirely.
+
+    LAB-PENDING: the exact endpoint path + the ``X-Proxy-Token`` HMAC auth must
+    match the panel's live contract; supply ``fetch_json`` that performs the
+    signed GET. The contract PARSING (parse_desired_peers) is implemented +
+    tested here."""
+    def __init__(self, url: str, fetch_json: Callable[[str], dict],
+                 *, default_rate_mbit: int = DEFAULT_RATE_MBIT) -> None:
+        self._url = url
+        self._fetch_json = fetch_json
+        self._default_rate = default_rate_mbit
+
+    def fetch_desired(self) -> list[DesiredPeer]:
+        payload = self._fetch_json(self._url)
+        return parse_desired_peers(payload, default_rate_mbit=self._default_rate)
+
+
+@dataclass
+class ReconcileResult:
+    ok: bool
+    in_sync: bool = False
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    detail: str = ""
+
+
+# ── pure: listening-UDP-port parsing + free-port pick (WG clash check) ───────
+def parse_listening_udp_ports(ss_output: str) -> set[int]:
+    """Extract listening UDP local ports from ``ss -lun`` output. Tolerant of
+    column layout: we take the local-address column's trailing ``:PORT``."""
+    ports: set[int] = set()
+    for ln in (ss_output or "").splitlines():
+        s = ln.strip()
+        if not s or s.lower().startswith(("netid", "state", "recv-q")):
+            continue
+        for tok in s.split():
+            # local addr looks like 0.0.0.0:51820 / [::]:51820 / *:51820
+            m = re.search(r":(\d{1,5})$", tok)
+            if m:
+                try:
+                    ports.add(int(m.group(1)))
+                except ValueError:
+                    pass
+    return ports
+
+
+def pick_free_port(desired: int, used: set[int], *, max_tries: int = 20) -> int | None:
+    """Return ``desired`` if free, else the next free port scanning upward.
+    ``None`` if none free within ``max_tries`` (caller emits a clear error)."""
+    for n in range(desired, desired + max_tries):
+        if 1 <= n <= 65535 and n not in used:
+            return n
+    return None
+
+
 # ── agent (binds the seam to the logic) ───────────────────────────────────--
 class VpsAgent:
-    def __init__(self, executor: CommandExecutor, resolver: Resolver | None = None) -> None:
+    def __init__(self, executor: CommandExecutor, resolver: Resolver | None = None,
+                 prober: Port80Prober | None = None,
+                 allocator: ClassidAllocator | None = None) -> None:
         self._x = executor
         self._resolver = resolver
+        self._prober = prober
+        self._alloc = allocator or ClassidAllocator()
+        # Peers THIS process has applied (safe-remove set) + their last desired
+        # spec (so an unchanged peer is a true no-op next tick).
+        self._managed: dict[str, DesiredPeer] = {}
 
     def _run_all(self, cmds: list[list[str]]) -> AgentResult:
         ran: list[list[str]] = []
@@ -349,16 +577,131 @@ class VpsAgent:
         return AgentResult(True, commands=ran)
 
     def apply_wireguard_peer(self, spec: WireguardPeerSpec) -> AgentResult:
-        """Add/update the WG peer, then apply its per-peer speed cap."""
+        """Add/update the WG peer, then apply its per-peer speed cap (with a
+        collision-free classid). Ensures the root qdisc exists first."""
         peer = self._run_all(build_wireguard_peer_argv(spec))
         if not peer.ok:
             return peer
-        shaper = self._run_all(build_shaper_argv(spec))
+        self.ensure_root_qdisc(spec.interface)
+        minor = self._alloc.allocate(spec.public_key)
+        shaper = self._run_all(build_peer_shaper_argv(spec, minor))
         shaper.commands = peer.commands + shaper.commands
         return shaper
 
     def apply_shaper(self, spec: WireguardPeerSpec) -> AgentResult:
-        return self._run_all(build_shaper_argv(spec))
+        minor = self._alloc.allocate(spec.public_key)
+        return self._run_all(build_peer_shaper_argv(spec, minor))
+
+    # ── reconcile daemon ────────────────────────────────────────────────
+    def list_wg_peers(self, iface: str) -> list[str]:
+        """Public keys currently configured on ``iface`` (``wg show … peers``)."""
+        res = self._x.run(["wg", "show", iface, "peers"])
+        if not res.ok:
+            return []
+        return [ln.strip() for ln in (res.stdout or "").splitlines() if ln.strip()]
+
+    def ensure_root_qdisc(self, iface: str) -> AgentResult:
+        """Idempotently ensure the htb root qdisc exists. We ADD only when
+        absent (checking ``tc qdisc show``) — never ``replace``, which would
+        destroy the child classes of peers already shaped."""
+        show = self._x.run(["tc", "qdisc", "show", "dev", iface])
+        if show.ok and "htb" in (show.stdout or "") and "1:" in (show.stdout or ""):
+            return AgentResult(True, detail="root qdisc present")
+        return self._run_all([build_root_qdisc_argv(iface)])
+
+    def remove_peer(self, public_key: str, iface: str) -> AgentResult:
+        """Remove a WG peer + its shaper, and free its classid. Used by the
+        reconciler for peers IT previously added that are no longer desired."""
+        cmds = [build_wireguard_peer_remove_argv(public_key, iface)]
+        minor = self._alloc.minor_for(public_key)
+        if minor is not None:
+            cmds += build_peer_shaper_delete_argv(iface, minor)
+        res = self._run_all(cmds)
+        if res.ok:
+            self._alloc.release(public_key)
+        return res
+
+    def reconcile_once(self, source: PeerSource, iface: str = "wg-data") -> ReconcileResult:
+        """One reconcile tick. Idempotent + safe-by-default:
+
+        - fetch the desired peer set (transient fetch error → ok=False, no crash);
+        - ADD/UPDATE each desired peer (skip when unchanged → true no-op in sync);
+        - REMOVE only peers THIS process added that are no longer desired —
+          NEVER an operator-added peer (one not in our managed set);
+        - per-peer command failures are recorded, the loop continues (non-fatal).
+        """
+        try:
+            desired = source.fetch_desired()
+        except Exception as exc:  # noqa: BLE001 — a flaky fetch must not kill the daemon
+            return ReconcileResult(ok=False, detail=f"peer fetch failed: {type(exc).__name__}: {exc}")
+
+        desired_by_key = {p.public_key: p for p in desired}
+        current = set(self.list_wg_peers(iface))
+        added: list[str] = []
+        removed: list[str] = []
+        errors: list[str] = []
+
+        # ADD / UPDATE — apply only when the peer is missing or its spec changed.
+        for key in sorted(desired_by_key):
+            peer = desired_by_key[key]
+            if key in current and self._managed.get(key) == peer:
+                continue  # already in sync → no-op
+            spec = WireguardPeerSpec(public_key=key, allowed_ip=peer.allowed_ip,
+                                     interface=iface, rate_mbit=peer.rate_mbit)
+            res = self.apply_wireguard_peer(spec)
+            if res.ok:
+                self._managed[key] = peer
+                added.append(key)
+            else:
+                errors.append(key)
+
+        # REMOVE — only managed peers (added by us) that are no longer desired.
+        for key in sorted(set(self._managed) - set(desired_by_key)):
+            res = self.remove_peer(key, iface)
+            if res.ok:
+                self._managed.pop(key, None)
+                removed.append(key)
+            else:
+                errors.append(key)
+
+        return ReconcileResult(ok=not errors, in_sync=not added and not removed,
+                               added=added, removed=removed, errors=errors)
+
+    def serve(self, source: PeerSource, *, iface: str = "wg-data",
+              interval_s: float = 30, max_ticks: int | None = None,
+              sleep: Callable[[float], None] = time.sleep) -> list[ReconcileResult]:
+        """Run the reconcile loop. ``max_ticks`` bounds it for tests (None =
+        forever in production). Each tick is non-fatal; the loop never raises."""
+        results: list[ReconcileResult] = []
+        tick = 0
+        while max_ticks is None or tick < max_ticks:
+            results.append(self.reconcile_once(source, iface))
+            tick += 1
+            if max_ticks is not None and tick >= max_ticks:
+                break
+            sleep(interval_s)
+        return results
+
+    def check_wg_port(self, desired_port: int, *, pick_next: bool = False) -> tuple[bool, int | None, str]:
+        """Detect a WG data-port clash via ``ss -lun``.
+
+        Returns ``(free, port_to_use, detail)``:
+        - free=True  → ``desired_port`` is available (port_to_use == desired).
+        - free=False, pick_next=False → clash; port_to_use=None; actionable detail.
+        - free=False, pick_next=True  → port_to_use = next free port (or None)."""
+        res = self._x.run(["ss", "-lun"])
+        used = parse_listening_udp_ports(res.stdout) if res.ok else set()
+        if desired_port not in used:
+            return True, desired_port, f"udp/{desired_port} is free"
+        if not pick_next:
+            return (False, None,
+                    f"udp/{desired_port} is already in use (ss -lun). Choose a free "
+                    f"WG_DATA_PORT that doesn't clash with the mgmt/data WG already "
+                    f"on this box, or re-run with port auto-pick.")
+        chosen = pick_free_port(desired_port + 1, used)
+        if chosen is None:
+            return False, None, f"no free UDP port found near {desired_port}"
+        return False, chosen, f"udp/{desired_port} in use; next free is udp/{chosen}"
 
     def list_active_sessions(self) -> list[Session]:
         res = self._x.run(["accel-cmd", "show", "sessions"])
@@ -372,33 +715,51 @@ class VpsAgent:
         return self._run_all([["certbot", "renew", "--quiet"]])
 
     def ensure_cert(self, fqdn: str, expected_ip: str, email: str, *,
+                    challenge: str = CHALLENGE_AUTO, cf_credentials_path: str = "",
                     timeout_s: float = 300, interval_s: float = 10,
                     staging: bool = False,
                     sleep: Callable[[float], None] = time.sleep,
                     monotonic: Callable[[], float] = time.monotonic) -> AgentResult:
-        """Wait for DNS, then issue the cert (certbot HTTP-01). Non-fatal:
+        """Issue the cert. Picks the ACME challenge, then issues. Non-fatal:
 
-        - DNS never resolves to this VPS within ``timeout_s`` → return ok=False
-          with an actionable detail, WITHOUT calling certbot (no pointless
-          challenge that would just fail).
-        - certbot itself fails → return ok=False with certbot's rc/stderr.
+        Challenge selection (``challenge=auto`` default): probe port 80 → use
+        HTTP-01 if reachable, else fall back to DNS-01 (Cloudflare). Explicit
+        ``http01``/``dns01`` override the probe.
 
-        The caller (setup script) treats a False result as a warning, not a
-        hard boot failure — accel-ppp stays installed and the operator can fix
-        DNS and re-run (idempotent)."""
-        resolver = self._resolver or SystemResolver()
-        wait = wait_for_dns(fqdn, expected_ip, resolver=resolver,
-                            timeout_s=timeout_s, interval_s=interval_s,
-                            sleep=sleep, monotonic=monotonic)
-        if not wait.ok:
-            return AgentResult(False, detail=f"DNS wait failed: {wait.detail}")
-        argv = build_certbot_argv(fqdn, email, staging=staging)
+        - HTTP-01: the A record must point HERE, so we wait for DNS first; on
+          timeout return ok=False WITHOUT calling certbot.
+        - DNS-01: validates a TXT record via the Cloudflare plugin, so the A
+          record need not resolve to us yet — we skip the wait. Requires
+          ``cf_credentials_path`` (the CF token INI on the VPS).
+
+        Always non-fatal: a False result is a warning to the caller, never a
+        hard boot failure (accel-ppp stays installed; fix + re-run is idempotent)."""
+        prober = self._prober or SystemPort80Prober()
+        port80_open = prober.is_open(expected_ip) if challenge == CHALLENGE_AUTO else False
+        mode = select_challenge(challenge, port80_open=port80_open)
+
+        if mode == CHALLENGE_DNS01 and not cf_credentials_path:
+            return AgentResult(False, detail=(
+                "DNS-01 selected (port 80 unreachable or forced) but no Cloudflare "
+                "credentials file — set CF_DNS_CREDENTIALS / CERT_CHALLENGE. "
+                "See README security trade-off."))
+
+        if mode == CHALLENGE_HTTP01:
+            resolver = self._resolver or SystemResolver()
+            wait = wait_for_dns(fqdn, expected_ip, resolver=resolver,
+                                timeout_s=timeout_s, interval_s=interval_s,
+                                sleep=sleep, monotonic=monotonic)
+            if not wait.ok:
+                return AgentResult(False, detail=f"DNS wait failed: {wait.detail}")
+
+        argv = build_certbot_argv(fqdn, email, challenge=mode, staging=staging,
+                                  cf_credentials_path=cf_credentials_path)
         res = self._x.run(argv)
         if not res.ok:
             return AgentResult(False, commands=[argv],
-                               detail=f"certbot failed (rc={res.returncode}): "
+                               detail=f"certbot ({mode}) failed (rc={res.returncode}): "
                                       f"{(res.stderr or res.stdout).strip()}")
-        return AgentResult(True, commands=[argv], detail=f"cert issued for {fqdn}")
+        return AgentResult(True, commands=[argv], detail=f"cert issued for {fqdn} via {mode}")
 
     def reload_accel_ppp(self) -> AgentResult:
         """Reload accel-ppp so it serves a fresh cert. Tries graceful reload
@@ -415,24 +776,47 @@ class VpsAgent:
         return AgentResult(False, commands=ran, detail="all reload methods failed")
 
 
-# ── CLI entrypoint (skeleton) ─────────────────────────────────────────────--
+def _urllib_fetch_json(url: str, *, token: str = "", timeout: float = 15.0) -> dict:
+    """Minimal GET→JSON for the live peer source. LAB-PENDING: the panel's
+    /wg-peers contract is authed with an X-Proxy-Token HMAC; wire that exact
+    signing here before live use. The CONTRACT PARSING is already tested."""
+    from urllib.request import Request, urlopen
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["X-Proxy-Token"] = token  # LAB-PENDING: replace with HMAC scheme
+    req = Request(url, headers=headers, method="GET")
+    with urlopen(req, timeout=timeout) as resp:  # noqa: S310 — operator-owned URL
+        return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+# ── CLI entrypoint ─────────────────────────────────────────────────────────--
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="HobeRadius VPS agent (skeleton)")
-    parser.add_argument("--serve", action="store_true", help="run as a daemon (LAB-PENDING)")
+    parser = argparse.ArgumentParser(description="HobeRadius VPS agent")
+    parser.add_argument("--serve", action="store_true", help="run the reconcile daemon")
     parser.add_argument("--wg-iface", default="wg-data")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list-sessions", action="store_true")
     # Cert automation (called by the setup script / certbot deploy-hook).
     parser.add_argument("--ensure-cert", action="store_true",
-                        help="wait for DNS then issue the LE cert (certbot HTTP-01)")
+                        help="select challenge, (wait for DNS,) issue the LE cert")
     parser.add_argument("--reload-accel", action="store_true",
                         help="reload accel-ppp (certbot deploy-hook target)")
+    parser.add_argument("--check-wg-port", type=int, default=0,
+                        help="check the WG data UDP port is free; exit 1 if in use")
     parser.add_argument("--subdomain", default="", help="FQDN, e.g. client5.hoberadius.com")
     parser.add_argument("--vps-ip", default="", help="this VPS public IP the FQDN must resolve to")
     parser.add_argument("--email", default="", help="certbot registration email")
+    parser.add_argument("--challenge", default=CHALLENGE_AUTO,
+                        choices=[CHALLENGE_AUTO, CHALLENGE_HTTP01, CHALLENGE_DNS01],
+                        help="ACME challenge (auto probes port 80)")
+    parser.add_argument("--cf-credentials", default="",
+                        help="Cloudflare credentials INI for DNS-01")
     parser.add_argument("--timeout", type=float, default=300.0, help="DNS-wait timeout (s)")
-    parser.add_argument("--interval", type=float, default=10.0, help="DNS-wait poll interval (s)")
+    parser.add_argument("--interval", type=float, default=10.0,
+                        help="DNS-wait poll / reconcile interval (s)")
     parser.add_argument("--staging", action="store_true", help="use LE staging (dry-run)")
+    parser.add_argument("--peer-source-url", default="", help="panel wg-peers contract URL")
+    parser.add_argument("--peer-source-token", default="", help="X-Proxy-Token for the peer source")
     args = parser.parse_args(argv)
 
     agent = VpsAgent(SystemExecutor(dry_run=args.dry_run))
@@ -440,11 +824,16 @@ def main(argv: list[str] | None = None) -> int:
         res = agent.reload_accel_ppp()
         print(f"vps-agent reload-accel: {res.detail}")
         return 0 if res.ok else 1
+    if args.check_wg_port:
+        free, port, detail = agent.check_wg_port(args.check_wg_port)
+        print(f"vps-agent check-wg-port: {detail}")
+        return 0 if free else 1
     if args.ensure_cert:
         if not (args.subdomain and args.vps_ip and args.email):
             print("vps-agent --ensure-cert requires --subdomain, --vps-ip and --email")
             return 2
         res = agent.ensure_cert(args.subdomain, args.vps_ip, args.email,
+                                challenge=args.challenge, cf_credentials_path=args.cf_credentials,
                                 timeout_s=args.timeout, interval_s=args.interval,
                                 staging=args.staging)
         print(f"vps-agent ensure-cert: {res.detail}")
@@ -456,9 +845,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{s.username}\t{s.ip}\t{s.iface}\t{s.type}")
         return 0
     if args.serve:
-        # LAB-PENDING: the daemon loop (poll the panel/bridge for peer specs,
-        # reconcile WG peers + shapers, report sessions) is not implemented yet.
-        print("vps-agent: --serve is a skeleton stub; nothing to do. Exiting cleanly.")
+        if not args.peer_source_url:
+            print("vps-agent --serve requires --peer-source-url (the panel wg-peers contract)")
+            return 2
+        source = HttpPeerSource(
+            args.peer_source_url,
+            lambda u: _urllib_fetch_json(u, token=args.peer_source_token))
+        print(f"vps-agent: reconcile daemon on {args.wg_iface}, every {args.interval:.0f}s")
+        # max_ticks=None → run forever (systemd restarts on failure).
+        agent.serve(source, iface=args.wg_iface, interval_s=args.interval, max_ticks=None)
         return 0
     parser.print_help()
     return 0

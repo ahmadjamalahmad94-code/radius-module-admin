@@ -6,5 +6,6 @@ deploy/accel-ppp/*.sh     text eol=lf
 deploy/accel-ppp/*.yaml   text eol=lf
 deploy/accel-ppp/*.tmpl   text eol=lf
 deploy/accel-ppp/*.md     text eol=lf
+deploy/accel-ppp/**/*.md  text eol=lf
 deploy/accel-ppp/**/*.py  text eol=lf
 deploy/accel-ppp/*.py     text eol=lf
