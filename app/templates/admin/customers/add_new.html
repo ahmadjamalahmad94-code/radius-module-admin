@@ -1128,6 +1128,37 @@
               </div>
             </div>
 
+            {# عنوان IP للخادم VPS — اتصالات البيانات (accel-ppp 2c) #}
+            <div class="cadd-field" id="field-vps_ip">
+              <label class="cadd-label" for="vps_ip">
+                عنوان IP للخادم VPS
+                <span class="cadd-label-opt">(اختياري)</span>
+              </label>
+              <div class="cadd-input-wrap">
+                <i class="fa-solid fa-server cadd-input-icon" aria-hidden="true"></i>
+                <input
+                  class="cadd-input {{ 'is-error' if form_errors and 'vps_ip' in form_errors else '' }}"
+                  type="text"
+                  id="vps_ip"
+                  name="vps_ip"
+                  value="{{ (form_data and form_data.get('vps_ip')) or (customer and customer.vps_ip) or '' }}"
+                  placeholder="203.0.113.10"
+                  dir="ltr"
+                  inputmode="numeric"
+                  aria-describedby="hint-vps_ip err-vps_ip"
+                >
+              </div>
+              <div class="cadd-field-error {{ 'is-visible' if form_errors and 'vps_ip' in form_errors }}"
+                   id="err-vps_ip" role="alert">
+                <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+                {{ form_errors.vps_ip if form_errors and 'vps_ip' in form_errors else 'عنوان IP غير صالح.' }}
+              </div>
+              <div class="cadd-field-hint" id="hint-vps_ip">
+                <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                العنوان العام لخادم RADIUS (accel-ppp) الذي يخدم اتصالات البيانات. تُوجَّه إليه نقطة النطاق الفرعي عبر Cloudflare.
+              </div>
+            </div>
+
             {# Realm #}
             <div class="cadd-field" id="field-realm">
               <label class="cadd-label" for="realm">

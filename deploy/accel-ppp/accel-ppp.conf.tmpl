@@ -1,0 +1,143 @@
+# ============================================================================
+# accel-ppp.conf — DATA-connection BRAS for a customer RADIUS VPS
+# HobeRadius — design/accel-ppp-data (Phase 1 TEMPLATE; not yet deployed)
+#
+# Rendered per-VPS by radius-module (Phase 2). Serves end-user DATA VPNs
+# (SSTP / PPTP / L2TP) directly on the customer's VPS, RADIUS-driven:
+#   * speed  → shaper module, attr=Filter-Id (set by RADIUS Access-Accept)
+#   * quota  → RADIUS accounting (interim) + server-side Disconnect at cap
+#   * TLS    → per-client Let's Encrypt cert for SSTP (clientN.hoberadius.com)
+#
+# TEMPLATE VARS (rendered by radius-module; shown as {{ ... }}):
+#   {{ POOL_RANGE }}        end-user IP pool, e.g. 10.20.0.2-10.20.255.254
+#   {{ POOL_GATEWAY }}      BRAS-side gateway IP, e.g. 10.20.0.1
+#   {{ DNS1 }} {{ DNS2 }}   pushed DNS, e.g. 1.1.1.1 / 1.0.0.1
+#   {{ RADIUS_SECRET }}     shared secret between accel-ppp and local RADIUS
+#   {{ RADIUS_AUTH_PORT }}  local RADIUS auth port (default 1812)
+#   {{ RADIUS_ACCT_PORT }}  local RADIUS acct port (default 1813)
+#   {{ NAS_IDENTIFIER }}    this VPS identity, e.g. clientN
+#   {{ COA_PORT }}          DM/CoA listen port (default 3799)
+#   {{ SSTP_CERT_FULLCHAIN }}  /etc/letsencrypt/live/clientN.hoberadius.com/fullchain.pem
+#   {{ SSTP_CERT_KEY }}        /etc/letsencrypt/live/clientN.hoberadius.com/privkey.pem
+#   {{ SUBDOMAIN }}         clientN.hoberadius.com (informational / logs)
+#
+# NOTE: this is a STUDIED TEMPLATE. The exact shaper rate form (Filter-Id)
+# and Session-Octets-Limit support MUST be validated against the pinned
+# accel-ppp version in the Phase-4 lab step before any live use.
+# ============================================================================
+
+[modules]
+# --- access protocols (DATA connection types) ---
+sstp                 # TLS PPP over 443 — primary (works through firewalls/NAT)
+pptp                 # legacy GRE+1723 — weak crypto; offered for compatibility
+l2tp                 # UDP 1701, optionally over IPsec
+# --- AAA ---
+radius               # auth + accounting + DM/CoA against the LOCAL radius-module
+# --- traffic control ---
+shaper               # per-session rate-limit driven by a RADIUS attribute
+# --- IP assignment ---
+ippool               # hand out end-user addresses from the pool below
+# --- logging / ops ---
+log_file
+# auth_mschap_v2 etc. are built-in to ppp; no extra module line needed
+
+[core]
+log-error=/var/log/accel-ppp/core.log
+thread-count=2       # 1-vCPU VPS friendly; raise with cores
+
+[log]
+log-file=/var/log/accel-ppp/accel-ppp.log
+copy=1
+level=3             # 0=min .. 5=debug; 3 = info (raise to 4/5 only when debugging)
+
+[ppp]
+verbose=1
+min-mtu=1280
+mtu=1400            # safe under SSTP/TLS + L2TP overhead
+mru=1400
+# Single session per username — a DATA subscriber is one device at a time.
+single-session=replace
+# Accounting cadence: drives the server-side quota counter (see [radius]).
+# MUST stay small enough that 5 GB isn't blown far past the cap between
+# updates (60s @ 10Mbit ~ 75 MB worst-case overshoot — acceptable).
+lcp-echo-interval=30
+lcp-echo-failure=3
+ipv4=require
+ipv6=deny
+
+[auth]
+# Accept the strong PPP auth methods; refuse PAP/CHAP plaintext-ish ones
+# unless a client needs them. MSCHAP-v2 is the SSTP/PPTP/L2TP default.
+methods=MSCHAP-v2,MSCHAP-v1
+# (PAP intentionally omitted — enable only if a specific client requires it)
+
+[radius]
+# All AAA goes to the LOCAL radius-module on this same VPS (loopback) —
+# DATA auth never leaves the customer's box (no proxy, no CHR).
+nas-identifier={{ NAS_IDENTIFIER }}
+nas-ip-address=127.0.0.1
+server=127.0.0.1,{{ RADIUS_SECRET }},auth-port={{ RADIUS_AUTH_PORT }},acct-port={{ RADIUS_ACCT_PORT }},req-limit=0,fail-time=0
+dae-server=127.0.0.1:{{ COA_PORT }},{{ RADIUS_SECRET }}   # DM/CoA listener (Disconnect at quota, CoA for speed change)
+acct-interim-interval=60                                   # interim updates → quota accounting
+acct-timeout=3
+timeout=5
+max-try=3
+# Verbose accounting so radius-module sees in+out octets for the cap.
+acct-delay-time=1
+
+[shaper]
+# Per-session speed comes from RADIUS as the Filter-Id attribute. accel-ppp
+# parses Filter-Id into a rate. radius-module sets Filter-Id from the plan's
+# Mbit (see docs/design/ACCEL_PPP_DATA_CONNECTIONS.md §3.1).
+#   attr=Filter-Id        which RADIUS attr carries the rate
+#   verbose=1             log applied rates
+#   vendor / rate units   VALIDATE in lab (kbit vs bit; symmetric vs rx/tx)
+attr=Filter-Id
+verbose=1
+# Optional default if RADIUS sends no rate (safety; keep modest):
+#down-limiter=tbf
+#up-limiter=police
+
+[ip-pool]
+# End-user addresses. Gateway is the BRAS side. Keep OUTSIDE the fleet
+# reserves (10.98/10.99/10.51) and outside the VPS's own subnets.
+gw-ip-address={{ POOL_GATEWAY }}
+{{ POOL_RANGE }}
+
+[dns]
+dns1={{ DNS1 }}
+dns2={{ DNS2 }}
+
+[sstp]
+# SSTP over TLS on 443. The cert is the per-client Let's Encrypt cert for
+# {{ SUBDOMAIN }} — so native Windows SSTP trusts it with NO import
+# (the key advantage over the CHR self-signed path).
+verbose=1
+accept=ssl
+ssl-pemfile={{ SSTP_CERT_FULLCHAIN }}
+ssl-keyfile={{ SSTP_CERT_KEY }}
+# Pin modern TLS; drop legacy protocols.
+ssl-protocol=tlsv1.2,tlsv1.3
+port=443
+
+[pptp]
+# Legacy. GRE + TCP 1723. Weak (MPPE/MSCHAP) — offered for old clients only.
+verbose=1
+echo-interval=30
+echo-failure=3
+
+[l2tp]
+# UDP 1701. use-ipsec/secret handled by the host IPsec stack when enabled;
+# for a pure-L2TP (no IPsec) offering keep it simple here.
+verbose=1
+hello-interval=30
+
+[client-ip-range]
+# Restrict which client source nets may even attempt (optional hardening).
+# 0.0.0.0/0 = anyone (public DATA service). Tighten per deployment.
+0.0.0.0/0
+
+[cli]
+# Local admin socket only (the vps-agent reads live sessions via this).
+telnet=127.0.0.1:2000
+tcp=127.0.0.1:2001

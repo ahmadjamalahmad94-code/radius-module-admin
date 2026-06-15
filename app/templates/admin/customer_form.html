@@ -59,6 +59,11 @@
           <input class="hub-input" name="runtime_url" value="{{ customer.runtime_url or '' }}" placeholder="https://radius.example.com أو http://187.77.70.18/">
           <div class="hub-field-hint">يظهر للعميل كرابط دخول أو سيرفر تشغيل. مزامنة كلمات المرور تتم من الريدياس إلى لوحة التراخيص عبر HTTPS.</div>
         </div>
+        <div class="hub-field full">
+          <label>عنوان IP للخادم VPS <span class="hub-pill hub-pill--blue">اتصالات البيانات</span></label>
+          <input class="hub-input" name="vps_ip" value="{{ customer.vps_ip or '' }}" placeholder="203.0.113.10" dir="ltr" inputmode="numeric">
+          <div class="hub-field-hint">العنوان العام لخادم RADIUS الخاص بالعميل (accel-ppp). تُوجَّه إليه نقطة النطاق الفرعي عبر Cloudflare ليُصدر الخادم شهادته بنفسه. اتركه فارغًا حتى تجهيز الخادم.</div>
+        </div>
         <div class="hub-field">
           <label>{{ _('الحالة') }}</label>
           <select class="hub-select" name="status">
@@ -94,4 +99,64 @@
     </div>
   </form>
 {% endcall %}
+
+{% if not is_new %}
+  {# accel-ppp DATA connections (2c): read-only DNS + cert status for the
+     customer's RADIUS VPS, plus the Cloudflare subdomain sync action. The
+     panel only ensures the subdomain resolves — the VPS issues its own cert. #}
+  {% set _dns = customer.dns_status %}
+  {% set _cert = customer.cert_status or 'unknown' %}
+  {% set _dns_labels = {'synced': 'مُزامَن', 'missing': 'لم يُنشأ بعد', 'unset': 'لا يوجد IP'} %}
+  {% set _cert_labels = {'active': 'فعّالة', 'pending': 'قيد الإصدار', 'error': 'خطأ', 'unknown': 'غير معروفة'} %}
+  {% call hub.section("اتصال البيانات (DATA) — النطاق والشهادة", icon="globe") %}
+    <div class="hub-form-grid">
+      <div class="hub-field">
+        <label>النطاق الفرعي (FQDN)</label>
+        <input class="hub-input" value="{{ data_fqdn or '—' }}" dir="ltr" readonly>
+        <div class="hub-field-hint">يُوجَّه هذا النطاق إلى عنوان IP للخادم VPS عبر Cloudflare (سجل A، DNS فقط).</div>
+      </div>
+      <div class="hub-field">
+        <label>عنوان IP للخادم VPS</label>
+        <input class="hub-input" value="{{ customer.vps_ip or '—' }}" dir="ltr" readonly>
+      </div>
+      <div class="hub-field">
+        <label>حالة سجل DNS</label>
+        <input class="hub-input" value="{{ _dns_labels.get(_dns, _dns) }}{% if customer.dns_synced_at %} — آخر مزامنة {{ customer.dns_synced_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}" readonly>
+      </div>
+      <div class="hub-field">
+        <label>حالة الشهادة (للقراءة فقط)</label>
+        <input class="hub-input" value="{{ _cert_labels.get(_cert, _cert) }}" readonly>
+        <div class="hub-field-hint">الشهادة يُصدرها الخادم VPS بنفسه عبر certbot (HTTP-01). اللوحة لا تُصدر الشهادات؛ تعرض الحالة فقط.</div>
+      </div>
+    </div>
+
+    {% if not cloudflare_configured %}
+      <div class="hub-alert hub-alert--warning" style="margin-top:12px">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        لم يُضبط رمز Cloudflare API بعد. أضِفه من
+        <a href="{{ url_for('admin.settings_platform') }}">إعدادات المنصة</a>
+        لتفعيل مزامنة النطاق الفرعي.
+      </div>
+    {% endif %}
+
+    <div class="hub-form-foot" style="padding-top:16px; gap:10px; display:flex; flex-wrap:wrap">
+      <form method="post" action="{{ url_for('admin.customer_dns_sync', customer_id=customer.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="action" value="sync">
+        <button class="hub-btn hub-btn--primary" type="submit" {{ 'disabled' if not customer.vps_ip else '' }}>
+          <i class="fa-solid fa-cloud-arrow-up"></i> مزامنة النطاق الفرعي (DNS)
+        </button>
+      </form>
+      {% if customer.dns_record_id %}
+        <form method="post" action="{{ url_for('admin.customer_dns_sync', customer_id=customer.id) }}" style="display:inline">
+          {{ csrf_input() }}
+          <input type="hidden" name="action" value="remove">
+          <button class="hub-btn hub-btn--ghost" type="submit" data-confirm="حذف سجل DNS للنطاق الفرعي لهذا العميل؟">
+            <i class="fa-solid fa-trash-can"></i> حذف سجل DNS
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  {% endcall %}
+{% endif %}
 {% endblock %}

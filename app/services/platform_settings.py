@@ -82,6 +82,7 @@ _GROUP_LIC  = "سياسة فحص التراخيص"
 _GROUP_WA   = "واتساب — إعدادات تشغيل"
 _GROUP_LOG  = "السجلات"
 _GROUP_SEC  = "مفاتيح تكامل (سرّ مشترك)"
+_GROUP_DNS  = "Cloudflare DNS (اتصالات البيانات)"
 
 
 # Curated migration set — operational knobs that today live only in env vars.
@@ -187,6 +188,17 @@ KEYS: dict[str, Spec] = {
     # by the existing /admin/settings (WhatsApp Cloud + Embedded sub-sections)
     # which store it encrypted under its own namespace. Listing it again here
     # would split the source of truth.
+    # ── Cloudflare DNS — accel-ppp DATA connections (2c) ───────────────
+    # Scoped API token (Zone.DNS:Edit on the hoberadius.com zone) used to
+    # point clientN.<zone> at each customer's RADIUS VPS so its certbot can
+    # issue the SSTP cert. Stored encrypted; real DNS calls are gated behind
+    # this being set (see app/services/cloudflare/__init__.py).
+    "CLOUDFLARE_API_TOKEN": Spec(
+        "CLOUDFLARE_API_TOKEN", "secret", "", _GROUP_DNS,
+        "رمز Cloudflare API",
+        "رمز محدود النطاق بصلاحية Zone.DNS:Edit على نطاق hoberadius.com. "
+        "يُستخدم لإنشاء سجل A للنطاق الفرعي للعميل (DNS فقط، بدون بروكسي).",
+    ),
 }
 
 

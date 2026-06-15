@@ -86,6 +86,44 @@ class Customer(TimestampMixin, db.Model):
     # bumps this to 10 / 50 / 100 to unlock the customer.
     speed_unlock_mbps = db.Column(db.Integer, default=0, nullable=False)
 
+    # ── accel-ppp DATA connections (2c) ────────────────────────────────
+    # The customer's own RADIUS VPS serves DATA VPNs directly via accel-ppp
+    # (no proxy, no CHR). The panel's role is narrow (see
+    # docs/design/ACCEL_PPP_DATA_CONNECTIONS.md §1):
+    #   1. store this VPS public IP,
+    #   2. point <subdomain>.<zone> at it via the Cloudflare DNS API so the
+    #      VPS's own certbot (HTTP-01) can issue the SSTP cert,
+    #   3. surface the cert + DNS state read-only (the VPS reports cert state
+    #      later over the bridge; the panel never issues certs).
+    # Public IPv4/IPv6 of the customer's RADIUS VPS. Empty until the owner
+    # fills it on the customer create/edit form.
+    vps_ip = db.Column(db.String(64), default="", nullable=False)
+    # Cloudflare DNS record id for <subdomain>.<zone> → vps_ip. Stored so the
+    # upsert/delete calls are idempotent (update the same record, never
+    # duplicate). Empty when no record has been created yet.
+    dns_record_id = db.Column(db.String(64), default="", nullable=False)
+    # When the A record was last confirmed against Cloudflare. NULL = never.
+    dns_synced_at = db.Column(db.DateTime, nullable=True)
+    # Read-only cert state surfaced on the customer record. The VPS's certbot
+    # owns issuance; this column is a mirror the bridge updates later. Values:
+    # "unknown" | "pending" | "active" | "error". Default "unknown" — the
+    # panel only knows the cert exists once the VPS reports it.
+    cert_status = db.Column(db.String(24), default="unknown", nullable=False)
+
+    @property
+    def dns_status(self) -> str:
+        """Derived DNS-record state for the read-only status surface.
+
+        "synced"  — an A record id is on file (the subdomain points at the VPS).
+        "missing" — a VPS IP is set but no record has been created yet.
+        "unset"   — no VPS IP configured, so nothing to point anywhere.
+        """
+        if (self.dns_record_id or "").strip():
+            return "synced"
+        if (self.vps_ip or "").strip():
+            return "missing"
+        return "unset"
+
     @property
     def portal_config(self) -> dict:
         return json_loads(self.portal_config_json, {})

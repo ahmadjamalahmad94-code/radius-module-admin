@@ -561,9 +561,17 @@ def ensure_schema_compatibility(app: Flask) -> None:
     # subdomain='' until assign_subdomain() runs, speed_unlock_mbps=0
     # which the resolver collapses to the locked 5M floor.
     if "customers" in tables:
+        datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
         _add_columns_if_missing("customers", {
             "subdomain": "VARCHAR(120) NOT NULL DEFAULT ''",
             "speed_unlock_mbps": "INTEGER NOT NULL DEFAULT 0",
+            # accel-ppp DATA connections (2c): VPS public IP + Cloudflare DNS
+            # record bookkeeping + read-only cert mirror. Additive; existing
+            # rows default to empty/unknown so the CHR path is untouched.
+            "vps_ip": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "dns_record_id": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "dns_synced_at": datetime_type,
+            "cert_status": "VARCHAR(24) NOT NULL DEFAULT 'unknown'",
         })
     if "plans" in tables:
         _add_columns_if_missing("plans", {

@@ -1718,7 +1718,20 @@ def _should_apply_vpn_plan_defaults() -> bool:
 @login_required
 def customer_edit(customer_id: int):
     customer = db.get_or_404(Customer, customer_id)
-    return render_template("admin/customer_form.html", customer=customer, is_new=False)
+    return render_template("admin/customer_form.html", customer=customer, is_new=False,
+                           **_customer_data_ctx(customer))
+
+
+def _customer_data_ctx(customer: Customer) -> dict:
+    """Read-only DATA-connection (accel-ppp 2c) context for the customer form:
+    the resolved FQDN + whether Cloudflare is configured. The cert/DNS status
+    fields live on the row itself."""
+    from ..services.customer_subdomain import customer_fqdn
+    from ..services import cloudflare
+    return {
+        "data_fqdn": customer_fqdn(customer),
+        "cloudflare_configured": cloudflare.is_configured(),
+    }
 
 
 @bp.post("/customers/<int:customer_id>/edit")
@@ -1729,10 +1742,41 @@ def customer_update(customer_id: int):
         _fill_customer(customer)
     except CustomerControlValidationError as exc:
         flash(str(exc), "error")
-        return render_template("admin/customer_form.html", customer=customer, is_new=False), 400
+        return render_template("admin/customer_form.html", customer=customer, is_new=False,
+                               **_customer_data_ctx(customer)), 400
     audit("customer_updated", "customer", str(customer.id), f"Updated customer {customer.company_name}")
     db.session.commit()
     flash("تم تحديث العميل.", "success")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/dns-sync")
+@login_required
+def customer_dns_sync(customer_id: int):
+    """Point clientN.<zone> at the customer's RADIUS VPS via Cloudflare (2c).
+
+    The panel's whole job in the cert flow: make the subdomain resolve to the
+    VPS so its own certbot (HTTP-01) can issue the SSTP cert. ``action=remove``
+    tears the record down. We never issue certs here. Gated behind a configured
+    Cloudflare token — reports ``not_configured`` (no network) when unset.
+    """
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import data_connection_dns as dns
+
+    action = (request.form.get("action") or "sync").strip().lower()
+    if action == "remove":
+        result = dns.remove_subdomain_record(customer, commit=False)
+    else:
+        result = dns.ensure_subdomain_record(customer, commit=False)
+
+    audit(
+        "customer_dns_sync", "customer", str(customer.id),
+        f"DNS {action} for {result.fqdn or customer.subdomain}: {result.status}",
+        {"action": action, "status": result.status, "fqdn": result.fqdn,
+         "record_id": result.record_id},
+    )
+    db.session.commit()
+    flash(result.message_ar, "success" if result.ok else "error")
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
@@ -1776,6 +1820,7 @@ def _fill_customer(customer: Customer) -> None:
         customer.dial_code = dial_raw if re.match(r"^\+\d{1,7}$", dial_raw) else ""
     customer.city = (request.form.get("city") or "").strip()[:100]
     customer.runtime_url = _clean_runtime_url(request.form.get("runtime_url") or "")
+    customer.vps_ip = _clean_vps_ip(request.form.get("vps_ip") or "")
     customer.notes = (request.form.get("notes") or "").strip()
     validate_unique_customer_contact(customer, customer.email, customer.phone)
     status = (request.form.get("status") or "active").strip().lower()
@@ -1793,6 +1838,24 @@ def _clean_runtime_url(value: str) -> str:
     text = str(value or "").strip()[:255]
     if text and not text.lower().startswith(("http://", "https://")):
         raise CustomerControlValidationError("رابط الريدياس يجب أن يبدأ بـ http:// أو https://.")
+    return text
+
+
+def _clean_vps_ip(value: str) -> str:
+    """The customer's RADIUS VPS public IP (accel-ppp DATA connections, 2c).
+
+    Empty is allowed (the field is optional until the owner provisions the
+    VPS). A non-empty value must be a valid IPv4/IPv6 address — the panel
+    points clientN.<zone> at it via Cloudflare, so a garbage value would
+    create a dead DNS record."""
+    text = str(value or "").strip()[:64]
+    if not text:
+        return ""
+    import ipaddress
+    try:
+        ipaddress.ip_address(text)
+    except ValueError as exc:
+        raise CustomerControlValidationError("عنوان IP للخادم VPS غير صالح.") from exc
     return text
 
 
