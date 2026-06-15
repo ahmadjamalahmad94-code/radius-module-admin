@@ -92,13 +92,16 @@ def ensure_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSy
     if not _valid_ip(ip):
         return DnsSyncResult(STATUS_INVALID_IP, ip=ip)
 
+    # Gate on the token BEFORE assigning — on a fresh, unconfigured panel we
+    # don't want a no-op click to persist a subdomain write. customer_fqdn()
+    # still returns the deterministic clientN FQDN for display without writing.
+    client = cloudflare.get_client()
+    if client is None:
+        return DnsSyncResult(STATUS_NOT_CONFIGURED, fqdn=customer_fqdn(customer), ip=ip)
+
     # Assign clientN now so the FQDN is concrete (no-op if already set).
     assign_subdomain(customer, commit=False)
     fqdn = customer_fqdn(customer)
-
-    client = cloudflare.get_client()
-    if client is None:
-        return DnsSyncResult(STATUS_NOT_CONFIGURED, fqdn=fqdn, ip=ip)
 
     res = client.upsert_a_record(get_zone_base(), fqdn, ip)
     if not res.ok:
@@ -116,21 +119,17 @@ def ensure_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSy
 
 
 def remove_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSyncResult:
-    """Delete the customer's A record and clear the bookkeeping. Idempotent —
-    a missing record (or a missing token) is not an error for the caller's
-    intent of "make sure it's gone"."""
+    """Delete the customer's DNS record and clear the bookkeeping. Idempotent —
+    an already-absent record is success (the client treats a 404 as gone)."""
     fqdn = customer_fqdn(customer)
     client = cloudflare.get_client()
     if client is None:
-        # Can't reach Cloudflare; still clear local state so the row reflects
-        # "no record" — the operator removed the token deliberately.
-        customer.dns_record_id = ""
-        customer.dns_synced_at = None
-        if commit:
-            db.session.commit()
-        else:
-            db.session.flush()
-        return DnsSyncResult(STATUS_NOT_CONFIGURED, fqdn=fqdn)
+        # No token → we CANNOT delete the real Cloudflare record. Do NOT clear
+        # the stored record_id: that would orphan the live record (lose the
+        # handle to delete it later). Report not-configured so the operator
+        # adds the token first.
+        return DnsSyncResult(STATUS_NOT_CONFIGURED, fqdn=fqdn,
+                             record_id=(customer.dns_record_id or "").strip())
 
     res = client.delete_a_record(get_zone_base(), fqdn,
                                  record_id=(customer.dns_record_id or "").strip())

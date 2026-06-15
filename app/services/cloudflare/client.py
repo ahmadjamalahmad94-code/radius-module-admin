@@ -40,6 +40,12 @@ _PROXIED = False
 _TTL = 120
 
 
+def record_type_for(ip: str) -> str:
+    """``AAAA`` for an IPv6 literal, else ``A``. The VPS IP may be either, and
+    Cloudflare rejects an A record holding an IPv6 address (and vice versa)."""
+    return "AAAA" if ":" in (ip or "") else "A"
+
+
 @dataclass(frozen=True)
 class DnsRecord:
     id: str
@@ -125,13 +131,13 @@ class CloudflareDNSClient:
         return CfResult(ok=True, status=res.status, zone_id=str(zones[0].get("id", "")),
                         raw=res.body)
 
-    def find_a_record(self, zone_id: str, fqdn: str) -> CfResult:
-        """Find the A record for ``fqdn`` in ``zone_id``.
+    def find_a_record(self, zone_id: str, fqdn: str, *, rtype: str = "A") -> CfResult:
+        """Find the ``rtype`` (A/AAAA) record for ``fqdn`` in ``zone_id``.
 
         ``ok=True`` with ``record=None`` means "looked up fine, none exists" —
         distinct from ``ok=False`` (the lookup itself failed)."""
         url = (f"{self._base}/zones/{quote(zone_id)}/dns_records"
-               f"?type=A&name={quote(fqdn)}")
+               f"?type={quote(rtype)}&name={quote(fqdn)}")
         res = _http.get_json(url, headers=self._headers(), timeout=self._timeout)
         ok, result, err = self._envelope(res)
         if not ok:
@@ -143,7 +149,8 @@ class CloudflareDNSClient:
     def create_a_record(self, zone_id: str, fqdn: str, ip: str, *,
                          proxied: bool = _PROXIED, ttl: int = _TTL) -> CfResult:
         url = f"{self._base}/zones/{quote(zone_id)}/dns_records"
-        payload = {"type": "A", "name": fqdn, "content": ip, "ttl": ttl, "proxied": proxied}
+        payload = {"type": record_type_for(ip), "name": fqdn, "content": ip,
+                   "ttl": ttl, "proxied": proxied}
         res = _http.post_json(url, payload=payload, headers=self._headers(), timeout=self._timeout)
         ok, result, err = self._envelope(res)
         if not ok:
@@ -154,7 +161,8 @@ class CloudflareDNSClient:
     def update_a_record(self, zone_id: str, record_id: str, fqdn: str, ip: str, *,
                         proxied: bool = _PROXIED, ttl: int = _TTL) -> CfResult:
         url = f"{self._base}/zones/{quote(zone_id)}/dns_records/{quote(record_id)}"
-        payload = {"type": "A", "name": fqdn, "content": ip, "ttl": ttl, "proxied": proxied}
+        payload = {"type": record_type_for(ip), "name": fqdn, "content": ip,
+                   "ttl": ttl, "proxied": proxied}
         res = _http.put_json(url, payload=payload, headers=self._headers(), timeout=self._timeout)
         ok, result, err = self._envelope(res)
         if not ok:
@@ -167,21 +175,27 @@ class CloudflareDNSClient:
         res = _http.delete_json(url, headers=self._headers(), timeout=self._timeout)
         ok, _result, err = self._envelope(res)
         if not ok:
+            # A record deleted out-of-band → Cloudflare 404 (errors 81044/7003).
+            # "Make sure it's gone" is satisfied, so treat not-found as success;
+            # otherwise a stale stored record_id could never be cleared.
+            if res.status == 404 or "81044" in err or "does not exist" in err.lower():
+                return CfResult(ok=True, status=res.status, zone_id=zone_id, raw=res.body)
             return CfResult(ok=False, status=res.status, error=err, zone_id=zone_id, raw=res.body)
         return CfResult(ok=True, status=res.status, zone_id=zone_id, raw=res.body)
 
     # ── high-level idempotent operations ───────────────────────────────
     def upsert_a_record(self, zone_name: str, fqdn: str, ip: str, *,
                         proxied: bool = _PROXIED, ttl: int = _TTL) -> CfResult:
-        """Create-or-update the DNS-only A record ``fqdn`` → ``ip``. Idempotent.
+        """Create-or-update the DNS-only A/AAAA record ``fqdn`` → ``ip``.
+        Idempotent.
 
-        Resolves the zone, looks for an existing A record, then PUTs (when one
-        exists, even if the IP already matches — cheap and keeps proxied/ttl
-        in sync) or POSTs a new one."""
+        Resolves the zone, looks for an existing record of the matching type
+        (A for IPv4, AAAA for IPv6), then PUTs (when one exists, even if the IP
+        already matches — cheap and keeps proxied/ttl in sync) or POSTs."""
         zone = self.find_zone_id(zone_name)
         if not zone.ok:
             return zone
-        existing = self.find_a_record(zone.zone_id, fqdn)
+        existing = self.find_a_record(zone.zone_id, fqdn, rtype=record_type_for(ip))
         if not existing.ok:
             return existing
         if existing.record is not None:

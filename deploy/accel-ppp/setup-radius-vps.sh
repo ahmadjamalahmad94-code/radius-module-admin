@@ -108,24 +108,36 @@ apt-get install -y --no-install-recommends \
 # only swap it in when it differs (keeps the step idempotent + reload-light).
 log "Rendering ${ACCEL_CONF} from template…"
 TMP_CONF="$(mktemp)"
-sed \
-  -e "s|{{ POOL_RANGE }}|${POOL_RANGE}|g" \
-  -e "s|{{ POOL_GATEWAY }}|${POOL_GATEWAY}|g" \
-  -e "s|{{ DNS1 }}|${DNS1}|g" \
-  -e "s|{{ DNS2 }}|${DNS2}|g" \
-  -e "s|{{ RADIUS_SECRET }}|${RADIUS_SECRET}|g" \
-  -e "s|{{ RADIUS_AUTH_PORT }}|${RADIUS_AUTH_PORT}|g" \
-  -e "s|{{ RADIUS_ACCT_PORT }}|${RADIUS_ACCT_PORT}|g" \
-  -e "s|{{ NAS_IDENTIFIER }}|${NAS_IDENTIFIER}|g" \
-  -e "s|{{ COA_PORT }}|${COA_PORT}|g" \
-  -e "s|{{ SSTP_CERT_FULLCHAIN }}|${SSTP_CERT_FULLCHAIN}|g" \
-  -e "s|{{ SSTP_CERT_KEY }}|${SSTP_CERT_KEY}|g" \
-  -e "s|{{ SUBDOMAIN }}|${SUBDOMAIN}|g" \
-  "$TEMPLATE" > "$TMP_CONF"
 
-if grep -q '{{' "$TMP_CONF"; then
-    warn "template still has unrendered {{ vars }}:"
-    grep -n '{{' "$TMP_CONF" >&2 || true
+# Render with python3 (installed in step 1) doing LITERAL substitution. We
+# deliberately avoid `sed` here: a random RADIUS_SECRET can contain `|` (the
+# delimiter), `&` (whole-match backref), or `\` — all of which corrupt or
+# crash a sed s-command. Values are passed via the environment (never
+# interpolated into the script) so no shell/sed metachar can leak in.
+R_POOL_RANGE="$POOL_RANGE" R_POOL_GATEWAY="$POOL_GATEWAY" \
+R_DNS1="$DNS1" R_DNS2="$DNS2" R_RADIUS_SECRET="$RADIUS_SECRET" \
+R_RADIUS_AUTH_PORT="$RADIUS_AUTH_PORT" R_RADIUS_ACCT_PORT="$RADIUS_ACCT_PORT" \
+R_NAS_IDENTIFIER="$NAS_IDENTIFIER" R_COA_PORT="$COA_PORT" \
+R_SSTP_CERT_FULLCHAIN="$SSTP_CERT_FULLCHAIN" R_SSTP_CERT_KEY="$SSTP_CERT_KEY" \
+R_SUBDOMAIN="$SUBDOMAIN" R_TEMPLATE="$TEMPLATE" \
+python3 - "$TMP_CONF" <<'PY'
+import os, sys
+keys = ["POOL_RANGE", "POOL_GATEWAY", "DNS1", "DNS2", "RADIUS_SECRET",
+        "RADIUS_AUTH_PORT", "RADIUS_ACCT_PORT", "NAS_IDENTIFIER", "COA_PORT",
+        "SSTP_CERT_FULLCHAIN", "SSTP_CERT_KEY", "SUBDOMAIN"]
+with open(os.environ["R_TEMPLATE"], "r", encoding="utf-8") as f:
+    text = f.read()
+for k in keys:
+    text = text.replace("{{ %s }}" % k, os.environ.get("R_" + k, ""))
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    f.write(text)
+PY
+
+# Match only real, unrendered {{ VAR }} tokens (UPPER_SNAKE) — NOT the literal
+# "{{ ... }}" example that lives in the template's own header comment.
+if grep -qE '\{\{ [A-Z][A-Z0-9_]* \}\}' "$TMP_CONF"; then
+    warn "template still has unrendered {{ VAR }} tokens:"
+    grep -nE '\{\{ [A-Z][A-Z0-9_]* \}\}' "$TMP_CONF" >&2 || true
     die "refusing to install a partially-rendered config."
 fi
 

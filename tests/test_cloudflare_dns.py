@@ -156,6 +156,35 @@ def test_delete_absent_is_idempotent_success(monkeypatch, client):
     assert res.ok  # absent == success for "make sure it's gone"
 
 
+def test_delete_stored_id_gone_out_of_band_is_idempotent(monkeypatch, client):
+    # Record deleted out-of-band → Cloudflare 404 on the stored id. Must be
+    # treated as success so the stale record_id can be cleared.
+    not_found = _http.HttpResult(ok=False, status=404,
+                                 body={"success": False,
+                                       "errors": [{"code": 81044, "message": "Record does not exist."}]})
+    (Router()
+     .add("GET", "/zones?name=", _ok([{"id": "zoneABC"}]))
+     .add("DELETE", "/dns_records/recGONE", not_found)
+     .install(monkeypatch))
+    res = client.delete_a_record("hoberadius.com", "c.hoberadius.com", record_id="recGONE")
+    assert res.ok  # 404/81044 → idempotent success
+
+
+def test_upsert_ipv6_uses_aaaa(monkeypatch, client):
+    r = (Router()
+         .add("GET", "/zones?name=", _ok([{"id": "zoneABC"}]))
+         .add("GET", "/dns_records", _ok([]))
+         .add("POST", "/dns_records", _ok({"id": "recV6", "type": "AAAA"}))
+         .install(monkeypatch))
+    res = client.upsert_a_record("hoberadius.com", "client9.hoberadius.com", "2001:db8::1")
+    assert res.ok
+    # Lookup queries the AAAA type and the create payload is AAAA, not A.
+    get_record_call = next(c for c in r.calls if c[0] == "GET" and "/dns_records" in c[1])
+    assert "type=AAAA" in get_record_call[1]
+    post_call = next(c for c in r.calls if c[0] == "POST")
+    assert post_call[2]["type"] == "AAAA" and post_call[2]["content"] == "2001:db8::1"
+
+
 # ── token gate ────────────────────────────────────────────────────────────────
 def test_is_configured_and_get_client_gate(monkeypatch, app):
     from app.services import cloudflare
@@ -207,7 +236,7 @@ def test_ensure_invalid_ip(app):
         assert res.status == dns.STATUS_INVALID_IP
 
 
-def test_ensure_not_configured_still_assigns_subdomain(monkeypatch, app):
+def test_ensure_not_configured_does_not_write(monkeypatch, app):
     from app.services import data_connection_dns as dns
     from app.services import cloudflare
     with app.app_context():
@@ -215,9 +244,11 @@ def test_ensure_not_configured_still_assigns_subdomain(monkeypatch, app):
         monkeypatch.setattr(cloudflare, "get_client", lambda: None)  # no token
         res = dns.ensure_subdomain_record(c)
         assert res.status == dns.STATUS_NOT_CONFIGURED
-        assert c.subdomain == f"client{c.id}"        # subdomain assigned regardless
-        assert res.fqdn.endswith("hoberadius.com")
-        assert c.dns_record_id == ""                  # no record created
+        # FQDN is still surfaced for display (deterministic clientN)…
+        assert res.fqdn == f"client{c.id}.hoberadius.com"
+        # …but nothing is persisted on the unconfigured path (gate before write).
+        assert c.subdomain == ""
+        assert c.dns_record_id == ""
 
 
 def test_ensure_ok_writes_back_state(monkeypatch, app):

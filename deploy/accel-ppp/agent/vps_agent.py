@@ -124,10 +124,23 @@ def build_wireguard_peer_argv(spec: WireguardPeerSpec) -> list[list[str]]:
     # A preshared key can't be passed inline; wg reads it from a file path.
     # The setup/daemon writes it out first — flagged for the real impl.
     if spec.preshared_key:
+        # WireGuard pubkeys are base64 (contain '/' and '+'), so derive a
+        # filesystem-safe, collision-resistant slug for the .psk path — a raw
+        # '/' from the key would otherwise create a bogus subdir and the write
+        # (and the subsequent wg read) would fail.
+        psk_path = f"/run/wg-{_safe_slug(spec.public_key)}.psk"
         cmds.insert(0, ["sh", "-c", f"umask 077; printf %s {shlex.quote(spec.preshared_key)} "
-                                    f"> /run/wg-{spec.public_key[:8]}.psk"])
-        argv += ["preshared-key", f"/run/wg-{spec.public_key[:8]}.psk"]
+                                    f"> {psk_path}"])
+        argv += ["preshared-key", psk_path]
     return cmds
+
+
+def _safe_slug(public_key: str) -> str:
+    """Collision-resistant, filesystem-safe slug from a WG public key — a short
+    hex digest, so two keys sharing a base64 prefix don't collide on the same
+    .psk filename and '/'/'+' never leak into the path."""
+    import hashlib
+    return hashlib.sha256((public_key or "").encode("utf-8")).hexdigest()[:16]
 
 
 def mbit_to_kbit(rate_mbit: int) -> int:
