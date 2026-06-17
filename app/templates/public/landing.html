@@ -217,15 +217,21 @@
       </div>
       <div class="lp-dl-btns">
         {% if d.windows %}
-        <a class="lp-btn lp-btn--primary lp-dl-btn" href="{{ url_for('app_download', release_id=d.windows.id) }}" rel="nofollow">
+        {% set w = d.windows %}
+        <a class="lp-btn lp-btn--primary lp-dl-btn"
+           href="{{ w.download_url if w.is_external else url_for('app_download', release_id=w.id) }}"
+           {% if w.is_external %}target="_blank" rel="noopener nofollow"{% else %}rel="nofollow"{% endif %}>
           <i class="fa-brands fa-windows"></i>
-          <span>Windows<small>v{{ d.windows.version }} · {{ d.windows.size_bytes | filesizeformat }}</small></span>
+          <span>Windows<small>v{{ w.version }}{% if w.size_bytes %} · {{ w.size_bytes | filesizeformat }}{% endif %}</small></span>
         </a>
         {% endif %}
         {% if d.android %}
-        <a class="lp-btn lp-btn--ghost lp-dl-btn" href="{{ url_for('app_download', release_id=d.android.id) }}" rel="nofollow">
+        {% set an = d.android %}
+        <a class="lp-btn lp-btn--ghost lp-dl-btn"
+           href="{{ an.download_url if an.is_external else url_for('app_download', release_id=an.id) }}"
+           {% if an.is_external %}target="_blank" rel="noopener nofollow"{% else %}rel="nofollow"{% endif %}>
           <i class="fa-brands fa-android"></i>
-          <span>Android<small>v{{ d.android.version }} · {{ d.android.size_bytes | filesizeformat }}</small></span>
+          <span>Android<small>v{{ an.version }}{% if an.size_bytes %} · {{ an.size_bytes | filesizeformat }}{% endif %}</small></span>
         </a>
         {% endif %}
       </div>

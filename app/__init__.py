@@ -157,15 +157,18 @@ def create_app(config_object=None, **overrides) -> Flask:
 
     @app.get("/downloads/<int:release_id>")
     def app_download(release_id: int):
-        # PUBLIC: serve a product-app binary as an attachment. No login — the
-        # landing Downloads section links straight here. 404 when the release or
-        # its stored file is missing.
-        from flask import abort, send_file
+        # PUBLIC: serve a product-app binary. No login — the landing Downloads
+        # section links here for hosted files. For an EXTERNAL-url release we
+        # redirect to its URL (so the route works either way); for a hosted file
+        # we stream it as an attachment. 404 when neither is available.
+        from flask import abort, redirect, send_file
         from .models import AppRelease
         from .services import app_releases
         release = db.session.get(AppRelease, release_id)
         if release is None:
             abort(404)
+        if release.is_external:
+            return redirect(release.download_url, code=302)
         resolved = app_releases.get_release_file(release)
         if not resolved:
             abort(404)
@@ -804,6 +807,14 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "allowed_fleet_chr_node_ids_json": "TEXT NOT NULL DEFAULT '[]'",
         })
 
+    # Downloads — external-URL releases. The app_releases table (migration 006)
+    # predates the download_url column; add it to existing DBs so a release can
+    # point at an external GitHub asset instead of a panel-hosted file.
+    if "app_releases" in tables:
+        _add_columns_if_missing("app_releases", {
+            "download_url": "VARCHAR(600) NOT NULL DEFAULT ''",
+        })
+
     # Zero-central: each customer tunnel + WG peer carries the fleet node it
     # was provisioned on. Backfill is handled below — column add first.
     if "customer_vpn_tunnels" in tables:
@@ -1057,6 +1068,16 @@ def seed_defaults(app: Flask) -> None:
         ensure_app_sections()
     except Exception:  # pragma: no cover - seeding must never block startup
         app.logger.exception("landing CMS seed failed")
+        db.session.rollback()
+
+    # Downloads — seed the two shipped Android apps (external GitHub release
+    # URLs) so the public Downloads section is populated after deploy with no
+    # manual upload. Idempotent; never clobbers operator-edited products.
+    try:
+        from .services.app_releases import seed_download_apps
+        seed_download_apps()
+    except Exception:  # pragma: no cover - seeding must never block startup
+        app.logger.exception("download apps seed failed")
         db.session.rollback()
 
 

@@ -2058,6 +2058,10 @@ class AppRelease(TimestampMixin, db.Model):
     file_ext = db.Column(db.String(12), default="", nullable=False)         # .exe|.msi|.apk|.aab
     original_filename = db.Column(db.String(255), default="", nullable=False)
     stored_filename = db.Column(db.String(255), default="", nullable=False)
+    # When set, this release is served from an EXTERNAL url (e.g. a GitHub
+    # release asset) instead of a panel-hosted file — for binaries too large to
+    # upload through the panel. stored_filename stays empty for url releases.
+    download_url = db.Column(db.String(600), default="", nullable=False)
     size_bytes = db.Column(db.Integer, default=0, nullable=False)
     sha256 = db.Column(db.String(64), default="", nullable=False)
     content_type = db.Column(db.String(120), default="", nullable=False)
@@ -2066,6 +2070,11 @@ class AppRelease(TimestampMixin, db.Model):
     created_by = db.Column(db.Integer, nullable=True)  # admin id (best-effort)
 
     product = db.relationship("AppProduct", back_populates="releases")
+
+    @property
+    def is_external(self) -> bool:
+        """True when this release links to an external URL (no hosted file)."""
+        return bool((self.download_url or "").strip())
 
 
 # ``InstanceActivationToken`` was retired with the activation-code mechanism
