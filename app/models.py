@@ -2019,6 +2019,55 @@ class LandingRevision(db.Model):
         self.snapshot_json = json_dumps(value or {})
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Product apps + downloadable releases — the public landing "Downloads"
+# section is rendered from these (admin uploads Windows .exe/.msi + Android
+# .apk/.aab per app+channel and marks a current version). Binaries live on
+# disk under instance_path/app_releases/...; only metadata is in the DB.
+# ─────────────────────────────────────────────────────────────────────────
+
+class AppProduct(TimestampMixin, db.Model):
+    __tablename__ = "app_products"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(160), default="", nullable=False)
+    description = db.Column(db.Text, default="", nullable=False)
+    icon_name = db.Column(db.String(60), default="", nullable=False)
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_visible = db.Column(db.Boolean, default=True, nullable=False)
+
+    releases = db.relationship(
+        "AppRelease", back_populates="product",
+        cascade="all, delete-orphan", lazy="dynamic",
+    )
+
+
+class AppRelease(TimestampMixin, db.Model):
+    __tablename__ = "app_releases"
+    __table_args__ = (
+        db.Index("ix_app_releases_product_platform_channel",
+                 "product_id", "platform", "channel"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("app_products.id"), nullable=False, index=True)
+    platform = db.Column(db.String(16), default="windows", nullable=False)  # windows|android
+    channel = db.Column(db.String(16), default="stable", nullable=False)    # stable|beta
+    version = db.Column(db.String(60), default="", nullable=False)
+    file_ext = db.Column(db.String(12), default="", nullable=False)         # .exe|.msi|.apk|.aab
+    original_filename = db.Column(db.String(255), default="", nullable=False)
+    stored_filename = db.Column(db.String(255), default="", nullable=False)
+    size_bytes = db.Column(db.Integer, default=0, nullable=False)
+    sha256 = db.Column(db.String(64), default="", nullable=False)
+    content_type = db.Column(db.String(120), default="", nullable=False)
+    is_current = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    notes = db.Column(db.String(300), default="", nullable=False)
+    created_by = db.Column(db.Integer, nullable=True)  # admin id (best-effort)
+
+    product = db.relationship("AppProduct", back_populates="releases")
+
+
 # ``InstanceActivationToken`` was retired with the activation-code mechanism
 # (legacy linking auth). Bearer license-key is the only link path now —
 # docs/SIMPLE_LINK_CONTRACT.md. The ``instance_activation_tokens`` table is

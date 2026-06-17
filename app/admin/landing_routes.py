@@ -15,6 +15,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from ..auth.routes import audit, login_required
 from ..extensions import db
 from ..models import (
+    AppRelease,
     LandingContactMethod,
     LandingItem,
     LandingPage,
@@ -385,3 +386,134 @@ def contact_delete(cid: int):
     db.session.commit()
     flash("تم حذف طريقة الاتصال.", "success")
     return redirect(url_for("admin_landing.contact_list"))
+
+
+# ════════════════════ PRODUCT APPS + DOWNLOADS ════════════════════
+# Upload Windows .exe/.msi + Android .apk/.aab per app+channel, mark a current
+# version. The public Downloads section serves the current releases. The
+# Card-Print intro link target is a CMS setting edited here too.
+
+@bp.get("/apps")
+@login_required
+def apps():
+    from ..services import app_releases as ar
+    products = []
+    for p in ar.list_products():
+        products.append({"product": p, "releases": p.releases.order_by(
+            AppRelease.platform.asc(), AppRelease.channel.asc(),
+            AppRelease.created_at.desc()).all()})
+    return render_template(
+        "admin/landing/apps.html",
+        products=products,
+        platforms=ar.PLATFORMS, channels=ar.CHANNELS,
+        allowed_ext=ar.ALLOWED_EXT_BY_PLATFORM,
+        cardprint_url=ar.get_cardprint_url(),
+    )
+
+
+@bp.post("/apps/save")
+@login_required
+def app_save():
+    from ..services import app_releases as ar
+    pid = _i("product_id")
+    product = ar.get_product(pid) if pid else None
+    try:
+        product = ar.upsert_product(
+            product=product, name=_s("name"), slug=_s("slug"),
+            description=_s("description"), icon_name=_s("icon_name"),
+            sort_order=_i("sort_order", 100), is_visible=_flag("is_visible"))
+    except ar.AppReleaseError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_landing.apps"))
+    audit("landing_app_saved", "app_product", str(product.id), f"App {product.slug}")
+    db.session.commit()
+    flash("تم حفظ التطبيق.", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
+@bp.post("/apps/<int:pid>/delete")
+@login_required
+def app_delete(pid: int):
+    from ..services import app_releases as ar
+    product = ar.get_product(pid)
+    if product is None:
+        flash("التطبيق غير موجود.", "error")
+        return redirect(url_for("admin_landing.apps"))
+    slug = product.slug
+    ar.delete_product(product)
+    audit("landing_app_deleted", "app_product", str(pid), f"App {slug}")
+    db.session.commit()
+    flash("تم حذف التطبيق وجميع إصداراته.", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
+@bp.post("/apps/<int:pid>/upload")
+@login_required
+def app_upload(pid: int):
+    from flask import session
+    from ..services import app_releases as ar
+    product = ar.get_product(pid)
+    if product is None:
+        flash("التطبيق غير موجود.", "error")
+        return redirect(url_for("admin_landing.apps"))
+    upload = request.files.get("binary")
+    if not upload or not (upload.filename or "").strip():
+        flash("اختر ملفًا للرفع.", "error")
+        return redirect(url_for("admin_landing.apps"))
+    blob = upload.read(ar.MAX_UPLOAD_BYTES + 1)
+    try:
+        rel = ar.create_release(
+            product=product, platform=_s("platform"), channel=_s("channel", "stable"),
+            version=_s("version"), filename=upload.filename, content=blob,
+            set_current=_flag("set_current"), admin_id=session.get("admin_id"))
+    except ar.AppReleaseError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_landing.apps"))
+    audit("landing_app_release_uploaded", "app_release", str(rel.id),
+          f"{product.slug} {rel.platform}/{rel.channel} v{rel.version}",
+          {"sha256": rel.sha256, "size": rel.size_bytes, "current": rel.is_current})
+    db.session.commit()
+    flash(f"تم رفع الإصدار v{rel.version} ({rel.platform}).", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
+@bp.post("/releases/<int:rid>/set-current")
+@login_required
+def release_set_current(rid: int):
+    from ..services import app_releases as ar
+    rel = db.get_or_404(AppRelease, rid)
+    ar.set_current_release(rel)
+    audit("landing_app_release_current", "app_release", str(rel.id),
+          f"current {rel.platform}/{rel.channel} v{rel.version}")
+    db.session.commit()
+    flash(f"تم تعيين v{rel.version} كإصدار حالي.", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
+@bp.post("/releases/<int:rid>/delete")
+@login_required
+def release_delete(rid: int):
+    from ..services import app_releases as ar
+    rel = db.get_or_404(AppRelease, rid)
+    label = f"{rel.platform}/{rel.channel} v{rel.version}"
+    ar.delete_release(rel)
+    audit("landing_app_release_deleted", "app_release", str(rid), label)
+    db.session.commit()
+    flash("تم حذف الإصدار.", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
+@bp.post("/apps/cardprint-url")
+@login_required
+def cardprint_save():
+    from ..services import app_releases as ar
+    try:
+        url = ar.set_cardprint_url(_s("cardprint_url"))
+    except ar.AppReleaseError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_landing.apps"))
+    audit("landing_cardprint_url_saved", "setting", ar.CARDPRINT_URL_SETTING,
+          "Card-Print store URL updated", {"set": bool(url)})
+    db.session.commit()
+    flash("تم حفظ رابط متجر بطاقات الطباعة.", "success")
+    return redirect(url_for("admin_landing.apps"))

@@ -35,6 +35,7 @@
       <a href="#modules">الوحدات</a>
       <a href="#integrations">التكاملات</a>
       <a href="#how_it_works">طريقة العمل</a>
+      <a href="#downloads">التنزيلات</a>
       <a href="#faq">الأسئلة الشائعة</a>
       <a href="#contact_cta">تواصل معنا</a>
     </div>
@@ -67,7 +68,7 @@
 {% for blk in sections %}
 {% set s = blk['section'] %}{% set items = blk['items'] %}
 {% if s.section_type != 'footer' %}
-<section id="{{ s.section_key }}" class="lp-section{% if s.section_type == 'hero' %} lp-hero{% else %} lp-reveal{% endif %}{% if s.section_key in ['modules', 'whatsapp_service', 'why_hoberadius'] %} alt{% endif %}">
+<section id="{{ s.section_key }}" class="lp-section{% if s.section_type == 'hero' %} lp-hero{% else %} lp-reveal{% endif %}{% if s.section_key in ['modules', 'whatsapp_service', 'why_hoberadius', 'downloads'] %} alt{% endif %}">
   <div class="lp-wrap">
 
   {# ========== HERO ========== #}
@@ -200,6 +201,58 @@
       <div class="lp-faq-a"><p>{{ it.description }}</p></div>
     </div>
     {% endfor %}
+  </div>
+
+  {# ========== DOWNLOADS (aggregated product apps) ========== #}
+  {% elif s.section_type == 'downloads' %}
+  <div class="lp-sec-head">{% if s.eyebrow_text %}<span class="lp-eyebrow">{{ s.eyebrow_text }}</span>{% endif %}<h2 class="lp-h2">{{ s.title }}</h2>{% if s.subtitle %}<p class="lp-lead">{{ s.subtitle }}</p>{% endif %}</div>
+  {% set shown = downloads | selectattr('has_any') | list %}
+  {% if shown %}
+  <div class="lp-grid">
+    {% for d in shown %}
+    <div class="lp-dl-card">
+      <div class="lp-dl-head">
+        <span class="lp-card-ico"><i class="fa-solid fa-{{ d.product.icon_name or 'cube' }}"></i></span>
+        <div><h3>{{ d.product.name }}</h3>{% if d.product.description %}<p>{{ d.product.description }}</p>{% endif %}</div>
+      </div>
+      <div class="lp-dl-btns">
+        {% if d.windows %}
+        <a class="lp-btn lp-btn--primary lp-dl-btn" href="{{ url_for('app_download', release_id=d.windows.id) }}" rel="nofollow">
+          <i class="fa-brands fa-windows"></i>
+          <span>Windows<small>v{{ d.windows.version }} · {{ d.windows.size_bytes | filesizeformat }}</small></span>
+        </a>
+        {% endif %}
+        {% if d.android %}
+        <a class="lp-btn lp-btn--ghost lp-dl-btn" href="{{ url_for('app_download', release_id=d.android.id) }}" rel="nofollow">
+          <i class="fa-brands fa-android"></i>
+          <span>Android<small>v{{ d.android.version }} · {{ d.android.size_bytes | filesizeformat }}</small></span>
+        </a>
+        {% endif %}
+      </div>
+      {% set fp = (d.windows.sha256 if d.windows else d.android.sha256) %}
+      {% if fp %}<div class="lp-dl-fp" title="SHA-256">SHA-256: {{ fp[:16] }}…</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="lp-lead lp-dl-empty">ستتوفّر التطبيقات للتنزيل قريبًا.</p>
+  {% endif %}
+
+  {# ========== CARD-PRINT INTRO (links to the separate product) ========== #}
+  {% elif s.section_type == 'cardprint_intro' %}
+  <div class="lp-band">
+    {% if s.eyebrow_text %}<span class="lp-badge">{{ s.eyebrow_text }}</span>{% endif %}
+    <h2>{{ s.title }}</h2>
+    {% if s.description %}<p>{{ s.description }}</p>{% endif %}
+    <div class="lp-band-actions">
+      {% if cardprint_url %}
+      <a class="lp-btn lp-btn--primary lp-btn--lg" href="{{ cardprint_url }}" target="_blank" rel="noopener">
+        <i class="fa-solid fa-id-card"></i> {{ s.primary_button_text or 'افتح متجر بطاقات الطباعة' }}
+      </a>
+      {% else %}
+      <span class="lp-note">سيتوفّر رابط متجر بطاقات الطباعة قريبًا.</span>
+      {% endif %}
+    </div>
   </div>
   {% endif %}
 

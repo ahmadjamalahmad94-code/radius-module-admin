@@ -158,8 +158,11 @@ def test_seed_is_idempotent(client, app):
         seed_landing_defaults()
         assert LandingPage.query.filter_by(slug="home").count() == 1
         page = LandingPage.query.filter_by(slug="home").first()
-        # 12 default sections, exactly once each
-        assert page.sections.count() == 12
+        # 12 default sections + 2 app sections (downloads, cardprint_intro),
+        # each exactly once (no duplicates ⇒ seed + ensure_app_sections idempotent).
+        keys = [s.section_key for s in page.sections]
+        assert len(keys) == len(set(keys)) == 14
+        assert {"downloads", "cardprint_intro"} <= set(keys)
 
 
 # 13

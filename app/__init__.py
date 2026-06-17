@@ -151,8 +151,27 @@ def create_app(config_object=None, **overrides) -> Flask:
         ctx = build_public_context(page) if page else {
             "page": None, "sections": [], "social_links": [],
             "contact_methods": [], "status_badge_class": {},
+            "downloads": [], "cardprint_url": "",
         }
         return render_template("public/landing.html", **ctx)
+
+    @app.get("/downloads/<int:release_id>")
+    def app_download(release_id: int):
+        # PUBLIC: serve a product-app binary as an attachment. No login — the
+        # landing Downloads section links straight here. 404 when the release or
+        # its stored file is missing.
+        from flask import abort, send_file
+        from .models import AppRelease
+        from .services import app_releases
+        release = db.session.get(AppRelease, release_id)
+        if release is None:
+            abort(404)
+        resolved = app_releases.get_release_file(release)
+        if not resolved:
+            abort(404)
+        path, download_name = resolved
+        return send_file(str(path), as_attachment=True, download_name=download_name,
+                         mimetype=release.content_type or "application/octet-stream")
 
     _register_cli_commands(app)
 
@@ -1031,8 +1050,11 @@ def seed_defaults(app: Flask) -> None:
 
     # Landing Page CMS — seed default editable homepage content (idempotent).
     try:
-        from .services.landing_cms import seed_landing_defaults
+        from .services.landing_cms import ensure_app_sections, seed_landing_defaults
         seed_landing_defaults()
+        # Additively heal the Downloads + Card-Print sections onto existing
+        # landings too (seed_landing_defaults early-returns when sections exist).
+        ensure_app_sections()
     except Exception:  # pragma: no cover - seeding must never block startup
         app.logger.exception("landing CMS seed failed")
         db.session.rollback()
