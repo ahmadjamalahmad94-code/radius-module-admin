@@ -85,6 +85,26 @@
     <div style="margin-top:10px"><button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-upload"></i> رفع إصدار</button></div>
   </form>
 
+  {# add a release by EXTERNAL URL (for binaries too large to upload, e.g. 50MB+ APKs) #}
+  <form method="post" action="{{ url_for('admin_landing.app_add_url', pid=p.id) }}"
+        style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:14px">
+    {{ csrf_input() }}
+    <div style="font-weight:700;margin-bottom:8px"><i class="fa-solid fa-link"></i> إضافة إصدار برابط خارجي</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:end">
+      <label>المنصة
+        <select class="hub-input" name="platform">{% for pl in platforms %}<option value="{{ pl }}">{{ pl }}</option>{% endfor %}</select>
+      </label>
+      <label>القناة
+        <select class="hub-input" name="channel">{% for c in channels %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+      </label>
+      <label>الإصدار<input class="hub-input" name="version" dir="ltr" placeholder="v0.1.0" required></label>
+      <label style="grid-column:span 2">رابط التنزيل<input class="hub-input" name="download_url" dir="ltr" placeholder="https://github.com/…/app-release.apk" required></label>
+      <label style="grid-column:span 2">SHA-256 (اختياري)<input class="hub-input" name="sha256" dir="ltr" placeholder="بصمة الملف — اختياري"></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="set_current" checked> اجعله الحالي</label>
+    </div>
+    <div style="margin-top:10px"><button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-link"></i> إضافة برابط</button></div>
+  </form>
+
   {# releases table #}
   {% if row.releases %}
   <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
@@ -93,8 +113,8 @@
       {% for r in row.releases %}
       <tr>
         <td>{{ r.platform }}</td><td>{{ r.channel }}</td><td dir="ltr">v{{ r.version }}{{ r.file_ext }}</td>
-        <td>{{ r.size_bytes | filesizeformat }}</td>
-        <td dir="ltr" style="font-family:ui-monospace,monospace;font-size:12px">{{ r.sha256[:16] }}…</td>
+        <td>{% if r.is_external %}<span class="hub-pill hub-pill--blue">رابط خارجي</span>{% else %}{{ r.size_bytes | filesizeformat }}{% endif %}</td>
+        <td dir="ltr" style="font-family:ui-monospace,monospace;font-size:12px">{{ (r.sha256[:16] ~ '…') if r.sha256 else '—' }}</td>
         <td>{% if r.is_current %}<span class="hub-pill hub-pill--green">حالي</span>{% else %}<span class="hub-pill hub-pill--grey">—</span>{% endif %}</td>
         <td>
           <div style="display:flex;gap:8px;flex-wrap:wrap">

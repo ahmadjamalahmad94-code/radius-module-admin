@@ -193,6 +193,50 @@ def create_release(*, product: AppProduct, platform: str, channel: str, version:
     return rel
 
 
+def validate_external_url(url: str) -> str:
+    """Return a safe external download URL (http/https only) or raise."""
+    u = (url or "").strip()
+    if not u:
+        raise AppReleaseError("رابط التنزيل مطلوب.")
+    if not u.lower().startswith(("http://", "https://")):
+        raise AppReleaseError("رابط التنزيل يجب أن يبدأ بـ http:// أو https://.")
+    return u[:600]
+
+
+def create_url_release(*, product: AppProduct, platform: str, channel: str, version: str,
+                       download_url: str, sha256: str = "", set_current: bool = True,
+                       admin_id: Optional[int] = None) -> AppRelease:
+    """Create a release that links to an EXTERNAL url instead of a hosted file.
+
+    For binaries too large to upload through the panel (e.g. 50+ MB APKs on a
+    GitHub release). No file is stored; ``download_url`` is the source of truth.
+    ``sha256`` is optional (display-only). Raises on bad platform/channel/url.
+    """
+    if platform not in PLATFORMS:
+        raise AppReleaseError(f"منصة غير معروفة: {platform}")
+    if channel not in CHANNELS:
+        raise AppReleaseError(f"قناة غير معروفة: {channel}")
+    version = (version or "").strip()
+    if not version:
+        raise AppReleaseError("رقم الإصدار مطلوب.")
+    url = validate_external_url(download_url)
+    ext = file_ext(url.split("?")[0])  # best-effort, for display only
+
+    rel = AppRelease(
+        product_id=product.id, platform=platform, channel=channel, version=version,
+        file_ext=ext if ext in {e for exts in ALLOWED_EXT_BY_PLATFORM.values() for e in exts} else "",
+        download_url=url, stored_filename="", size_bytes=0,
+        sha256=(sha256 or "").strip().lower()[:64],
+        content_type=_CONTENT_TYPE_BY_EXT.get(ext, ""),
+        created_by=admin_id, is_current=False,
+    )
+    db.session.add(rel)
+    db.session.flush()
+    if set_current:
+        set_current_release(rel)
+    return rel
+
+
 def set_current_release(release: AppRelease) -> None:
     """Mark ``release`` current for its (product, platform, channel) and clear
     the flag on every sibling — exactly one current per combo."""
@@ -284,12 +328,70 @@ def set_cardprint_url(url: str) -> str:
     return u
 
 
+# ── seed: the two shipped Android apps (external GitHub release URLs) ───────--
+#: (slug, name, icon, version, download_url, sha256). APKs are 50+ MB so they
+#: are hosted on public GitHub releases, not uploaded through the panel.
+_SEED_ANDROID_APPS = [
+    {
+        "slug": "radius_app",
+        "name": "تطبيق الريدياس",
+        "icon_name": "wifi",
+        "version": "v0.1.0-test",
+        "download_url": "https://github.com/ahmadjamalahmad94-code/radius-module-app-releases/"
+                        "releases/download/v0.1.0-test/radius-app.apk",
+        "sha256": "f44a34ac2de99b953aececd64bd6c0247010a1e4ac7808a60d83d879c85c343f",
+    },
+    {
+        "slug": "card_print_app",
+        "name": "تطبيق طباعة الكروت",
+        "icon_name": "id-card",
+        "version": "v0.1.0-test",
+        "download_url": "https://github.com/ahmadjamalahmad94-code/card-print-store-releases/"
+                        "releases/download/v0.1.0-test/app-release.apk",
+        "sha256": "",  # optional — left blank (not computed offline)
+    },
+]
+
+
+def seed_download_apps() -> None:
+    """Idempotently create the two shipped Android apps + their current
+    external-URL releases so the public Downloads section is populated after a
+    deploy with no manual upload.
+
+    Safe to re-run: a product is created only when its slug is absent (existing
+    products are NOT clobbered), and a release is created only when no release
+    with the same download_url already exists for that product.
+    """
+    changed = False
+    for i, spec in enumerate(_SEED_ANDROID_APPS):
+        product = AppProduct.query.filter_by(slug=spec["slug"]).first()
+        if product is None:
+            product = AppProduct(slug=spec["slug"], name=spec["name"],
+                                 icon_name=spec["icon_name"], sort_order=(i + 1) * 10,
+                                 is_visible=True)
+            db.session.add(product)
+            db.session.flush()
+            changed = True
+        # Already have this exact external release? then nothing to do.
+        exists = AppRelease.query.filter_by(
+            product_id=product.id, download_url=spec["download_url"]).first()
+        if exists is None:
+            create_url_release(
+                product=product, platform="android", channel="stable",
+                version=spec["version"], download_url=spec["download_url"],
+                sha256=spec["sha256"], set_current=True)
+            changed = True
+    if changed:
+        db.session.commit()
+
+
 __all__ = [
     "PLATFORMS", "CHANNELS", "ALLOWED_EXT_BY_PLATFORM", "MAX_UPLOAD_BYTES",
     "CARDPRINT_URL_SETTING", "AppReleaseError",
-    "releases_root", "slugify", "file_ext", "validate_extension", "human_size",
+    "releases_root", "slugify", "file_ext", "validate_extension", "validate_external_url",
+    "human_size",
     "list_products", "visible_products", "get_product", "upsert_product", "delete_product",
-    "create_release", "set_current_release", "current_release", "delete_release",
-    "get_release_file", "public_downloads", "has_any_downloads",
-    "get_cardprint_url", "set_cardprint_url",
+    "create_release", "create_url_release", "set_current_release", "current_release",
+    "delete_release", "get_release_file", "public_downloads", "has_any_downloads",
+    "get_cardprint_url", "set_cardprint_url", "seed_download_apps",
 ]

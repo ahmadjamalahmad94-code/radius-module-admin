@@ -477,6 +477,31 @@ def app_upload(pid: int):
     return redirect(url_for("admin_landing.apps"))
 
 
+@bp.post("/apps/<int:pid>/add-url")
+@login_required
+def app_add_url(pid: int):
+    from flask import session
+    from ..services import app_releases as ar
+    product = ar.get_product(pid)
+    if product is None:
+        flash("التطبيق غير موجود.", "error")
+        return redirect(url_for("admin_landing.apps"))
+    try:
+        rel = ar.create_url_release(
+            product=product, platform=_s("platform"), channel=_s("channel", "stable"),
+            version=_s("version"), download_url=_s("download_url"), sha256=_s("sha256"),
+            set_current=_flag("set_current"), admin_id=session.get("admin_id"))
+    except ar.AppReleaseError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin_landing.apps"))
+    audit("landing_app_release_url_added", "app_release", str(rel.id),
+          f"{product.slug} {rel.platform}/{rel.channel} v{rel.version} (external)",
+          {"download_url": rel.download_url, "current": rel.is_current})
+    db.session.commit()
+    flash(f"تمت إضافة الإصدار v{rel.version} ({rel.platform}) برابط خارجي.", "success")
+    return redirect(url_for("admin_landing.apps"))
+
+
 @bp.post("/releases/<int:rid>/set-current")
 @login_required
 def release_set_current(rid: int):
