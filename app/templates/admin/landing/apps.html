@@ -1,0 +1,124 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}التطبيقات والتنزيلات{% endblock %}
+{% block page_title %}التطبيقات والتنزيلات{% endblock %}
+{% block page_subtitle %}ارفع إصدارات Windows و Android لكل تطبيق وحدّد الإصدار الحالي — تظهر في قسم «التنزيلات» على الصفحة العامة.{% endblock %}
+
+{% block content %}
+
+{# ── Card-Print store URL (CMS setting) ───────────────────────────── #}
+{% call hub.section("رابط متجر بطاقات الطباعة (Card-Print)", icon="id-card") %}
+  <form method="post" action="{{ url_for('admin_landing.cardprint_save') }}">
+    {{ csrf_input() }}
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+      <label style="flex:1;min-width:280px">رابط المتجر (يُستضاف بشكل منفصل)
+        <input class="hub-input" name="cardprint_url" dir="ltr" value="{{ cardprint_url }}"
+               placeholder="https://cards.example.com">
+      </label>
+      <button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> حفظ الرابط</button>
+    </div>
+    <p style="font-size:12.5px;color:#94a3b8;margin-top:8px">يظهر كزر في قسم «بطاقات الطباعة» على الصفحة العامة. اتركه فارغًا لإخفاء الزر.</p>
+  </form>
+{% endcall %}
+
+{# ── Add / edit a product app ─────────────────────────────────────── #}
+{% call hub.section("إضافة تطبيق جديد", icon="plus") %}
+  <form method="post" action="{{ url_for('admin_landing.app_save') }}">
+    {{ csrf_input() }}<input type="hidden" name="product_id" value="">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+      <label>الاسم<input class="hub-input" name="name" required placeholder="مثال: HobeRadius Manager"></label>
+      <label>المُعرّف (slug)<input class="hub-input" name="slug" dir="ltr" placeholder="يُشتق من الاسم تلقائيًا"></label>
+      <label>الأيقونة (Font Awesome)<input class="hub-input" name="icon_name" dir="ltr" placeholder="cube"></label>
+      <label>الترتيب<input class="hub-input" type="number" name="sort_order" value="100"></label>
+      <label style="grid-column:1/-1">الوصف<input class="hub-input" name="description" placeholder="وصف مختصر يظهر تحت اسم التطبيق."></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="is_visible" checked> ظاهر على الصفحة</label>
+    </div>
+    <div style="margin-top:10px"><button class="hub-btn hub-btn--primary" type="submit"><i class="fa-solid fa-plus"></i> حفظ التطبيق</button></div>
+  </form>
+{% endcall %}
+
+{# ── Existing products + their releases ───────────────────────────── #}
+{% for row in products %}
+{% set p = row.product %}
+{% call hub.section(p.name ~ ("  ·  مخفي" if not p.is_visible else ""), icon=(p.icon_name or 'cube')) %}
+
+  {# edit product #}
+  <form method="post" action="{{ url_for('admin_landing.app_save') }}" style="margin-bottom:14px">
+    {{ csrf_input() }}<input type="hidden" name="product_id" value="{{ p.id }}">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+      <label>الاسم<input class="hub-input" name="name" value="{{ p.name }}" required></label>
+      <label>المُعرّف<input class="hub-input" name="slug" dir="ltr" value="{{ p.slug }}"></label>
+      <label>الأيقونة<input class="hub-input" name="icon_name" dir="ltr" value="{{ p.icon_name }}"></label>
+      <label>الترتيب<input class="hub-input" type="number" name="sort_order" value="{{ p.sort_order }}"></label>
+      <label style="grid-column:1/-1">الوصف<input class="hub-input" name="description" value="{{ p.description }}"></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="is_visible" {{ 'checked' if p.is_visible }}> ظاهر</label>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:10px">
+      <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">حفظ التعديلات</button>
+    </div>
+  </form>
+  <form method="post" action="{{ url_for('admin_landing.app_delete', pid=p.id) }}" style="margin-bottom:16px">
+    {{ csrf_input() }}
+    <button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626" type="submit"
+            data-confirm="حذف التطبيق «{{ p.name }}» وكل إصداراته وملفاته؟">
+      <i class="fa-solid fa-trash"></i> حذف التطبيق
+    </button>
+  </form>
+
+  {# upload a release #}
+  <form method="post" action="{{ url_for('admin_landing.app_upload', pid=p.id) }}" enctype="multipart/form-data"
+        style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:14px">
+    {{ csrf_input() }}
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:end">
+      <label>المنصة
+        <select class="hub-input" name="platform">
+          {% for pl in platforms %}<option value="{{ pl }}">{{ pl }} ({{ allowed_ext[pl]|join(' / ') }})</option>{% endfor %}
+        </select>
+      </label>
+      <label>القناة
+        <select class="hub-input" name="channel">{% for c in channels %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+      </label>
+      <label>الإصدار<input class="hub-input" name="version" dir="ltr" placeholder="1.2.0" required></label>
+      <label style="grid-column:span 2">الملف<input class="hub-input" type="file" name="binary" required></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="set_current" checked> اجعله الحالي</label>
+    </div>
+    <div style="margin-top:10px"><button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-upload"></i> رفع إصدار</button></div>
+  </form>
+
+  {# releases table #}
+  {% if row.releases %}
+  <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+    <thead><tr><th>المنصة</th><th>القناة</th><th>الإصدار</th><th>الحجم</th><th>SHA-256</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+    <tbody>
+      {% for r in row.releases %}
+      <tr>
+        <td>{{ r.platform }}</td><td>{{ r.channel }}</td><td dir="ltr">v{{ r.version }}{{ r.file_ext }}</td>
+        <td>{{ r.size_bytes | filesizeformat }}</td>
+        <td dir="ltr" style="font-family:ui-monospace,monospace;font-size:12px">{{ r.sha256[:16] }}…</td>
+        <td>{% if r.is_current %}<span class="hub-pill hub-pill--green">حالي</span>{% else %}<span class="hub-pill hub-pill--grey">—</span>{% endif %}</td>
+        <td>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('app_download', release_id=r.id) }}"><i class="fa-solid fa-download"></i></a>
+            {% if not r.is_current %}
+            <form method="post" action="{{ url_for('admin_landing.release_set_current', rid=r.id) }}" style="display:inline">
+              {{ csrf_input() }}<button class="hub-btn hub-btn--primary hub-btn--sm" type="submit">اجعله الحالي</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin_landing.release_delete', rid=r.id) }}" style="display:inline">
+              {{ csrf_input() }}<button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626" type="submit"
+                      data-confirm="حذف الإصدار v{{ r.version }} ({{ r.platform }})؟"><i class="fa-solid fa-trash"></i></button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}{{ hub.empty("لا إصدارات بعد", sub="ارفع أول إصدار Windows أو Android لهذا التطبيق.", icon="box-open") }}{% endif %}
+{% endcall %}
+{% endfor %}
+
+{% if not products %}{{ hub.empty("لا تطبيقات بعد", sub="أضف تطبيقًا ثم ارفع إصداراته ليظهر في قسم التنزيلات.", icon="cubes") }}{% endif %}
+
+<div style="margin-top:12px"><a class="hub-btn hub-btn--ghost hub-btn--sm" href="{{ url_for('admin_landing.overview') }}">رجوع للنظرة العامة</a></div>
+{% endblock %}

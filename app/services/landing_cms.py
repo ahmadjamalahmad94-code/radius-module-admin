@@ -80,12 +80,18 @@ def build_public_context(page: LandingPage) -> dict:
     sections = []
     for sec in visible_sections(page):
         sections.append({"section": sec, "items": visible_items(sec)})
+    # Aggregated downloads + the externally-hosted Card-Print URL are pulled
+    # from the app-releases service (not from LandingItem rows) so the Downloads
+    # section reflects the actual uploaded binaries.
+    from . import app_releases
     return {
         "page": page,
         "sections": sections,
         "social_links": visible_social_links(),
         "contact_methods": visible_contact_methods(),
         "status_badge_class": STATUS_BADGE_CLASS,
+        "downloads": app_releases.public_downloads(),
+        "cardprint_url": app_releases.get_cardprint_url(),
     }
 
 
@@ -326,3 +332,37 @@ def seed_landing_defaults() -> None:
                                                  value="", is_visible=False, sort_order=(i + 1) * 10))
 
     db.session.commit()
+
+
+def ensure_app_sections() -> None:
+    """Add the Downloads + Card-Print intro sections to the homepage if missing.
+
+    Idempotent and additive — safe on an existing live landing (it only inserts
+    a section when its ``section_key`` is absent; it never touches existing
+    sections). Runs on every boot after the default seed.
+    """
+    page = get_homepage()
+    if page is None:
+        return
+    existing = {s.section_key for s in all_sections(page)}
+    added = False
+
+    if "cardprint_intro" not in existing:
+        db.session.add(_section(
+            page.id, "cardprint_intro", "cardprint_intro", 85,
+            eyebrow_text="منتج منفصل",
+            title="بطاقات الطباعة (Card-Print)",
+            description="نظام مستقل لإدارة وطباعة بطاقات الاشتراك/الكروت، يُستضاف بشكل منفصل "
+                        "عن لوحة HobeRadius. افتح متجر بطاقات الطباعة من الزر أدناه."))
+        added = True
+
+    if "downloads" not in existing:
+        db.session.add(_section(
+            page.id, "downloads", "downloads", 95,
+            eyebrow_text="التنزيلات",
+            title="حمّل تطبيقات HobeRadius",
+            subtitle="إصدارات Windows و Android لكل تطبيق — مع رقم الإصدار وبصمة SHA-256."))
+        added = True
+
+    if added:
+        db.session.commit()

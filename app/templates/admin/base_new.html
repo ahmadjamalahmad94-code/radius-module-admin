@@ -400,6 +400,10 @@
              class="adm-link {% if ep == 'admin_landing.preview' %}is-active{% endif %}">
             {{ _('معاينة الصفحة') }}
           </a>
+          <a href="{{ url_for('admin_landing.apps') }}"
+             class="adm-link {% if ep == 'admin_landing.apps' %}is-active{% endif %}">
+            {{ _('التطبيقات والتنزيلات') }}
+          </a>
           <a href="{{ url_for('admin_landing.social_list') }}"
              class="adm-link {% if ep == 'admin_landing.social_list' %}is-active{% endif %}">
             {{ _('روابط التواصل') }}

@@ -305,3 +305,18 @@
 .lp-steps.timeline .lp-step { text-align: center; background: transparent; border: none; box-shadow: none; }
 .lp-steps.timeline .lp-step-n { margin: 0 auto 14px; box-shadow: 0 0 0 6px var(--lp-bg); }
 @media (max-width: 760px) { .lp-steps.timeline::before { display: none; } .lp-steps.timeline .lp-step { background: var(--lp-surface); border: 1px solid var(--lp-line); box-shadow: var(--lp-shadow); } }
+
+/* ═══════════ DOWNLOADS (aggregated product apps) ═══════════ */
+.lp-dl-card {
+  flex: 1 1 320px; max-width: 380px; background: var(--lp-surface);
+  border: 1px solid var(--lp-line); border-radius: 18px; padding: 22px;
+  box-shadow: var(--lp-shadow); display: flex; flex-direction: column; gap: 16px;
+}
+.lp-dl-head { display: flex; gap: 14px; align-items: flex-start; }
+.lp-dl-head h3 { margin: 0 0 4px; font-size: 18px; }
+.lp-dl-head p { margin: 0; color: var(--lp-muted); font-size: 14px; line-height: 1.6; }
+.lp-dl-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+.lp-dl-btn { flex: 1 1 140px; justify-content: center; gap: 10px; }
+.lp-dl-btn small { display: block; font-size: 11px; font-weight: 600; opacity: .85; margin-top: 2px; }
+.lp-dl-fp { font-size: 12px; color: var(--lp-muted); font-family: ui-monospace, monospace; direction: ltr; text-align: start; }
+.lp-dl-empty { text-align: center; }

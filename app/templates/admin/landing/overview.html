@@ -21,7 +21,8 @@
     <div>أقسام مخفية: <strong>{{ hidden_count }}</strong></div>
     <div>روابط تواصل: <strong>{{ social_count }}</strong></div>
     <div>طرق اتصال: <strong>{{ contact_count }}</strong></div>
-    <div style="margin-inline-start:auto;display:flex;gap:8px">
+    <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.apps') }}"><i class="fa-solid fa-download"></i> التطبيقات والتنزيلات</a>
       <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.social_list') }}"><i class="fa-solid fa-share-nodes"></i> روابط التواصل</a>
       <a class="hub-btn hub-btn--secondary hub-btn--sm" href="{{ url_for('admin_landing.contact_list') }}"><i class="fa-solid fa-address-book"></i> طرق الاتصال</a>
     </div>
