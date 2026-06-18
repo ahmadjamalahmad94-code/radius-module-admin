@@ -1706,9 +1706,12 @@ def _serialize_service(
         # free_limited is upgradable by design («قابلة للتطوير») — the portal
         # shows a ترقية CTA; paid-disabled keeps the طلب تفعيل CTA.
         "upgradable": tier == SERVICE_TIER_FREE_LIMITED,
-        # VIEW-only flag: the portal omits hidden services entirely; the
-        # radius client mirrors the hide in its own UI. Functionality is
-        # untouched — hidden ≠ suspended (orthogonal states by design).
+        # DECLUTTER flag («إخفاء للترتيب»): a VIEW-only tidiness choice — the
+        # provider hides a service this customer doesn't need so their panel is
+        # clean. The radius removes it from the CUSTOMER's panel nav (operator
+        # view) AND the end-user portal, but it is NOT a commercial block: no
+        # 403, fully reversible, functionality untouched. Distinct from a
+        # «موقوفة» suspend (status=="suspended" → gate "disabled" → hide+403).
         "hidden": service_is_hidden(entitlement),
     }
     if plan_code:
