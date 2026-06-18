@@ -194,8 +194,12 @@ def test_contract_returns_disabled_and_expired_when_vpn_is_not_active(client):
     entitlement.status = "disabled"
     db.session.commit()
 
+    # «مدفوعة» not-purchased (status "disabled", NOT «موقوفة») → a VISIBLE upsell
+    # (locked_upgrade), per the owner's model — never a hard `disabled` block.
     disabled = _license_check(client, lic, fingerprint="fp-disabled").get_json()["services"]["ip_change_vpn"]
-    assert disabled == {"enabled": False, "status": "disabled"}
+    assert disabled["enabled"] is False
+    assert disabled["status"] == "locked_upgrade"
+    assert disabled["requires_activation"] is True
 
     entitlement.enabled = False
     entitlement.status = "suspended"
@@ -226,7 +230,12 @@ def test_existing_license_check_fields_remain_backward_compatible(client):
     assert body["status"] == "active"
     assert body["mode"] == "active"
     assert {"expires_at", "grace_until", "plan", "features"}.issubset(body.keys())
-    assert body["services"]["ip_change_vpn"] == {"enabled": False, "status": "disabled"}
+    # ip_change_vpn is a «مدفوعة» service: off + active license + not suspended →
+    # a VISIBLE upsell (locked_upgrade), NOT a hard `disabled` block.
+    vpn = body["services"]["ip_change_vpn"]
+    assert vpn["enabled"] is False
+    assert vpn["status"] == "locked_upgrade"
+    assert vpn["requires_activation"] is True
 
 
 def test_vpn_admin_pages_render(client):

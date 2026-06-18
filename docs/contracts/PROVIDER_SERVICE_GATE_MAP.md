@@ -46,6 +46,38 @@ service entries (post plan-features / tier / suspend / license), so:
 A «مدفوعة» service is a visible upsell, never a hard block — only the suspend
 toggle hard-disables.
 
+### Default free/paid model (owner's commercial baseline)
+
+When the owner sets no explicit catalog policy, the IMPLICIT default is:
+
+- **PAID** («مدفوعة») — ONLY the five infrastructure services the provider runs
+  centrally: `ip_change_vpn`, `public_ip_change`, `remote_support`,
+  `remote_health_fix`, `multi_tenant`. Each emits **per-service**
+  `status: "locked_upgrade"` + `requires_activation: true` (visible «طلب تفعيل»),
+  NEVER `disabled` — so they are upsells, not blocks. (`multi_tenant` is also
+  hidden-until-granted, so it stays invisible until granted.)
+- **FREE** («مجانية مطلقة» / `free_unlimited`) — EVERYTHING else (all software:
+  finance/accounting/invoices, communications/whatsapp/sms-BYO, network/router
+  services, cards/store, reports, subscribers, backups, audit, integration,
+  portals, …). A fresh active customer has all software `enabled`.
+
+So in a fresh customer NOTHING is `disabled` (no 403) — only an explicit
+«موقوفة» suspend produces `disabled`. The owner can still override any service
+per-customer or globally («الخدمات»): mark a free service paid, or a paid one free.
+
+Because each gate section mixes free + paid capabilities, a SECTION (gate) is
+typically `active` (its free capabilities are open) while a specific paid feature
+inside it emits `locked_upgrade` at the **service** level — e.g. the `network`
+section is open, but `services.ip_change_vpn.status == "locked_upgrade"`.
+
+### Renew / «اعرض الباقات» CTA — `pricing_url`
+
+The capacity-contract response carries a top-level **`pricing_url`** — the public
+landing «الباقات والأسعار» deep-link (`https://<panel>/pricing` → `/#pricing`).
+The radius points its expired/locked renew CTA at this so a locked customer lands
+on the offers. The landing pricing is CMS-managed (live from the editable
+packages + discount tiers).
+
 ## License block (radius lifecycle gate)
 
 The contract — and the bridge response **root** — carry a `license` block the

@@ -241,30 +241,36 @@ def test_bridge_endpoint_mirrors_license_at_top_level(app, client, cust_lic):
 
 # ── FIX 2: paid-not-purchased is locked_upgrade, not disabled ────────────────
 def test_paid_default_service_is_locked_upgrade_not_disabled(cust_lic):
-    """The 26 «مدفوعة» defaults must reach the gate as locked_upgrade (visible
-    upsell), NOT disabled (hard hide+403)."""
+    """Under the owner's model only the five infrastructure services are paid;
+    each emits at the SERVICE level as locked_upgrade (visible «طلب تفعيل»),
+    NEVER disabled — and nothing is hard-`disabled` in a fresh customer."""
     _c, lic = cust_lic
-    grants = _grants(lic)
-    # `store` is all-paid + off by default → locked_upgrade
-    store = grants["store"]
-    assert store["status"] == "locked_upgrade"
-    assert store["requires_activation"] is True
-    assert store["enabled"] is False
-    # No gate should be hard-`disabled` purely from paid defaults (nothing is
-    # suspended in a fresh customer).
-    assert all(g["status"] != "disabled" for g in grants.values())
+    ct = _contract(lic)
+    services = ct["services"]
+    # a default-paid service is a VISIBLE upsell at the service level
+    ip = services["ip_change_vpn"]
+    assert ip["tier"] == "paid"
+    assert ip["status"] == "locked_upgrade"
+    assert ip["requires_activation"] is True
+    assert ip["enabled"] is False
+    # NOTHING is hard-disabled purely from paid defaults (nothing suspended) —
+    # not a single service, not a single gate.
+    assert all(s.get("status") != "disabled" for s in services.values())
+    assert all(g["status"] != "disabled" for g in ct["provider_grants"].values())
+    # free software is open: the `store` section (card_marketplace …) is active
+    assert ct["provider_grants"]["store"]["status"] == "active"
 
 
-def test_paid_then_suspended_flips_locked_to_disabled(cust_lic):
-    # customer_support is the sole service feeding `service_requests` → a clean
-    # single-service gate, deterministic regardless of plan features.
+def test_only_explicit_suspend_hard_disables(cust_lic):
+    """The ONLY thing that maps to a hard `disabled` is an explicit «موقوفة»
+    suspend. customer_support is the sole service feeding `service_requests`
+    (a clean single-service gate); free by default → active; suspended → disabled."""
     c, lic = cust_lic
+    # default (free software) → the section is OPEN
+    assert _grants(lic)["service_requests"]["status"] == "active"
+    # explicit «موقوفة» → hard disabled (radius hide + 403)
     ent = get_or_create_service_entitlement(c, "customer_support")
-    ent.status = "disabled"   # paid, not purchased
-    ent.enabled = False
-    db.session.commit()
-    assert _grants(lic)["service_requests"]["status"] == "locked_upgrade"
-    # …then explicit «موقوفة» → hard disabled.
     ent.status = "suspended"
+    ent.enabled = False
     db.session.commit()
     assert _grants(lic)["service_requests"]["status"] == "disabled"

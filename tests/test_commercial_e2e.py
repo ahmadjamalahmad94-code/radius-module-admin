@@ -201,9 +201,11 @@ def test_gate_state_free_enabled(gate_cust):
 
 def test_gate_state_locked_upgrade(gate_cust):
     _c, lic = gate_cust
-    # `store` is all-paid + off by default → a visible upsell, not a hard block
-    g = _grant(lic, "store")
-    assert g["status"] == "locked_upgrade" and g["requires_activation"] is True and g["enabled"] is False
+    # Only the five infrastructure services are paid; each is a VISIBLE upsell at
+    # the SERVICE level (locked_upgrade + «طلب تفعيل»), never a hard block.
+    ip = _svc(lic, "ip_change_vpn")
+    assert ip["tier"] == "paid"
+    assert ip["status"] == "locked_upgrade" and ip["requires_activation"] is True and ip["enabled"] is False
 
 
 def test_gate_state_disabled_commercial_block(gate_cust):
@@ -228,6 +230,45 @@ def test_gate_state_hidden_until_granted(gate_cust):
     _c, lic = gate_cust
     mt = _svc(lic, "multi_tenant")
     assert mt["visibility"] == "hidden" and mt["status"] == "hidden" and mt["upgradable"] is False
+
+
+# ── E′. The «شركتي» live scenario: free software open, 5 paid locked, none blocked
+def test_fresh_customer_correct_commercial_state(gate_cust):
+    """The exact state the owner wants on the live radius for «شركتي»: a fresh
+    active customer has all SOFTWARE accessible, only the five infrastructure
+    services as «طلب تفعيل», and NOTHING hard-disabled (no «موقوفة»)."""
+    _c, lic = gate_cust
+    ct = build_runtime_contract_for_license(lic, license_active=True, status="active")
+    services, grants = ct["services"], ct["provider_grants"]
+
+    PAID = {"ip_change_vpn", "public_ip_change", "remote_support", "remote_health_fix", "multi_tenant"}
+
+    # finance-center (the live symptom) is now OPEN — free + enabled, gate active.
+    fc = services["finance_center"]
+    assert fc["enabled"] is True and fc["status"] == "active"
+    assert grants["finance"]["status"] == "active"
+
+    # representative free software is enabled
+    for k in ("accounting", "invoices", "communications", "reports", "cards",
+              "subscribers", "routers", "whatsapp_gateway", "sms_gateway", "backups"):
+        assert services[k]["enabled"] is True, f"{k} should be free+enabled"
+        assert services[k]["status"] == "active"
+
+    # the four NON-hidden paid services are visible upsells (locked_upgrade)
+    for k in ("ip_change_vpn", "public_ip_change", "remote_support", "remote_health_fix"):
+        assert services[k]["enabled"] is False
+        assert services[k]["status"] == "locked_upgrade", f"{k} must be locked_upgrade"
+        assert services[k]["requires_activation"] is True
+    # multi_tenant is the fully-hidden paid service
+    assert services["multi_tenant"]["visibility"] == "hidden"
+
+    # NOTHING is hard-disabled (nothing explicitly «موقوفة») — service or gate
+    assert all(s.get("status") != "disabled" for s in services.values())
+    assert all(g["status"] != "disabled" for g in grants.values())
+
+    # and only the five are paid; everything else is free
+    paid_services = {k for k, s in services.items() if s.get("tier") == "paid"}
+    assert paid_services == PAID
 
 
 # ── F. ACTIVATIONS over the bridge: request → approve → contract ─────────────

@@ -92,7 +92,31 @@ def build_public_context(page: LandingPage) -> dict:
         "status_badge_class": STATUS_BADGE_CLASS,
         "downloads": app_releases.public_downloads(),
         "cardprint_url": app_releases.get_cardprint_url(),
+        # Pricing/offers — pulled LIVE from the editable packages + discount tiers
+        # (CMS-managed: edits in /admin/plans + /admin/discounts reflect here).
+        **public_pricing_context(),
     }
+
+
+def public_pricing_context() -> dict:
+    """The «الباقات والأسعار» data for the public landing — the six packages
+    (each with its discount-tier quotes), the free-trial entry card, and the
+    enabled discount tiers as badges. All from the editable data, never hardcoded.
+    Defensive: any error yields an empty pricing block so the landing still renders.
+    """
+    try:
+        from . import subscription_pricing as sp
+        from .trial_plan import TRIAL_ACTIVE_SUBSCRIBERS_CAP, TRIAL_DURATION_DAYS
+        return {
+            "pricing": sp.package_pricing(),
+            "discount_tiers": [t for t in sp.get_discount_tiers() if t.get("enabled")],
+            "trial_offer": {
+                "days": TRIAL_DURATION_DAYS,
+                "capacity": TRIAL_ACTIVE_SUBSCRIBERS_CAP,
+            },
+        }
+    except Exception:  # noqa: BLE001 — never break the public page on a pricing read
+        return {"pricing": [], "discount_tiers": [], "trial_offer": None}
 
 
 # ═══════════════════════════ SEED (idempotent) ═══════════════════════════

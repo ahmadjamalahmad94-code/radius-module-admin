@@ -157,10 +157,18 @@ def hoberadius_capacity_contract():
         license_active=result.active,
         status=result.status,
     )
+    # The public «الباقات والأسعار» deep-link — the radius points its
+    # renew/«اعرض الباقات» CTA (pricing_url) here so a locked/expired customer
+    # lands on the offers. Best-effort: never fail the contract on a URL build.
+    try:
+        pricing_url = url_for("pricing_page", _external=True)
+    except Exception:  # noqa: BLE001
+        pricing_url = "/pricing"
     return jsonify({
         "ok": True,
         "status": result.status,
         "contract": contract,
+        "pricing_url": pricing_url,
         # Top-level mirrors of the contract blocks so the radius gate finds them
         # whether it reads the nested contract or the response root. The
         # `license` mirror is CRITICAL: without it the lifecycle gate saw no
