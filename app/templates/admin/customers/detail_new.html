@@ -708,6 +708,10 @@
        title="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة لهذا المشترك">
       <i class="fa-solid fa-layer-group" aria-hidden="true"></i> تعرفة الخدمات
     </a>
+    <a href="{{ url_for('admin.customer_messages', customer_id=customer.id) }}" class="cd-hero-btn"
+       title="خط الدعم: إشعارات ودردشة باتجاهين بين لوحة التراخيص ولوحة الزبون">
+      <i class="fa-solid fa-comments" aria-hidden="true"></i> رسائل الدعم
+    </a>
     {% if is_super_admin %}
       <a href="{{ url_for('admin_vault.vault_home', customer_id=customer.id) }}" class="cd-hero-btn">
         <i class="fa-solid fa-vault" aria-hidden="true"></i> الخزنة

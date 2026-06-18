@@ -8,7 +8,7 @@ from ..license_signing import (
     mask_license_key as _mask_license_key,
     verify_license_signature,
 )
-from ..models import CustomerUser, utcnow
+from ..models import CustomerServiceRequest, CustomerUser, utcnow
 from ..security import clean_text, client_ip
 from ..services.license_payments import (
     LicensePaymentProofService,
@@ -22,13 +22,16 @@ from ..services.license_payments import (
 from ..services.license_service import check_license
 from ..services.customer_control import (
     CustomerControlValidationError,
+    add_service_request_message,
     audit_customer_control,
     build_identity_sync_contract,
     build_runtime_contract_for_license,
     clean_username,
     create_customer_service_request,
     import_radius_admins,
+    visible_service_request_messages,
 )
+from ..services import panel_messaging
 from ..services.whatsapp import policy as wa_policy
 from ..services.whatsapp import queue as wa_queue
 from ..services.whatsapp import settings as wa_settings
@@ -215,6 +218,140 @@ def hoberadius_service_requests():
             "status": service_request.status,
         },
     }), 201
+
+
+@bp.post("/integration/hoberadius/service-requests/messages")
+def hoberadius_service_request_messages():
+    """Bidirectional ticket thread over the bridge.
+
+    The radius PULLS the visible message thread for one of its tickets (so the
+    provider's «رد» replies reach the customer's panel) and may POST a customer
+    reply onto the thread (``message`` field) — closing the support-ticket loop
+    without requiring a portal SSO round-trip.
+    """
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "رسائل الطلبات تتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status, "message": "الترخيص غير معروف."}), 404
+    reference = clean_text(body.get("reference"), 40)
+    sr = (CustomerServiceRequest.query
+          .filter_by(customer_id=result.license.customer_id, public_reference=reference)
+          .first()) if reference else None
+    if sr is None:
+        return jsonify({"ok": False, "status": "not_found", "message": "لم يتم العثور على الطلب."}), 404
+    # Optional customer reply onto the thread (customer → provider).
+    reply = (body.get("message") or "").strip()
+    if reply:
+        try:
+            add_service_request_message(sr, body=reply, sender_type="customer", event_type="message")
+        except CustomerControlValidationError as exc:
+            return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+        audit_customer_control(
+            actor_admin_id=None, action="customer_service_request_message",
+            entity_type="customer_service_request", entity_id=str(sr.id),
+            summary=f"رد الزبون على الطلب {sr.public_reference} عبر الجسر",
+            metadata={"customer_id": sr.customer_id})
+        db.session.commit()
+    messages = [{
+        "id": m.id,
+        "sender": m.sender_type,
+        "event": m.event_type,
+        "body": m.body,
+        "created_at": (m.created_at.replace(microsecond=0).isoformat() + "Z") if m.created_at else None,
+    } for m in visible_service_request_messages(sr)]
+    return jsonify({
+        "ok": True,
+        "service_request": {
+            "id": sr.id, "reference": sr.public_reference, "title": sr.title,
+            "service_key": sr.service_key, "status": sr.status,
+        },
+        "messages": messages,
+    })
+
+
+@bp.post("/integration/hoberadius/messages/poll")
+def hoberadius_messages_poll():
+    """The radius pulls provider→customer panel messages (notices + chat replies)
+    it hasn't received yet; they're stamped delivered so the next poll is clean."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "الرسائل تتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status, "messages": []}), 404
+    rows = panel_messaging.poll_undelivered(result.license.customer, mark_delivered=True)
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "messages": [panel_messaging.to_bridge_dict(m) for m in rows],
+        "count": len(rows),
+    })
+
+
+@bp.post("/integration/hoberadius/messages/send")
+def hoberadius_messages_send():
+    """The radius posts a customer→provider chat/support message into the inbox."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "الرسائل تتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license or not result.active:
+        return jsonify({"ok": False, "status": result.status, "message": "الترخيص ليس نشطًا."}), 403
+    try:
+        msg = panel_messaging.record_from_customer(
+            result.license.customer,
+            body=body.get("body") or body.get("message") or "",
+            subject=body.get("subject") or "",
+            channel=body.get("channel") or "chat",
+            license=result.license,
+            sender_label=clean_text(body.get("sender_label"), 120) or "لوحة الزبون",
+        )
+    except panel_messaging.PanelMessagingError as exc:
+        return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+    audit_customer_control(
+        actor_admin_id=None, action="panel_message_from_customer",
+        entity_type="panel_message", entity_id=str(msg.id),
+        summary=f"رسالة دعم واردة من {result.license.customer.company_name}",
+        metadata={"customer_id": result.license.customer_id, "channel": msg.channel})
+    db.session.commit()
+    return jsonify({"ok": True, "status": "received", "message_id": msg.id}), 201
+
+
+@bp.post("/integration/hoberadius/messages/ack")
+def hoberadius_messages_ack():
+    """The radius confirms the customer saw provider messages (ids list)."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "الرسائل تتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result.license:
+        return jsonify({"ok": False, "status": result.status, "acked": 0}), 404
+    ids = body.get("message_ids") or body.get("ids") or []
+    acked = panel_messaging.ack_seen(result.license.customer, ids if isinstance(ids, list) else [])
+    db.session.commit()
+    return jsonify({"ok": True, "acked": acked})
 
 
 @bp.post("/integration/hoberadius/portal-sso")

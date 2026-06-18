@@ -21,6 +21,7 @@ from ..models import (
     CustomerServiceRequest,
     CustomerServiceRequestMessage,
     CustomerUser,
+    PanelMessage,
     CustomerVpnEntitlement,
     License,
     LicenseCheck,
@@ -633,6 +634,54 @@ def customer_detail(customer_id: int):
         chr_move_targets=_chr_move_targets,
         chr_move_current_ips=_chr_move_current_ips,
     )
+
+
+@bp.get("/customers/<int:customer_id>/messages")
+@login_required
+def customer_messages(customer_id: int):
+    """The support-LINE thread with this customer («رسائل لوحة التراخيص» + chat):
+    provider notices/replies the radius pulls, and inbound customer messages."""
+    from ..services import panel_messaging
+    customer = db.get_or_404(Customer, customer_id)
+    panel_messaging.mark_inbound_seen(customer)   # opening the thread clears unread
+    db.session.commit()
+    thread = panel_messaging.thread_for_customer(customer)
+    return render_template(
+        "admin/customer_messages.html",
+        customer=customer,
+        thread=thread,
+        channels=panel_messaging.CHANNELS,
+        importances=panel_messaging.IMPORTANCES,
+    )
+
+
+@bp.post("/customers/<int:customer_id>/messages")
+@login_required
+def customer_messages_send(customer_id: int):
+    """Provider → customer: queue a notice / chat reply the radius pulls on poll."""
+    from ..services import panel_messaging
+    customer = db.get_or_404(Customer, customer_id)
+    current_license = find_best_customer_license(customer)
+    try:
+        msg = panel_messaging.send_to_customer(
+            customer,
+            body=request.form.get("body") or "",
+            subject=request.form.get("subject") or "",
+            channel=request.form.get("channel") or "notice",
+            importance=request.form.get("importance") or "info",
+            sender_admin_id=session.get("admin_id"),
+            sender_label="لوحة التراخيص",
+            license=current_license,
+        )
+    except panel_messaging.PanelMessagingError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customer_messages", customer_id=customer.id))
+    audit("panel_message_to_customer", "panel_message", str(msg.id),
+          f"إرسال رسالة لوحة إلى {customer.company_name}",
+          {"customer_id": customer.id, "channel": msg.channel, "importance": msg.importance})
+    db.session.commit()
+    flash("تم إرسال الرسالة — سيستلمها الزبون على لوحته عند المزامنة القادمة.", "success")
+    return redirect(url_for("admin.customer_messages", customer_id=customer.id))
 
 
 def _observed_devices_for_license(lic) -> list[dict]:
