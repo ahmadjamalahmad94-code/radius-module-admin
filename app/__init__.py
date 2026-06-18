@@ -815,6 +815,13 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "download_url": "VARCHAR(600) NOT NULL DEFAULT ''",
         })
 
+    # IP-change on-demand traffic quota: the approved «طلب تفعيل» traffic amount
+    # is stored per-customer on the VPN entitlement (GB/month, nullable).
+    if "customer_vpn_entitlements" in tables:
+        _add_columns_if_missing("customer_vpn_entitlements", {
+            "traffic_quota_gb": "INTEGER",
+        })
+
     # Zero-central: each customer tunnel + WG peer carries the fleet node it
     # was provisioned on. Backfill is handled below — column add first.
     if "customer_vpn_tunnels" in tables:

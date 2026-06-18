@@ -184,6 +184,10 @@ def build_effective_vpn_entitlement(
     upload_mbps = entitlement.upload_mbps or (plan.upload_mbps if plan else None)
     max_vpn_users = entitlement.max_vpn_users or (plan.max_vpn_users if plan else None)
     max_locations = entitlement.max_locations or (plan.max_locations if plan else 1)
+    # The per-customer APPROVED traffic quota (from the «طلب تفعيل») wins over
+    # the plan default; NULL on both ⇒ unlimited.
+    traffic_quota_gb = (getattr(entitlement, "traffic_quota_gb", None)
+                        or (plan.traffic_quota_gb if plan else None))
 
     try:
         download_mbps = validate_vpn_speed(download_mbps, "download_mbps")
@@ -201,7 +205,7 @@ def build_effective_vpn_entitlement(
         upload_mbps=upload_mbps,
         max_vpn_users=max_vpn_users,
         max_locations=max_locations,
-        traffic_quota_gb=plan.traffic_quota_gb if plan else None,
+        traffic_quota_gb=traffic_quota_gb,
         expires_at=entitlement.expires_at,
     )
 
