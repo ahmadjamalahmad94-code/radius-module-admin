@@ -66,9 +66,12 @@ def _login_admin(client):
 
 
 def _pick_service(*, with_limit_fields: bool = False) -> ServiceCatalogItem:
-    """A non-default-enabled catalog service (so gating is actually exercised)."""
+    """A non-default-enabled, FREE-by-model catalog service (so applying an
+    explicit policy is actually exercised against a known free default — the
+    five paid services are skipped so the model default is deterministic)."""
+    from app.services.customer_control import DEFAULT_PAID_SERVICES
     for item in ServiceCatalogItem.query.all():
-        if item.default_enabled or item.service_key == "ip_change_vpn":
+        if item.default_enabled or item.service_key in DEFAULT_PAID_SERVICES:
             continue
         if with_limit_fields and not service_limit_fields(item.service_key):
             continue
@@ -93,12 +96,19 @@ def test_catalog_policy_roundtrip(app):
     assert catalog_default_tier(item) == SERVICE_TIER_FREE_UNLIMITED
     assert catalog_default_limits(item) == {}  # limits cleared with the tier
 
-    # Paid (the implicit default) clears both metadata keys entirely.
+    # Paid is NO LONGER the implicit default (the model default for software is
+    # free_unlimited) — so marking a free-by-model service «مدفوعة» persists the
+    # tier explicitly so it wins over the model default.
     set_catalog_policy(item, SERVICE_TIER_PAID)
     db.session.commit()
     assert catalog_default_tier(item) == SERVICE_TIER_PAID
-    assert "default_tier" not in item.catalog_metadata
+    assert item.catalog_metadata.get("default_tier") == SERVICE_TIER_PAID
     assert "default_limits" not in item.catalog_metadata
+
+    # Setting the MODEL default (free_unlimited for software) cleans the keys.
+    set_catalog_policy(item, SERVICE_TIER_FREE_UNLIMITED)
+    db.session.commit()
+    assert "default_tier" not in item.catalog_metadata
 
 
 def test_catalog_policy_ignores_garbage(app):
@@ -298,7 +308,8 @@ def test_services_page_save_rejects_negative_quantity(app, client):
     assert "لا يمكن أن تكون سالبة" in res.get_data(as_text=True)
     db.session.expire_all()
     fresh = ServiceCatalogItem.query.filter_by(service_key=item.service_key).one()
-    assert catalog_default_tier(fresh) == SERVICE_TIER_PAID  # nothing persisted
+    # rejected save → nothing persisted → still the model default (free software)
+    assert catalog_default_tier(fresh) == SERVICE_TIER_FREE_UNLIMITED
 
 
 # ─────────────────────────────────────────────────────────────────────────

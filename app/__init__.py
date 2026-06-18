@@ -146,14 +146,23 @@ def create_app(config_object=None, **overrides) -> Flask:
         # The landing page is shown to EVERYONE (including logged-in users).
         # Navigation into the dashboard/portal is via the context-aware "دخول"
         # button in the landing navbar, not an automatic redirect.
-        from .services.landing_cms import get_published_homepage, build_public_context
+        from .services.landing_cms import get_published_homepage, build_public_context, public_pricing_context
         page = get_published_homepage()
         ctx = build_public_context(page) if page else {
             "page": None, "sections": [], "social_links": [],
             "contact_methods": [], "status_badge_class": {},
             "downloads": [], "cardprint_url": "",
+            **public_pricing_context(),
         }
         return render_template("public/landing.html", **ctx)
+
+    @app.get("/pricing")
+    def pricing_page():
+        # Canonical, stable deep-link to the landing «الباقات والأسعار» section —
+        # the renew/«اعرض الباقات» CTA target (radius-side `pricing_url`). A
+        # locked/expired customer lands straight on the offers.
+        from flask import redirect
+        return redirect(url_for("root") + "#pricing")
 
     @app.get("/downloads/<int:release_id>")
     def app_download(release_id: int):

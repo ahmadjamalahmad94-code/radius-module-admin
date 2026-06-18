@@ -35,6 +35,7 @@
       <a href="#modules">الوحدات</a>
       <a href="#integrations">التكاملات</a>
       <a href="#how_it_works">طريقة العمل</a>
+      <a href="#pricing">الباقات</a>
       <a href="#downloads">التنزيلات</a>
       <a href="#faq">الأسئلة الشائعة</a>
       <a href="#contact_cta">تواصل معنا</a>
@@ -266,6 +267,82 @@
 </section>
 {% endif %}
 {% endfor %}
+
+{# ───────── PRICING / OFFERS («الباقات والأسعار») — live from editable data ───────── #}
+{% if pricing %}
+<section id="pricing" class="lp-section lp-reveal alt">
+  <style>
+    .lp-price-discounts{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:6px 0 22px }
+    .lp-disc-badge{ background:rgba(13,148,136,.12); color:#0d9488; border:1px solid rgba(13,148,136,.35);
+      border-radius:999px; padding:5px 13px; font-weight:800; font-size:13px }
+    .lp-price-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px; margin-top:8px }
+    .lp-price-card{ background:#fff; border:1px solid rgba(2,6,23,.08); border-radius:18px; padding:24px 20px;
+      text-align:center; box-shadow:0 8px 24px rgba(2,6,23,.05); display:flex; flex-direction:column; gap:12px }
+    .lp-price-card.is-trial{ border:2px solid #0d9488; background:linear-gradient(180deg,rgba(13,148,136,.06),#fff) }
+    .lp-price-card.is-unlimited{ border:2px solid #7c3aed; background:linear-gradient(180deg,rgba(124,58,237,.06),#fff) }
+    .lp-price-name{ font-weight:900; font-size:18px; color:#0f172a }
+    .lp-price-cap{ font-size:13.5px; color:#475569; font-weight:700 }
+    .lp-price-cap i{ color:#0d9488; margin-inline-end:5px }
+    .lp-price-amount{ font-size:34px; font-weight:900; color:#0d9488; line-height:1 }
+    .lp-price-amount small{ font-size:14px; color:#64748b; font-weight:700 }
+    .lp-price-per{ font-size:12px; color:#94a3b8 }
+    .lp-price-tiers{ border-top:1px dashed rgba(2,6,23,.12); padding-top:12px; margin-top:4px;
+      display:flex; flex-direction:column; gap:6px }
+    .lp-price-tier{ display:flex; justify-content:space-between; font-size:12.5px; color:#475569 }
+    .lp-price-tier b{ color:#0f172a }
+    .lp-price-tier .off{ color:#0d9488; font-weight:800 }
+    .lp-price-foot{ text-align:center; color:#94a3b8; font-size:12.5px; margin-top:18px }
+  </style>
+  <div class="lp-wrap">
+    <div class="lp-sec-head">
+      <span class="lp-eyebrow">الباقات والأسعار</span>
+      <h2 class="lp-h2">اختر باقتك حسب عدد الاتصالات المتزامنة</h2>
+      <p class="lp-lead">السعر حسب أقصى عدد متصلين آنيًا (كروت + مشتركون + PPPoE + هوتسبوت معًا). اشترك لمدة أطول ووفّر أكثر.</p>
+    </div>
+
+    {% if discount_tiers %}
+    <div class="lp-price-discounts">
+      {% for t in discount_tiers %}
+      <span class="lp-disc-badge">{{ t.months }} {{ 'شهر' if t.months == 1 else ('شهور' if t.months < 11 else 'شهرًا') }} −{{ t.percent|round(0)|int }}%</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="lp-price-grid">
+      {% if trial_offer %}
+      <div class="lp-price-card is-trial">
+        <div class="lp-price-name">العرض المجاني</div>
+        <div class="lp-price-cap"><i class="fa-solid fa-bolt"></i> {{ trial_offer.capacity }} اتصال متزامن</div>
+        <div class="lp-price-amount">مجانًا</div>
+        <div class="lp-price-per">تجربة كاملة لمدة {{ trial_offer.days }} يومًا</div>
+      </div>
+      {% endif %}
+
+      {% for p in pricing %}
+      <div class="lp-price-card{% if p.unlimited %} is-unlimited{% endif %}">
+        <div class="lp-price-name">{{ p.name }}</div>
+        <div class="lp-price-cap"><i class="fa-solid fa-users"></i> {{ p.capacity_label }}</div>
+        <div>
+          <span class="lp-price-amount">{{ p.monthly|round(0)|int }}$<small>/شهر</small></span>
+          {% if not p.unlimited %}<div class="lp-price-per">{{ (p.monthly / p.capacity)|round(2) }}$ لكل اتصال متزامن</div>{% endif %}
+        </div>
+        {% if p.quotes|length > 1 %}
+        <div class="lp-price-tiers">
+          {% for q in p.quotes if q.months > 1 and q.percent %}
+          <div class="lp-price-tier">
+            <span>{{ q.months }} {{ 'شهور' if q.months < 11 else 'شهرًا' }} <span class="off">−{{ q.percent|round(0)|int }}%</span></span>
+            <b>{{ q.total|round(0)|int }}$</b>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="lp-price-foot">السعة = أقصى عدد اتصالات متزامنة للنسخة كاملةً. يمكنك الترقية أو التجديد في أي وقت.</p>
+  </div>
+</section>
+{% endif %}
 
 {# ───────── FOOTER ───────── #}
 {% for blk in sections %}{% if blk['section'].section_type == 'footer' %}

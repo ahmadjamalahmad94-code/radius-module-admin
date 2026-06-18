@@ -607,6 +607,30 @@ SERVICE_TIER_FREE_LIMITED = "free_limited"
 SERVICE_TIER_VALUES = (SERVICE_TIER_PAID, SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
 SERVICE_TIER_DEFAULT = SERVICE_TIER_PAID
 
+#: The owner's free/paid model. ONLY these infrastructure services are «مدفوعة»
+#: by default — the provider runs/pays for them centrally. EVERYTHING else is
+#: free software the customer runs on their own VPS (BYO), so a fresh active
+#: customer has all software accessible and only these five as paid upsells.
+#: Matches trial_plan.TRIAL_PAID_SERVICES (the trial uses the same split).
+DEFAULT_PAID_SERVICES: frozenset[str] = frozenset({
+    "ip_change_vpn",
+    "public_ip_change",
+    "remote_support",
+    "remote_health_fix",
+    "multi_tenant",
+})
+
+
+def default_service_tier_for_key(service_key: str) -> str:
+    """The IMPLICIT default tier when the owner set no explicit catalog policy:
+    the five infrastructure services are «مدفوعة» (paid); EVERYTHING else is
+    «مجانية مطلقة» (free_unlimited) — the owner's commercial-model baseline, so a
+    fresh active customer has all software accessible. The owner can still mark
+    any service free_limited (+caps) or paid per-service from «الخدمات»."""
+    if str(service_key or "") in DEFAULT_PAID_SERVICES:
+        return SERVICE_TIER_PAID
+    return SERVICE_TIER_FREE_UNLIMITED
+
 #: Services that are FULLY HIDDEN until the provider explicitly grants them —
 #: NOT shown, NOT available, NOT even a «طلب تفعيل» upsell (distinct from the
 #: paid/locked_upgrade state). «الجهات» (multi_tenant) is the first: when granted
@@ -722,13 +746,18 @@ _CATALOG_LIMITS_KEY = "default_limits"
 
 
 def catalog_default_tier(item: "ServiceCatalogItem | None") -> str:
-    """The owner's catalog-level default tier for a service (paid when unset)."""
+    """The catalog-level default tier for a service. An EXPLICIT owner policy
+    (stored in catalog metadata) always wins; otherwise the owner's commercial
+    MODEL applies (``default_service_tier_for_key``: free software, 5 paid)."""
     if item is None:
         return SERVICE_TIER_DEFAULT
     try:
-        return clean_service_tier(item.catalog_metadata.get(_CATALOG_TIER_KEY))
+        explicit = item.catalog_metadata.get(_CATALOG_TIER_KEY)
     except Exception:  # pragma: no cover — defensive against broken JSON
-        return SERVICE_TIER_DEFAULT
+        explicit = None
+    if explicit:
+        return clean_service_tier(explicit)
+    return default_service_tier_for_key(getattr(item, "service_key", ""))
 
 
 def catalog_default_limits(item: "ServiceCatalogItem | None") -> dict[str, Any]:
@@ -756,7 +785,12 @@ def set_catalog_policy(item: "ServiceCatalogItem", tier: str, limits: dict[str, 
     (paid is the implicit default — keeps metadata clean)."""
     cleaned = clean_service_tier(tier)
     data = item.catalog_metadata
-    if cleaned == SERVICE_TIER_DEFAULT:
+    # Persist the tier explicitly UNLESS it equals this service's MODEL default
+    # (then keep metadata clean — the model already yields it). This preserves
+    # full owner control: marking a normally-free service «مدفوعة», or one of
+    # the five paid services free, is stored explicitly and wins.
+    model_default = default_service_tier_for_key(getattr(item, "service_key", ""))
+    if cleaned == model_default:
         data.pop(_CATALOG_TIER_KEY, None)
         data.pop(_CATALOG_LIMITS_KEY, None)
     else:
@@ -1629,6 +1663,16 @@ def _services_contract(
             "enabled": False,
             "status": generic_vpn.status,
         }
+    # ip_change_vpn is one of the five «مدفوعة» services: when it's off and NOT
+    # explicitly «موقوفة» suspended, it must emit as a VISIBLE upsell
+    # (locked_upgrade + «طلب تفعيل»), never a hard `disabled` block — mirroring
+    # the generic paid-service emission. Only an explicit suspend hard-blocks.
+    if (license_active and not vpn_contract.get("enabled")
+            and vpn_contract.get("status") not in ("suspended", "expired")):
+        vpn_contract = dict(vpn_contract)
+        vpn_contract["status"] = "locked_upgrade"
+        vpn_contract["requires_activation"] = True
+        vpn_contract.setdefault("tier", SERVICE_TIER_PAID)
     services[VPN_SERVICE_KEY] = vpn_contract
     return services
 
@@ -1691,6 +1735,19 @@ def _serialize_service(
             enabled = True
             status = "active"
 
+    # ── PAID, NOT PURCHASED → LOCKED_UPGRADE (visible «طلب تفعيل»), NOT a block ─
+    # A «مدفوعة» service the customer hasn't bought is a VISIBLE upsell: the
+    # radius shows it LOCKED with a «طلب تفعيل/ترقية» CTA — it must NEVER
+    # hard-block (403). Only the explicit «موقوفة (إيقاف فعلي)» suspend maps to
+    # "disabled". Expired paid stays "expired" (re-purchasable). Default-paid
+    # services have no entitlement (seeded status "disabled") → flip them here to
+    # the upsell state so the five paid services show «طلب تفعيل», not a block.
+    requires_activation = False
+    if (not service_tier_is_free(tier) and license_active and not enabled
+            and status not in ("suspended", "expired")):
+        status = "locked_upgrade"
+        requires_activation = True
+
     if not license_active:
         enabled = False
         if status == "active":
@@ -1704,8 +1761,11 @@ def _serialize_service(
         "tier_label": SERVICE_TIER_BADGE_LABELS.get(tier, SERVICE_TIER_BADGE_LABELS[SERVICE_TIER_DEFAULT]),
         "tier_tone": SERVICE_TIER_BADGE_TONE.get(tier, "violet"),
         # free_limited is upgradable by design («قابلة للتطوير») — the portal
-        # shows a ترقية CTA; paid-disabled keeps the طلب تفعيل CTA.
+        # shows a ترقية CTA; paid-not-purchased shows the «طلب تفعيل» CTA.
         "upgradable": tier == SERVICE_TIER_FREE_LIMITED,
+        # True for a «مدفوعة» service awaiting purchase (status locked_upgrade) —
+        # the radius shows it LOCKED + «طلب تفعيل», never a 403 block.
+        "requires_activation": requires_activation,
         # DECLUTTER flag («إخفاء للترتيب»): a VIEW-only tidiness choice — the
         # provider hides a service this customer doesn't need so their panel is
         # clean. The radius removes it from the CUSTOMER's panel nav (operator
