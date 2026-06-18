@@ -95,6 +95,23 @@
   </div>
 </div>
 
+{# Apply the reusable «العرض المجاني» preset: 14-day license + 100 active
+   subscribers + free-on-us tiers (costly ones stay locked-with-upgrade). #}
+<div class="cst-intro" style="border-color:#c4b5fd;background:#f5f3ff;align-items:center;justify-content:space-between">
+  <div style="display:flex;gap:12px;align-items:center">
+    <i class="fa-solid fa-gift"></i>
+    <div>طبّق <b>«العرض المجاني»</b> ({{ trial_days }} يومًا، حتى <b>{{ trial_cap }}</b> مشترك نشط) —
+    يفعّل الخدمات المجانية ويُبقي المدفوعة كعروض ترقية.</div>
+  </div>
+  <form method="post" action="{{ url_for('admin.customer_apply_trial', customer_id=customer.id) }}" style="margin:0">
+    {{ csrf_input() }}
+    <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"
+            data-confirm="تطبيق «العرض المجاني» ({{ trial_days }} يومًا، {{ trial_cap }} مشترك نشط) على هذا العميل؟ سيُنشأ/يُحدّث ترخيص تجريبي ويُعاد ضبط تعرفة الخدمات.">
+      <i class="fa-solid fa-gift"></i> تطبيق العرض المجاني
+    </button>
+  </form>
+</div>
+
 <form method="post" action="{{ url_for('admin.customer_service_tiers_save', customer_id=customer.id) }}" class="cst-form">
   {{ csrf_input() }}
 
