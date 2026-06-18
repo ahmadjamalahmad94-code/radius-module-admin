@@ -1009,6 +1009,15 @@ def seed_defaults(app: Flask) -> None:
         plan.features = features
         db.session.add(plan)
 
+    # «العرض المجاني» Free-Trial plan (14-day term applied per-license on assign;
+    # 100-subscriber cap + per-service trial tiers). Idempotent.
+    try:
+        from .services.trial_plan import ensure_trial_plan
+        ensure_trial_plan()
+    except Exception:  # pragma: no cover — seeding must never block startup
+        app.logger.exception("trial plan seed failed")
+        db.session.rollback()
+
     vpn_plans = [
         ("شبكة خاصة 10 ميجابت", "vpn_10m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 10 ميجابت/ثانية", 10, 10, 25, 1, Decimal("10.00")),
         ("شبكة خاصة 50 ميجابت", "vpn_50m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 50 ميجابت/ثانية", 50, 50, 100, 1, Decimal("35.00")),

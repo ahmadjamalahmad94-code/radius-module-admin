@@ -4348,13 +4348,37 @@ def customer_service_tiers(customer_id: int):
             "hidden": service_is_hidden(ent),
             "suspended": bool(ent and ent.status == "suspended"),
         })
+    from ..services.trial_plan import TRIAL_ACTIVE_SUBSCRIBERS_CAP, TRIAL_DURATION_DAYS
     return render_template(
         "admin/customer_service_tiers.html",
         customer=customer,
         rows=rows,
         tier_labels=SERVICE_TIER_LABELS,
         tier_values=SERVICE_TIER_VALUES,
+        trial_days=TRIAL_DURATION_DAYS,
+        trial_cap=TRIAL_ACTIVE_SUBSCRIBERS_CAP,
     )
+
+
+@bp.post("/customers/<int:customer_id>/apply-trial")
+@login_required
+def customer_apply_trial(customer_id: int):
+    """Assign «العرض المجاني» — a 14-day license on the trial plan + the trial
+    per-service tier set (free-on-us features free, costly ones locked_upgrade,
+    subscribers capped at 100). Flows into the capacity contract."""
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services.trial_plan import apply_trial_to_customer
+    result = apply_trial_to_customer(customer, actor_admin_id=session.get("admin_id"))
+    audit("customer_trial_applied", "customer", str(customer.id),
+          f"Applied free trial ({result['days']}d, cap {result['active_subscribers_cap']}) to {customer.company_name}",
+          {"license_key": result["license_key"], "expires_at": result["expires_at"].isoformat(),
+           "tiers": result["summary"]})
+    db.session.commit()
+    s = result["summary"]
+    flash(f"تم تطبيق «العرض المجاني» ({result['days']} يوم): "
+          f"{s['free'] + s['free_limited']} خدمة مجانية، {s['paid']} مدفوعة، "
+          f"حد {result['active_subscribers_cap']} مشترك نشط.", "success")
+    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/service-tiers")
