@@ -978,6 +978,75 @@
       </div>
 
     </div>
+
+    {# ── «الجهات» (multi_tenant) grant — fully hidden until granted here ── #}
+    <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
+      <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+      تفعيل خدمة الجهات
+      <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
+        — خدمة مخفية تمامًا عن العميل حتى تمنحها هنا. عند المنح: حدّد عدد الجهات وحدود كل جهة.
+        {% if mt_grant and mt_grant.granted %}
+          <span style="color:var(--cc-ok,#16a34a);font-weight:var(--cc-fw-bold)">ممنوحة حاليًا — {{ mt_grant.entity_count }} جهة</span>
+        {% else %}
+          <span style="color:var(--cc-text-mute);font-weight:var(--cc-fw-bold)">الحالة: مخفية</span>
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        «الجهات» (multi_tenant) تُتيح للعميل إنشاء عدّة جهات/مستأجرين داخل نسخته، لكل جهة حدودها الخاصة.
+        تبقى مخفية في عقد السعة (<code>visibility: hidden</code>) حتى تمنحها، فتتحول إلى
+        <code>granted</code> ومعها <code>entity_count</code> وحدود كل جهة. الإلغاء يعيدها مخفية.
+      </span>
+    </div>
+
+    <form method="post" action="{{ url_for('admin.customer_grant_entities', customer_id=customer.id) }}"
+          style="margin-block:var(--cc-sp-6) var(--cc-sp-8)">
+      {{ csrf_input() }}
+      <input type="hidden" name="action" value="grant">
+      <input type="hidden" name="return_to" value="detail">
+      <div style="display:flex;gap:var(--cc-sp-6);flex-wrap:wrap;align-items:flex-end">
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          عدد الجهات (entity_count)
+          <input type="number" name="entity_count" min="1" step="1"
+                 value="{{ mt_grant.entity_count if mt_grant and mt_grant.entity_count else 2 }}"
+                 style="width:140px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        {% for fk, label in (entity_fields or []) %}
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          {{ label }}
+          <input type="number" name="entity_{{ fk }}" min="0" step="1"
+                 value="{{ mt_grant.per_entity_limits.get(fk, '') if mt_grant else '' }}"
+                 placeholder="بلا حد"
+                 style="width:170px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        {% endfor %}
+      </div>
+      <div style="margin-block-start:var(--cc-sp-6);display:flex;gap:var(--cc-sp-4);flex-wrap:wrap">
+        <button type="submit"
+                style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:38px;padding-inline:var(--cc-sp-9);border:none;border-radius:var(--cc-btn-radius);background:var(--cc-brand);color:#fff;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);cursor:pointer">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+          {{ 'تحديث المنح' if mt_grant and mt_grant.granted else 'منح وتفعيل «الجهات»' }}
+        </button>
+      </div>
+    </form>
+
+    {% if mt_grant and mt_grant.granted %}
+    <form method="post" action="{{ url_for('admin.customer_grant_entities', customer_id=customer.id) }}"
+          style="margin-block-end:var(--cc-sp-6)">
+      {{ csrf_input() }}
+      <input type="hidden" name="action" value="revoke">
+      <input type="hidden" name="return_to" value="detail">
+      <button type="submit"
+              data-confirm="إلغاء منح «الجهات» لهذا العميل؟ ستعود مخفية تمامًا من عقد السعة."
+              style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:36px;padding-inline:var(--cc-sp-8);border:1.5px solid #dc2626;border-radius:var(--cc-btn-radius);background:#fff;color:#dc2626;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);cursor:pointer">
+        <i class="fa-solid fa-eye-slash" aria-hidden="true"></i> إلغاء المنح (إعادة الإخفاء)
+      </button>
+    </form>
+    {% endif %}
+
   </div>
 
   {# =========================================================
