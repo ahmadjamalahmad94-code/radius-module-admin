@@ -1268,7 +1268,12 @@ def build_runtime_contract_for_license(
     license_status = status or (lic.status if lic else "not_found")
     customer = lic.customer if lic else None
     services = _services_contract(customer, lic, license_active=license_active, license_status=license_status)
-    return {
+    limits = _limits_contract(lic, customer)
+    # Gate-keyed view of the per-service state for the radius web-admin gate
+    # (its 14 section keys), aggregated from the ~45 provider services above.
+    from .provider_service_gate import build_provider_grants
+    provider_grants = build_provider_grants(services)
+    contract = {
         "license": {
             "active": bool(license_active),
             "status": license_status,
@@ -1283,13 +1288,36 @@ def build_runtime_contract_for_license(
             "portal_config": customer.portal_config if customer else {},
         },
         "services": services,
-        "limits": _limits_contract(lic, customer),
+        # provider_grants is the radius gate's source of truth: each of its 14
+        # section keys → {enabled, status, hidden, limits?}. A section the owner
+        # disabled/hid/limited now reaches the radius under a key its gate reads.
+        "provider_grants": provider_grants,
+        "limits": limits,
         "customer_users_version": customer_users_version(customer) if customer else 0,
         # The bridge_token rotation block was retired with the linking-auth
         # cleanup — there is nothing to rotate; the license key IS the
         # credential and the customer-radius reads it directly from the
         # owner's panel.
     }
+    # Change-detection fingerprint over the parts the radius enforces, so it can
+    # cheaply tell the contract changed (e.g. after the owner saves the tariff)
+    # and re-apply on its next sync without diffing the whole payload.
+    contract["fingerprint"] = _contract_fingerprint(
+        services, provider_grants, limits, contract["customer_users_version"])
+    return contract
+
+
+def _contract_fingerprint(services: dict, provider_grants: dict, limits: dict,
+                          users_version: int) -> str:
+    """Stable sha256 over the enforced parts of the contract (order-insensitive)."""
+    import hashlib
+    import json
+    blob = json.dumps(
+        {"services": services, "provider_grants": provider_grants,
+         "limits": limits, "customer_users_version": users_version},
+        sort_keys=True, ensure_ascii=False, default=str,
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def build_identity_sync_contract(lic: License, *, license_active: bool, status: str) -> dict[str, Any]:
