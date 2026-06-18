@@ -69,14 +69,16 @@ def test_anti_mac_clone_omitted_no_provider_service(cust_lic):
 
 # ── disable / hide / limit reach the gate key ───────────────────────────────
 def test_suspended_provider_service_gates_its_section(cust_lic):
-    # `reports` is a single-service gate → suspending it gates `reports`.
+    # `reports` is a single-service gate → an explicit «موقوفة» suspend is the
+    # ONLY thing that maps to a hard `disabled` (radius hides+403).
     c, lic = cust_lic
     ent = get_or_create_service_entitlement(c, "reports")
     ent.status = "suspended"
     ent.enabled = False
     db.session.commit()
     g = _grants(lic)["reports"]
-    assert g["enabled"] is False and g["status"] == "suspended"
+    assert g["enabled"] is False and g["status"] == "disabled"
+    assert g["requires_activation"] is False
 
 
 def test_hidden_provider_service_marks_gate_hidden(cust_lic):
@@ -117,8 +119,9 @@ def test_any_enabled_keeps_multi_service_section_available(cust_lic):
     assert ct["provider_grants"]["subscribers"]["enabled"] is True  # section stays (sessions/groups)
 
 
-def test_disabling_all_mapped_services_gates_the_section(cust_lic):
-    """Suspend every service feeding `communications` → the gate disables."""
+def test_suspending_all_mapped_services_hard_disables_the_section(cust_lic):
+    """Suspend every service feeding `communications` → hard `disabled`
+    (nothing left sellable, all explicitly «موقوفة»)."""
     c, lic = cust_lic
     for key in ("communications", "whatsapp_gateway"):
         ent = get_or_create_service_entitlement(c, key)
@@ -126,22 +129,29 @@ def test_disabling_all_mapped_services_gates_the_section(cust_lic):
         ent.enabled = False
     db.session.commit()
     g = _grants(lic)["communications"]
-    assert g["enabled"] is False and g["status"] == "suspended"
+    assert g["enabled"] is False and g["status"] == "disabled"
+    assert g["requires_activation"] is False
 
 
 def test_build_provider_grants_unit_semantics():
     services = {
-        "communications": {"enabled": False, "status": "disabled", "hidden": True},
-        "whatsapp_gateway": {"enabled": False, "status": "suspended", "hidden": True},
+        # both off + explicitly suspended, nothing sellable → hard disabled
+        "communications": {"enabled": False, "status": "suspended", "tier": "paid", "hidden": True},
+        "whatsapp_gateway": {"enabled": False, "status": "suspended", "tier": "paid", "hidden": True},
+        # paid + off + NOT suspended → locked_upgrade (visible upsell)
+        "card_marketplace": {"enabled": False, "status": "disabled", "tier": "paid"},  # → store
         "reports": {"enabled": True, "status": "active", "hidden": False,
                     "limits": {"max_reports": 5}},
         "integration_bridge": {"enabled": True, "status": "active"},  # → settings
     }
     g = build_provider_grants(services)
-    assert g["communications"] == {
-        "enabled": False, "status": "suspended", "hidden": True,
-        "services": ["communications", "whatsapp_gateway"],
-    }
+    # all-suspended section → hard disabled (radius hides+403)
+    assert g["communications"]["status"] == "disabled"
+    assert g["communications"]["enabled"] is False and g["communications"]["hidden"] is True
+    assert g["communications"]["requires_activation"] is False
+    # paid-not-purchased → locked_upgrade (radius shows locked + upgrade CTA)
+    assert g["store"]["status"] == "locked_upgrade"
+    assert g["store"]["requires_activation"] is True and g["store"]["enabled"] is False
     assert g["reports"]["enabled"] is True and g["reports"]["limits"] == {"max_reports": 5}
     assert "settings" in g  # integration_bridge mapped to settings
 
@@ -199,3 +209,60 @@ def test_heartbeat_returns_capacity_fingerprint(app, client, cust_lic):
     body = res.get_json()
     assert body.get("ok") is True
     assert body.get("capacity_fingerprint")
+
+
+# ── FIX 1: license block unlocks the radius lifecycle gate ───────────────────
+def test_contract_carries_license_block(cust_lic):
+    _c, lic = cust_lic
+    blk = _contract(lic)["license"]
+    # The fields the radius lifecycle gate reads — redundant aliases so it
+    # unlocks however it keys on them.
+    assert blk["active"] is True and blk["activated"] is True
+    assert blk["status"] == "active" and blk["state"] == "active"
+    assert blk["expires_at"]  # ISO timestamp present
+
+
+def test_bridge_endpoint_mirrors_license_at_top_level(app, client, cust_lic):
+    """The CRITICAL unlock: license must be a TOP-LEVEL sibling of
+    provider_grants (the gate read the response root and found none → locked)."""
+    _c, lic = cust_lic
+    data = client.post("/api/integration/hoberadius/capacity-contract",
+                       json={"license_key": lic.license_key}, **HTTPS).get_json()
+    assert "license" in data, "top-level license block missing → radius would lock"
+    assert data["license"]["active"] is True
+    assert data["license"]["activated"] is True
+    assert data["license"]["status"] == "active"
+    assert data["license"]["expires_at"]
+    # license sits next to provider_grants at the root
+    assert "provider_grants" in data
+
+
+# ── FIX 2: paid-not-purchased is locked_upgrade, not disabled ────────────────
+def test_paid_default_service_is_locked_upgrade_not_disabled(cust_lic):
+    """The 26 «مدفوعة» defaults must reach the gate as locked_upgrade (visible
+    upsell), NOT disabled (hard hide+403)."""
+    _c, lic = cust_lic
+    grants = _grants(lic)
+    # `store` is all-paid + off by default → locked_upgrade
+    store = grants["store"]
+    assert store["status"] == "locked_upgrade"
+    assert store["requires_activation"] is True
+    assert store["enabled"] is False
+    # No gate should be hard-`disabled` purely from paid defaults (nothing is
+    # suspended in a fresh customer).
+    assert all(g["status"] != "disabled" for g in grants.values())
+
+
+def test_paid_then_suspended_flips_locked_to_disabled(cust_lic):
+    # customer_support is the sole service feeding `service_requests` → a clean
+    # single-service gate, deterministic regardless of plan features.
+    c, lic = cust_lic
+    ent = get_or_create_service_entitlement(c, "customer_support")
+    ent.status = "disabled"   # paid, not purchased
+    ent.enabled = False
+    db.session.commit()
+    assert _grants(lic)["service_requests"]["status"] == "locked_upgrade"
+    # …then explicit «موقوفة» → hard disabled.
+    ent.status = "suspended"
+    db.session.commit()
+    assert _grants(lic)["service_requests"]["status"] == "disabled"

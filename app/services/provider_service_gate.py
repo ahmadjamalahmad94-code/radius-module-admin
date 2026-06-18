@@ -28,8 +28,10 @@ serialized service entries (post plan-features / tier / suspend / license), so:
   * enabled = OR of mapped services  (section stays available while ANY of its
     capabilities is granted; the owner gates the whole section by disabling all
     of them);
-  * status  = "active" if any enabled, else "suspended" if any suspended, else
-    "disabled";
+  * status  = "active" if any enabled; else "locked_upgrade" (+ requires_activation)
+    when something is paid-but-not-purchased (a visible upsell — the radius shows
+    it LOCKED with a «طلب تفعيل/ترقية» CTA, NOT hidden); else "disabled" — which
+    happens ONLY for an explicit «موقوفة» suspend (radius hard-hides + 403);
   * hidden  = all mapped services hidden (hide the section only when everything
     feeding it is hidden);
   * limits  = merged limits of the mapped services.
@@ -41,6 +43,11 @@ controls it.
 from __future__ import annotations
 
 from typing import Any
+
+#: The provider "paid, not-yet-purchased" tier (matches
+#: customer_control.SERVICE_TIER_PAID). A paid service that's off is a visible
+#: upsell (``locked_upgrade``), never a hard ``disabled``.
+PAID_TIER = "paid"
 
 #: The radius web-admin gate keys (the 14 sections it can hide / 403).
 RADIUS_GATE_KEYS: tuple[str, ...] = (
@@ -154,11 +161,30 @@ def build_provider_grants(services: dict[str, Any]) -> dict[str, dict[str, Any]]
         any_enabled = any(bool(e.get("enabled")) for _k, e in items)
         any_suspended = any(e.get("status") == "suspended" for _k, e in items)
         all_hidden = bool(items) and all(bool(e.get("hidden")) for _k, e in items)
+        # A «مدفوعة» (paid) service that isn't purchased yet is OFF but is a
+        # visible upsell — NOT a hard block. It's a lock/upgrade candidate when
+        # it's off, paid-tier, and not explicitly suspended (expired paid still
+        # counts — it's re-purchasable). Free services auto-enable, so an
+        # off-not-suspended service is in practice always a paid lock.
+        any_paid_locked = any(
+            (not e.get("enabled")) and e.get("tier") == PAID_TIER and e.get("status") != "suspended"
+            for _k, e in items
+        )
 
+        # State priority (sell-services model):
+        #   active        — at least one capability is granted/working;
+        #   locked_upgrade — nothing on, but something is purchasable → show
+        #                    the section LOCKED with a «طلب تفعيل/ترقية» CTA;
+        #   disabled      — ONLY when the section is explicitly «موقوفة» (or
+        #                    off with nothing sellable) → radius hard-hides+403.
+        requires_activation = False
         if any_enabled:
             status = "active"
+        elif any_paid_locked:
+            status = "locked_upgrade"
+            requires_activation = True
         elif any_suspended:
-            status = "suspended"
+            status = "disabled"
         else:
             status = "disabled"
 
@@ -171,6 +197,9 @@ def build_provider_grants(services: dict[str, Any]) -> dict[str, dict[str, Any]]
         grant: dict[str, Any] = {
             "enabled": any_enabled,
             "status": status,
+            # Distinct from `disabled`: the radius shows a locked section with an
+            # upgrade CTA instead of hard-hiding+403.
+            "requires_activation": requires_activation,
             "hidden": all_hidden,
             # The provider services that fed this gate key — useful for the
             # radius/operator to see why a section is gated.
