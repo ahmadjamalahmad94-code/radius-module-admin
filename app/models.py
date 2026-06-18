@@ -498,6 +498,54 @@ class CustomerServiceRequestMessage(TimestampMixin, db.Model):
         self.metadata_json = json_dumps(value or {})
 
 
+class PanelMessage(TimestampMixin, db.Model):
+    """A direct message on the support LINE between the provider licensing panel
+    and a customer's radius panel — the «رسائل لوحة التراخيص» path + a poll-based
+    support CHAT, both directions, NOT tied to a specific service request.
+
+    * ``direction`` = ``to_customer`` (provider → radius panel) | ``from_customer``
+      (radius panel → provider inbox).
+    * ``channel``   = ``notice`` (a provider announcement/alert pushed to the
+      radius) | ``chat`` (a back-and-forth support conversation message).
+
+    The radius PULLS ``to_customer`` rows via the bridge (poll), marks them
+    ``delivered_at`` on fetch and ``seen_at`` on ack; it POSTS ``from_customer``
+    rows via the bridge (send). This is poll-based (no websocket) — adequate for
+    the pull-based bridge; near-real-time when the radius polls on its heartbeat.
+    """
+    __tablename__ = "panel_messages"
+    __table_args__ = (
+        db.Index("ix_panel_messages_customer_created", "customer_id", "created_at"),
+        db.Index("ix_panel_messages_customer_dir_delivered", "customer_id", "direction", "delivered_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("licenses.id"), nullable=True, index=True)
+    direction = db.Column(db.String(20), default="to_customer", nullable=False, index=True)
+    channel = db.Column(db.String(20), default="notice", nullable=False, index=True)
+    importance = db.Column(db.String(20), default="info", nullable=False)  # info|warning|critical
+    subject = db.Column(db.String(180), default="", nullable=False)
+    body = db.Column(db.Text, default="", nullable=False)
+    sender_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    sender_label = db.Column(db.String(120), default="", nullable=False)
+    delivered_at = db.Column(db.DateTime, nullable=True)  # set when the radius pulled it
+    seen_at = db.Column(db.DateTime, nullable=True)       # set when the radius acked it
+    metadata_json = db.Column(db.Text, default="{}", nullable=False)
+
+    customer = db.relationship("Customer")
+    license = db.relationship("License")
+    sender_admin = db.relationship("Admin")
+
+    @property
+    def message_metadata(self) -> dict:
+        return json_loads(self.metadata_json, {})
+
+    @message_metadata.setter
+    def message_metadata(self, value: dict) -> None:
+        self.metadata_json = json_dumps(value or {})
+
+
 class Plan(TimestampMixin, db.Model):
     __tablename__ = "plans"
     __table_args__ = (
