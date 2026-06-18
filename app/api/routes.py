@@ -158,11 +158,14 @@ def hoberadius_capacity_contract():
         "ok": True,
         "status": result.status,
         "contract": contract,
+        # Top-level mirrors of the contract blocks so the radius gate finds them
+        # whether it reads the nested contract or the response root. The
+        # `license` mirror is CRITICAL: without it the lifecycle gate saw no
+        # license status next to provider_grants and locked the panel
+        # (no_successful_license_snapshot) even for an active license.
+        "license": contract["license"],
         "limits": contract["limits"],
         "services": contract["services"],
-        # Top-level convenience mirrors (like limits/services): the radius gate
-        # reads provider_grants by its 14 section keys; fingerprint lets it
-        # detect a change (e.g. after a tariff save) and re-apply.
         "provider_grants": contract["provider_grants"],
         "fingerprint": contract["fingerprint"],
     })

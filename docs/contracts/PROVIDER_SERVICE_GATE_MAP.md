@@ -29,11 +29,42 @@ service entries (post plan-features / tier / suspend / license), so:
 
 | field | rule |
 |---|---|
-| `enabled` | **OR** of mapped services — the section stays available while ANY of its capabilities is granted; the owner gates the whole section by disabling all of them. |
-| `status` | `active` if any enabled, else `suspended` if any suspended, else `disabled`. |
+| `enabled` | **OR** of mapped services — the section stays available while ANY of its capabilities is granted. |
+| `status` | `active` if any enabled; else `locked_upgrade` if something is paid-but-not-purchased; else `disabled` (**only** for an explicit «موقوفة» suspend / nothing sellable). |
+| `requires_activation` | `true` only when `status == "locked_upgrade"`. |
 | `hidden` | **all** mapped services hidden (hide the section only when everything feeding it is hidden). |
 | `limits` | merged limits of the mapped services. |
 | `services` | the provider keys that fed this gate (for diagnostics). |
+
+### Radius gate must distinguish two off-states
+
+| `status` | meaning | radius behavior |
+|---|---|---|
+| `disabled` | explicit «موقوفة (إيقاف فعلي)» — owner stopped it | hard-hide + 403 |
+| `locked_upgrade` | «مدفوعة» paid, not purchased (`requires_activation: true`) | **show LOCKED + «طلب تفعيل/ترقية» CTA** (do NOT 403) |
+
+A «مدفوعة» service is a visible upsell, never a hard block — only the suspend
+toggle hard-disables.
+
+## License block (radius lifecycle gate)
+
+The contract — and the bridge response **root** — carry a `license` block the
+radius lifecycle gate reads to decide activated-vs-locked. Without it next to
+`provider_grants` the gate saw no status and locked the panel
+(`no_successful_license_snapshot`) even for an active license.
+
+```json
+"license": {
+  "active": true, "activated": true,
+  "status": "active", "state": "active",
+  "expires_at": "2026-07-11T..Z", "grace_until": "..", "license_key": "HBR-.."
+}
+```
+
+`status`/`state` are aliases of the mapped license status; `active` is live
+validity; `activated` is `true` whenever a license record exists. The bridge
+returns `license` BOTH nested in `contract` and mirrored at the response root
+(beside `services`/`limits`/`provider_grants`/`fingerprint`).
 
 A gate key with **no** mapped provider service is **omitted** from
 `provider_grants`, so the radius gate applies its own default (enabled). Today

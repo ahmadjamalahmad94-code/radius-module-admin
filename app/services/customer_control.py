@@ -1274,9 +1274,17 @@ def build_runtime_contract_for_license(
     from .provider_service_gate import build_provider_grants
     provider_grants = build_provider_grants(services)
     contract = {
+        # The radius lifecycle gate reads this to decide activated-vs-locked.
+        # We emit redundant aliases (status/state, active/activated) so whichever
+        # field the gate keys on, an active license unlocks the panel. ``state``
+        # mirrors ``status``; ``activated`` is True whenever a license record
+        # exists (it was activated at least once) — distinct from ``active``
+        # which is the live validity (expiry/suspension) check.
         "license": {
             "active": bool(license_active),
+            "activated": lic is not None,
             "status": license_status,
+            "state": license_status,
             "license_key": lic.license_key if lic else None,
             "expires_at": iso_z(lic.expires_at) if lic else None,
             "grace_until": iso_z(lic.grace_until) if lic else None,
