@@ -88,6 +88,8 @@ PROVIDER_TO_GATE: dict[str, str] = {
     "public_ip_change": "network",
     "ip_change_vpn": "network",
     "remote_access": "network",
+    "loop_detection": "network",
+    "device_health": "network",
     # ── store (sales / marketplace) ──
     "card_marketplace": "store",
     "card_users": "store",

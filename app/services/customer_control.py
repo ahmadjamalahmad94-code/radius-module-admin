@@ -389,6 +389,28 @@ DEFAULT_SERVICE_CATALOG = [
         "price_monthly": None,
     },
     {
+        # Runs on the customer's own MikroTik/VPS → free-on-us (no provider cost).
+        "service_key": "loop_detection",
+        "name": "كشف الحلقات (Loop Detection)",
+        "name_ar": "كشف الحلقات (Loop Detection)",
+        "description": "اكتشاف الحلقات (loops) في شبكة العميل وتنبيهه — يعمل على راوتر/خادم العميل.",
+        "category": "network",
+        "default_enabled": True,
+        "sort_order": 182,
+        "price_monthly": None,
+    },
+    {
+        # Limit-based monitoring («معمولات بحدود») on the customer's own VPS → free.
+        "service_key": "device_health",
+        "name": "صحة الأجهزة",
+        "name_ar": "صحة الأجهزة",
+        "description": "مراقبة صحة أجهزة الشبكة (CPU/ذاكرة/اتصال) ضمن حدّ عدد الأجهزة المراقَبة.",
+        "category": "network",
+        "default_enabled": True,
+        "sort_order": 184,
+        "price_monthly": None,
+    },
+    {
         "service_key": "communications",
         "name": "الرسائل والتنبيهات",
         "name_ar": "الرسائل والتنبيهات",
@@ -761,6 +783,7 @@ SERVICE_LIMIT_FIELDS = {
     "card_users": [("max_total", "أقصى عدد مستخدمي بطاقات", "عدد حسابات مستخدمي البطاقات.")],
     "cards_recharge": [("monthly_generated", "أقصى بطاقات شحن شهريًا", "إجمالي بطاقات الشحن المسبق خلال الشهر.")],
     "ip_pools": [("max_total", "أقصى عدد نطاقات", "عدد نطاقات العناوين المسموحة.")],
+    "device_health": [("max_devices", "أقصى عدد أجهزة مراقَبة", "عدد أجهزة الشبكة التي تُراقب صحتها.")],
     "finance_center": [("max_wallets", "أقصى عدد محافظ", "عدد المحافظ المالية داخل الريدياس.")],
     "whatsapp_gateway": [
         ("max_messages_monthly", "حد الرسائل الشهري", "أقصى عدد رسائل واتساب المسموح إرسالها خلال الشهر (الافتراضي 500)."),
@@ -798,6 +821,7 @@ SERVICE_SPEC_META: dict[str, dict[str, dict[str, Any]]] = {
     "card_users": {"max_total": {"min": 10, "max": 100000, "step": 10, "default": 100, "unit": "مستخدم"}},
     "cards_recharge": {"monthly_generated": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "بطاقة/شهر"}},
     "ip_pools": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "نطاق"}},
+    "device_health": {"max_devices": {"min": 1, "max": 1000, "step": 1, "default": 50, "unit": "جهاز"}},
     "finance_center": {"max_wallets": {"min": 1, "max": 100, "step": 1, "default": 3, "unit": "محفظة"}},
     "whatsapp_gateway": {
         "max_messages_monthly": {"min": 100, "max": 100000, "step": 100, "default": 500, "unit": "رسالة/شهر"},

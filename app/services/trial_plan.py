@@ -29,6 +29,8 @@ from .customer_control import (
     SERVICE_TIER_PAID,
     get_or_create_service_entitlement,
     service_catalog_items,
+    service_limit_fields,
+    service_spec_fields,
 )
 from .license_service import generate_license_key
 
@@ -43,17 +45,21 @@ TRIAL_DURATION_DAYS = 14
 TRIAL_ACTIVE_SUBSCRIBERS_CAP = 100
 
 #: The ONLY services the trial leaves PAID (everything else is free). Edit here
-#: to reclassify — owner-approved baseline.
+#: to reclassify — owner-approved baseline. NOTE: whatsapp_gateway is FREE — the
+#: customer brings their own WhatsApp Business number and pays Meta directly, so
+#: it costs the provider nothing (free-with-limits, BYO).
 TRIAL_PAID_SERVICES: frozenset[str] = frozenset({
     "ip_change_vpn",
     "public_ip_change",
     "remote_support",
     "remote_health_fix",
-    "whatsapp_gateway",   # customer pays Meta directly
     "multi_tenant",
 })
 
-#: Services that are FREE but quantity-capped under the trial (→ free_limited).
+#: Explicit trial caps that OVERRIDE the per-service spec defaults. subscribers
+#: is the headline 100-active cap. Every other free service that HAS quantity
+#: limits is also free_limited but uses its spec-default caps (see
+#: ``trial_limits_for``) — so router/network/loop/whatsapp limits are respected.
 TRIAL_CAPPED_SERVICES: dict[str, dict[str, int]] = {
     "subscribers": {
         "max_total": TRIAL_ACTIVE_SUBSCRIBERS_CAP,
@@ -62,14 +68,37 @@ TRIAL_CAPPED_SERVICES: dict[str, dict[str, int]] = {
 }
 
 
+def _has_limit_fields(service_key: str) -> bool:
+    return bool(service_limit_fields(service_key))
+
+
 def trial_tier_for(service_key: str) -> str:
-    """The trial tier for a service: paid set → paid; capped set → free_limited;
-    everything else → free_unlimited (free on us)."""
+    """Trial tier for a service:
+      * paid set → paid (locked, «طلب تفعيل»);
+      * free service that HAS quantity limits → free_limited (caps respected);
+      * everything else → free_unlimited (free-on-us, runs on the customer VPS).
+    """
     if service_key in TRIAL_PAID_SERVICES:
         return SERVICE_TIER_PAID
-    if service_key in TRIAL_CAPPED_SERVICES:
+    if service_key in TRIAL_CAPPED_SERVICES or _has_limit_fields(service_key):
         return SERVICE_TIER_FREE_LIMITED
     return SERVICE_TIER_FREE_UNLIMITED
+
+
+def trial_limits_for(service_key: str) -> dict[str, int]:
+    """The «مجانية محدودة» caps to apply for a free-limited service: an explicit
+    TRIAL_CAPPED_SERVICES override, else the service's spec-default limit values
+    (so router/nas/ip_pools/whatsapp/device_health caps are respected)."""
+    if service_key in TRIAL_CAPPED_SERVICES:
+        return dict(TRIAL_CAPPED_SERVICES[service_key])
+    limit_keys = {fk for fk, _label, _hint in service_limit_fields(service_key)}
+    if not limit_keys:
+        return {}
+    out: dict[str, int] = {}
+    for field in service_spec_fields(service_key):
+        if field.get("key") in limit_keys and field.get("default") is not None:
+            out[field["key"]] = int(field["default"])
+    return out
 
 
 def ensure_trial_plan() -> Plan:
@@ -140,7 +169,7 @@ def apply_trial_to_customer(customer: Customer, *, days: int = TRIAL_DURATION_DA
         elif tier == SERVICE_TIER_FREE_LIMITED:
             ent.enabled = True
             ent.status = "active"
-            ent.limits = dict(TRIAL_CAPPED_SERVICES.get(key, {}))
+            ent.limits = trial_limits_for(key)  # explicit cap or spec defaults
             summary["free_limited"] += 1
         else:  # free_unlimited
             ent.enabled = True

@@ -382,6 +382,15 @@ def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expir
         vpn_entitlement.max_vpn_users = 10
     if not vpn_entitlement.max_locations:
         vpn_entitlement.max_locations = 1
+    # On-demand TRAFFIC quota: the customer's «طلب تفعيل» includes a requested
+    # traffic amount (spec field `quota_gb`); the admin can override via the
+    # approval form (`traffic_quota_gb`). Empty/0 ⇒ no per-customer cap (falls
+    # back to the plan quota, or unlimited). This flows into the contract.
+    _quota_raw = (request.form.get("traffic_quota_gb")
+                  or request.form.get("quota_gb")
+                  or desired.get("quota_gb") or desired.get("traffic_quota_gb"))
+    if _quota_raw not in (None, "", 0, "0"):
+        vpn_entitlement.traffic_quota_gb = validate_positive_limit(_quota_raw, "traffic_quota_gb")
     vpn_entitlement.license_id = selected_license.id if selected_license else None
     vpn_entitlement.enabled = True
     vpn_entitlement.status = "active"

@@ -78,7 +78,7 @@ that is only `anti_mac_clone` — the provider never controls it.
 | `cards` | `cards`, `print_templates` |
 | `reports` | `reports` |
 | `finance` | `accounting`, `invoices`, `payment_collection`, `finance_center`, `vouchers` |
-| `network` | `routers`, `nas`, `profiles`, `ip_pools`, `network_policies`, `bandwidth_control`, `site_exit`, `public_ip_change`, `ip_change_vpn`, `remote_access` |
+| `network` | `routers`, `nas`, `profiles`, `ip_pools`, `network_policies`, `bandwidth_control`, `site_exit`, `public_ip_change`, `ip_change_vpn`, `remote_access`, `loop_detection`, `device_health` |
 | `store` | `card_marketplace`, `card_users`, `cards_recharge`, `distributors` |
 | `communications` | `communications`, `whatsapp_gateway` |
 | `access_control` | `admins`, `audit_logs`, `risk_events` |

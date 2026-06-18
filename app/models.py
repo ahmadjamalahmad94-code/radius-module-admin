@@ -580,6 +580,11 @@ class CustomerVpnEntitlement(TimestampMixin, db.Model):
     upload_mbps = db.Column(db.Integer, nullable=True)
     max_vpn_users = db.Column(db.Integer, nullable=True)
     max_locations = db.Column(db.Integer, default=1, nullable=True)
+    # On-demand traffic quota (GB/month) the customer REQUESTED and the provider
+    # approved for the IP-change service. NULL = fall back to the plan's quota
+    # (or unlimited). Flows into the capacity contract as the VPN grant's
+    # traffic_quota_gb.
+    traffic_quota_gb = db.Column(db.Integer, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
     notes = db.Column(db.Text, default="", nullable=False)
     updated_by_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True)

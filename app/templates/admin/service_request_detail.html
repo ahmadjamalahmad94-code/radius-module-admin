@@ -91,6 +91,12 @@
             <label>عدد المواقع</label>
             <input class="hub-input" type="number" min="1" name="max_locations" value="{{ desired_limits.get('max_locations', '') }}">
           </div>
+          <div class="hub-field">
+            <label>حصة البيانات (GB/شهر)</label>
+            <input class="hub-input" type="number" min="1" name="traffic_quota_gb" value="{{ desired_limits.get('quota_gb', desired_limits.get('traffic_quota_gb', '')) }}"
+                   placeholder="الكمية المطلوبة — اتركها فارغة لغير محدود">
+            <div class="hub-field-hint">حصة الترافيك التي طلبها العميل عند «طلب التفعيل»؛ تُعتمد مع الخدمة وتظهر في عقد السعة.</div>
+          </div>
         {% endif %}
         <div class="hub-field full">
           <label>ملاحظة الاعتماد</label>

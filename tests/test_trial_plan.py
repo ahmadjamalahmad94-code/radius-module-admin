@@ -45,15 +45,20 @@ def test_trial_tier_classification(app):
         assert trial_tier_for("subscribers") == "free_limited"
         for paid in TRIAL_PAID_SERVICES:
             assert trial_tier_for(paid) == "paid", paid
-        # a representative sample of free-on-us services
-        for free in ("cards", "reports", "routers", "backups", "customer_portal",
-                     "finance_center", "store" if False else "card_marketplace",
-                     "audit_logs", "communications", "vouchers", "distributors"):
+        # free-on-us, NO caps → free_unlimited
+        for free in ("reports", "customer_portal", "communications", "audit_logs",
+                     "loop_detection", "vouchers", "accounting"):
             assert trial_tier_for(free) == "free_unlimited", free
-        # exactly the six paid keys
+        # free-on-us WITH caps → free_limited (caps respected). Includes whatsapp
+        # (BYO number, pays Meta directly) and the router/network limit services.
+        for capped in ("cards", "routers", "nas", "ip_pools", "whatsapp_gateway",
+                       "device_health", "distributors", "subscribers"):
+            assert trial_tier_for(capped) == "free_limited", capped
+        # exactly the FIVE paid keys (whatsapp is NOT paid)
         assert TRIAL_PAID_SERVICES == frozenset({
             "ip_change_vpn", "public_ip_change", "remote_support",
-            "remote_health_fix", "whatsapp_gateway", "multi_tenant"})
+            "remote_health_fix", "multi_tenant"})
+        assert "whatsapp_gateway" not in TRIAL_PAID_SERVICES
 
 
 # ── assignment: 14-day license ───────────────────────────────────────────────
@@ -83,12 +88,20 @@ def test_apply_sets_service_tiers(app):
         subs = ents["subscribers"]
         assert subs.config.get("tier") == "free_limited" and subs.enabled is True
         assert subs.limits.get("max_active") == 100 and subs.limits.get("max_total") == 100
-        # a free-on-us service: free_unlimited + enabled
-        assert ents["cards"].config.get("tier") == "free_unlimited" and ents["cards"].enabled is True
-        # a paid service: paid + OFF + NOT suspended (→ locked-with-upgrade, not hard stop)
+        # a free-on-us no-cap service: free_unlimited + enabled
+        assert ents["reports"].config.get("tier") == "free_unlimited" and ents["reports"].enabled is True
+        # whatsapp: FREE (BYO + pays Meta) — free_limited with its message/template caps
         wa = ents["whatsapp_gateway"]
-        assert wa.config.get("tier") == "paid"
-        assert wa.enabled is False and wa.status != "suspended"
+        assert wa.config.get("tier") == "free_limited" and wa.enabled is True
+        assert wa.limits.get("max_messages_monthly") and wa.limits.get("max_templates")
+        # router/network limit services free_limited with caps
+        assert ents["routers"].config.get("tier") == "free_limited" and ents["routers"].limits.get("max_total")
+        assert ents["device_health"].config.get("tier") == "free_limited" and ents["device_health"].limits.get("max_devices")
+        assert ents["loop_detection"].config.get("tier") == "free_unlimited" and ents["loop_detection"].enabled is True
+        # a paid service: paid + OFF + NOT suspended (→ locked-with-«طلب تفعيل»)
+        vpn = ents["ip_change_vpn"]
+        assert vpn.config.get("tier") == "paid"
+        assert vpn.enabled is False and vpn.status != "suspended"
 
 
 # ── flows into the capacity contract ─────────────────────────────────────────
@@ -103,15 +116,22 @@ def test_trial_contract_emission(app):
         assert ct["license"]["expires_at"]
 
         svc = ct["services"]
-        # free → enabled
-        assert svc["cards"]["enabled"] is True and svc["cards"]["tier"] == "free_unlimited"
-        assert svc["reports"]["enabled"] is True
+        # free → enabled (cards has caps → free_limited; reports no caps → free_unlimited)
+        assert svc["cards"]["enabled"] is True and svc["cards"]["tier"] == "free_limited"
+        assert svc["reports"]["enabled"] is True and svc["reports"]["tier"] == "free_unlimited"
+        # whatsapp FREE (BYO) → enabled, free_limited with caps
+        assert svc["whatsapp_gateway"]["enabled"] is True
+        assert svc["whatsapp_gateway"]["tier"] == "free_limited"
+        assert svc["whatsapp_gateway"]["limits"]["max_messages_monthly"]
+        # loop-detection + device-health free network services present + enabled
+        assert svc["loop_detection"]["enabled"] is True
+        assert svc["device_health"]["enabled"] is True and svc["device_health"]["limits"]["max_devices"]
         # subscribers → enabled, free_limited, 100 cap
         assert svc["subscribers"]["enabled"] is True
         assert svc["subscribers"]["limits"]["max_active"] == 100
-        # paid → OFF with tier=paid, and NOT suspended (radius shows upgrade, not 403)
-        wa = svc["whatsapp_gateway"]
-        assert wa["enabled"] is False and wa["tier"] == "paid" and wa["status"] != "suspended"
+        # paid (IP-change) → OFF with tier=paid, NOT suspended (radius shows «طلب تفعيل», not 403)
+        vpn = svc["ip_change_vpn"]
+        assert vpn["enabled"] is False and vpn["status"] != "suspended"
 
         # top-level limits carry the subscribers cap
         assert ct["limits"]["subscribers"]["max_total"] == 100
@@ -148,7 +168,8 @@ def test_admin_apply_trial_route(app, client):
         assert lic is not None and lic.plan.slug == TRIAL_PLAN_SLUG
         ents = customer_service_map(c)
         assert ents["subscribers"].config.get("tier") == "free_limited"
-        assert ents["whatsapp_gateway"].config.get("tier") == "paid"
+        assert ents["whatsapp_gateway"].config.get("tier") == "free_limited"  # BYO, free
+        assert ents["ip_change_vpn"].config.get("tier") == "paid"
 
 
 def test_admin_apply_trial_requires_login(client):
