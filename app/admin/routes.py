@@ -603,9 +603,22 @@ def customer_detail(customer_id: int):
     except Exception:  # noqa: BLE001 — never break the page on a fleet probe
         _chr_move_targets = []
         _chr_move_current_ips = []
+    # «الجهات» (multi_tenant) grant state for the 360 control: fully hidden until
+    # the provider grants it here (entity_count + per-entity limits).
+    from ..services.customer_control import ENTITY_LIMIT_FIELDS
+    _svc_map = customer_service_map(customer)
+    _mt_ent = _svc_map.get("multi_tenant")
+    _mt_cfg = (_mt_ent.config if _mt_ent else {}) or {}
+    _mt_grant = {
+        "granted": _mt_cfg.get("visibility") == "granted" and bool(_mt_ent and _mt_ent.enabled),
+        "entity_count": _mt_cfg.get("entity_count") or "",
+        "per_entity_limits": _mt_cfg.get("per_entity_limits") or {},
+    }
     return render_template(
         "admin/customers/detail_new.html",
         customer=customer,
+        entity_fields=ENTITY_LIMIT_FIELDS,
+        mt_grant=_mt_grant,
         licenses=licenses,
         current_license=current_license,
         contract=contract,
@@ -4541,6 +4554,10 @@ def customer_grant_entities(customer_id: int):
     (no «طلب تفعيل» upsell — distinct from locked_upgrade)."""
     customer = db.get_or_404(Customer, customer_id)
     from ..services.customer_control import ENTITY_LIMIT_FIELDS
+    # Honor the entry point: grant can be driven from the service-tiers page OR
+    # the Customer 360 page — return the operator to wherever they posted from.
+    _return_ep = "admin.customer_detail" if request.form.get("return_to") == "detail" else "admin.customer_service_tiers"
+    _back = redirect(url_for(_return_ep, customer_id=customer.id))
     ent = get_or_create_service_entitlement(customer, "multi_tenant")
     action = (request.form.get("action") or "grant").strip().lower()
     if action == "revoke":
@@ -4560,7 +4577,7 @@ def customer_grant_entities(customer_id: int):
                     v = int(raw)
                 except ValueError:
                     flash("حدود الجهة يجب أن تكون أرقامًا صحيحة.", "error")
-                    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+                    return _back
                 if v >= 0:
                     per_entity[fk] = v
         ent.enabled = True
@@ -4576,7 +4593,7 @@ def customer_grant_entities(customer_id: int):
           {"action": action, "config": ent.config})
     db.session.commit()
     flash(msg, "success")
-    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+    return _back
 
 
 @bp.post("/customers/<int:customer_id>/apply-trial")
