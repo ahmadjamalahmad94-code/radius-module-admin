@@ -38,10 +38,10 @@ from .license_service import generate_license_key
 TRIAL_PLAN_SLUG = "trial"
 TRIAL_PLAN_NAME = "العرض المجاني"
 TRIAL_DURATION_DAYS = 14
-#: 100 ACTIVE subscribers. The subscribers limit field is ``max_total`` today;
-#: we ALSO emit ``max_active`` so the radius can enforce the active cap
-#: explicitly (note: until a dedicated active-cap field exists, max_total
-#: carries the same number).
+#: 100 CONCURRENT-ONLINE sessions — the trial's instance-wide live-connection
+#: ceiling across ALL session types (cards + subscribers + PPPoE + hotspot), NOT
+#: a created-accounts cap. Flows into the contract as ``limits.active_online.max``
+#: (mirrored onto ``subscribers.max_active``/``max_total`` for back-compat).
 TRIAL_ACTIVE_SUBSCRIBERS_CAP = 100
 
 #: The ONLY services the trial leaves PAID (everything else is free). Edit here

@@ -1025,6 +1025,15 @@ def seed_defaults(app: Flask) -> None:
         app.logger.exception("trial plan seed failed")
         db.session.rollback()
 
+    # Commercial subscription packages (6, priced by active-subscriber capacity).
+    # Idempotent: only creates missing ones; never clobbers edited prices.
+    try:
+        from .services.subscription_pricing import ensure_subscription_packages
+        ensure_subscription_packages()
+    except Exception:  # pragma: no cover — seeding must never block startup
+        app.logger.exception("subscription packages seed failed")
+        db.session.rollback()
+
     vpn_plans = [
         ("شبكة خاصة 10 ميجابت", "vpn_10m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 10 ميجابت/ثانية", 10, 10, 25, 1, Decimal("10.00")),
         ("شبكة خاصة 50 ميجابت", "vpn_50m", "خدمة تغيير العنوان والشبكة الخاصة بسرعة 50 ميجابت/ثانية", 50, 50, 100, 1, Decimal("35.00")),

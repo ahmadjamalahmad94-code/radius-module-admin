@@ -80,7 +80,7 @@ that is only `anti_mac_clone` — the provider never controls it.
 | `finance` | `accounting`, `invoices`, `payment_collection`, `finance_center`, `vouchers` |
 | `network` | `routers`, `nas`, `profiles`, `ip_pools`, `network_policies`, `bandwidth_control`, `site_exit`, `public_ip_change`, `ip_change_vpn`, `remote_access`, `loop_detection`, `device_health` |
 | `store` | `card_marketplace`, `card_users`, `cards_recharge`, `distributors` |
-| `communications` | `communications`, `whatsapp_gateway` |
+| `communications` | `communications`, `whatsapp_gateway`, `sms_gateway` |
 | `access_control` | `admins`, `audit_logs`, `risk_events` |
 | `anti_mac_clone` | *(none — radius default-enables it)* |
 | `backups` | `backups`, `lifecycle` |
@@ -99,6 +99,60 @@ that is only `anti_mac_clone` — the provider never controls it.
 },
 "fingerprint": "9f2c…"
 ```
+
+## Instance-wide concurrent-online ceiling (`limits.active_online`)
+
+The package capacity the provider sells (`Plan.max_users`) is the **maximum
+number of simultaneously-connected (live/online) sessions across ALL session
+types** — cards + subscribers + broadband/PPPoE + hotspot. Every live session
+counts as 1. It is **NOT** the number of accounts created.
+
+The contract carries it under `limits`:
+
+```json
+"limits": {
+  "active_online": {"max": 250, "scope": "instance", "counts": "all_session_types"},
+  "subscribers":   {"max_total": 250, "max_active": 250}
+}
+```
+
+| field | meaning |
+|---|---|
+| `active_online.max` | **authoritative** instance-wide concurrent-online ceiling. `0` ⇒ unlimited («حزمة لا محدودة»). |
+| `active_online.scope` | always `"instance"` — the cap is per-instance, not per-service. |
+| `active_online.counts` | `"all_session_types"` — cards + subscribers + PPPoE + hotspot all count toward the one ceiling. |
+| `subscribers.max_active` / `max_total` | **back-compat mirror** of the same number for older radius builds. New builds MUST read `active_online.max`. |
+
+**Radius side MUST:** count live sessions across all session types and reject /
+refuse to bring online any new session once the live count reaches
+`active_online.max` (when `> 0`). Trial = `100`; packages map 50/100/250/500/
+1000 and `0` for unlimited.
+
+## Fully-hidden-until-granted services (`visibility`)
+
+«الجهات» (`multi_tenant`) is **not** an upsell — it's invisible until the
+provider explicitly grants it. The contract carries `services.multi_tenant`:
+
+```json
+"multi_tenant": {"visibility": "hidden",  "enabled": false, "status": "hidden"}
+"multi_tenant": {"visibility": "granted", "enabled": true,  "status": "active",
+                 "entity_count": 3,
+                 "per_entity_limits": {"max_subscribers": 200, "max_cards": 500, "max_nas": 5}}
+```
+
+| `visibility` | radius behavior |
+|---|---|
+| `hidden` | render **nothing** — no nav entry, no «طلب تفعيل» upsell (distinct from `locked_upgrade`). The entry is also dropped from `provider_grants` entirely. |
+| `granted` | enable the «الجهات» feature with `entity_count` tenants, each capped by `per_entity_limits`. |
+
+## Decluttering hide vs commercial block
+
+Two distinct off-states the radius must NOT conflate (provider-controlled):
+
+| state | provider label | contract | radius behavior |
+|---|---|---|---|
+| **declutter hide** | «إخفاء للترتيب (لا يلزم هذا الزبون)» | service `hidden: true`, `status` stays `active` | **remove from the customer-panel nav for tidiness** — reversible, **no 403**. Not a commercial block. |
+| **commercial block** | «موقوفة (إيقاف فعلي)» | gate `status: "disabled"` | hard-hide **+ 403** — not allowed (not-paid / suspended). |
 
 ## Propagation after a tariff save
 

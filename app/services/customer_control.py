@@ -431,6 +431,21 @@ DEFAULT_SERVICE_CATALOG = [
         "price_monthly": None,
     },
     {
+        # HYBRID: FREE when the customer uses their OWN SMS gateway API (BYO,
+        # pays their provider directly — costs us nothing). The customer may
+        # ALSO buy message packages from us via «طلب حزمة رسائل» (paid add-on);
+        # the granted package credits flow into the contract as sms_package_credits.
+        "service_key": "sms_gateway",
+        "name": "SMS Gateway",
+        "name_ar": "رسائل SMS للمشتركين",
+        "description": "إرسال رسائل SMS عبر بوابة العميل الخاصة (مجانًا — يدفع لمزوّده مباشرة)، "
+                       "أو بشراء حزم رسائل من المزوّد عبر «طلب حزمة رسائل».",
+        "category": "communications",
+        "default_enabled": False,
+        "sort_order": 194,
+        "price_monthly": None,
+    },
+    {
         "service_key": "operations_center",
         "name": "مركز العمليات",
         "name_ar": "مركز العمليات",
@@ -591,6 +606,21 @@ SERVICE_TIER_FREE_UNLIMITED = "free_unlimited"
 SERVICE_TIER_FREE_LIMITED = "free_limited"
 SERVICE_TIER_VALUES = (SERVICE_TIER_PAID, SERVICE_TIER_FREE_UNLIMITED, SERVICE_TIER_FREE_LIMITED)
 SERVICE_TIER_DEFAULT = SERVICE_TIER_PAID
+
+#: Services that are FULLY HIDDEN until the provider explicitly grants them —
+#: NOT shown, NOT available, NOT even a «طلب تفعيل» upsell (distinct from the
+#: paid/locked_upgrade state). «الجهات» (multi_tenant) is the first: when granted
+#: the provider sets entity_count + a per-entity limit set (config-stored). The
+#: contract carries ``visibility`` = "hidden" | "granted" for these.
+HIDDEN_UNTIL_GRANTED_SERVICES = {"multi_tenant"}
+
+#: Per-entity limit fields for «الجهات» — each granted entity/tenant gets its
+#: own caps. Editable here; the provider sets values per-customer on grant.
+ENTITY_LIMIT_FIELDS = (
+    ("max_subscribers", "أقصى مشتركين لكل جهة"),
+    ("max_cards", "أقصى كروت لكل جهة"),
+    ("max_nas", "أقصى أجهزة شبكة لكل جهة"),
+)
 
 SERVICE_TIER_LABELS = {
     SERVICE_TIER_PAID: "مدفوعة",
@@ -790,6 +820,11 @@ SERVICE_LIMIT_FIELDS = {
         ("max_messages_daily", "حد الرسائل اليومي", "أقصى عدد رسائل واتساب المسموح إرسالها خلال اليوم (الافتراضي 100)."),
         ("max_templates", "حد القوالب", "أقصى عدد قوالب واتساب المعتمدة للعميل (الافتراضي 20)."),
     ],
+    "sms_gateway": [
+        ("max_messages_monthly", "حد الرسائل الشهري (بوابة العميل)", "أقصى عدد رسائل SMS عبر بوابة العميل الخاصة شهريًا."),
+        ("max_messages_daily", "حد الرسائل اليومي (بوابة العميل)", "أقصى عدد رسائل SMS عبر بوابة العميل الخاصة يوميًا."),
+        ("sms_package_credits", "رصيد حزم الرسائل المشتراة", "رصيد رسائل SMS المشتراة من المزوّد (يُضاف عند اعتماد طلب حزمة)."),
+    ],
     "distributors": [("max_total", "أقصى عدد موزعين", "عدد الموزعين المسموح إدارتهم.")],
     "multi_tenant": [("max_total", "أقصى عدد مستأجرين", "عدد الشركات أو المستأجرين داخل النسخة.")],
 }
@@ -828,6 +863,11 @@ SERVICE_SPEC_META: dict[str, dict[str, dict[str, Any]]] = {
         "max_messages_daily": {"min": 10, "max": 10000, "step": 10, "default": 100, "unit": "رسالة/يوم"},
         "max_templates": {"min": 1, "max": 200, "step": 1, "default": 20, "unit": "قالب"},
     },
+    "sms_gateway": {
+        "max_messages_monthly": {"min": 100, "max": 200000, "step": 100, "default": 1000, "unit": "رسالة/شهر"},
+        "max_messages_daily": {"min": 10, "max": 20000, "step": 10, "default": 200, "unit": "رسالة/يوم"},
+        "sms_package_credits": {"min": 0, "max": 1000000, "step": 100, "default": 0, "unit": "رسالة"},
+    },
     "distributors": {"max_total": {"min": 1, "max": 1000, "step": 1, "default": 5, "unit": "موزع"}},
     "multi_tenant": {"max_total": {"min": 1, "max": 100, "step": 1, "default": 2, "unit": "مستأجر"}},
 }
@@ -846,6 +886,13 @@ SERVICE_REQUEST_EXTRA_FIELDS: dict[str, list[dict[str, Any]]] = {
          "min": 1, "max": 1000, "step": 1, "default": 5, "unit": "مستخدم"},
         {"key": "quota_gb", "label": "حصة البيانات الشهرية", "hint": "اتركها فارغة لطلب حصة غير محدودة.",
          "min": 1, "max": 100000, "step": 10, "default": None, "unit": "GB/شهر"},
+    ],
+    "sms_gateway": [
+        # «طلب حزمة رسائل» — the paid SMS package size to buy from the provider.
+        # On approval the granted count is CREDITED to sms_package_credits.
+        {"key": "package_messages", "label": "حجم حزمة الرسائل المطلوبة",
+         "hint": "عدد رسائل SMS التي ترغب بشرائها من المزوّد (تُضاف إلى رصيدك عند الاعتماد).",
+         "min": 100, "max": 1000000, "step": 100, "default": 1000, "unit": "رسالة"},
     ],
 }
 
@@ -1673,14 +1720,48 @@ def _serialize_service(
     if expires_at:
         payload["expires_at"] = iso_z(expires_at)
     payload["label"] = catalog_item.name_ar or catalog_item.name or key
+
+    # ── FULLY-HIDDEN-UNTIL-GRANTED («الجهات»/multi_tenant) ─────────────────
+    # A distinct state from locked_upgrade: the customer doesn't see it AT ALL
+    # (no sidebar item, no «طلب تفعيل») until the provider explicitly grants it.
+    # When granted, the provider sets entity_count + per-entity limit set, which
+    # ride in entitlement.config and flow out here. The radius reads
+    # ``visibility`` ("hidden" | "granted") to decide whether to render anything.
+    if key in HIDDEN_UNTIL_GRANTED_SERVICES:
+        granted = bool(entitlement and entitlement.enabled and status == "active"
+                       and (config or {}).get("visibility") == "granted")
+        payload["visibility"] = "granted" if granted else "hidden"
+        if not granted:
+            payload["enabled"] = False
+            payload["status"] = "hidden"
+            payload["upgradable"] = False
+            payload["hidden"] = True
+            payload.pop("limits", None)
+        else:
+            payload["entity_count"] = int((config or {}).get("entity_count") or 0)
+            payload["per_entity_limits"] = (config or {}).get("per_entity_limits") or {}
+
     return payload
 
 
 def _limits_contract(lic: License | None, customer: Customer | None = None) -> dict[str, Any]:
     if not lic or not lic.plan:
         return {}
+    # The plan capacity the provider SELLS is the instance-wide CONCURRENT-ONLINE
+    # ceiling: the max number of simultaneously-connected (live/online) sessions
+    # across ALL session types — cards + subscribers + broadband/PPPoE + hotspot.
+    # Every live session = 1 active. It is NOT the number of accounts created.
+    #
+    # Canonical contract field: ``limits.active_online.max`` — the radius MUST
+    # enforce this as the global concurrent-online cap (reject/disconnect new
+    # online sessions once the live count across all types hits it). 0 ⇒ unlimited
+    # («حزمة لا محدودة»). We also mirror it onto ``subscribers.max_active``/
+    # ``max_total`` for back-compat with older radius builds; the authoritative
+    # instance-wide ceiling is ``active_online.max``.
+    _cap = int(lic.plan.max_users or 0)
     limits = {
-        "subscribers": {"max_total": int(lic.plan.max_users or 0)},
+        "active_online": {"max": _cap, "scope": "instance", "counts": "all_session_types"},
+        "subscribers": {"max_total": _cap, "max_active": _cap},
         "nas": {"max_total": int(lic.plan.max_nas or 0)},
         "admins": {"max_total": int(lic.plan.max_admins or 0)},
         "devices": {"max_total": int(lic.plan.max_devices or 0)},

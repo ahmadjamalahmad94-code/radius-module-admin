@@ -140,6 +140,9 @@ _ENDPOINT_PREFIX_MAP = (
     ("admin.license_create",            "licenses.create"),
     ("admin.plans_list",                "licenses.plans"),
     ("admin.plan_",                     "licenses.plans"),
+    ("admin.subscription_packages",     "licenses.plans"),
+    ("admin.discount_tiers",            "licenses.plans"),
+    ("admin.discount_",                 "licenses.plans"),
     ("admin.license_",                  "licenses"),
     # VPN
     ("admin.vpn_",                      "vpn.tunnels"),

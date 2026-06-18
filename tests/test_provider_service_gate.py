@@ -123,7 +123,9 @@ def test_suspending_all_mapped_services_hard_disables_the_section(cust_lic):
     """Suspend every service feeding `communications` → hard `disabled`
     (nothing left sellable, all explicitly «موقوفة»)."""
     c, lic = cust_lic
-    for key in ("communications", "whatsapp_gateway"):
+    # communications gate now = communications + whatsapp_gateway + sms_gateway;
+    # suspend ALL so nothing is left sellable → hard disabled.
+    for key in ("communications", "whatsapp_gateway", "sms_gateway"):
         ent = get_or_create_service_entitlement(c, key)
         ent.status = "suspended"
         ent.enabled = False
