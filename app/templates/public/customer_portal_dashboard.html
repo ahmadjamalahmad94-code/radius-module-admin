@@ -392,6 +392,8 @@
   {% if contract.services.get(item.service_key, {}).enabled %}{% set ns.on = ns.on + 1 %}{% endif %}
 {% endfor %}
 {% set license_status = contract.license.status %}
+{# renew prompt: expired/grace, or active license with ≤14 days left #}
+{% set _renew_needed = license_status in ('expired', 'grace') or (license_days_left is not none and license_days_left <= 14) %}
 
 {# count backups with content #}
 {% set bk_stored = customer_backups|selectattr('has_content')|list|length if customer_backups else 0 %}
@@ -412,6 +414,8 @@
       <nav class="pp-nav" id="pp-nav" aria-label="أقسام البوابة">
         <button type="button" class="pp-nav-link is-active" data-pp-view="overview"><i class="fa-solid fa-gauge-high"></i> نظرة عامة</button>
         {% if 'services' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="services"><i class="fa-solid fa-shapes"></i> الخدمات <span class="pp-nav-badge">{{ ns.on }}</span></button>{% endif %}
+        <button type="button" class="pp-nav-link" data-pp-view="license"><i class="fa-solid fa-id-card-clip"></i> ترخيصي والباقة{% if _renew_needed %} <span class="pp-nav-badge" style="background:#fef3c7;color:#b45309">!</span>{% endif %}</button>
+        <button type="button" class="pp-nav-link" data-pp-view="team"><i class="fa-solid fa-user-shield"></i> المستخدمون والمدراء{% if portal_users %} <span class="pp-nav-badge">{{ portal_users|length }}</span>{% endif %}</button>
         <button type="button" class="pp-nav-link" data-pp-view="whatsapp"><i class="fa-brands fa-whatsapp"></i> رسائل واتساب للمشتركين</button>
         <button type="button" class="pp-nav-link" data-pp-view="backups"><i class="fa-solid fa-database"></i> النسخ الاحتياطي{% if bk_stored %} <span class="pp-nav-badge">{{ bk_stored }}</span>{% endif %}</button>
         {% if 'payments' not in _hidden %}<button type="button" class="pp-nav-link" data-pp-view="billing"><i class="fa-solid fa-credit-card"></i> الفواتير والمدفوعات</button>{% endif %}
@@ -444,11 +448,27 @@
           </div>
         </div>
 
+        {% if _renew_needed %}
+        <div class="pp-notice {{ 'warn' if license_status != 'expired' else '' }}"
+             style="margin-bottom:16px;{% if license_status == 'expired' %}background:#fef2f2;border-color:#fecaca;color:#991b1b{% endif %};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div style="flex:1;min-width:200px">
+            {% if license_status == 'expired' %}انتهى ترخيصك — جدِّد اشتراكك لاستعادة الخدمات الكاملة.
+            {% elif license_status == 'grace' %}ترخيصك في فترة السماح — جدِّد قريبًا لتفادي التوقف.
+            {% else %}يتبقّى على انتهاء ترخيصك {{ license_days_left }} يومًا — جدِّد الآن ووفّر مع الباقات الأطول.{% endif %}
+          </div>
+          <a class="pp-btn pp-btn--primary pp-btn--sm" href="{{ pricing_url }}" target="_blank" rel="noopener"><i class="fa-solid fa-tags"></i> اعرض الباقات وجدّد</a>
+        </div>
+        {% endif %}
+
         <div class="pp-kpis">
           <div class="pp-kpi"><span class="pp-kpi-ic is-green"><i class="fa-solid fa-shapes"></i></span>
             <div><div class="pp-kpi-l">خدمات مفعّلة</div><div class="pp-kpi-v">{{ ns.on }} <small>/ {{ service_catalog|length }}</small></div></div></div>
           <div class="pp-kpi"><span class="pp-kpi-ic is-violet"><i class="fa-solid fa-calendar-day"></i></span>
-            <div><div class="pp-kpi-l">تاريخ الانتهاء</div><div class="pp-kpi-v" style="font-size:15px">{{ current_license.expires_at|date if current_license else '—' }}</div></div></div>
+            <div><div class="pp-kpi-l">المتبقّي على الترخيص</div><div class="pp-kpi-v" style="font-size:15px">
+              {% if license_days_left is not none and license_days_left >= 0 %}{{ license_days_left }} يوم
+              {% elif license_days_left is not none %}منتهٍ
+              {% else %}—{% endif %}</div></div></div>
           <div class="pp-kpi"><span class="pp-kpi-ic is-blue"><i class="fa-solid fa-users"></i></span>
             <div><div class="pp-kpi-l">حد المشتركين</div><div class="pp-kpi-v">{{ contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—' }}</div></div></div>
           <div class="pp-kpi"><span class="pp-kpi-ic is-amber"><i class="fa-solid fa-database"></i></span>
@@ -488,15 +508,19 @@
           <div><h1>خدماتي</h1><p>تصفّح كل ما تشمله خطتك — الخدمات المجانية تعمل فورًا، والمدفوعة تحتاج طلب تفعيل بسيط.</p></div>
         </div>
 
-        {# Count totals by tier across the whole catalog (intro panel + chips). #}
+        {# Count totals by tier across the catalog (intro panel + chips) —
+           EXCLUDING services hidden from this customer (declutter hide +
+           ungranted «الجهات»), so the chips match what's actually shown. #}
         {% set tier_count = namespace(all=0, free_unlimited=0, free_limited=0, paid=0) %}
         {% for item in service_catalog %}
           {% set svc = contract.services.get(item.service_key, {}) %}
-          {% set t = svc.tier|default('paid') %}
-          {% set tier_count.all = tier_count.all + 1 %}
-          {% if t == 'free_unlimited' %}{% set tier_count.free_unlimited = tier_count.free_unlimited + 1 %}
-          {% elif t == 'free_limited' %}{% set tier_count.free_limited = tier_count.free_limited + 1 %}
-          {% else %}{% set tier_count.paid = tier_count.paid + 1 %}{% endif %}
+          {% if not svc.hidden %}
+            {% set t = svc.tier|default('paid') %}
+            {% set tier_count.all = tier_count.all + 1 %}
+            {% if t == 'free_unlimited' %}{% set tier_count.free_unlimited = tier_count.free_unlimited + 1 %}
+            {% elif t == 'free_limited' %}{% set tier_count.free_limited = tier_count.free_limited + 1 %}
+            {% else %}{% set tier_count.paid = tier_count.paid + 1 %}{% endif %}
+          {% endif %}
         {% endfor %}
 
         <div class="pp-services-intro">
@@ -607,6 +631,107 @@
         </div>
       </section>
       {% endif %}
+
+      {# ───── LICENSE / PACKAGE ───── #}
+      <section class="pp-view" data-pp-pane="license">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-id-card-clip"></i></span>
+          <div><h1>ترخيصي والباقة</h1><p>حالة ترخيصك، الباقة، والمدة المتبقّية — وتجديد اشتراكك من الباقات.</p></div>
+        </div>
+
+        {% if _renew_needed %}
+        <div class="pp-notice {{ 'warn' if license_status != 'expired' else '' }}"
+             style="margin-bottom:16px;{% if license_status == 'expired' %}background:#fef2f2;border-color:#fecaca;color:#991b1b{% endif %};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div style="flex:1;min-width:200px">
+            {% if license_status == 'expired' %}انتهى ترخيصك — جدِّد اشتراكك لاستعادة الخدمات الكاملة.
+            {% elif license_status == 'grace' %}ترخيصك في فترة السماح — جدِّد قريبًا لتفادي التوقف.
+            {% else %}يتبقّى {{ license_days_left }} يومًا على الانتهاء — جدِّد الآن.{% endif %}
+          </div>
+          <a class="pp-btn pp-btn--primary pp-btn--sm" href="{{ pricing_url }}" target="_blank" rel="noopener"><i class="fa-solid fa-tags"></i> اعرض الباقات وجدّد</a>
+        </div>
+        {% endif %}
+
+        <div class="pp-grid-2">
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-key"></i></span><h2>الترخيص الحالي</h2></div>
+            <div class="pp-card-body">
+              <div class="pp-rows">
+                <div class="pp-row"><span>الحالة</span><strong>
+                  {% if license_status == 'active' %}<span style="color:#15803d">● نشط</span>
+                  {% elif license_status == 'grace' %}<span style="color:#b45309">● فترة سماح</span>
+                  {% elif license_status == 'expired' %}<span style="color:#dc2626">● منتهٍ</span>
+                  {% elif license_status == 'not_found' %}<span style="color:#64748b">● لا يوجد</span>
+                  {% else %}<span style="color:#b45309">● {{ license_status|status_label }}</span>{% endif %}
+                </strong></div>
+                <div class="pp-row"><span>الباقة</span><strong>{{ license_package or '—' }}</strong></div>
+                <div class="pp-row"><span>المدة المتبقّية</span><strong>
+                  {% if license_days_left is not none and license_days_left >= 0 %}{{ license_days_left }} يوم
+                  {% elif license_days_left is not none %}منتهٍ منذ {{ license_days_left|abs }} يوم
+                  {% else %}—{% endif %}</strong></div>
+                <div class="pp-row"><span>تاريخ الانتهاء</span><strong>{{ current_license.expires_at|date if current_license else '—' }}</strong></div>
+                <div class="pp-row"><span>حد المشتركين (المتصلون المتزامنون)</span><strong>{{ contract.limits.active_online.max if contract.limits.active_online is defined else (contract.limits.subscribers.max_total if contract.limits.subscribers is defined else '—') }}</strong></div>
+                <div class="pp-row"><span>مفتاح الترخيص</span><strong class="mono ltr">{{ current_license.license_key if current_license else '—' }}</strong></div>
+              </div>
+              <a class="pp-btn pp-btn--ghost pp-btn--sm" href="{{ pricing_url }}" target="_blank" rel="noopener" style="margin-top:13px"><i class="fa-solid fa-tags"></i> اعرض الباقات والأسعار</a>
+            </div>
+          </div>
+          <div class="pp-card">
+            <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-layer-group"></i></span><h2>كل التراخيص</h2></div>
+            <div class="pp-card-body">
+              {% if licenses %}
+              <div class="pp-rows">
+                {% for l in licenses %}
+                <div class="pp-row">
+                  <span class="mono ltr">{{ l.license_key }}</span>
+                  <strong>{{ (l.plan.name if l.plan else '—') }} · {{ l.status|status_label }}{% if l.expires_at %} · حتى {{ l.expires_at|date }}{% endif %}</strong>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="pp-empty"><div class="pp-empty-ic"><i class="fa-solid fa-key"></i></div><div class="pp-empty-msg">لا توجد تراخيص بعد.</div></div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ───── TEAM (users / admins) ───── #}
+      <section class="pp-view" data-pp-pane="team">
+        <div class="pp-vhead">
+          <span class="pp-vh-ic"><i class="fa-solid fa-user-shield"></i></span>
+          <div><h1>المستخدمون والمدراء</h1><p>حسابات الدخول التي يملكها حسابك (للبوابة والريدياس)، وحدّ المدراء في باقتك.</p></div>
+        </div>
+
+        <div class="pp-kpis" style="margin-bottom:16px">
+          <div class="pp-kpi"><span class="pp-kpi-ic is-blue"><i class="fa-solid fa-users"></i></span>
+            <div><div class="pp-kpi-l">عدد المستخدمين</div><div class="pp-kpi-v">{{ portal_users|length }}{% if plan_admin_limit %} <small>/ {{ plan_admin_limit }}</small>{% endif %}</div></div></div>
+          <div class="pp-kpi"><span class="pp-kpi-ic is-violet"><i class="fa-solid fa-user-gear"></i></span>
+            <div><div class="pp-kpi-l">حدّ المدراء في الباقة</div><div class="pp-kpi-v">{{ plan_admin_limit if plan_admin_limit else 'غير محدد' }}</div></div></div>
+        </div>
+
+        <div class="pp-card">
+          <div class="pp-card-head"><span class="ic"><i class="fa-solid fa-user-shield"></i></span><h2>حسابات الدخول</h2></div>
+          <div class="pp-card-body">
+            {% if plan_admin_limit and portal_users|length >= plan_admin_limit %}
+            <div class="pp-notice warn" style="margin-bottom:13px"><i class="fa-solid fa-circle-info"></i><div>وصلت إلى حدّ المدراء في باقتك ({{ plan_admin_limit }}). لإضافة المزيد، رقِّ باقتك أو تواصل مع الدعم.</div></div>
+            {% endif %}
+            {% if portal_users %}
+            <div class="pp-rows">
+              {% for u in portal_users %}
+              <div class="pp-row">
+                <span><i class="fa-solid fa-user" style="opacity:.6;margin-inline-end:6px"></i>{{ u.username }}{% if u.email %} <span class="ltr" style="color:#94a3b8;font-size:12px">· {{ u.email }}</span>{% endif %}</span>
+                <strong>{% set _rk = u.role_key or 'owner' %}{{ 'مالك الحساب' if _rk == 'owner' else _rk }}{% if not u.active %} · <span style="color:#dc2626">معطّل</span>{% endif %}</strong>
+              </div>
+              {% endfor %}
+            </div>
+            <p class="pp-hint" style="margin-top:12px">تُدار الحسابات وكلمات المرور من لوحة التراخيص (الإدارة). تواصل مع الدعم لإضافة مستخدم أو تعديل صلاحياته.</p>
+            {% else %}
+            <div class="pp-empty"><div class="pp-empty-ic"><i class="fa-solid fa-user-slash"></i></div><div class="pp-empty-msg">لا يوجد مستخدمون مرتبطون بحسابك بعد.</div></div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
 
       {# ───── WHATSAPP ───── #}
       <section class="pp-view" data-pp-pane="whatsapp">

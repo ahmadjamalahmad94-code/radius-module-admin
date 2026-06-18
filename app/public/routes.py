@@ -6,7 +6,7 @@ from ..extensions import db
 # Legacy ``license_integration_secret`` import retired with the linking-auth
 # cleanup — the customer portal used to surface the derived secret as «سر
 # التوقيع», which no longer exists.
-from ..models import Customer, CustomerBackupArtifact, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting
+from ..models import Customer, CustomerBackupArtifact, CustomerServiceRequest, CustomerUser, License, LicensePaymentProof, LicensePaymentRequest, Setting, utcnow
 from ..services.customer_control import (
     CustomerControlValidationError,
     add_service_request_message,
@@ -436,6 +436,11 @@ def customer_portal_dashboard():
     from ..services import google_drive as gd
     gdrive = gd.status(customer.id)
     gdrive["backups_active"] = bool((contract.get("services") or {}).get("backups", {}).get("enabled"))
+    # License countdown + package (for the «التراخيص» view + renew CTA).
+    _days_left = None
+    if lic and lic.expires_at:
+        _days_left = (lic.expires_at - utcnow()).days
+    _plan = lic.plan if lic else None
     return render_template(
         "public/customer_portal_dashboard.html",
         customer=customer,
@@ -448,6 +453,13 @@ def customer_portal_dashboard():
         service_limit_summary=service_limit_summary,
         service_limit_fields=service_limit_fields,
         service_spec_fields=service_spec_fields,
+        # License view extras.
+        license_days_left=_days_left,
+        license_package=getattr(_plan, "name", "") or "",
+        plan_admin_limit=getattr(_plan, "max_admins", None),
+        pricing_url=url_for("pricing_page"),
+        # The customer's own users/admins (portal + radius identities).
+        portal_users=customer.users.order_by(CustomerUser.created_at.desc()).all(),
         licenses=customer.licenses.order_by(License.created_at.desc()).all(),
         payment_requests=LicensePaymentRequest.query.filter_by(customer_id=customer.id).order_by(LicensePaymentRequest.created_at.desc()).limit(20).all(),
         service_requests=CustomerServiceRequest.query.filter_by(customer_id=customer.id).order_by(CustomerServiceRequest.created_at.desc()).limit(20).all(),
