@@ -226,15 +226,18 @@
             </div>
           </td>
           <td>
-            {# orthogonal per-customer states: hide (view) ≠ suspend (function) #}
+            {# Two DISTINCT provider controls (orthogonal):
+               • hide  = إخفاء للترتيب — declutter the customer's panel; reversible;
+                         NO commercial meaning, NO 403. The service still works.
+               • susp  = موقوفة — commercial hard-block (not-paid/suspended): 403. #}
             <div class="cst-ctl">
-              <label class="cst-ctl-check cst-ctl-check--hide" title="إزالة الخدمة كليًا من بوابة هذا العميل — حتى لو كانت أساسية/مجانية. لا توقف عملها.">
+              <label class="cst-ctl-check cst-ctl-check--hide" title="إخفاء للترتيب فقط: تختفي الخدمة من واجهة لوحة هذا الزبون (تنظيم/تبسيط) لأنها لا تلزمه — قابلة للإلغاء في أي وقت، ولا تُعدّ منعًا تجاريًا ولا تتوقف عن العمل.">
                 <input type="checkbox" name="hidden_{{ item.service_key }}" {% if row.hidden %}checked{% endif %}>
-                <span><i class="fa-solid fa-eye-slash"></i> مخفية من البوابة</span>
+                <span><i class="fa-solid fa-eye-slash"></i> إخفاء للترتيب (لا يلزم هذا الزبون)</span>
               </label>
-              <label class="cst-ctl-check cst-ctl-check--susp" title="إيقاف فعلي للخدمة لهذا العميل — تتوقف عن العمل حتى تستأنفها. مستقل عن الإخفاء.">
+              <label class="cst-ctl-check cst-ctl-check--susp" title="منع تجاري فعلي: تتوقف الخدمة عن العمل لهذا الزبون (غير مدفوعة/موقوفة) ويُرفض الوصول إليها — مستقل تمامًا عن الإخفاء للترتيب.">
                 <input type="checkbox" name="suspended_{{ item.service_key }}" {% if row.suspended %}checked{% endif %}>
-                <span><i class="fa-solid fa-ban"></i> موقوفة (إيقاف فعلي)</span>
+                <span><i class="fa-solid fa-ban"></i> موقوفة (إيقاف فعلي — منع تجاري)</span>
               </label>
             </div>
           </td>
