@@ -160,6 +160,11 @@ def hoberadius_capacity_contract():
         "contract": contract,
         "limits": contract["limits"],
         "services": contract["services"],
+        # Top-level convenience mirrors (like limits/services): the radius gate
+        # reads provider_grants by its 14 section keys; fingerprint lets it
+        # detect a change (e.g. after a tariff save) and re-apply.
+        "provider_grants": contract["provider_grants"],
+        "fingerprint": contract["fingerprint"],
     })
 
 
@@ -965,6 +970,16 @@ def hoberadius_instance_heartbeat():
     }
     if radius_tunnel_payload is not None:
         response_body["radius_tunnel"] = radius_tunnel_payload
+    # Capacity-contract change signal: the radius compares this cheap
+    # fingerprint each heartbeat and re-pulls the full capacity-contract when it
+    # changed (e.g. right after the owner saves a tariff) — so a disable/hide/
+    # limit propagates on the next heartbeat, not after a long delay.
+    try:
+        contract = build_runtime_contract_for_license(
+            result.license, license_active=result.active, status=result.status)
+        response_body["capacity_fingerprint"] = contract["fingerprint"]
+    except Exception:  # noqa: BLE001 — never break the heartbeat over a hint
+        current_app.logger.exception("instance-heartbeat: capacity_fingerprint degraded")
     return jsonify(response_body)
 
 
