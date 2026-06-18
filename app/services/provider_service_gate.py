@@ -98,6 +98,7 @@ PROVIDER_TO_GATE: dict[str, str] = {
     # ── communications ──
     "communications": "communications",
     "whatsapp_gateway": "communications",
+    "sms_gateway": "communications",
     # ── access_control (admins / security) ──
     "admins": "access_control",
     "audit_logs": "access_control",
@@ -155,6 +156,11 @@ def build_provider_grants(services: dict[str, Any]) -> dict[str, dict[str, Any]]
     for provider_key, entry in (services or {}).items():
         gate = PROVIDER_TO_GATE.get(provider_key)
         if gate is None or not isinstance(entry, dict):
+            continue
+        # Fully-hidden-until-granted services (e.g. «الجهات») contribute NOTHING
+        # to the section gate — they're invisible, not an upsell. The radius
+        # reads services.<key>.visibility directly for these.
+        if entry.get("visibility") == "hidden":
             continue
         buckets.setdefault(gate, []).append((provider_key, entry))
 

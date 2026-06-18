@@ -168,7 +168,7 @@
 
       {# ── ③ التراخيص والاشتراكات ───────────────────────────────────── #}
       {% if 'licenses' not in hidden_sections %}
-      {% set _g3 = ep.startswith('admin.license') or ep.startswith('admin.plan') or 'payment' in ep %}
+      {% set _g3 = ep.startswith('admin.license') or ep.startswith('admin.plan') or ep.startswith('admin.subscription') or ep.startswith('admin.discount') or 'payment' in ep %}
       <div class="adm-group {% if _g3 %}is-active is-open{% endif %}" data-group="licenses">
         <button class="adm-group-head"
                 type="button"
@@ -193,6 +193,14 @@
             {{ _('خطط الاشتراك') }}
           </a>
           {% endif %}
+          <a href="{{ url_for('admin.subscription_packages') }}"
+             class="adm-link {% if ep == 'admin.subscription_packages' %}is-active{% endif %}">
+            {{ _('الباقات والأسعار') }}
+          </a>
+          <a href="{{ url_for('admin.discount_tiers') }}"
+             class="adm-link {% if ep.startswith('admin.discount') %}is-active{% endif %}">
+            {{ _('عروض الخصومات') }}
+          </a>
           <a href="{{ url_for('admin.services_catalog_policy') }}"
              class="adm-link {% if ep in ['admin.services_catalog_policy'] %}is-active{% endif %}">
             {{ _('الخدمات') }}

@@ -413,7 +413,24 @@ def _apply_generic_service_request(service_request: CustomerServiceRequest, *, e
     limits = _service_limits_from_request(key)
     if not limits:
         limits = service_request.desired_limits or {}
-    entitlement.limits = limits
+    if key == "sms_gateway":
+        # «طلب حزمة رسائل»: CREDIT the purchased package onto the running balance
+        # (sms_package_credits) instead of overwriting — and keep BYO caps.
+        merged = dict(entitlement.limits or {})
+        desired = service_request.desired_limits or {}
+        pkg_raw = request.form.get("package_messages") or desired.get("package_messages") or 0
+        try:
+            pkg = int(pkg_raw)
+        except (TypeError, ValueError):
+            pkg = 0
+        if pkg > 0:
+            merged["sms_package_credits"] = int(merged.get("sms_package_credits") or 0) + pkg
+        for fk in ("max_messages_monthly", "max_messages_daily", "sms_package_credits"):
+            if fk in limits:
+                merged[fk] = limits[fk]
+        entitlement.limits = merged
+    else:
+        entitlement.limits = limits
     entitlement.config = parse_json_object(request.form.get("config_json"), field="إعدادات الخدمة") if "config_json" in request.form else entitlement.config
     entitlement.price_monthly = parse_service_decimal(request.form.get("price_monthly"), field="price_monthly") if request.form.get("price_monthly") else entitlement.price_monthly
     entitlement.expires_at = expires_at
@@ -1957,6 +1974,91 @@ def plan_delete(plan_id: int):
     db.session.commit()
     flash("تم حذف الخطة.", "success")
     return redirect(url_for("admin.plans_list"))
+
+
+# ════════════════════ COMMERCIAL PACKAGES + DISCOUNTS ════════════════════
+
+@bp.get("/packages")
+@login_required
+def subscription_packages():
+    """Nice pricing view: a card per package with monthly + the discounted
+    3/6/12-month prices, priced per active-subscriber capacity."""
+    from ..services import subscription_pricing as sp
+    return render_template(
+        "admin/packages_pricing.html",
+        pricing=sp.package_pricing(),
+        tiers=[t for t in sp.get_discount_tiers() if t["enabled"]],
+    )
+
+
+@bp.get("/discounts")
+@login_required
+def discount_tiers():
+    """Edit the duration-discount tiers (months → %). Admin-configurable."""
+    from ..services import subscription_pricing as sp
+    return render_template("admin/discount_tiers.html", tiers=sp.get_discount_tiers())
+
+
+@bp.post("/discounts")
+@login_required
+def discount_tiers_save():
+    from ..services import subscription_pricing as sp
+    # Rows posted as months[]/percent[]/enabled_<i>; blank months row = dropped.
+    months_list = request.form.getlist("months")
+    percent_list = request.form.getlist("percent")
+    tiers = []
+    for i, (m, p) in enumerate(zip(months_list, percent_list)):
+        if not (m or "").strip():
+            continue
+        tiers.append({"months": m, "percent": p or 0,
+                      "enabled": request.form.get(f"enabled_{i}") == "on"})
+    try:
+        saved = sp.set_discount_tiers(tiers)
+    except sp.PricingError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.discount_tiers"))
+    audit("subscription_discounts_saved", "settings", sp.DISCOUNT_TIERS_SETTING,
+          "Updated duration-discount tiers", {"tiers": saved})
+    db.session.commit()
+    flash("تم حفظ عروض الخصومات.", "success")
+    return redirect(url_for("admin.discount_tiers"))
+
+
+@bp.post("/customers/<int:customer_id>/assign-package")
+@login_required
+def customer_assign_package(customer_id: int):
+    """Assign a subscription package to a customer for N months — sets the
+    active-subscriber cap (plan capacity) + the license term (flows into the
+    capacity contract). Reuses/refreshes the customer's license."""
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import subscription_pricing as sp
+    plan = db.get_or_404(Plan, _int("plan_id"))
+    months = max(1, _int("months", 1))
+    q = sp.quote(plan.monthly_price, months)
+    now = utcnow()
+    expires = now + timedelta(days=30 * months)
+    lic = customer.licenses.filter_by(plan_id=plan.id).order_by(License.id.desc()).first()
+    if lic is None:
+        lic = License(customer_id=customer.id, plan_id=plan.id,
+                      license_key=generate_license_key(), status="active",
+                      starts_at=now, expires_at=expires,
+                      grace_until=expires + timedelta(days=default_grace_days()),
+                      max_fingerprints=max(3, plan.max_devices or 3))
+        db.session.add(lic)
+    else:
+        lic.status = "active"
+        lic.starts_at = now
+        lic.expires_at = expires
+        lic.grace_until = expires + timedelta(days=default_grace_days())
+    db.session.flush()
+    audit("customer_package_assigned", "license", str(lic.id),
+          f"Assigned {plan.name} ({months}mo, cap {plan.max_users}) to {customer.company_name}",
+          {"plan_id": plan.id, "months": months, "total": q.total, "percent": q.percent})
+    db.session.commit()
+    flash(f"تم تفعيل «{plan.name}» لمدة {months} شهر — السعة "
+          f"{sp.capacity_label(plan.max_users)} بسعر {q.total}$ "
+          f"(خصم {q.percent:.0f}%).", "success")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
 def _fill_plan(plan: Plan) -> None:
@@ -4340,10 +4442,13 @@ def customer_whatsapp_test(customer_id: int):
 @login_required
 def customer_service_tiers(customer_id: int):
     customer = db.get_or_404(Customer, customer_id)
+    from ..services.customer_control import HIDDEN_UNTIL_GRANTED_SERVICES
     catalog = service_catalog_items()
     entitlement_map = customer_service_map(customer)
     rows = []
     for item in catalog:
+        if item.service_key in HIDDEN_UNTIL_GRANTED_SERVICES:
+            continue  # «الجهات» has its own dedicated grant control (below)
         ent = entitlement_map.get(item.service_key)
         rows.append({
             "item": item,
@@ -4358,6 +4463,14 @@ def customer_service_tiers(customer_id: int):
             "suspended": bool(ent and ent.status == "suspended"),
         })
     from ..services.trial_plan import TRIAL_ACTIVE_SUBSCRIBERS_CAP, TRIAL_DURATION_DAYS
+    from ..services.customer_control import ENTITY_LIMIT_FIELDS
+    mt_ent = entitlement_map.get("multi_tenant")
+    mt_cfg = (mt_ent.config if mt_ent else {}) or {}
+    mt_grant = {
+        "granted": mt_cfg.get("visibility") == "granted" and bool(mt_ent and mt_ent.enabled),
+        "entity_count": mt_cfg.get("entity_count") or "",
+        "per_entity_limits": mt_cfg.get("per_entity_limits") or {},
+    }
     return render_template(
         "admin/customer_service_tiers.html",
         customer=customer,
@@ -4366,7 +4479,55 @@ def customer_service_tiers(customer_id: int):
         tier_values=SERVICE_TIER_VALUES,
         trial_days=TRIAL_DURATION_DAYS,
         trial_cap=TRIAL_ACTIVE_SUBSCRIBERS_CAP,
+        entity_fields=ENTITY_LIMIT_FIELDS,
+        mt_grant=mt_grant,
     )
+
+
+@bp.post("/customers/<int:customer_id>/grant-entities")
+@login_required
+def customer_grant_entities(customer_id: int):
+    """Provider grant for «الجهات» (multi_tenant): fully hidden until granted.
+    Grant sets entity_count + a per-entity limit set; revoke hides it again
+    (no «طلب تفعيل» upsell — distinct from locked_upgrade)."""
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services.customer_control import ENTITY_LIMIT_FIELDS
+    ent = get_or_create_service_entitlement(customer, "multi_tenant")
+    action = (request.form.get("action") or "grant").strip().lower()
+    if action == "revoke":
+        ent.enabled = False
+        ent.status = "disabled"
+        cfg = dict(ent.config or {})
+        cfg.pop("visibility", None); cfg.pop("entity_count", None); cfg.pop("per_entity_limits", None)
+        ent.config = cfg
+        msg = "تم إخفاء خدمة «الجهات» عن العميل."
+    else:
+        entity_count = max(1, _int("entity_count", 1))
+        per_entity = {}
+        for fk, _label in ENTITY_LIMIT_FIELDS:
+            raw = (request.form.get(f"entity_{fk}") or "").strip()
+            if raw:
+                try:
+                    v = int(raw)
+                except ValueError:
+                    flash("حدود الجهة يجب أن تكون أرقامًا صحيحة.", "error")
+                    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
+                if v >= 0:
+                    per_entity[fk] = v
+        ent.enabled = True
+        ent.status = "active"
+        cfg = dict(ent.config or {})
+        cfg.update({"tier": "paid", "visibility": "granted",
+                    "entity_count": entity_count, "per_entity_limits": per_entity})
+        ent.config = cfg
+        msg = f"تم منح «الجهات»: {entity_count} جهة، بحدود لكل جهة."
+    ent.updated_by_admin_id = session.get("admin_id")
+    audit("customer_entities_grant", "customer", str(customer.id),
+          f"multi_tenant {action} for {customer.company_name}",
+          {"action": action, "config": ent.config})
+    db.session.commit()
+    flash(msg, "success")
+    return redirect(url_for("admin.customer_service_tiers", customer_id=customer.id))
 
 
 @bp.post("/customers/<int:customer_id>/apply-trial")

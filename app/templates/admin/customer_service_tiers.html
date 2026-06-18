@@ -112,6 +112,42 @@
   </form>
 </div>
 
+{# «الجهات» (multi_tenant): FULLY HIDDEN until the provider grants it. Provider
+   sets how many entities + per-entity limits. Not shown to the customer at all
+   until granted (distinct from the «طلب تفعيل» locked state). #}
+{% call hub.section("«الجهات» (متعدّد المستأجرين) — منح خاص بالمزوّد", icon="building") %}
+  <p style="font-size:12.5px;color:#64748b;margin:0 0 10px">
+    هذه الخدمة <b>مخفية تمامًا</b> عن العميل (لا تظهر ولا حتى كطلب تفعيل) حتى تمنحها أنت. عند المنح
+    تحدّد عدد الجهات وحدود كل جهة.
+    {% if mt_grant.granted %}<span class="hub-pill hub-pill--green">ممنوحة حاليًا</span>{% else %}<span class="hub-pill hub-pill--grey">مخفية</span>{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('admin.customer_grant_entities', customer_id=customer.id) }}">
+    {{ csrf_input() }}<input type="hidden" name="action" value="grant">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end">
+      <label>عدد الجهات
+        <input class="hub-input" type="number" min="1" name="entity_count" value="{{ mt_grant.entity_count }}" placeholder="مثال: 3">
+      </label>
+      {% for fk, label in entity_fields %}
+      <label>{{ label }}
+        <input class="hub-input" type="number" min="0" name="entity_{{ fk }}" value="{{ mt_grant.per_entity_limits.get(fk, '') }}" placeholder="—">
+      </label>
+      {% endfor %}
+    </div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"><i class="fa-solid fa-building-circle-check"></i> منح «الجهات»</button>
+    </div>
+  </form>
+  {% if mt_grant.granted %}
+  <form method="post" action="{{ url_for('admin.customer_grant_entities', customer_id=customer.id) }}" style="margin-top:8px">
+    {{ csrf_input() }}<input type="hidden" name="action" value="revoke">
+    <button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626" type="submit"
+            data-confirm="إخفاء «الجهات» عن هذا العميل؟ ستختفي تمامًا من واجهته.">
+      <i class="fa-solid fa-eye-slash"></i> إخفاء «الجهات»
+    </button>
+  </form>
+  {% endif %}
+{% endcall %}
+
 <form method="post" action="{{ url_for('admin.customer_service_tiers_save', customer_id=customer.id) }}" class="cst-form">
   {{ csrf_input() }}
 
