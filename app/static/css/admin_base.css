@@ -1153,23 +1153,49 @@ body.adm-body {
     position: fixed;
     inset-block: 0;
     inset-inline-start: 0;
-    z-index: 50;
-    transform: translateX(100%);
+    width: min(var(--hb-side-w), 86vw);   /* leave room to tap the backdrop */
+    max-width: 360px;
+    z-index: 50;                          /* ABOVE the overlay (z-index 39) */
+    overflow-y: auto;                     /* nav scrolls if taller than screen */
     transition: transform var(--cc-anim-med) var(--cc-ease-out);
   }
 
-  /* في RTL، الدرج يدخل من اليمين */
-  html[dir="rtl"] .adm-side {
-    transform: translateX(100%);
-  }
+  /* CLOSED — parked off the inline-START edge (RTL → off-right, LTR → off-left). */
+  html[dir="rtl"] .adm-side       { transform: translateX(100%); }
+  html:not([dir="rtl"]) .adm-side { transform: translateX(-100%); }
 
-  .adm-side.is-drawer-open {
-    transform: translateX(0);
-  }
+  /* OPEN — slide in. These MUST out-specify the closed dir-rules above, else
+     the drawer never leaves its parked transform. (The bug was exactly this:
+     `html[dir="rtl"] .adm-side` (0,0,2,1) beat `.adm-side.is-drawer-open`
+     (0,0,2,0), so tapping the burger only toggled the backdrop — the drawer
+     stayed at translateX(100%) off-screen.) */
+  html[dir="rtl"] .adm-side.is-drawer-open,
+  html:not([dir="rtl"]) .adm-side.is-drawer-open { transform: translateX(0); }
 
+  /* ── general mobile sweep ── */
   .adm-menu-btn {
     display: flex;
+    width:  44px;          /* ≥44px tap target */
+    height: 44px;
   }
+  /* tighter chrome so content gets the width; no horizontal overflow */
+  .adm-topbar { padding-inline: var(--cc-sp-6); gap: var(--cc-sp-4); }
+  .adm-page   { padding: var(--cc-sp-8) var(--cc-sp-6); }
+  /* a long page title truncates instead of pushing the topbar controls off */
+  .adm-topbar-page-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ≤ 600px — phone: smaller gutters, comfortable tap targets in the topbar */
+@media (max-width: 600px) {
+  .adm-page   { padding: var(--cc-sp-7) var(--cc-sp-5); }
+  .adm-topbar { padding-inline: var(--cc-sp-5); }
+  .adm-topbar-logout,
+  .adm-topbar-avatar { min-width: 40px; min-height: 40px; }
 }
 
 /* ≤ 720px — KPI grid إلى عمودَين */
