@@ -344,6 +344,27 @@ def get_secret(key: str, default: str = "") -> str:
     return raw or default
 
 
+def secret_state(key: str) -> tuple[bool, str, bool]:
+    """Diagnose a secret WITHOUT exposing it — ``(present, source, readable)``.
+
+    * ``present``  — a non-empty value exists somewhere (DB or config/env).
+    * ``source``   — ``"db" | "config" | "default" | "none"``.
+    * ``readable`` — it can actually be USED: for a DB secret this means it
+      decrypts with the current master key (catches the silent trap where a
+      token was saved but the Fernet key later changed → ``get_secret`` returns
+      "" and the flow looks "not configured" even though a value is on disk).
+    """
+    raw, src = _read_raw(key)
+    if not (raw or "").strip():
+        return (False, "none", False)
+    if src == "db":
+        try:
+            return (True, "db", bool(_crypto().decrypt_secret(raw).strip()))
+        except Exception:  # noqa: BLE001
+            return (True, "db", False)
+    return (True, src, True)
+
+
 # ────────────────────────────────────────────────────────────────────
 # Write API
 # ────────────────────────────────────────────────────────────────────

@@ -1901,6 +1901,29 @@ def customer_dns_sync(customer_id: int):
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
+@bp.post("/customers/<int:customer_id>/dns-diagnose")
+@login_required
+def customer_dns_diagnose(customer_id: int):
+    """Read-only live probe of the customer-subdomain DNS path: is the Cloudflare
+    token present + decryptable, can we reach the zone, and does the A record
+    actually exist (DNS-only → the VPS IP)? Surfaces the exact Cloudflare answer
+    so a failed «مزامنة» is never silent. Changes nothing."""
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import data_connection_dns as dns
+    dx = dns.diagnose(customer)
+    audit(
+        "customer_dns_diagnose", "customer", str(customer.id),
+        f"DNS diagnose {dx.fqdn}: token_present={dx.token_present} readable={dx.token_readable} "
+        f"zone_ok={dx.zone_ok} record_exists={dx.record_exists} healthy={dx.healthy}",
+        {"fqdn": dx.fqdn, "ip": dx.expected_ip, "token_present": dx.token_present,
+         "token_source": dx.token_source, "token_readable": dx.token_readable,
+         "zone_ok": dx.zone_ok, "record_exists": dx.record_exists,
+         "record_ip": dx.record_ip, "record_proxied": dx.record_proxied, "error": dx.error},
+    )
+    flash(("تشخيص DNS لـ " + dx.fqdn + ": " + dx.verdict_ar), "success" if dx.healthy else "error")
+    return redirect(url_for("admin.customer_edit", customer_id=customer.id))
+
+
 @bp.post("/customers/<int:customer_id>/delete")
 @login_required
 def customer_delete(customer_id: int):

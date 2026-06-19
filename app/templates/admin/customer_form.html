@@ -147,6 +147,13 @@
           <i class="fa-solid fa-cloud-arrow-up"></i> مزامنة النطاق الفرعي (DNS)
         </button>
       </form>
+      <form method="post" action="{{ url_for('admin.customer_dns_diagnose', customer_id=customer.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <button class="hub-btn hub-btn--ghost" type="submit" {{ 'disabled' if not customer.vps_ip else '' }}
+                title="فحص حيّ لا يغيّر شيئًا: هل الرمز موجود ويعمل، وهل سجل DNS منشأ فعلًا؟">
+          <i class="fa-solid fa-stethoscope"></i> تشخيص DNS
+        </button>
+      </form>
       {% if customer.dns_record_id %}
         <form method="post" action="{{ url_for('admin.customer_dns_sync', customer_id=customer.id) }}" style="display:inline">
           {{ csrf_input() }}
