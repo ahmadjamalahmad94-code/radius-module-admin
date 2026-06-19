@@ -650,6 +650,24 @@
 
   .cd-empty i { font-size: 28px; color: var(--cc-text-faint); }
 
+  /* ── MOBILE (≤640px): stack everything to one column, no overflow ──
+     The desktop grids use `minmax(280px,1fr)` / `minmax(220px,1fr)` — on a
+     ~360px phone the 280/220px MINIMUM is wider than the available content
+     column, so the track overflows the viewport. Force single-column (and a
+     2-up KPI strip) with a 0 minimum so cards always fit. */
+  @media (max-width: 640px) {
+    .cd-hero { padding: var(--cc-sp-8) var(--cc-sp-7); gap: var(--cc-sp-7); }
+    .cd-grid, .cd-grid-3 { grid-template-columns: 1fr; }
+    .cd-kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* let any wide inner element shrink instead of forcing page width */
+    .cd-grid > *, .cd-grid-3 > *, .cd-grid-stack > * { min-width: 0; }
+  }
+  @media (max-width: 420px) {
+    .cd-kpi-strip { grid-template-columns: 1fr; }
+    .cd-hero { padding: var(--cc-sp-7) var(--cc-sp-6); }
+    .cd-hero-name { font-size: var(--cc-fs-h3, 18px); }
+  }
+
 </style>
 {% endblock %}
 

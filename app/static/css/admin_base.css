@@ -1145,6 +1145,17 @@ body.adm-body {
 
 /* ≤ 900px — sidebar يتحول لدرج */
 @media (max-width: 900px) {
+  /* ── OFF-CANVAS DRAWER OVERFLOW GUARD (the headline mobile bug) ──
+     The closed sidebar is position:fixed and parked off the inline-start edge
+     (translateX(±100%)). A fixed element beyond the viewport EXTENDS the
+     document width — and in RTL that shifts the whole page right, leaving dead
+     space on the left and pushing/clipping content off the right edge (exactly
+     the reported Customer-360 symptom). Clip horizontal overflow at the root so
+     the parked drawer never creates a scroll/shift. The OPEN drawer is
+     translateX(0) — inside the viewport — so it stays fully visible. */
+  html, body { overflow-x: hidden; max-width: 100%; }
+  .adm-shell, .adm-main, .adm-page { min-width: 0; max-width: 100%; }
+
   .adm-shell {
     grid-template-columns: 1fr;
   }
