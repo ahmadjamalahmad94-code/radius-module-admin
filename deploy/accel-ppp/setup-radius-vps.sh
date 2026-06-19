@@ -82,6 +82,25 @@ POOL_RANGE="${POOL_RANGE:-10.20.0.2-10.20.255.254}"
 WG_DATA_PORT="${WG_DATA_PORT:-51830}"              # !!! LAB-PENDING confirm no clash with mgmt/data WG
 WG_DATA_IFACE="${WG_DATA_IFACE:-wg-data}"
 
+# ── Networking: forwarding + NAT egress + SURGICAL inbound opens ──────────────
+# Subscribers get a pool IP; without IP-forwarding + a MASQUERADE out the WAN
+# they have NO internet. We also OPEN the inbound VPN ports — but SURGICALLY:
+# only ADD allow rules, NEVER touch the default policy, flush, or the SSH rule,
+# so this is lockout-proof on a production box. Applied via an idempotent,
+# reboot-safe oneshot unit (no interactive iptables-persistent prompt).
+# WAN_IFACE auto-detects the default-route interface; override if multi-homed.
+WAN_IFACE="${WAN_IFACE:-$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") {print $(i+1); exit}}')}"
+# CIDR covering POOL_RANGE — MUST contain the pool. Default matches POOL_* above.
+POOL_CIDR="${POOL_CIDR:-10.20.0.0/16}"
+# Open the legacy PPTP ports (TCP 1723 + GRE)? The template enables [pptp]; set 0
+# if you only offer SSTP. SSTP (TCP 443) + HTTP-01 (TCP 80) are always opened.
+ENABLE_PPTP="${ENABLE_PPTP:-1}"
+# Open the WireGuard DATA udp port too (RouterOS v7 native-WG path). Default 0:
+# the SSTP/PPTP path is the lab-validated one; WG peer-publish is LAB-PENDING.
+ENABLE_WG_DATA="${ENABLE_WG_DATA:-0}"
+NET_SCRIPT="/usr/local/sbin/hoberadius-accel-net.sh"
+NET_UNIT="/etc/systemd/system/hoberadius-accel-net.service"
+
 # Local RADIUS + DM/CoA ports (defaults match the template).
 RADIUS_AUTH_PORT="${RADIUS_AUTH_PORT:-1812}"
 RADIUS_ACCT_PORT="${RADIUS_ACCT_PORT:-1813}"
@@ -207,6 +226,19 @@ if ! python3 "$AGENT" --check-wg-port "$WG_DATA_PORT" >/dev/null 2>&1; then
     warn "choose a free WG_DATA_PORT (re-run with WG_DATA_PORT=<free port>)."
 fi
 
+# accel-ppp will bind TCP 443 (SSTP) and 1723 (PPTP); certbot HTTP-01 binds :80.
+# On an EXISTING box something may already hold these (e.g. a web panel on 443).
+# Warn clearly (non-fatal) so the operator resolves the clash before accel-ppp
+# fails to start, or switches the cert to dns01 when :80 is taken.
+for _p in 443 1723 80; do
+    if ss -ltn "( sport = :$_p )" 2>/dev/null | grep -q ":$_p"; then
+        warn "TCP :$_p is already in use on this box:"
+        ss -ltnp "( sport = :$_p )" 2>/dev/null | tail -n +2 | sed 's/^/[warn]   /' >&2 || true
+        [[ "$_p" == "80" ]] && warn "  → :80 busy: use CERT_CHALLENGE=dns01 + CLOUDFLARE_API_TOKEN (firewalled/used :80)."
+        [[ "$_p" == "443" ]] && warn "  → :443 busy: accel-ppp SSTP cannot bind it — free :443 or move the other service."
+    fi
+done
+
 # ── 4. cert: select challenge, (wait for DNS,) issue via certbot (NON-FATAL) ──
 # CERT_CHALLENGE=auto probes :80 → HTTP-01 if reachable, else DNS-01 (Cloudflare).
 # HTTP-01: the agent WAITS (bounded) for clientN.<zone> to resolve to THIS VPS
@@ -270,6 +302,83 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
+# ── 5b. networking: forwarding + NAT egress + SURGICAL inbound opens ──────────
+# Subscribers get a pool IP — they need IP-forwarding + a MASQUERADE out the WAN
+# to reach the internet. We also OPEN the inbound VPN ports. SAFETY: this is
+# strictly ADDITIVE — it enables forwarding, ADDs a MASQUERADE for the pool, and
+# ADDs inbound ACCEPTs for 80/443(/1723+GRE)(/wg-udp). It NEVER sets a default
+# policy, NEVER flushes, and NEVER touches the SSH rule → no self-lockout. A
+# reboot-safe oneshot unit re-applies it idempotently (no iptables-persistent
+# prompt). All rules use `-C … || -A/-I` so re-runs don't duplicate.
+log "Configuring networking (forwarding + NAT egress + surgical port opens)…"
+if [[ -z "$WAN_IFACE" ]]; then
+    warn "could not auto-detect WAN interface (no default route?). Set WAN_IFACE=<iface> and re-run."
+    warn "skipping NAT/forwarding — subscribers would have NO internet until this is set."
+else
+    log "  WAN interface: ${WAN_IFACE}; subscriber pool: ${POOL_CIDR}"
+    # Persist forwarding via sysctl drop-in (survives reboot independently).
+    cat > /etc/sysctl.d/99-hoberadius-accel.conf <<SYSCTL
+# HobeRadius accel-ppp DATA — subscribers need IPv4 forwarding for egress.
+net.ipv4.ip_forward=1
+SYSCTL
+    sysctl -q --system 2>/dev/null || sysctl -q -w net.ipv4.ip_forward=1 || true
+
+    # The idempotent, ADDITIVE rule applier (also the boot oneshot).
+    cat > "$NET_SCRIPT" <<NET
+#!/usr/bin/env bash
+# HobeRadius accel-ppp DATA networking — forwarding + NAT egress + SURGICAL opens.
+# SAFE/ADDITIVE ONLY: enables forwarding, adds a pool MASQUERADE, and adds inbound
+# ACCEPTs for the VPN ports. NEVER changes default policy, NEVER flushes, NEVER
+# touches SSH → lockout-proof. Every rule is guarded by -C so it is idempotent.
+set -e
+WAN_IFACE="${WAN_IFACE}"
+POOL_CIDR="${POOL_CIDR}"
+sysctl -q -w net.ipv4.ip_forward=1 || true
+# NAT egress for the subscriber pool.
+iptables -t nat -C POSTROUTING -s "\$POOL_CIDR" -o "\$WAN_IFACE" -j MASQUERADE 2>/dev/null \\
+  || iptables -t nat -A POSTROUTING -s "\$POOL_CIDR" -o "\$WAN_IFACE" -j MASQUERADE
+# Allow forwarding for the pool (ADD-only; we never set FORWARD policy to DROP).
+iptables -C FORWARD -s "\$POOL_CIDR" -j ACCEPT 2>/dev/null || iptables -A FORWARD -s "\$POOL_CIDR" -j ACCEPT
+iptables -C FORWARD -d "\$POOL_CIDR" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \\
+  || iptables -A FORWARD -d "\$POOL_CIDR" -m state --state ESTABLISHED,RELATED -j ACCEPT
+# SURGICAL inbound opens — insert ACCEPTs (idempotent). SSH/policy untouched.
+open_tcp(){ iptables -C INPUT -p tcp --dport "\$1" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport "\$1" -j ACCEPT; }
+open_udp(){ iptables -C INPUT -p udp --dport "\$1" -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p udp --dport "\$1" -j ACCEPT; }
+open_tcp 80    # certbot HTTP-01 (issuance + renewals)
+open_tcp 443   # SSTP over TLS
+NET
+    if [[ "$ENABLE_PPTP" == "1" ]]; then
+        cat >> "$NET_SCRIPT" <<NET
+open_tcp 1723  # PPTP control
+modprobe nf_conntrack_pptp 2>/dev/null || true   # PPTP GRE conntrack helper
+iptables -C INPUT -p gre -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p gre -j ACCEPT   # PPTP GRE
+NET
+    fi
+    if [[ "$ENABLE_WG_DATA" == "1" ]]; then
+        cat >> "$NET_SCRIPT" <<NET
+open_udp ${WG_DATA_PORT}   # WireGuard DATA listener (RouterOS v7 native-WG path)
+NET
+    fi
+    chmod 0755 "$NET_SCRIPT"
+
+    cat > "$NET_UNIT" <<UNIT
+[Unit]
+Description=HobeRadius accel-ppp DATA networking (forwarding + NAT egress + surgical port opens)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=${NET_SCRIPT}
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload
+    systemctl enable --now hoberadius-accel-net.service \
+        || { warn "applying networking rules directly (unit enable failed)…"; bash "$NET_SCRIPT" || warn "networking rules NOT applied — check ${NET_SCRIPT}."; }
+    log "  networking applied (MASQUERADE ${POOL_CIDR} → ${WAN_IFACE}; opened 80/443$( [[ "$ENABLE_PPTP" == "1" ]] && printf '/1723+GRE' )$( [[ "$ENABLE_WG_DATA" == "1" ]] && printf '/udp%s' "$WG_DATA_PORT" ))."
+fi
+
 # ── 6. enable services ───────────────────────────────────────────────────────
 log "Enabling services…"
 systemctl daemon-reload
@@ -296,12 +405,17 @@ cat <<SUMMARY
   renew     : certbot.timer + ${RELOAD_HOOK}
   agent     : ${AGENT_DST}  (reconcile daemon; peer-source=${PEER_SOURCE_URL:-<unset, disabled>})
   pool      : ${POOL_RANGE} (gw ${POOL_GATEWAY})
-  wg-data   : ${WG_DATA_IFACE} udp/${WG_DATA_PORT}
+  network   : forward+NAT ${POOL_CIDR} -> ${WAN_IFACE:-<unset!>}; opened 80/443$( [[ "$ENABLE_PPTP" == "1" ]] && printf '/1723+GRE' )$( [[ "$ENABLE_WG_DATA" == "1" ]] && printf '/udp%s' "$WG_DATA_PORT" )  (${NET_UNIT})
+  wg-data   : ${WG_DATA_IFACE} udp/${WG_DATA_PORT}  (server bring-up + peer-publish = LAB-PENDING; SSTP/PPTP is the live path)
+
+  REQUIRED on this box (NOT done by this script):
+    * local radius-module must accept a RADIUS client 127.0.0.1 with the SAME
+      RADIUS_SECRET, and return Filter-Id=5120 (5 Mbit) for DATA users + a TEST USER.
 
   LAB-PENDING before any live customer (genuinely needs a live VPS — see RUNBOOK):
     * exact accel-ppp Filter-Id rate form (shaper)        -> confirm live, then set
-    * Session-Octets-Limit (227) support on the build     -> confirm live, then set
-    * accel-ppp NAS source IP for Disconnect (CoA secret)  -> confirm live, then set
-    * peer-source endpoint path + X-Proxy-Token HMAC auth  -> wire to the panel
-    * tc ingress/egress direction for the per-peer shaper  -> confirm on the kernel
+    * peer-source endpoint path + X-Proxy-Token HMAC auth  -> wire to the panel (WG only)
+    * tc ingress/egress direction for the per-peer shaper  -> confirm on the kernel (WG only)
+  (NOT needed for this install — owner's model is 5 Mbit cap, NO quota, NO disconnect:
+   Session-Octets-Limit / CoA-Disconnect are intentionally unused.)
 SUMMARY
