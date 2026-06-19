@@ -1845,7 +1845,9 @@ def customer_data_bundle(customer_id: int):
     customer = db.get_or_404(Customer, customer_id)
     token = request.args.get("t", "")
     if not session.get("admin_id") and verify_bundle_token(token) != customer_id:
-        abort(403)
+        # Fail loud + specific (readable in a browser or `curl` without -f) rather
+        # than a bare 403, so the operator knows the link/token is the problem.
+        abort(403, description="رابط الحزمة غير صالح أو منتهي — انسخ الأمر من جديد من صفحة العميل في اللوحة.")
     data = build_bundle_targz(customer)
     return send_file(
         io.BytesIO(data),
