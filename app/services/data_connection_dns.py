@@ -146,8 +146,94 @@ def remove_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSy
     return DnsSyncResult(STATUS_DELETED, fqdn=fqdn)
 
 
+@dataclass(frozen=True)
+class DnsDiagnosis:
+    """Read-only, non-mutating live probe of the customer-subdomain DNS state —
+    answers «was the API call possible, and does the record actually exist?»."""
+    token_present: bool
+    token_source: str
+    token_readable: bool
+    zone_base: str
+    fqdn: str
+    expected_ip: str
+    zone_ok: bool
+    zone_id: str
+    record_exists: bool
+    record_ip: str
+    record_proxied: bool
+    record_matches_ip: bool
+    error: str
+    verdict_ar: str
+    healthy: bool
+
+
+def diagnose(customer: Customer) -> DnsDiagnosis:
+    """Probe — WITHOUT changing anything — exactly why a customer's subdomain
+    does/doesn't resolve: is the token present + readable, can we reach the
+    zone, and does the A record exist (DNS-only, pointing at the VPS IP)?
+
+    This answers "was the API call made and what did Cloudflare say".
+    """
+    from . import platform_settings as ps
+    present, source, readable = ps.secret_state(cloudflare.CLOUDFLARE_API_TOKEN_KEY)
+    zone_base = get_zone_base()
+    fqdn = customer_fqdn(customer)
+    ip = (customer.vps_ip or "").strip()
+    rtype = "AAAA" if ":" in ip else "A"
+
+    def _d(*, zone_ok=False, zone_id="", record_exists=False, record_ip="",
+           record_proxied=False, record_matches=False, error="", verdict="", healthy=False):
+        return DnsDiagnosis(present, source, readable, zone_base, fqdn, ip,
+                            zone_ok, zone_id, record_exists, record_ip, record_proxied,
+                            record_matches, error, verdict, healthy)
+
+    if not ip:
+        return _d(verdict="لا يوجد عنوان IP للخادم VPS — أدخله أولًا ثم زامن النطاق.")
+    if not present:
+        return _d(verdict=("رمز Cloudflare API غير مضبوط في إعدادات المنصة (حقل «رمز Cloudflare API»). "
+                           "أضِف رمزًا بصلاحية Zone.DNS:Edit على النطاق ثم أعد المزامنة."))
+    if not readable:
+        return _d(error="token present but not decryptable",
+                  verdict=("الرمز محفوظ لكن تعذّر فك تشفيره (تغيّر مفتاح التشفير الرئيسي للوحة؟). "
+                           "أعد إدخال رمز Cloudflare في الإعدادات."))
+    client = cloudflare.get_client()
+    if client is None:  # defensive — present+readable should yield a client
+        return _d(error="client unavailable", verdict="تعذّر بناء عميل Cloudflare رغم وجود الرمز.")
+
+    zr = client.find_zone_id(zone_base)
+    if not zr.ok:
+        return _d(error=zr.error,
+                  verdict=(f"تعذّر الوصول إلى النطاق {zone_base}: {zr.error}. "
+                           f"تأكّد أن الرمز له صلاحية Zone.DNS:Edit على {zone_base} وأن النطاق على هذا الحساب."))
+    rr = client.find_a_record(zr.zone_id, fqdn, rtype=rtype)
+    if not rr.ok:
+        return _d(zone_ok=True, zone_id=zr.zone_id, error=rr.error,
+                  verdict=f"النطاق متاح لكن فشل الاستعلام عن سجل {fqdn}: {rr.error}.")
+    if rr.record is None:
+        return _d(zone_ok=True, zone_id=zr.zone_id,
+                  verdict=(f"النطاق {zone_base} متاح والرمز يعمل، لكن لا يوجد سجل {fqdn} بعد. "
+                           f"اضغط «مزامنة النطاق الفرعي (DNS)» لإنشائه ← {ip}."))
+    rec = rr.record
+    matches = rec.content.strip() == ip
+    if rec.proxied:
+        return _d(zone_ok=True, zone_id=zr.zone_id, record_exists=True, record_ip=rec.content,
+                  record_proxied=True, record_matches=matches,
+                  verdict=("السجل موجود لكنه عبر بروكسي Cloudflare (السحابة البرتقالية). يجب أن يكون «DNS فقط» "
+                           "ليصل SSTP مباشرة إلى الخادم. أعد المزامنة (تُنشئه DNS-only)."))
+    if not matches:
+        return _d(zone_ok=True, zone_id=zr.zone_id, record_exists=True, record_ip=rec.content,
+                  record_matches=False,
+                  verdict=f"السجل موجود لكنه يشير إلى {rec.content} بدل {ip}. أعد المزامنة لتحديثه.")
+    return _d(zone_ok=True, zone_id=zr.zone_id, record_exists=True, record_ip=rec.content,
+              record_matches=True, healthy=True,
+              verdict=(f"سليم: {fqdn} ← {rec.content} (DNS فقط). إن لم يُحَل بعد على جهازك، "
+                       "انتظر دقيقة لانتشار DNS ثم جرّب مجددًا."))
+
+
 __all__ = [
     "DnsSyncResult",
+    "DnsDiagnosis",
+    "diagnose",
     "ensure_subdomain_record",
     "remove_subdomain_record",
     "STATUS_OK",
