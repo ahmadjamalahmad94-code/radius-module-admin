@@ -17,6 +17,16 @@ Follow top-to-bottom; each step has a **verify** you must see green before movin
       If not, use the **Manual fallback** (step 2b).
 - [ ] You know the VPS's **public IP** before/at creation, the customer's plan
       (speed/quota), and a **RADIUS shared secret** (≥ 32 random chars).
+- [ ] **Local radius-module is configured** (this script does NOT touch it): it
+      must accept a RADIUS **client `127.0.0.1`** with the **same** shared secret,
+      and return **`Filter-Id=5120`** (5 Mbit) for DATA users — plus at least one
+      **test RADIUS user** (username/password) to verify a connection. The owner's
+      model is **5 Mbit cap, NO quota, NO disconnect** (no Session-Octets-Limit /
+      no CoA-Disconnect needed).
+- [ ] The script enables **IPv4 forwarding + NAT MASQUERADE** for the pool and
+      **opens 80/443/1723+GRE** surgically (ADD-only; never flushes, never sets a
+      default-DROP, never touches SSH). On an **existing** box it warns (non-fatal)
+      if **:443 / :80 / :1723** are already in use — free :443 (SSTP can't share it).
 - [ ] Decide the ACME challenge: **`auto`** (default — probes port 80) is fine
       unless you already know inbound **:80 is firewalled** at this provider, in
       which case plan for **DNS-01** (needs a Cloudflare token on the VPS — see §6).
@@ -91,6 +101,22 @@ Same script, same verifies as 2a. Re-running is safe (idempotent).
 
 **Verify shaping:** run a speed test from the client → throughput is capped at the
 plan rate (default 5 Mbit). (The exact `Filter-Id` form is LAB-PENDING — see §7.)
+
+**Verify internet egress (NAT):** from a connected client, browse / ping `1.1.1.1`
+— traffic must reach the internet (forwarding + MASQUERADE). On the VPS:
+```bash
+sysctl net.ipv4.ip_forward                              # = 1
+iptables -t nat -S POSTROUTING | grep MASQUERADE        # pool → WAN masquerade present
+systemctl status hoberadius-accel-net                   # active (exited) — reboot-safe
+iptables -S INPUT | grep -E 'dport (80|443|1723)'       # surgical opens present
+```
+
+> **WireGuard (v7):** the SSTP/PPTP path above is the **live, lab-validated** one
+> (RouterOS v7 has a first-class SSTP client that trusts the public LE cert with
+> no import). WG-native is **scaffolded but not lab-validated** — the script opens
+> the WG udp port only when `ENABLE_WG_DATA=1`, but the WG **server bring-up**,
+> the **peer-publish** from the panel, and the **tc** shaper are LAB-PENDING (§7).
+> Install SSTP/PPTP now; treat WG as a later phase.
 
 ---
 
