@@ -37,17 +37,49 @@ STATUS_DELETED = "deleted"
 STATUS_NOT_CONFIGURED = "not_configured"  # no Cloudflare token saved yet
 STATUS_NO_IP = "no_ip"                    # customer has no VPS IP set
 STATUS_INVALID_IP = "invalid_ip"          # VPS IP is not a valid address
-STATUS_API_ERROR = "api_error"            # Cloudflare rejected the call
+STATUS_INVALID_TOKEN = "invalid_token"    # token rejected (auth / scope)
+STATUS_ZONE_NOT_FOUND = "zone_not_found"  # zone absent on this CF account/token
+STATUS_TIMEOUT = "timeout"                # network/Cloudflare timeout
+STATUS_API_ERROR = "api_error"            # any other Cloudflare/transport failure
 
 
 _AR_MESSAGES = {
     STATUS_OK: "تمت مزامنة سجل DNS للنطاق الفرعي بنجاح.",
     STATUS_DELETED: "تم حذف سجل DNS للنطاق الفرعي.",
-    STATUS_NOT_CONFIGURED: "لم يتم ضبط رمز Cloudflare API في الإعدادات بعد.",
-    STATUS_NO_IP: "لا يوجد عنوان IP للخادم VPS لهذا العميل.",
-    STATUS_INVALID_IP: "عنوان IP للخادم VPS غير صالح.",
-    STATUS_API_ERROR: "فشل الاتصال بـ Cloudflare. راجع الرمز والصلاحيات.",
+    STATUS_NOT_CONFIGURED: "فشل: رمز Cloudflare API غير مضبوط في الإعدادات. أضِف رمزًا بصلاحية Zone.DNS:Edit ثم أعد المحاولة.",
+    STATUS_NO_IP: "فشل: لا يوجد عنوان IP للخادم VPS لهذا العميل. أدخله أولًا.",
+    STATUS_INVALID_IP: "فشل: عنوان IP للخادم VPS غير صالح.",
+    STATUS_INVALID_TOKEN: "فشل: رمز Cloudflare غير صالح أو لا يملك صلاحية Zone.DNS:Edit على النطاق. صحّح الرمز في الإعدادات.",
+    STATUS_ZONE_NOT_FOUND: "فشل: النطاق غير موجود في حساب Cloudflare لهذا الرمز. تأكّد أن النطاق على الحساب نفسه وللرمز صلاحية عليه.",
+    STATUS_TIMEOUT: "فشل: انتهت مهلة الاتصال بـ Cloudflare. تحقّق من الشبكة وأعد المحاولة.",
+    STATUS_API_ERROR: "فشل: رفض Cloudflare الطلب. راجع الرمز والصلاحيات والنطاق.",
 }
+
+#: Failure statuses whose toast appends the REAL Cloudflare/transport detail —
+#: so the operator always sees the actual cause, never a generic-only message.
+_FAILURE_WITH_DETAIL = frozenset({
+    STATUS_INVALID_TOKEN, STATUS_ZONE_NOT_FOUND, STATUS_TIMEOUT, STATUS_API_ERROR,
+})
+
+
+def _classify_cf_error(error: str) -> str:
+    """Map a raw Cloudflare/transport error string to a SPECIFIC status so the
+    operator gets an actionable Arabic message (not a generic bucket)."""
+    e = (error or "").lower()
+    if not e:
+        return STATUS_API_ERROR
+    if "timed out" in e or "timeout" in e:
+        return STATUS_TIMEOUT
+    if "zone not found" in e:
+        return STATUS_ZONE_NOT_FOUND
+    # CF auth/token error codes + phrases (9109 invalid token, 1000/10000 auth,
+    # 6003 invalid headers, 9103/9106 unauthorized).
+    if (any(code in e for code in ("9109", "10000", "9103", "9106", "6003", "1000"))
+            or "invalid access token" in e or "invalid api token" in e
+            or "authentication" in e or "unauthorized" in e
+            or "invalid request headers" in e or "not authorized" in e):
+        return STATUS_INVALID_TOKEN
+    return STATUS_API_ERROR
 
 
 @dataclass(frozen=True)
@@ -65,8 +97,8 @@ class DnsSyncResult:
     @property
     def message_ar(self) -> str:
         base = _AR_MESSAGES.get(self.status, "تعذّر تنفيذ العملية.")
-        if self.status == STATUS_API_ERROR and self.error:
-            return f"{base} ({self.error})"
+        if self.error and self.status in _FAILURE_WITH_DETAIL:
+            return f"{base} (تفاصيل من Cloudflare: {self.error})"
         return base
 
 
@@ -103,11 +135,23 @@ def ensure_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSy
     assign_subdomain(customer, commit=False)
     fqdn = customer_fqdn(customer)
 
-    res = client.upsert_a_record(get_zone_base(), fqdn, ip)
+    # Never fake-success and never 500: an unexpected client crash becomes a
+    # clear error toast, with the customer's state left UNSYNCED.
+    try:
+        res = client.upsert_a_record(get_zone_base(), fqdn, ip)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("data_connection_dns: upsert crashed for %s", fqdn)
+        return DnsSyncResult(STATUS_API_ERROR, fqdn=fqdn, ip=ip, error=type(exc).__name__)
     if not res.ok:
-        return DnsSyncResult(STATUS_API_ERROR, fqdn=fqdn, ip=ip, error=res.error)
+        # Specific cause (token / zone / timeout / generic) → actionable toast.
+        return DnsSyncResult(_classify_cf_error(res.error), fqdn=fqdn, ip=ip, error=res.error)
 
+    # Only mark «مُزامَن» when Cloudflare actually returned a record id (a real
+    # created/verified record) — otherwise report failure and stay unsynced.
     record_id = res.record.id if res.record else ""
+    if not record_id:
+        return DnsSyncResult(STATUS_API_ERROR, fqdn=fqdn, ip=ip,
+                             error="Cloudflare reported success but returned no record id")
     customer.dns_record_id = record_id
     customer.dns_synced_at = utcnow()
     if commit:
@@ -131,10 +175,14 @@ def remove_subdomain_record(customer: Customer, *, commit: bool = True) -> DnsSy
         return DnsSyncResult(STATUS_NOT_CONFIGURED, fqdn=fqdn,
                              record_id=(customer.dns_record_id or "").strip())
 
-    res = client.delete_a_record(get_zone_base(), fqdn,
-                                 record_id=(customer.dns_record_id or "").strip())
+    try:
+        res = client.delete_a_record(get_zone_base(), fqdn,
+                                     record_id=(customer.dns_record_id or "").strip())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("data_connection_dns: delete crashed for %s", fqdn)
+        return DnsSyncResult(STATUS_API_ERROR, fqdn=fqdn, error=type(exc).__name__)
     if not res.ok:
-        return DnsSyncResult(STATUS_API_ERROR, fqdn=fqdn, error=res.error)
+        return DnsSyncResult(_classify_cf_error(res.error), fqdn=fqdn, error=res.error)
 
     customer.dns_record_id = ""
     customer.dns_synced_at = None
@@ -241,5 +289,8 @@ __all__ = [
     "STATUS_NOT_CONFIGURED",
     "STATUS_NO_IP",
     "STATUS_INVALID_IP",
+    "STATUS_INVALID_TOKEN",
+    "STATUS_ZONE_NOT_FOUND",
+    "STATUS_TIMEOUT",
     "STATUS_API_ERROR",
 ]

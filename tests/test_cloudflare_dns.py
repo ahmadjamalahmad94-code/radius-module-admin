@@ -274,7 +274,10 @@ def test_ensure_api_error_does_not_write_state(monkeypatch, app):
         fake = _FakeClient(CfResult(ok=False, error="9109: bad token"))
         monkeypatch.setattr(cloudflare, "get_client", lambda: fake)
         res = dns.ensure_subdomain_record(c)
-        assert res.status == dns.STATUS_API_ERROR and "bad token" in res.message_ar
+        # A 9109 token error now classifies SPECIFICALLY (invalid_token), still a
+        # failure that surfaces the real detail and writes NO state.
+        assert res.status == dns.STATUS_INVALID_TOKEN and res.ok is False
+        assert "bad token" in res.message_ar
         assert c.dns_record_id == ""
 
 
