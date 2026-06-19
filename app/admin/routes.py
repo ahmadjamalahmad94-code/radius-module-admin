@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -1812,14 +1813,46 @@ def customer_edit(customer_id: int):
 
 def _customer_data_ctx(customer: Customer) -> dict:
     """Read-only DATA-connection (accel-ppp 2c) context for the customer form:
-    the resolved FQDN + whether Cloudflare is configured. The cert/DNS status
-    fields live on the row itself."""
+    the resolved FQDN, whether Cloudflare is configured, and the ONE-paste
+    install command (token-gated bundle URL, dns01 pre-filled)."""
     from ..services.customer_subdomain import customer_fqdn
     from ..services import cloudflare
+    from ..services.data_connection_bundle import bundle_token
+    bundle_url = ""
+    try:
+        bundle_url = url_for("admin.customer_data_bundle", customer_id=customer.id,
+                             t=bundle_token(customer.id), _external=True)
+    except Exception:  # noqa: BLE001 — never break the form on URL/token build
+        bundle_url = ""
     return {
         "data_fqdn": customer_fqdn(customer),
         "cloudflare_configured": cloudflare.is_configured(),
+        "data_bundle_url": bundle_url,
     }
+
+
+@bp.get("/customers/<int:customer_id>/data-bundle.tar.gz")
+def customer_data_bundle(customer_id: int):
+    """Serve the per-customer accel-ppp install bundle as a .tar.gz (2c).
+
+    Token-gated (NOT login_required) so the customer's VPS can fetch it with a
+    single ``curl … | tar`` — no GitHub token, no scp. A logged-in admin may
+    also fetch it directly. The bundle contains only non-secret install
+    scaffolding (SUBDOMAIN/VPS_IP/dns01 defaults pre-filled; SECRETS supplied at
+    runtime), so the token is anti-enumeration, not secret-hiding.
+    """
+    from ..services.data_connection_bundle import build_bundle_targz, verify_bundle_token
+    customer = db.get_or_404(Customer, customer_id)
+    token = request.args.get("t", "")
+    if not session.get("admin_id") and verify_bundle_token(token) != customer_id:
+        abort(403)
+    data = build_bundle_targz(customer)
+    return send_file(
+        io.BytesIO(data),
+        mimetype="application/gzip",
+        as_attachment=True,
+        download_name=f"hobe-accel-{customer.subdomain or customer.id}.tar.gz",
+    )
 
 
 @bp.post("/customers/<int:customer_id>/edit")

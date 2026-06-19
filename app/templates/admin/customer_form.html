@@ -157,6 +157,21 @@
         </form>
       {% endif %}
     </div>
+
+    {# One-paste install on the customer's EXISTING VPS: curl the token-gated
+       bundle (SUBDOMAIN/VPS_IP/dns01 pre-filled) → run with the SECRETS only. #}
+    {% if data_bundle_url %}
+    <div class="hub-field" style="margin-top:16px">
+      <label><i class="fa-solid fa-terminal"></i> أمر التثبيت على خادم VPS (لصقة واحدة عبر SSH)</label>
+      <textarea class="hub-input" dir="ltr" rows="4" readonly onclick="this.select()"
+        style="font-family:monospace;font-size:12px;line-height:1.6">curl -fsSL "{{ data_bundle_url }}" | sudo tar -xz -C /opt && cd /opt/accel-ppp && sudo RADIUS_SECRET='ضع-سر-راديوس-32+حرف' CERTBOT_EMAIL='you@example.com' CLOUDFLARE_API_TOKEN='رمز-Cloudflare' bash setup-radius-vps.sh</textarea>
+      <div class="hub-field-hint">
+        النطاق الفرعي وعنوان VPS و<b>DNS-01</b> مُعبّأة مسبقًا (منفذ 80 مشغول باللوحة، لذا نستخدم DNS-01).
+        عدّل فقط: <b>RADIUS_SECRET</b> (نفس سر عميل RADIUS المحلي 127.0.0.1)، البريد، و<b>CLOUDFLARE_API_TOKEN</b>.
+        الحزمة لا تحوي أي أسرار. تأكّد أولًا من مزامنة DNS أعلاه.
+      </div>
+    </div>
+    {% endif %}
   {% endcall %}
 {% endif %}
 {% endblock %}
