@@ -102,6 +102,43 @@ def _node():
     return n
 
 
+def test_snapshot_publishes_ip_change_creds(app, _stub_client):
+    """The capacity/grant snapshot the customer pulls carries services.ip_change
+    with the exact creds-display shape after provisioning, and flips to
+    status=expired (kept) once the monthly term ends."""
+    from app.services.customer_control import build_runtime_contract_for_license
+    from app.services.vpn_entitlements import get_or_create_customer_vpn_entitlement
+    with app.app_context():
+        c = _cust(email="snap@x.com")
+        lic = _active_license(c)
+        node = _node()
+        t = ipx.provision_ip_change(c, lic, speed_mbps=100, fleet_chr_node_id=node.id)
+        ent = get_or_create_customer_vpn_entitlement(c)
+        ent.enabled = True
+        ent.status = "active"
+        ent.expires_at = utcnow() + timedelta(days=30)
+        db.session.add(ent)
+        db.session.commit()
+
+        snap = build_runtime_contract_for_license(lic, license_active=True, status="active")
+        ipc = snap["services"]["ip_change"]
+        assert ipc["status"] == "provisioned"
+        assert ipc["server_host"] == "198.51.100.7" and ipc["server_ip"] == "198.51.100.7"
+        assert ipc["sstp_username"] == t.username
+        assert ipc["sstp_password"] and ipc["sstp_password_enc"]   # cleartext + Fernet
+        assert ipc["speed_mbps"] == 100
+        assert ipc["expires_at"]                                   # ISO term end
+        assert set(ipc) >= {"status", "server_host", "server_ip", "sstp_username",
+                            "sstp_password_enc", "speed_mbps", "expires_at"}
+
+        # persist through expiry → status flips to expired (rollback stays available)
+        ent.status = "expired"
+        ent.expires_at = utcnow() - timedelta(days=1)
+        db.session.add(ent); db.session.commit()
+        snap2 = build_runtime_contract_for_license(lic, license_active=True, status="active")
+        assert snap2["services"]["ip_change"]["status"] == "expired"
+
+
 def test_creds_payload_shape_for_customer_ip_page(app, _stub_client):
     with app.app_context():
         c = _cust(email="creds@x.com")
