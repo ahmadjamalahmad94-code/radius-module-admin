@@ -264,6 +264,12 @@ def _start_workers(app: Flask) -> None:
     except Exception:  # noqa: BLE001 — never fail app boot on a worker
         app.logger.exception("fleet wg-mgmt autosync failed to start")
 
+    try:
+        from app.services.ip_change_sweep import start_background_sweep
+        start_background_sweep(app)
+    except Exception:  # noqa: BLE001 — never fail app boot on a worker
+        app.logger.exception("ip-change sweep failed to start")
+
 
 def _configure_logging(app: Flask) -> None:
     level_name = str(app.config.get("LOG_LEVEL", "INFO")).upper()

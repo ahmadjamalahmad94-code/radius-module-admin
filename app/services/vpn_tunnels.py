@@ -529,6 +529,14 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
         "created_at": _iso_z(tunnel.created_at),
         # Surface the node name so the operator UI can show «على chr-best».
         "chr_node_name": (node.name if node else ""),
+        # ── IP-change «تغيير الـIP» contract aliases ──
+        # The customer panel's IP-change page reads these exact keys to display
+        # the new connection. Additive — the legacy keys above stay for other
+        # consumers. server_ip = the assigned CHR public IP (the new egress).
+        "server_ip": public_host,
+        "sstp_username": tunnel.username,
+        "speed": tunnel.download_mbps,
+        "speed_mbps": tunnel.download_mbps,
     }
     # ── SSTP only: surface the RADIUS-transport binding ─────────────
     # The owner's architectural intent: an SSTP tunnel created via the
@@ -579,7 +587,9 @@ def serialize_tunnel(tunnel: CustomerVpnTunnel, *, include_password: bool = Fals
                 ),
             }
     if include_password and tunnel.delivery_status != "delivered" and tunnel.status != "revoked":
-        data["password"] = get_tunnel_password(tunnel)
+        _pw = get_tunnel_password(tunnel)
+        data["password"] = _pw
+        data["sstp_password"] = _pw          # IP-change contract alias
     return data
 
 

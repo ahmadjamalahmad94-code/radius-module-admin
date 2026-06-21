@@ -97,6 +97,36 @@
                    placeholder="الكمية المطلوبة — اتركها فارغة لغير محدود">
             <div class="hub-field-hint">حصة الترافيك التي طلبها العميل عند «طلب التفعيل»؛ تُعتمد مع الخدمة وتظهر في عقد السعة.</div>
           </div>
+
+          {# ── Phase 2 «تغيير العنوان الكامل»: provision SSTP on a CHR ── #}
+          <div class="hub-field full" style="border-top:1px dashed var(--cc-border);padding-top:12px;margin-top:4px">
+            <label class="hub-check" style="display:flex;align-items:center;gap:8px;font-weight:700">
+              <input type="checkbox" name="provision_sstp" value="1" checked>
+              تفعيل «تغيير العنوان الكامل»: جهّز مستخدم SSTP على CHR
+            </label>
+            <div class="hub-field-hint">عند الاعتماد: يُنشأ مستخدم SSTP بحدّ سرعة = السرعة المطلوبة (مثل 100M/100M)، <b>بيانات غير محدودة</b>، <b>صلاحية شهرية</b>، ويُسنَد العميل إلى CHR (يدويًا أدناه أو تلقائيًا). تصل بياناته وعنوان الخادم للعميل عبر الجسر.</div>
+          </div>
+          <div class="hub-field">
+            <label>خادم CHR (العنوان العام الجديد)</label>
+            <select class="hub-input" name="fleet_chr_node_id">
+              <option value="">تلقائي — أفضل عقدة (الأولوية/التوفر)</option>
+              {% for n in (fleet_nodes or []) %}
+                <option value="{{ n.id }}">{{ n.name }} — {{ n.public_ip }}{% if n.drain %} (تصريف){% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="hub-field-hint">يدوي: اختر عقدة محددة. تلقائي: يختار النظام الأفضل من الأسطول.</div>
+          </div>
+          <div class="hub-field">
+            <label>السعر الشهري (محسوب من السرعة)</label>
+            <input class="hub-input" type="number" step="0.01" min="0" name="price_monthly"
+                   value="{{ '%.2f'|format(computed_monthly_price) if computed_monthly_price is defined else '' }}">
+            <div class="hub-field-hint">
+              السرعة المطلوبة: <b>{{ requested_speed_mbps or '—' }}</b> ميجابت ·
+              سعر الميجابت: <b>{{ price_per_mbps }}</b>$ ·
+              المحسوب: <b>{{ '%.2f'|format(computed_monthly_price) if computed_monthly_price is defined else '—' }}</b>$/شهر
+              {% if ip_change_expires_at %}· الانتهاء الحالي: <b>{{ ip_change_expires_at.strftime('%Y-%m-%d') }}</b>{% endif %}
+            </div>
+          </div>
         {% endif %}
         <div class="hub-field full">
           <label>ملاحظة الاعتماد</label>
@@ -107,6 +137,19 @@
         <i class="fa-solid fa-circle-check"></i> اعتماد وتفعيل الخدمة
       </button>
     </form>
+
+    {% if service_request.service_key == "ip_change_vpn" %}
+    {# Admin-configurable price per Mbps — separate form (no nested forms). #}
+    <form method="post" action="{{ url_for('admin.ip_change_set_pricing') }}" class="hub-filter-form"
+          style="margin-top:12px;gap:8px;align-items:center">
+      {{ csrf_input() }}
+      <input type="hidden" name="next" value="{{ url_for('admin.service_request_detail', request_id=service_request.id) }}">
+      <label style="font-size:12.5px;color:var(--cc-text-soft)">سعر الميجابت ($/ميجابت/شهر)</label>
+      <input class="hub-input" type="number" step="0.01" min="0" name="price_per_mbps"
+             value="{{ price_per_mbps }}" style="max-width:140px">
+      <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit"><i class="fa-solid fa-tag"></i> حفظ السعر</button>
+    </form>
+    {% endif %}
 
     <div style="border-top:1px dashed var(--hub-line); margin-top:16px; padding-top:14px">
       <form method="post" action="{{ url_for('admin.service_request_open_trial', request_id=service_request.id) }}" class="hub-filter-form">

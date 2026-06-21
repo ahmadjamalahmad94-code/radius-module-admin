@@ -1625,6 +1625,50 @@ def audit_customer_control(
     db.session.add(row)
 
 
+def _ip_change_creds_block(customer: "Customer | None") -> dict | None:
+    """Provisioned «full IP change» credentials for the capacity snapshot.
+
+    The customer panel reads ``services.ip_change`` from the SAME provider-grant
+    snapshot it already pulls — the single source for its creds display. Shape:
+    ``{status, server_host, server_ip, sstp_username, sstp_password,
+    sstp_password_enc, speed_mbps, expires_at}``. Persisted through expiry
+    (status → "expired") so the customer can still roll back. Returns ``None``
+    when the customer has no provisioned SSTP tunnel.
+    """
+    if customer is None:
+        return None
+    from ..models import CustomerVpnEntitlement, CustomerVpnTunnel
+    tunnel = (CustomerVpnTunnel.query
+              .filter_by(customer_id=customer.id, tunnel_type="sstp")
+              .filter(CustomerVpnTunnel.status == "active")
+              .order_by(CustomerVpnTunnel.id.desc())
+              .first())
+    if tunnel is None:
+        return None
+    node = tunnel.fleet_chr_node
+    host = (node.public_ip if node is not None else (tunnel.chr_host or "")) or ""
+    ent = CustomerVpnEntitlement.query.filter_by(customer_id=customer.id).first()
+    expires_at = ent.expires_at if ent else None
+    expired = bool(expires_at and expires_at < utcnow()) or bool(ent and ent.status == "expired")
+    block: dict[str, Any] = {
+        "status": "expired" if expired else "provisioned",
+        "server_host": host,
+        "server_ip": host,
+        "sstp_username": tunnel.username,
+        "sstp_password_enc": tunnel.password_encrypted or "",
+        "speed_mbps": tunnel.download_mbps,
+        "expires_at": iso_z(expires_at) if expires_at else None,
+    }
+    # Cleartext for the customer's creds display (same HTTPS+bearer posture as the
+    # tunnel-pull which already returns it). Best-effort — never break the snapshot.
+    try:
+        from .vpn_tunnels import get_tunnel_password
+        block["sstp_password"] = get_tunnel_password(tunnel)
+    except Exception:  # noqa: BLE001
+        block["sstp_password"] = ""
+    return block
+
+
 def _services_contract(
     customer: Customer | None,
     lic: License | None,
@@ -1674,6 +1718,11 @@ def _services_contract(
         vpn_contract["requires_activation"] = True
         vpn_contract.setdefault("tier", SERVICE_TIER_PAID)
     services[VPN_SERVICE_KEY] = vpn_contract
+    # «تغيير العنوان الكامل» provisioned credentials — the customer reads
+    # services.ip_change from this same snapshot for its creds display.
+    _ipc = _ip_change_creds_block(customer)
+    if _ipc is not None:
+        services["ip_change"] = _ipc
     return services
 
 
