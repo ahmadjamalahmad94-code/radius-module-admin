@@ -399,8 +399,42 @@ def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expir
     vpn_entitlement.expires_at = expires_at
     vpn_entitlement.notes = (request.form.get("admin_note") or service_request.admin_note or "").strip()[:2000]
     vpn_entitlement.updated_by_admin_id = session.get("admin_id")
+
+    # ── Phase 2 «تغيير العنوان الكامل» (full IP change), opt-in from the approval
+    # form (provision_sstp). The owner's model: DATA UNLIMITED + MONTHLY validity +
+    # an SSTP user (rate-limit = purchased speed) provisioned on a hosted CHR
+    # (manual pick OR auto/brain). The legacy traffic-quota path stays untouched
+    # when the flag is absent. #}
+    _provision_sstp = bool(request.form.get("provision_sstp"))
+    if _provision_sstp:
+        from ..services import ip_change_pricing as ipx
+        vpn_entitlement.traffic_quota_gb = None                 # data unlimited
+        if vpn_entitlement.expires_at is None:
+            vpn_entitlement.expires_at = ipx.monthly_expiry()   # monthly term
+
     validate_customer_vpn_entitlement(vpn_entitlement)
     db.session.add(vpn_entitlement)
+
+    if _provision_sstp:
+        # Provision (or reuse) the SSTP user on the chosen CHR (manual) or auto
+        # (brain). Reuses vpn_tunnels.provision_tunnel → creates /ppp/profile +
+        # /ppp/secret on the CHR and stores the encrypted credential; it reaches
+        # the customer via the existing pull bridge (vpn/tunnels → ack). Fail
+        # LOUD on any provisioning error so approval rolls back (no fake success).
+        from ..services import ip_change_pricing as ipx
+        from ..services.vpn_tunnels import VpnTunnelError
+        from ..services.fleet_node_router import FleetNodeUnavailable
+        _node_raw = (request.form.get("fleet_chr_node_id") or "").strip()
+        _node_id = int(_node_raw) if _node_raw.isdigit() else None   # "" / "auto" → brain
+        try:
+            ipx.provision_ip_change(
+                customer, selected_license,
+                speed_mbps=int(vpn_entitlement.download_mbps or 0),
+                fleet_chr_node_id=_node_id,
+                admin_id=session.get("admin_id"),
+            )
+        except (VpnTunnelError, FleetNodeUnavailable) as exc:
+            raise CustomerControlValidationError(f"تعذّر تجهيز نفق SSTP على CHR: {exc}") from exc
 
 
 def _apply_generic_service_request(service_request: CustomerServiceRequest, *, expires_at: datetime | None = None) -> CustomerServiceEntitlement:
@@ -858,6 +892,28 @@ def service_requests_list():
 def service_request_detail(request_id: int):
     service_request = db.get_or_404(CustomerServiceRequest, request_id)
     customer = service_request.customer
+    desired = service_request.desired_limits or {}
+    # ── Phase-2 «full IP change» approval context (ip_change_vpn only) ──
+    # The fleet CHRs the admin can place this on (manual), the configured
+    # price-per-Mbps, the requested speed + its computed monthly price, and the
+    # current entitlement expiry (monthly term). Cheap + defensive.
+    ipx_ctx: dict = {}
+    if service_request.service_key == "ip_change_vpn":
+        from ..services import ip_change_pricing as ipx
+        from ..services import fleet_node_router
+        try:
+            _nodes = fleet_node_router.available_nodes()
+        except Exception:  # noqa: BLE001 — never break the page on a fleet probe
+            _nodes = []
+        _req_speed = desired.get("speed_mbps") or desired.get("download_mbps") or 0
+        _ent = get_or_create_customer_vpn_entitlement(customer)
+        ipx_ctx = {
+            "fleet_nodes": _nodes,
+            "price_per_mbps": ipx.get_price_per_mbps(),
+            "requested_speed_mbps": _req_speed,
+            "computed_monthly_price": ipx.monthly_price(_req_speed),
+            "ip_change_expires_at": _ent.expires_at,
+        }
     return render_template(
         "admin/service_request_detail.html",
         service_request=service_request,
@@ -868,8 +924,45 @@ def service_request_detail(request_id: int):
         payment_request=service_request.payment_request,
         service_limit_fields=service_limit_fields(service_request.service_key),
         vpn_plans=VpnServicePlan.query.filter_by(is_active=True).order_by(VpnServicePlan.download_mbps.asc()).all(),
-        desired_limits=service_request.desired_limits or {},
+        desired_limits=desired,
+        **ipx_ctx,
     )
+
+
+@bp.post("/ip-change/pricing")
+@login_required
+def ip_change_set_pricing():
+    """Set the admin-configurable price PER Mbps of (symmetric) speed for the
+    full-IP-change service. Surfaced on the approval form; fails loud on bad input."""
+    from ..services import ip_change_pricing as ipx
+    back = request.form.get("next") or url_for("admin.service_requests_list")
+    try:
+        value = ipx.set_price_per_mbps(request.form.get("price_per_mbps"))
+    except ipx.IpChangePricingError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(back)
+    audit("ip_change_pricing_updated", "setting", ipx.PRICE_PER_MBPS_SETTING,
+          f"price per Mbps set to {value}", {"price_per_mbps": str(value)})
+    db.session.commit()
+    flash(f"تم تحديث سعر الميجابت إلى {value}$ لكل ميجابت شهريًا.", "success")
+    return redirect(back)
+
+
+@bp.post("/customers/<int:customer_id>/ip-change/renew")
+@login_required
+def customer_ip_change_renew(customer_id: int):
+    """Monthly renewal: extend the customer's IP-change entitlement by one month
+    and keep it active (the SSTP tunnel + CHR assignment are preserved)."""
+    from ..services import ip_change_pricing as ipx
+    customer = db.get_or_404(Customer, customer_id)
+    new_expiry = ipx.renew_ip_change(customer)
+    audit("customer_ip_change_renewed", "customer", str(customer.id),
+          f"IP-change renewed for {customer.company_name} until {new_expiry:%Y-%m-%d}",
+          {"customer_id": customer.id, "expires_at": new_expiry.isoformat()})
+    db.session.commit()
+    flash(f"تم تجديد خدمة تغيير العنوان شهرًا حتى {new_expiry:%Y-%m-%d}.", "success")
+    return redirect(request.form.get("next") or url_for("admin.customer_detail", customer_id=customer.id))
 
 
 @bp.post("/service-requests/<int:request_id>/reply")
