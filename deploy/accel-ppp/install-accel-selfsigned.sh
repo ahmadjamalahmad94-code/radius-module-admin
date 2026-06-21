@@ -58,19 +58,74 @@ case "${ID:-}" in
 esac
 command -v apt-get >/dev/null 2>&1 || die "apt-get not found — this installer supports Debian/Ubuntu only."
 export DEBIAN_FRONTEND=noninteractive
-log "Installing accel-ppp + openssl + iproute2 (idempotent)…"
+ACCEL_SRC="/usr/local/src/accel-ppp"
+
+build_accel_from_source() {
+  # accel-ppp is NOT in Ubuntu/Debian apt repos — build the daemon from source.
+  # SSTP/PPTP/RADIUS/shaper/ippool are all userspace; the optional kernel
+  # drivers (IPOE/VLAN_MON) are built ONLY when kernel headers are present.
+  log "Building accel-ppp from source (apt has no package)…"
+  apt-get install -y --no-install-recommends \
+    git cmake build-essential gcc pkg-config libpcre2-dev libssl-dev >/dev/null 2>&1 \
+    || die "failed to install build dependencies (git/cmake/build-essential/libpcre2-dev/libssl-dev)."
+  # Lua dev: 5.1 preferred, fall back to 5.3 / 5.4; build without Lua if none.
+  local LUA_FLAG="-DLUA=FALSE" _lp
+  for _lp in liblua5.1-0-dev liblua5.3-dev liblua5.4-dev liblua5.2-dev; do
+    if apt-get install -y --no-install-recommends "$_lp" >/dev/null 2>&1; then
+      LUA_FLAG="-DLUA=TRUE"; log "  Lua dev: ${_lp}"; break
+    fi
+  done
+  [[ "$LUA_FLAG" == "-DLUA=FALSE" ]] && warn "no liblua*-dev found — building WITHOUT Lua (Filter-Id shaper still works)."
+  # Kernel headers are OPTIONAL — only enable the kernel drivers if present.
+  local KFLAGS="" KDIR="/usr/src/linux-headers-$(uname -r)"
+  apt-get install -y --no-install-recommends "linux-headers-$(uname -r)" >/dev/null 2>&1 || true
+  if [[ -d "$KDIR" ]]; then
+    KFLAGS="-DBUILD_IPOE_DRIVER=TRUE -DBUILD_VLAN_MON_DRIVER=TRUE -DKDIR=${KDIR}"
+    log "  kernel headers present — building IPOE/VLAN_MON drivers too."
+  else
+    warn "kernel headers for $(uname -r) not available — building daemon WITHOUT kernel drivers (SSTP/PPTP unaffected)."
+  fi
+  # Clone (or update) + checkout the latest stable tag.
+  if [[ -d "$ACCEL_SRC/.git" ]]; then
+    git -C "$ACCEL_SRC" fetch --tags --quiet || true
+  else
+    rm -rf "$ACCEL_SRC"
+    git clone --quiet https://github.com/accel-ppp/accel-ppp.git "$ACCEL_SRC" \
+      || die "git clone of accel-ppp failed (check network/DNS)."
+  fi
+  local TAG; TAG="$(git -C "$ACCEL_SRC" tag -l | sort -V | tail -1)"
+  if [[ -n "$TAG" ]]; then
+    git -C "$ACCEL_SRC" checkout --quiet "$TAG" || warn "could not checkout tag ${TAG}; building default branch."
+    log "  building accel-ppp ${TAG}"
+  else
+    warn "no release tags found; building the default branch."
+  fi
+  rm -rf "$ACCEL_SRC/build"; install -d "$ACCEL_SRC/build"
+  ( cd "$ACCEL_SRC/build" \
+    && cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release \
+             ${LUA_FLAG} -DSHAPER=TRUE -DRADIUS=TRUE ${KFLAGS} .. >/dev/null \
+    && make -j"$(nproc)" >/dev/null \
+    && make install >/dev/null ) \
+    || die "accel-ppp build failed. Build it manually per https://accel-ppp.org/wiki/ and re-run this script."
+  ldconfig || true
+  log "  accel-ppp built + installed."
+}
+
+log "Installing openssl + iproute2 (idempotent)…"
 apt-get update -qq || die "apt-get update failed (check network/sources)."
-if ! apt-get install -y --no-install-recommends accel-ppp openssl iproute2 >/dev/null 2>&1; then
-  warn "accel-ppp not in the default repos for this release — enabling 'universe' and retrying…"
-  apt-get install -y --no-install-recommends software-properties-common >/dev/null 2>&1 || true
-  add-apt-repository -y universe >/dev/null 2>&1 || true
-  apt-get update -qq || true
-  apt-get install -y --no-install-recommends accel-ppp openssl iproute2 >/dev/null 2>&1 \
-    || die "accel-ppp is unavailable via apt on ${PRETTY_NAME:-this distro}. Install it manually (build from https://accel-ppp.org or your distro's package) then re-run this script."
+apt-get install -y --no-install-recommends openssl iproute2 >/dev/null 2>&1 \
+  || die "failed to install openssl/iproute2."
+# accel-ppp: apt fast path (rare distros that package it), else build from source.
+if apt-get install -y --no-install-recommends accel-ppp >/dev/null 2>&1; then
+  log "  accel-ppp installed via apt."
+else
+  build_accel_from_source
 fi
-command -v accel-pppd >/dev/null 2>&1 || command -v accel-cmd >/dev/null 2>&1 \
-  || die "accel-ppp installed but its binaries are missing — aborting."
-log "  accel-ppp present."
+ACCEL_PPPD="$(command -v accel-pppd || true)"
+[[ -z "$ACCEL_PPPD" && -x /usr/sbin/accel-pppd ]] && ACCEL_PPPD="/usr/sbin/accel-pppd"
+[[ -n "$ACCEL_PPPD" ]] || die "accel-ppp installed but accel-pppd is missing — aborting."
+command -v accel-cmd >/dev/null 2>&1 || warn "accel-cmd not on PATH (CLI helper) — daemon still usable."
+log "  accel-ppp present at ${ACCEL_PPPD}."
 
 # ── 2. self-signed cert for SSTP ─────────────────────────────────────────────
 install -d -m 0755 "$CERT_DIR"
@@ -220,14 +275,36 @@ systemctl daemon-reload
 systemctl enable --now hoberadius-accel-net.service >/dev/null 2>&1 \
   || { warn "applying net rules directly…"; bash "$NET_SCRIPT" || warn "net rules NOT applied — check ${NET_SCRIPT}."; }
 
-# ── 5. start accel-ppp ───────────────────────────────────────────────────────
+# ── 5. systemd unit (create if the package/source build didn't ship one) ────
+if ! systemctl cat accel-ppp >/dev/null 2>&1; then
+  log "Creating systemd unit /etc/systemd/system/accel-ppp.service (none shipped)…"
+  cat > /etc/systemd/system/accel-ppp.service <<UNIT
+[Unit]
+Description=accel-ppp PPP/VPN server (SSTP/PPTP, RADIUS)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /run/accel-ppp
+ExecStart=${ACCEL_PPPD} -c ${ACCEL_CONF} -p /run/accel-ppp/accel-pppd.pid
+ExecReload=/bin/sh -c 'accel-cmd reload || kill -HUP \$MAINPID'
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target
+UNIT
+fi
+
+# ── 6. start accel-ppp ───────────────────────────────────────────────────────
 log "Enabling accel-ppp…"
+systemctl daemon-reload
 systemctl enable accel-ppp >/dev/null 2>&1 || true
 systemctl restart accel-ppp || systemctl start accel-ppp \
-  || die "accel-ppp failed to start — check: journalctl -u accel-ppp -n 50"
+  || die "accel-ppp failed to start — check: journalctl -u accel-ppp -n 50 (and: ${ACCEL_PPPD} -c ${ACCEL_CONF} to see the error)."
 sleep 1
 
-# ── 6. summary ───────────────────────────────────────────────────────────────
+# ── 7. summary ───────────────────────────────────────────────────────────────
 echo
 log "DONE. accel-ppp is serving (self-signed SSTP + PPTP, RADIUS-backed)."
 echo "  -------------------------------------------------------------------"
