@@ -195,13 +195,22 @@ def hoberadius_service_requests():
         return error_response
     if not result.license or not result.active:
         return jsonify({"ok": False, "status": result.status, "message": "الترخيص ليس نشطًا."}), 403
+    _svc_key = body.get("service_key") or ""
+    # IP-change intake: normalize the customer's requested_speed_mbps + monthly/
+    # unlimited intent into desired_limits so it lands in the approval inbox with
+    # the speed + computed price (the customer panel pushes this over the bridge).
+    if _svc_key == "ip_change_vpn":
+        from ..services.ip_change_pricing import normalize_request_desired_limits
+        _desired = normalize_request_desired_limits(body)
+    else:
+        _desired = body.get("desired_limits") if isinstance(body.get("desired_limits"), dict) else {}
     try:
         service_request = create_customer_service_request(
             customer=result.license.customer,
-            service_key=body.get("service_key") or "",
+            service_key=_svc_key,
             request_type=body.get("request_type") or "activation",
             notes=body.get("notes") or "",
-            desired_limits=body.get("desired_limits") if isinstance(body.get("desired_limits"), dict) else {},
+            desired_limits=_desired,
         )
     except CustomerControlValidationError as exc:
         return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422

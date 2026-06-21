@@ -64,6 +64,35 @@ def set_price_per_mbps(value) -> Decimal:
     return v
 
 
+def normalize_request_desired_limits(body: dict) -> dict:
+    """Map a customer-pushed IP-change request body into the ``desired_limits``
+    the inbox / approval UI / pricing read.
+
+    The customer panel sends ``requested_speed_mbps`` + ``billing=monthly`` +
+    ``data=unlimited`` (top-level or already inside ``desired_limits``). We
+    surface the speed symmetrically as ``speed_mbps`` / ``download_mbps`` /
+    ``upload_mbps`` so the approval form pre-fills it and ``monthly_price`` can
+    compute the quote, and we stamp the monthly/unlimited intent.
+    """
+    src = body if isinstance(body, dict) else {}
+    desired = dict(src.get("desired_limits") or {}) if isinstance(src.get("desired_limits"), dict) else {}
+    raw = (src.get("requested_speed_mbps")
+           or desired.get("requested_speed_mbps")
+           or desired.get("speed_mbps")
+           or desired.get("download_mbps") or 0)
+    try:
+        speed = int(float(raw or 0))
+    except (TypeError, ValueError):
+        speed = 0
+    if speed > 0:
+        desired["speed_mbps"] = speed
+        desired.setdefault("download_mbps", speed)
+        desired.setdefault("upload_mbps", speed)
+    desired["billing"] = str(src.get("billing") or desired.get("billing") or "monthly")
+    desired["data"] = str(src.get("data") or desired.get("data") or "unlimited")
+    return desired
+
+
 def monthly_price(speed_mbps) -> Decimal:
     """Monthly price for a symmetric line of ``speed_mbps`` = speed × price/Mbps."""
     try:
@@ -162,6 +191,7 @@ def provision_ip_change(customer: Customer, license_obj: License | None, *,
 __all__ = [
     "PRICE_PER_MBPS_SETTING", "DEFAULT_PRICE_PER_MBPS", "IpChangePricingError",
     "get_price_per_mbps", "set_price_per_mbps", "monthly_price",
+    "normalize_request_desired_limits",
     "add_one_month", "monthly_expiry", "renew_ip_change", "mark_expired_if_due",
     "active_sstp_tunnel", "provision_ip_change",
 ]
