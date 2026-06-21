@@ -62,6 +62,10 @@ def create_app(config_object=None, **overrides) -> Flask:
     # على CHR المركزي. تستورد الـORM الجديد (WireguardPeer) قبل db.create_all().
     from .admin.access_connections_routes import bp as admin_access_bp
     from .models import WireguardPeer  # noqa: F401 — model registration
+    # Unified notification backbone: the one Notification model + center.
+    # Importing the model module registers `notifications` on db.metadata.
+    from .notifications.models import Notification as _Notification  # noqa: F401
+    from .notifications.routes import bp as admin_notifications_bp
     from .i18n.routes import bp as i18n_bp
     from .api.routes import bp as api_bp
     from .api.proxy_api import bp as proxy_api_bp
@@ -125,6 +129,7 @@ def create_app(config_object=None, **overrides) -> Flask:
     app.register_blueprint(admin_infra_bp)
     app.register_blueprint(admin_messaging_bp)
     app.register_blueprint(admin_access_bp)
+    app.register_blueprint(admin_notifications_bp)
     app.register_blueprint(i18n_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(proxy_api_bp)
@@ -1237,6 +1242,22 @@ def _register_cli_commands(app: Flask) -> None:
                 f"allocations_expired={result.get('allocations_expired', 0)}"
                 f"{scope}"
             )
+
+    @app.cli.command("notifications-scan")
+    def notifications_scan_command() -> None:
+        """يمسح محرّك العدّ التنازلي/النفاد ويُصدر الإشعارات عند العتبات.
+
+        idempotent — كل عتبة تُطلَق مرّة واحدة عبر dedupe_key. شغّله عبر
+        systemd timer / cron كل 10–15 دقيقة:  flask notifications-scan
+        """
+        from .notifications.engine import scan_once
+
+        with app.app_context():
+            summary = scan_once()
+        click.echo(
+            f"notifications-scan OK: emitted={summary.emitted} "
+            f"checked={summary.checked}"
+        )
 
 
 def _install_csrf(app: Flask) -> None:

@@ -1,0 +1,93 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+
+{% block title %}مركز الإشعارات{% endblock %}
+{% block page_title %}مركز الإشعارات{% endblock %}
+{% block page_subtitle %}كل التنبيهات في مكان واحد — انتهاء الاشتراكات، الفوترة، نفاد الباقات{% endblock %}
+
+{% set _sev = {
+  'info':     {'label': 'معلومة', 'bg': '#eff6ff', 'fg': '#1d4ed8', 'icon': 'circle-info'},
+  'warning':  {'label': 'تحذير',  'bg': '#fffbeb', 'fg': '#b45309', 'icon': 'triangle-exclamation'},
+  'critical': {'label': 'حرج',    'bg': '#fef2f2', 'fg': '#b91c1c', 'icon': 'circle-exclamation'}
+} %}
+
+{% block content %}
+{{ hub.hero(
+   "مركز الإشعارات",
+   subtitle="غير المقروء: " ~ unread_count,
+   icon="bell",
+   actions_html=(
+     '<form method="post" action="' ~ url_for('admin_notifications.mark_all_read') ~ '" style="display:inline">'
+     ~ csrf_input()
+     ~ '<button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-check-double"></i> تعليم الكل كمقروء</button>'
+     ~ '</form>'
+   )
+) }}
+
+{% call hub.section("الإشعارات", icon="list", meta=(items|length ~ ' إشعار')) %}
+  <div class="hub-toolbar">
+    <form class="hub-filter-form" method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select class="hub-select" name="type" onchange="this.form.submit()">
+        <option value="">كل الأنواع</option>
+        {% for key, label in type_labels.items() %}
+          <option value="{{ key }}" {% if type_filter == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select class="hub-select" name="severity" onchange="this.form.submit()">
+        <option value="">كل المستويات</option>
+        {% for key, meta in _sev.items() %}
+          <option value="{{ key }}" {% if severity_filter == key %}selected{% endif %}>{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+      <label style="display:inline-flex;gap:6px;align-items:center;font-size:13px">
+        <input type="checkbox" name="unread" value="1" {% if unread_only %}checked{% endif %}
+               onchange="this.form.submit()"> غير المقروء فقط
+      </label>
+      {% if type_filter or severity_filter or unread_only %}
+        <a class="hub-btn hub-btn--secondary" href="{{ url_for('admin_notifications.center') }}">إلغاء التصفية</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="hub-list" style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+    {% for n in items %}
+      {% set sv = _sev.get(n.severity, _sev['info']) %}
+      <div data-notif-row class="{% if not n.is_read %}is-unread{% endif %}"
+           style="display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:12px;
+                  border:1px solid #e5e7eb;background:{% if not n.is_read %}#fcfcfd{% else %}#fff{% endif %};
+                  border-inline-start:4px solid {{ sv.fg }}">
+        <span aria-hidden="true"
+              style="width:34px;height:34px;flex:none;border-radius:9px;display:inline-flex;
+                     align-items:center;justify-content:center;background:{{ sv.bg }};color:{{ sv.fg }}">
+          <i class="fa-solid fa-{{ sv.icon }}"></i>
+        </span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <strong style="font-size:14px;color:#0f172a">{{ n.title }}</strong>
+            {% if not n.is_read %}
+              <span style="width:8px;height:8px;border-radius:50%;background:#dc2626" title="غير مقروء"></span>
+            {% endif %}
+            <span style="font-size:11px;color:{{ sv.fg }};background:{{ sv.bg }};
+                         padding:1px 8px;border-radius:999px;font-weight:700">{{ sv.label }}</span>
+            <span style="font-size:11px;color:#64748b">{{ type_labels.get(n.type, n.type) }}</span>
+          </div>
+          <div style="font-size:13px;color:#334155;line-height:1.7;margin-top:4px">{{ n.body }}</div>
+          <div style="display:flex;gap:14px;align-items:center;margin-top:8px;font-size:12px;color:#94a3b8">
+            <span><i class="fa-regular fa-clock"></i>
+              {{ n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else '' }}</span>
+            {% if n.customer %}<span><i class="fa-solid fa-building"></i> {{ n.customer.company_name }}</span>{% endif %}
+            {% if n.link %}<a href="{{ n.link }}" style="color:#1d4ed8"><i class="fa-solid fa-up-right-from-square"></i> فتح</a>{% endif %}
+            {% if n.channels %}<span><i class="fa-solid fa-paper-plane"></i> {{ n.channels|join(', ') }}</span>{% endif %}
+          </div>
+        </div>
+        {% if not n.is_read %}
+          <button type="button" class="hub-btn hub-btn--secondary" data-notif-read="{{ n.id }}"
+                  style="flex:none">تعليم كمقروء</button>
+        {% endif %}
+      </div>
+    {% else %}
+      {{ hub.empty("لا توجد إشعارات بعد.", sub="ستظهر هنا تنبيهات انتهاء الاشتراكات والفوترة ونفاد الباقات تلقائياً.", icon="bell-slash") }}
+    {% endfor %}
+  </div>
+{% endcall %}
+{% endblock %}

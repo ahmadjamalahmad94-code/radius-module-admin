@@ -117,6 +117,22 @@
         <span class="adm-solo-label">{{ _('لوحة التحكم') }}</span>
       </a>
 
+      {# ── مركز الإشعارات (رابط منفرد + جرس بعدّاد غير مقروء) ─────────── #}
+      <a href="{{ url_for('admin_notifications.center') }}"
+         class="adm-solo {% if ep.startswith('admin_notifications') %}is-active{% endif %}"
+         data-notif-bell
+         data-unread-url="{{ url_for('admin_notifications.unread_count') }}"
+         aria-current="{{ 'page' if ep.startswith('admin_notifications') else 'false' }}">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-bell"></i>
+        </span>
+        <span class="adm-solo-label">{{ _('مركز الإشعارات') }}</span>
+        <span class="adm-badge adm-badge--alert" data-notif-badge hidden
+              style="margin-inline-start:auto;min-width:20px;height:20px;display:inline-flex;
+                     align-items:center;justify-content:center;border-radius:10px;
+                     background:#dc2626;color:#fff;font-size:11px;font-weight:800;padding:0 6px">0</span>
+      </a>
+
       {# ── ② العملاء ────────────────────────────────────────────────── #}
       {% if 'customers' not in hidden_sections %}
       {% set _g2 = ep.startswith('admin.customer') or ep.startswith('admin.service_request') or ep.startswith('admin.whatsapp') %}
@@ -623,6 +639,7 @@
 {# feat/panel-live-data-5s — shared live-data poller. Idle on pages without
    data-live-endpoint. SSR-first: every page still renders without JS. #}
 <script src="{{ url_for('static', filename='js/live_poll.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/admin_notifications.js') }}" defer></script>
 
 <script>
 (function () {
