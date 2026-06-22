@@ -56,6 +56,8 @@ from ..services.customer_control import (
     clean_service_key,
     clean_service_status,
     clean_service_tier,
+    clean_ip_change_method,
+    IP_CHANGE_METHOD_TUNNEL,
     clean_username,
     customer_service_map,
     customer_users_version,
@@ -405,7 +407,15 @@ def _apply_vpn_service_request(service_request: CustomerServiceRequest, *, expir
     # an SSTP user (rate-limit = purchased speed) provisioned on a hosted CHR
     # (manual pick OR auto/brain). The legacy traffic-quota path stays untouched
     # when the flag is absent. #}
-    _provision_sstp = bool(request.form.get("provision_sstp"))
+    # METHOD routing for the merged «تغيير عنوان الإنترنت»: the SSTP tunnel is
+    # only provisioned for the tunnel method. The server-public-IP method grants
+    # the entitlement (capability on) but leaves provisioning to the radius
+    # src-nat adapter / the super-admin CHR-move action — both stay live.
+    _method = clean_ip_change_method(desired.get("method"))
+    _provision_sstp = (
+        bool(request.form.get("provision_sstp"))
+        and _method == IP_CHANGE_METHOD_TUNNEL
+    )
     if _provision_sstp:
         from ..services import ip_change_pricing as ipx
         vpn_entitlement.traffic_quota_gb = None                 # data unlimited
@@ -472,6 +482,13 @@ def _apply_generic_service_request(service_request: CustomerServiceRequest, *, e
     entitlement.expires_at = expires_at
     entitlement.notes = (request.form.get("admin_note") or service_request.admin_note or "").strip()[:2000]
     entitlement.updated_by_admin_id = session.get("admin_id")
+    if key == "ip_change_vpn":
+        # Record the chosen method on the merged service's entitlement config so
+        # the admin/contract reflect which backend was activated (tunnel vs
+        # server-public-IP). Default = tunnel for legacy requests.
+        _cfg = dict(entitlement.config or {})
+        _cfg["method"] = clean_ip_change_method((service_request.desired_limits or {}).get("method"))
+        entitlement.config = _cfg
     db.session.add(entitlement)
     if key == "ip_change_vpn":
         _apply_vpn_service_request(service_request, expires_at=expires_at)

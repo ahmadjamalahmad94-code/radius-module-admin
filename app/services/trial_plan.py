@@ -47,10 +47,11 @@ TRIAL_ACTIVE_SUBSCRIBERS_CAP = 100
 #: The ONLY services the trial leaves PAID (everything else is free). Edit here
 #: to reclassify — owner-approved baseline. NOTE: whatsapp_gateway is FREE — the
 #: customer brings their own WhatsApp Business number and pays Meta directly, so
-#: it costs the provider nothing (free-with-limits, BYO).
+#: it costs the provider nothing (free-with-limits, BYO). The merged
+#: «تغيير عنوان الإنترنت» is ONE paid key (``ip_change_vpn``); the retired
+#: ``public_ip_change`` is no longer a separate card (see customer_control).
 TRIAL_PAID_SERVICES: frozenset[str] = frozenset({
     "ip_change_vpn",
-    "public_ip_change",
     "remote_support",
     "remote_health_fix",
     "multi_tenant",

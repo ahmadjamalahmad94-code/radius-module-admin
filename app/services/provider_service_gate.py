@@ -85,6 +85,9 @@ PROVIDER_TO_GATE: dict[str, str] = {
     "network_policies": "network",
     "bandwidth_control": "network",
     "site_exit": "network",
+    # «تغيير عنوان الإنترنت» is ONE customer card (``ip_change_vpn``) with two
+    # backends; ``public_ip_change`` stays mapped here so the merged-in
+    # server-public-IP backend key still resolves to the «الشبكة» gate.
     "public_ip_change": "network",
     "ip_change_vpn": "network",
     "remote_access": "network",

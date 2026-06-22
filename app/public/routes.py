@@ -588,7 +588,7 @@ def customer_portal_service_request(service_key: str):
     # service's own limit fields are, then append a human-readable summary
     # of the requested specs to the customer's notes so the admin sees them
     # in the service-request inbox.
-    desired_limits: dict[str, int] = {}
+    desired_limits: dict[str, object] = {}  # ints for quantity specs; str for choice (method)
     spec_summary_parts: list[str] = []
     try:
         # SMART per-type schema (service_spec_fields): entitlement limit
@@ -599,6 +599,16 @@ def customer_portal_service_request(service_key: str):
             field_key = field["key"]
             raw = (request.form.get(f"spec_{field_key}") or "").strip()
             if not raw:
+                continue
+            # CHOICE fields (e.g. the IP-change method) carry a value from a fixed
+            # option set — validated against the option values, stored as a string.
+            if str(field.get("type") or "") == "choice":
+                allowed = {str(o.get("value")) for o in (field.get("options") or [])}
+                if raw not in allowed:
+                    continue
+                desired_limits[field_key] = raw
+                chosen = next((o for o in field["options"] if str(o.get("value")) == raw), None)
+                spec_summary_parts.append(f"{field['label']}: {chosen['label'] if chosen else raw}")
                 continue
             try:
                 value = int(raw)

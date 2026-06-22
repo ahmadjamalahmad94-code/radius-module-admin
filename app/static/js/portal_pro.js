@@ -270,6 +270,36 @@
       var label = escText(f.label || key);
       var hint = escText(f.hint || "");
       var unit = escText(f.unit || "");
+      // A field may be conditionally visible (e.g. the per-Mbps tunnel specs show
+      // only for the tunnel METHOD) — carry show_when on the wrapper so the
+      // controlling <select> can toggle it.
+      var sw = f.show_when || null;
+      var swAttr = "";
+      if (sw && sw.field) {
+        var vals = (sw["in"] || []).map(function (v) { return String(v); }).join("|");
+        swAttr = ' data-show-when-field="' + escAttr(sw.field) + '" data-show-when-vals="' + escAttr(vals) + '"';
+      }
+      // CHOICE fields (e.g. the IP-change method) render a <select>; the default
+      // option pre-selects so a plain submit still carries a valid method.
+      if (String(f.type || "") === "choice") {
+        var opts = f.options || [];
+        var defChoice = (f["default"] != null) ? String(f["default"]) : "";
+        var selHtml = "";
+        var selHint = hint;
+        opts.forEach(function (o) {
+          var ov = String(o.value);
+          var sel = (ov === defChoice) ? " selected" : "";
+          selHtml += '<option value="' + escAttr(ov) + '"' + sel + ">" + escText(o.label || ov) + "</option>";
+        });
+        html += '<div class="pp-spec-field"' + swAttr + ">"
+          + '<label for="' + namePrefix + "-" + escAttr(key) + '">' + label + "</label>"
+          + '<select id="' + namePrefix + "-" + escAttr(key) + '" '
+            + 'name="spec_' + escAttr(key) + '" '
+            + 'data-spec-choice="' + escAttr(key) + '">' + selHtml + "</select>"
+          + (selHint ? '<div class="pp-hint">' + selHint + "</div>" : "")
+          + "</div>";
+        return;
+      }
       var cur = (currentLimits && currentLimits[key] != null) ? currentLimits[key] : "";
       // SMART bounds per service type: the schema carries min/max/step/default.
       // For an UPGRADE the floor is the CURRENT value (upgrades only go up);
@@ -283,7 +313,7 @@
       var curBadge = (cur !== "" && cur !== null && cur !== undefined)
         ? ' <span class="pp-current">الحالي: ' + escText(cur) + (unit ? " " + unit : "") + "</span>" : "";
       var unitBadge = unit ? ' <span class="pp-unit">' + unit + "</span>" : "";
-      html += '<div class="pp-spec-field">'
+      html += '<div class="pp-spec-field"' + swAttr + ">"
         + '<label for="' + namePrefix + "-" + escAttr(key) + '">' + label + unitBadge + curBadge + "</label>"
         + '<input type="number" '
           + 'min="' + escAttr(minV) + '" '
@@ -297,6 +327,28 @@
         + "</div>";
     });
     host.innerHTML = html;
+    wireSpecChoiceToggles(host);
+  }
+  // Show/hide spec fields whose ``show_when`` references a choice <select>, and
+  // keep them in sync when the choice changes. Hidden inputs are disabled so the
+  // server never receives a stale per-method value (e.g. Mbps for server-IP).
+  function wireSpecChoiceToggles(host) {
+    if (!host) return;
+    var selects = host.querySelectorAll("select[data-spec-choice]");
+    if (!selects.length) return;
+    function apply() {
+      var values = {};
+      selects.forEach(function (s) { values[s.getAttribute("data-spec-choice")] = s.value; });
+      host.querySelectorAll("[data-show-when-field]").forEach(function (wrap) {
+        var field = wrap.getAttribute("data-show-when-field");
+        var vals = (wrap.getAttribute("data-show-when-vals") || "").split("|");
+        var show = vals.indexOf(String(values[field])) !== -1;
+        wrap.style.display = show ? "" : "none";
+        wrap.querySelectorAll("input, select, textarea").forEach(function (el) { el.disabled = !show; });
+      });
+    }
+    selects.forEach(function (s) { s.addEventListener("change", apply); });
+    apply();
   }
   function openActivate(btn) {
     var modal = $("pp-activate-modal"); if (!modal) return;

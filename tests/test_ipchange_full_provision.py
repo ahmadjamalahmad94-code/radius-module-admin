@@ -197,6 +197,59 @@ def test_bridge_payload_has_creds_ip_speed(app):
         assert t in vt.deliverable_tunnels(c)                   # pullable over the bridge
 
 
+# ── METHOD routing (merged «تغيير عنوان الإنترنت») ────────────────────────────
+def test_server_public_ip_method_grants_without_tunnel(app, client):
+    """The server-public-IP method grants the entitlement (capability on) but
+    routes AWAY from SSTP provisioning even with the checkbox + a CHR pick — the
+    actual IP change is the radius src-nat adapter / CHR-move, not a tunnel."""
+    with app.app_context():
+        c, lic = _cust_lic(email="ipxmethod@example.com")
+        prov = _provider()
+        node = _node(prov, name="chr-m", public_ip="203.0.113.99")
+        cid, nid = c.id, node.id
+        req = create_customer_service_request(
+            customer=c, service_key="ip_change_vpn", request_type="activation",
+            desired_limits={"method": "server_public_ip", "download_mbps": 100})
+        db.session.commit()
+        rid = req.id
+    _admin(client)
+    r = client.post(f"/admin/service-requests/{rid}/approve", data={
+        "provision_sstp": "1", "download_mbps": "100", "fleet_chr_node_id": str(nid),
+    }, follow_redirects=False)
+    assert r.status_code in (301, 302)
+    with app.app_context():
+        from app.models import CustomerServiceEntitlement
+        assert CustomerVpnTunnel.query.filter_by(customer_id=cid).count() == 0   # NO tunnel
+        ve = CustomerVpnEntitlement.query.filter_by(customer_id=cid).one()
+        assert ve.enabled is True and ve.status == "active"                      # granted
+        se = CustomerServiceEntitlement.query.filter_by(customer_id=cid, service_key="ip_change_vpn").one()
+        assert (se.config or {}).get("method") == "server_public_ip"             # method recorded
+
+
+def test_tunnel_method_records_method_and_provisions(app, client):
+    """The tunnel method records its method AND provisions the SSTP backend."""
+    with app.app_context():
+        c, lic = _cust_lic(email="ipxtun@example.com")
+        prov = _provider()
+        node = _node(prov, name="chr-t", public_ip="203.0.113.41")
+        cid, nid = c.id, node.id
+        req = create_customer_service_request(
+            customer=c, service_key="ip_change_vpn", request_type="activation",
+            desired_limits={"method": "tunnel", "download_mbps": 100, "upload_mbps": 100})
+        db.session.commit()
+        rid = req.id
+    _admin(client)
+    client.post(f"/admin/service-requests/{rid}/approve", data={
+        "provision_sstp": "1", "download_mbps": "100", "fleet_chr_node_id": str(nid),
+    }, follow_redirects=False)
+    with app.app_context():
+        from app.models import CustomerServiceEntitlement
+        t = CustomerVpnTunnel.query.filter_by(customer_id=cid, tunnel_type="sstp").one()
+        assert t.status == "active"                                              # tunnel backend live
+        se = CustomerServiceEntitlement.query.filter_by(customer_id=cid, service_key="ip_change_vpn").one()
+        assert (se.config or {}).get("method") == "tunnel"
+
+
 # ── legacy traffic-quota path is untouched (no provision flag) ───────────────
 def test_legacy_quota_path_unchanged_without_flag(app, client):
     with app.app_context():

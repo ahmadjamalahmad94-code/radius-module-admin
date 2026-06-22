@@ -26,6 +26,54 @@ from ..models import (
 from .vpn_entitlements import SERVICE_KEY as VPN_SERVICE_KEY
 from .vpn_entitlements import vpn_services_contract_for_license
 
+# ════════════════════════════════════════════════════════════════════════════
+# «تغيير عنوان الإنترنت» — ONE customer-facing service, TWO live backends.
+#
+# The two historical IP-change cards (``ip_change_vpn`` = hosted-CHR tunnel, and
+# ``public_ip_change`` = the server's own public IP) are MERGED into a SINGLE
+# catalog service the customer + provider see as one card with one activation /
+# one provider grant. The two backends stay fully wired underneath and are
+# selected by a METHOD choice inside the one service's activation / upgrade flow:
+#
+#   • ``tunnel``            → hosted-CHR SSTP tunnel, per-Mbps pricing
+#                            (ip_change_pricing.provision_ip_change →
+#                            vpn_tunnels.provision_tunnel) + the monthly sweep;
+#   • ``server_public_ip`` → the server's own public IP via the tagged src-nat
+#                            adapter (radius-module ``network.public_ip_change``)
+#                            and the super-admin CHR-move action (chr_move.py).
+#
+# The SINGLE surface key is ``ip_change_vpn`` (= vpn_entitlements.SERVICE_KEY) —
+# it already owns the entitlement, contract, per-Mbps pricing, admin pages and
+# monthly sweep, so keeping it is the lowest-risk collapse. ``public_ip_change``
+# is RETIRED as a customer catalog card but kept alive as a backend key in the
+# provider→gate map and the radius src-nat adapter. The chosen method travels in
+# ``desired_limits["method"]``; approval routes the provisioning on it.
+# ════════════════════════════════════════════════════════════════════════════
+IP_CHANGE_SERVICE_KEY = VPN_SERVICE_KEY                 # "ip_change_vpn" — the ONE card
+IP_CHANGE_LEGACY_PUBLIC_KEY = "public_ip_change"        # merged-in backend key (kept live)
+IP_CHANGE_METHOD_TUNNEL = "tunnel"
+IP_CHANGE_METHOD_SERVER_PUBLIC_IP = "server_public_ip"
+IP_CHANGE_METHODS = (IP_CHANGE_METHOD_TUNNEL, IP_CHANGE_METHOD_SERVER_PUBLIC_IP)
+IP_CHANGE_DEFAULT_METHOD = IP_CHANGE_METHOD_TUNNEL
+IP_CHANGE_METHOD_OPTIONS = [
+    {"value": IP_CHANGE_METHOD_TUNNEL,
+     "label": "عبر النفق — تسعير لكل Mbps",
+     "hint": "نفق SSTP على CHR مُستضاف؛ يظهر عنوان إنترنت جديد بسرعة مستقلة لكل اتجاه والتسعير لكل ميجابت."},
+    {"value": IP_CHANGE_METHOD_SERVER_PUBLIC_IP,
+     "label": "تغيير IP العام للخادم",
+     "hint": "تغيير عنوان الإنترنت العام لخادم العميل عبر قاعدة src-nat موسومة على الراوتر."},
+]
+#: Catalog keys retired by a merge — never seeded as a card, and any existing
+#: seeded row is removed on seed (the backend key lives on elsewhere). Their
+#: entitlements (if any) are untouched (no FK), they just stop rendering a card.
+RETIRED_CATALOG_KEYS = frozenset({IP_CHANGE_LEGACY_PUBLIC_KEY})
+
+
+def clean_ip_change_method(value: str | None) -> str:
+    """Normalize an IP-change method; fall back to the tunnel default."""
+    method = str(value or "").strip().lower()
+    return method if method in IP_CHANGE_METHODS else IP_CHANGE_DEFAULT_METHOD
+
 SERVICE_STATUS_ALLOWLIST = {"active", "suspended", "expired", "disabled"}
 SERVICE_REQUEST_STATUS_ALLOWLIST = {
     "pending",
@@ -109,24 +157,18 @@ def validate_unique_customer_user_email(customer_user: CustomerUser, email: str)
 
 DEFAULT_SERVICE_CATALOG = [
     {
-        "service_key": VPN_SERVICE_KEY,
-        "name": "خدمة تغيير العنوان والشبكة الخاصة",
-        "name_ar": "خدمة تغيير العنوان والشبكة الخاصة",
-        "description": "صلاحية تجارية تحدد السرعة والمستخدمين والمواقع. الريدياس عند العميل هو الذي يطبق السرعة محليًا.",
+        # ONE merged service — see the IP_CHANGE_* block at the top of this module.
+        # Two live backends (tunnel / server-public-IP) chosen by a METHOD field
+        # in the activation flow; the per-Mbps tunnel price seeds price_monthly.
+        "service_key": IP_CHANGE_SERVICE_KEY,
+        "name": "تغيير عنوان الإنترنت",
+        "name_ar": "تغيير عنوان الإنترنت",
+        "description": "خدمة تجارية لتغيير عنوان الإنترنت بطريقتين: نفق مُدار بتسعير لكل ميجابت، "
+                       "أو تغيير عنوان الإنترنت العام للخادم. تختار الطريقة عند طلب التفعيل.",
         "category": "network",
         "default_enabled": False,
         "sort_order": 10,
         "price_monthly": Decimal("10.00"),
-    },
-    {
-        "service_key": "public_ip_change",
-        "name": "تغيير عنوان الإنترنت العام",
-        "name_ar": "تغيير عنوان الإنترنت العام",
-        "description": "طلب تجاري لتغيير عنوان الإنترنت العام المرتبط بنسخة العميل عند توفره.",
-        "category": "network",
-        "default_enabled": False,
-        "sort_order": 12,
-        "price_monthly": None,
     },
     {
         "service_key": "customer_portal",
@@ -610,11 +652,12 @@ SERVICE_TIER_DEFAULT = SERVICE_TIER_PAID
 #: The owner's free/paid model. ONLY these infrastructure services are «مدفوعة»
 #: by default — the provider runs/pays for them centrally. EVERYTHING else is
 #: free software the customer runs on their own VPS (BYO), so a fresh active
-#: customer has all software accessible and only these five as paid upsells.
+#: customer has all software accessible and only these as paid upsells.
 #: Matches trial_plan.TRIAL_PAID_SERVICES (the trial uses the same split).
+#: NOTE: the merged «تغيير عنوان الإنترنت» is ONE paid key (``ip_change_vpn``);
+#: the retired ``public_ip_change`` is no longer a separate paid card.
 DEFAULT_PAID_SERVICES: frozenset[str] = frozenset({
-    "ip_change_vpn",
-    "public_ip_change",
+    IP_CHANGE_SERVICE_KEY,
     "remote_support",
     "remote_health_fix",
     "multi_tenant",
@@ -911,15 +954,25 @@ SERVICE_SPEC_META: dict[str, dict[str, dict[str, Any]]] = {
 # speed + quota. They travel in ``desired_limits`` like everything else;
 # enforcement stays with the service's own provisioning (VPN contract).
 SERVICE_REQUEST_EXTRA_FIELDS: dict[str, list[dict[str, Any]]] = {
+    # The ONE merged «تغيير عنوان الإنترنت» service. First field is the METHOD
+    # choice (tunnel vs server-public-IP); the per-Mbps spec fields only apply to
+    # the tunnel method, so they carry ``show_when`` to hide for the other method.
     "ip_change_vpn": [
+        {"key": "method", "label": "طريقة تغيير العنوان", "type": "choice",
+         "hint": "اختر آلية تغيير العنوان: نفق مُدار بتسعير لكل ميجابت، أو تغيير عنوان الإنترنت العام للخادم.",
+         "default": IP_CHANGE_DEFAULT_METHOD, "options": IP_CHANGE_METHOD_OPTIONS},
         {"key": "download_mbps", "label": "سرعة التحميل المطلوبة", "hint": "Mbps باتجاه التنزيل (لكل اتجاه سرعة مستقلة).",
-         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↓"},
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↓",
+         "show_when": {"field": "method", "in": [IP_CHANGE_METHOD_TUNNEL]}},
         {"key": "upload_mbps", "label": "سرعة الرفع المطلوبة", "hint": "Mbps باتجاه الرفع.",
-         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↑"},
+         "min": 1, "max": 1000, "step": 1, "default": 50, "unit": "Mbps ↑",
+         "show_when": {"field": "method", "in": [IP_CHANGE_METHOD_TUNNEL]}},
         {"key": "max_vpn_users", "label": "عدد مستخدمي VPN", "hint": "عدد المستخدمين المتزامنين على الخدمة.",
-         "min": 1, "max": 1000, "step": 1, "default": 5, "unit": "مستخدم"},
+         "min": 1, "max": 1000, "step": 1, "default": 5, "unit": "مستخدم",
+         "show_when": {"field": "method", "in": [IP_CHANGE_METHOD_TUNNEL]}},
         {"key": "quota_gb", "label": "حصة البيانات الشهرية", "hint": "اتركها فارغة لطلب حصة غير محدودة.",
-         "min": 1, "max": 100000, "step": 10, "default": None, "unit": "GB/شهر"},
+         "min": 1, "max": 100000, "step": 10, "default": None, "unit": "GB/شهر",
+         "show_when": {"field": "method", "in": [IP_CHANGE_METHOD_TUNNEL]}},
     ],
     "sms_gateway": [
         # «طلب حزمة رسائل» — the paid SMS package size to buy from the provider.
@@ -1093,6 +1146,14 @@ def seed_service_catalog() -> None:
                 existing.price_monthly = item["price_monthly"]
             continue
         db.session.add(ServiceCatalogItem(**item))
+    # Retire any catalog card merged into another service (idempotent). The
+    # backend key lives on in the provider→gate map and the radius adapter; we
+    # only drop the duplicate CARD so the customer/provider see ONE. Entitlements
+    # are keyed by service_key string (no FK) and are left untouched.
+    for retired_key in RETIRED_CATALOG_KEYS:
+        stale = ServiceCatalogItem.query.filter_by(service_key=retired_key).first()
+        if stale is not None:
+            db.session.delete(stale)
 
 
 def clean_service_key(value: str) -> str:

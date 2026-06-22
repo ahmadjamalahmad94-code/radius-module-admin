@@ -66,6 +66,18 @@
           </div>
         {% endfor %}
         {% if service_request.service_key == "ip_change_vpn" %}
+          {% set _ipx_method = (desired_limits.get('method') or 'tunnel') %}
+          <div class="hub-field full">
+            <label>طريقة تغيير العنوان المطلوبة</label>
+            <div class="hub-field-hint">
+              {% if _ipx_method == 'server_public_ip' %}
+                <b>تغيير IP العام للخادم</b> — يُمنح التفعيل وتُطبَّق عبر قاعدة src-nat على راوتر العميل أو زر «نقل CHR»؛
+                لا يُجهَّز نفق SSTP لهذه الطريقة (تجاهل خيار تجهيز SSTP أدناه).
+              {% else %}
+                <b>عبر النفق — تسعير لكل Mbps</b> — يُجهَّز مستخدم SSTP على CHR بسرعة لكل اتجاه، بيانات غير محدودة، صلاحية شهرية.
+              {% endif %}
+            </div>
+          </div>
           <div class="hub-field">
             <label>باقة VPN</label>
             <select class="hub-input" name="vpn_plan_id">

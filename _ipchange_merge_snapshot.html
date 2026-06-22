@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تغيير عنوان الإنترنت — البطاقة المدمجة + اختيار الطريقة</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0f1226; --surface:#171a33; --card:#1d2142; --line:rgba(255,255,255,.10);
+    --text:#eef0fb; --soft:#a9adcf; --hint:#7e83ad; --violet:#7f77dd; --violet-soft:#2a2a59;
+    --green:#1d9e75; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Cairo",system-ui,sans-serif;padding:28px}
+  .wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .lead{font-size:13.5px;color:var(--soft)}
+  h1{font-size:19px;font-weight:700;margin:0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .ico{width:36px;height:36px;border-radius:10px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .name{font-size:16px;font-weight:700;flex:1}
+  .status{font-size:12px;color:var(--soft);display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--hint)}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:var(--violet-soft);color:#cecbf6;font-size:12px;padding:5px 11px;border-radius:9px;margin-bottom:10px}
+  .desc{font-size:13px;color:var(--soft);line-height:1.8;margin:0 0 14px}
+  .btn{width:100%;border:0;border-radius:10px;padding:11px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;background:var(--violet);color:#fff}
+  .btn--ghost{background:var(--surface);color:var(--text);border:1px solid var(--line)}
+  .modal{background:var(--surface);border-radius:var(--radius);padding:22px;margin-top:4px}
+  .dlg{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;max-width:460px;margin:0 auto}
+  .dlg-h{display:flex;align-items:center;gap:10px;margin-bottom:16px;font-size:15.5px;font-weight:700}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  select,input{width:100%;font-family:inherit;font-size:14px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  .field{margin-bottom:14px}
+  .fhint{font-size:12px;color:var(--hint);margin-top:6px;line-height:1.7}
+  .group{display:flex;flex-direction:column;gap:12px;border-top:1px dashed var(--line);padding-top:14px}
+  .note{border-top:1px dashed var(--line);padding-top:14px;font-size:13px;color:var(--soft);line-height:1.8}
+  .unit{color:var(--hint);font-weight:400}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>تغيير عنوان الإنترنت — بطاقة واحدة + اختيار الطريقة</h1>
+    <div class="lead">دمج البطاقتين في خدمة واحدة للعميل والمزوّد؛ الطريقة (نفق / IP عام للخادم) تُختار داخل طلب التفعيل، والخلفيتان تبقيان فعّالتين.</div>
+
+    <div class="grid">
+      <article class="card">
+        <div class="top">
+          <span class="ico">🛡️</span>
+          <span class="name">تغيير عنوان الإنترنت</span>
+          <span class="status"><span class="dot"></span>غير مفعّلة</span>
+        </div>
+        <span class="badge">🏷️ مدفوعة</span>
+        <p class="desc">خدمة تجارية لتغيير عنوان الإنترنت بطريقتين: نفق مُدار بتسعير لكل ميجابت، أو تغيير عنوان الإنترنت العام للخادم. تختار الطريقة عند طلب التفعيل.</p>
+        <button class="btn" onclick="document.getElementById('m').focus()">طلب تفعيل</button>
+      </article>
+    </div>
+
+    <div class="modal">
+      <div class="dlg">
+        <div class="dlg-h">✉️ طلب تفعيل: تغيير عنوان الإنترنت</div>
+
+        <div class="field">
+          <label for="m">طريقة تغيير العنوان</label>
+          <select id="m" onchange="apply()">
+            <option value="tunnel" selected>عبر النفق — تسعير لكل Mbps</option>
+            <option value="server_public_ip">تغيير IP العام للخادم</option>
+          </select>
+          <div class="fhint" id="mh">نفق SSTP على CHR مُستضاف؛ يظهر عنوان إنترنت جديد بسرعة مستقلة لكل اتجاه والتسعير لكل ميجابت.</div>
+        </div>
+
+        <div class="group" id="tun">
+          <div><label>سرعة التحميل المطلوبة <span class="unit">Mbps ↓</span></label><input type="number" min="1" max="1000" value="50"></div>
+          <div><label>سرعة الرفع المطلوبة <span class="unit">Mbps ↑</span></label><input type="number" min="1" max="1000" value="50"></div>
+          <div><label>عدد مستخدمي VPN</label><input type="number" min="1" max="1000" value="5"></div>
+          <div><label>حصة البيانات الشهرية <span class="unit">GB/شهر</span></label><input type="number" min="1" placeholder="فارغ = غير محدودة"></div>
+        </div>
+
+        <div class="note" id="srv" style="display:none">ℹ️ تُمنح الخدمة ويُطبَّق تغيير عنوان الإنترنت العام عبر قاعدة src-nat موسومة على راوتر العميل أو زر «نقل CHR» — بلا نفق ولا تسعير لكل ميجابت.</div>
+
+        <button class="btn" style="margin-top:16px">إرسال الطلب</button>
+      </div>
+    </div>
+  </div>
+<script>
+  var hints={tunnel:'نفق SSTP على CHR مُستضاف؛ يظهر عنوان إنترنت جديد بسرعة مستقلة لكل اتجاه والتسعير لكل ميجابت.',server_public_ip:'تغيير عنوان الإنترنت العام لخادم العميل عبر قاعدة src-nat موسومة على الراوتر.'};
+  function apply(){
+    var v=document.getElementById('m').value, tunnel=v==='tunnel';
+    document.getElementById('tun').style.display=tunnel?'flex':'none';
+    document.getElementById('srv').style.display=tunnel?'none':'block';
+    document.getElementById('mh').textContent=hints[v];
+    document.querySelectorAll('#tun input').forEach(function(i){i.disabled=!tunnel;});
+  }
+  apply();
+</script>
+</body>
+</html>

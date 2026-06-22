@@ -54,10 +54,12 @@ def test_trial_tier_classification(app):
         for capped in ("cards", "routers", "nas", "ip_pools", "whatsapp_gateway",
                        "device_health", "distributors", "subscribers"):
             assert trial_tier_for(capped) == "free_limited", capped
-        # exactly the FIVE paid keys (whatsapp is NOT paid)
+        # exactly the paid keys — «تغيير عنوان الإنترنت» is ONE merged key
+        # (ip_change_vpn); public_ip_change is no longer a separate paid card.
         assert TRIAL_PAID_SERVICES == frozenset({
-            "ip_change_vpn", "public_ip_change", "remote_support",
+            "ip_change_vpn", "remote_support",
             "remote_health_fix", "multi_tenant"})
+        assert "public_ip_change" not in TRIAL_PAID_SERVICES
         assert "whatsapp_gateway" not in TRIAL_PAID_SERVICES
 
 
