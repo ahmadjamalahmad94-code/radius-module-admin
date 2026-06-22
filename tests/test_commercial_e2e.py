@@ -232,16 +232,19 @@ def test_gate_state_hidden_until_granted(gate_cust):
     assert mt["visibility"] == "hidden" and mt["status"] == "hidden" and mt["upgradable"] is False
 
 
-# ── E′. The «شركتي» live scenario: free software open, 5 paid locked, none blocked
+# ── E′. The «شركتي» live scenario: free software open, paid locked, none blocked
 def test_fresh_customer_correct_commercial_state(gate_cust):
     """The exact state the owner wants on the live radius for «شركتي»: a fresh
-    active customer has all SOFTWARE accessible, only the five infrastructure
+    active customer has all SOFTWARE accessible, only the infrastructure
     services as «طلب تفعيل», and NOTHING hard-disabled (no «موقوفة»)."""
     _c, lic = gate_cust
     ct = build_runtime_contract_for_license(lic, license_active=True, status="active")
     services, grants = ct["services"], ct["provider_grants"]
 
-    PAID = {"ip_change_vpn", "public_ip_change", "remote_support", "remote_health_fix", "multi_tenant"}
+    # «تغيير عنوان الإنترنت» is now ONE merged paid card (ip_change_vpn); the
+    # retired public_ip_change is no longer a separate catalog service.
+    PAID = {"ip_change_vpn", "remote_support", "remote_health_fix", "multi_tenant"}
+    assert "public_ip_change" not in services  # no orphan second card
 
     # finance-center (the live symptom) is now OPEN — free + enabled, gate active.
     fc = services["finance_center"]
@@ -254,8 +257,8 @@ def test_fresh_customer_correct_commercial_state(gate_cust):
         assert services[k]["enabled"] is True, f"{k} should be free+enabled"
         assert services[k]["status"] == "active"
 
-    # the four NON-hidden paid services are visible upsells (locked_upgrade)
-    for k in ("ip_change_vpn", "public_ip_change", "remote_support", "remote_health_fix"):
+    # the NON-hidden paid services are visible upsells (locked_upgrade)
+    for k in ("ip_change_vpn", "remote_support", "remote_health_fix"):
         assert services[k]["enabled"] is False
         assert services[k]["status"] == "locked_upgrade", f"{k} must be locked_upgrade"
         assert services[k]["requires_activation"] is True
@@ -266,7 +269,7 @@ def test_fresh_customer_correct_commercial_state(gate_cust):
     assert all(s.get("status") != "disabled" for s in services.values())
     assert all(g["status"] != "disabled" for g in grants.values())
 
-    # and only the five are paid; everything else is free
+    # and only these are paid; everything else is free
     paid_services = {k for k, s in services.items() if s.get("tier") == "paid"}
     assert paid_services == PAID
 
