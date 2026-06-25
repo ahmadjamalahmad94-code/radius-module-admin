@@ -31,7 +31,7 @@ def test_single_ip_change_catalog_card(app):
         assert IP_CHANGE_SERVICE_KEY in keys                 # the ONE surviving card
         assert IP_CHANGE_LEGACY_PUBLIC_KEY not in keys        # no orphan second card
         item = ServiceCatalogItem.query.filter_by(service_key=IP_CHANGE_SERVICE_KEY).one()
-        assert item.name_ar == "تغيير عنوان الإنترنت"
+        assert item.name_ar == "تغيير عنوان التصفح العام (Public)"
         assert item.price_monthly is not None                 # per-Mbps seed preserved
 
 

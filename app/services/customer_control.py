@@ -161,10 +161,12 @@ DEFAULT_SERVICE_CATALOG = [
         # Two live backends (tunnel / server-public-IP) chosen by a METHOD field
         # in the activation flow; the per-Mbps tunnel price seeds price_monthly.
         "service_key": IP_CHANGE_SERVICE_KEY,
-        "name": "تغيير عنوان الإنترنت",
-        "name_ar": "تغيير عنوان الإنترنت",
-        "description": "خدمة تجارية لتغيير عنوان الإنترنت بطريقتين: نفق مُدار بتسعير لكل ميجابت، "
-                       "أو تغيير عنوان الإنترنت العام للخادم. تختار الطريقة عند طلب التفعيل.",
+        "name": "تغيير عنوان التصفح العام (Public)",
+        "name_ar": "تغيير عنوان التصفح العام (Public)",
+        "description": "خدمة مدفوعة لتغيير عنوان الإنترنت العام الذي يظهر للمواقع أثناء التصفح "
+                       "(عنوان الخروج العام)، وليست تغيير عنوان الجلسة أو الشبكة الداخلية المجاني. "
+                       "تتم بطريقتين: نفق مُدار بتسعير لكل ميجابت، أو تغيير عنوان الإنترنت العام للخادم. "
+                       "تختار الطريقة عند طلب التفعيل.",
         "category": "network",
         "default_enabled": False,
         "sort_order": 10,
