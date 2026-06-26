@@ -2,7 +2,7 @@
 {% import "_partials/hub.html" as hub %}
 {% block title %}{{ 'باقة شبكة خاصة جديدة' if is_new else vpn_plan.name }}{% endblock %}
 {% block page_title %}{{ 'باقة شبكة خاصة جديدة' if is_new else vpn_plan.name }}{% endblock %}
-{% block page_subtitle %}تعريف حدود خدمة تغيير عنوان الإنترنت والشبكة الخاصة التي يبيعها مركز التراخيص{% endblock %}
+{% block page_subtitle %}تعريف حدود خدمة تغيير عنوان التصفح العام (Public) التي يبيعها مركز التراخيص{% endblock %}
 
 {% block content %}
 {{ hub.hero(

@@ -37,7 +37,7 @@
           <i class="fa-solid fa-cubes"></i><span>الخطط</span>
         </a>
         <a class="{{ 'active' if ep.startswith('admin.vpn_service') or ep == 'admin.customer_vpn_service' else '' }}" href="{{ url_for('admin.vpn_services_list') }}">
-          <i class="fa-solid fa-shield-halved"></i><span>خدمة تغيير العنوان والشبكة الخاصة</span>
+          <i class="fa-solid fa-shield-halved"></i><span>تغيير عنوان التصفح العام (Public)</span>
         </a>
         <a class="{{ 'active' if ep.startswith('admin.service_request') else '' }}" href="{{ url_for('admin.service_requests_list') }}">
           <i class="fa-solid fa-headset"></i><span>طلبات الخدمات والدعم</span>

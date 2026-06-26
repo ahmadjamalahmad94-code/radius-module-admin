@@ -1,14 +1,14 @@
 {% extends "admin/base_new.html" %}
 {% import "_partials/hub.html" as hub %}
-{% block title %}خدمة تغيير العنوان والشبكة الخاصة — {{ customer.company_name }}{% endblock %}
-{% block page_title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
+{% block title %}تغيير عنوان التصفح العام (Public) — {{ customer.company_name }}{% endblock %}
+{% block page_title %}تغيير عنوان التصفح العام (Public){% endblock %}
 {% block page_subtitle %}{{ customer.company_name }}{% endblock %}
 
 {% block content %}
 {% set vpn_status_labels = {'active': 'مفعلة', 'suspended': 'موقوفة', 'expired': 'منتهية', 'disabled': 'معطلة'} %}
 
 {{ hub.hero(
-  "خدمة الشبكة الخاصة لـ " ~ customer.company_name,
+  "خدمة تغيير عنوان التصفح العام (Public) لـ " ~ customer.company_name,
   subtitle="السرعة والحدود والاستحقاق التجاري — تنفيذ السرعة يحدث داخل نسخة الريدياس عند العميل.",
   icon="shield-halved",
   actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.customer_detail', customer_id=customer.id) ~ '"><i class="fa-solid fa-arrow-up-right-from-square"></i> ملف العميل</a>'
