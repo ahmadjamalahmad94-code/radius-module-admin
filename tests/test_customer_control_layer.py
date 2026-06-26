@@ -388,7 +388,7 @@ def test_customer_360_renders_services_users_payments_and_contract(client):
 
     assert res.status_code == 200
     assert "ملف العميل 360" in body
-    assert "خدمة تغيير العنوان والشبكة الخاصة" in body
+    assert "تغيير عنوان التصفح العام (Public)" in body
     assert "limits JSON" not in body
     assert "config JSON" not in body
     assert "owner أولًا" not in body

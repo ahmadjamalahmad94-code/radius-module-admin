@@ -1,12 +1,12 @@
 {% extends "admin/base_new.html" %}
 {% import "_partials/hub.html" as hub %}
-{% block title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
-{% block page_title %}خدمة تغيير العنوان والشبكة الخاصة{% endblock %}
-{% block page_subtitle %}إدارة باقات خدمة تغيير عنوان الإنترنت التي تظهر كاستحقاق مرخص للعميل{% endblock %}
+{% block title %}تغيير عنوان التصفح العام (Public){% endblock %}
+{% block page_title %}تغيير عنوان التصفح العام (Public){% endblock %}
+{% block page_subtitle %}إدارة باقات خدمة تغيير عنوان التصفح العام (Public) التي تظهر كاستحقاق مرخص للعميل{% endblock %}
 
 {% block content %}
 {{ hub.hero(
-  "باقات تغيير العنوان والشبكة الخاصة",
+  "باقات تغيير عنوان التصفح العام (Public)",
   subtitle="عروض تجارية للسرعة وعدد المستخدمين والمواقع. لوحة التراخيص ترسل الصلاحية فقط، والتطبيق الفعلي يتم داخل نسخة العميل.",
   icon="shield-halved",
   actions_html='<a class="hub-btn hub-btn--secondary hub-btn--sm" style="background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.28)" href="' ~ url_for('admin.vpn_service_new') ~ '"><i class="fa-solid fa-plus"></i> باقة جديدة</a>'

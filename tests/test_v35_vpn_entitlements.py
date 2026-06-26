@@ -246,7 +246,7 @@ def test_vpn_admin_pages_render(client):
     customer_page = client.get(f"/admin/customers/{customer.id}/vpn-service")
 
     assert plans.status_code == 200
-    assert "خدمة تغيير العنوان والشبكة الخاصة" in plans.get_data(as_text=True)
+    assert "تغيير عنوان التصفح العام (Public)" in plans.get_data(as_text=True)
     assert customer_page.status_code == 200
     assert "ما سيصل للريدياس" in customer_page.get_data(as_text=True)
 

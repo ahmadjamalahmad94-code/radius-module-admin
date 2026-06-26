@@ -1542,7 +1542,7 @@ def customer_vpn_service_update(customer_id: int):
         },
     )
     db.session.commit()
-    flash("تم حفظ خدمة تغيير العنوان والشبكة الخاصة للعميل.", "success")
+    flash("تم حفظ خدمة تغيير عنوان التصفح العام (Public) للعميل.", "success")
     return redirect(url_for("admin.customer_vpn_service", customer_id=customer.id))
 
 
@@ -2365,7 +2365,7 @@ def vpn_service_create():
     db.session.flush()
     audit("vpn_service_plan_created", "vpn_service_plan", str(vpn_plan.id), f"تم إنشاء باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم إنشاء خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
+    flash("تم إنشاء خطة خدمة تغيير عنوان التصفح العام (Public).", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -2388,7 +2388,7 @@ def vpn_service_update(vpn_plan_id: int):
         return render_template("admin/vpn_service_form.html", vpn_plan=vpn_plan, is_new=False), 400
     audit("vpn_service_plan_updated", "vpn_service_plan", str(vpn_plan.id), f"تم تحديث باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم تحديث خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
+    flash("تم تحديث خطة خدمة تغيير عنوان التصفح العام (Public).", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -2399,7 +2399,7 @@ def vpn_service_disable(vpn_plan_id: int):
     vpn_plan.is_active = False
     audit("vpn_service_plan_disabled", "vpn_service_plan", str(vpn_plan.id), f"تم إيقاف باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم إيقاف خطة خدمة تغيير العنوان والشبكة الخاصة.", "warning")
+    flash("تم إيقاف خطة خدمة تغيير عنوان التصفح العام (Public).", "warning")
     return redirect(url_for("admin.vpn_services_list"))
 
 
@@ -2410,7 +2410,7 @@ def vpn_service_enable(vpn_plan_id: int):
     vpn_plan.is_active = True
     audit("vpn_service_plan_enabled", "vpn_service_plan", str(vpn_plan.id), f"تم تفعيل باقة الشبكة الخاصة {vpn_plan.code}")
     db.session.commit()
-    flash("تم تفعيل خطة خدمة تغيير العنوان والشبكة الخاصة.", "success")
+    flash("تم تفعيل خطة خدمة تغيير عنوان التصفح العام (Public).", "success")
     return redirect(url_for("admin.vpn_services_list"))
 
 
