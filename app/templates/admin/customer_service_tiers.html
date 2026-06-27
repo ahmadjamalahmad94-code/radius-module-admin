@@ -148,6 +148,36 @@
   {% endif %}
 {% endcall %}
 
+{# «إدارة أقسام الواجهة» (sections): FULLY HIDDEN until the provider grants it.
+   A plain on/off capability — no entity counts, no per-entity limits. The
+   customer radius gates /admin/radius/sections on services.sections being
+   enabled+active. DEFAULT OFF (hidden) — stays OFF for every existing customer
+   until development is finished. Grant → page appears + route unlocks. #}
+{% call hub.section("«إدارة أقسام الواجهة» — منح خاص بالمزوّد", icon="table-cells") %}
+  <p style="font-size:12.5px;color:#64748b;margin:0 0 10px">
+    هذه الخدمة <b>مخفية تمامًا</b> عن العميل (لا تظهر صفحة «أقسام الواجهة» ولا يُسمح بالوصول إليها)
+    حتى تمنحها أنت. منحٌ بنقرة واحدة (تشغيل/إيقاف)، ويبقى الوضع الافتراضي مُطفأً.
+    {% if sections_grant.granted %}<span class="hub-pill hub-pill--green">ممنوحة حاليًا</span>{% else %}<span class="hub-pill hub-pill--grey">مخفية (افتراضي)</span>{% endif %}
+  </p>
+  {% if sections_grant.granted %}
+  <form method="post" action="{{ url_for('admin.customer_grant_sections', customer_id=customer.id) }}" style="margin:0">
+    {{ csrf_input() }}<input type="hidden" name="action" value="revoke">
+    <button class="hub-btn hub-btn--ghost hub-btn--sm" style="color:#dc2626" type="submit"
+            data-confirm="إخفاء «إدارة أقسام الواجهة» عن هذا العميل؟ ستختفي صفحة الأقسام من واجهته.">
+      <i class="fa-solid fa-eye-slash"></i> إخفاء «إدارة أقسام الواجهة»
+    </button>
+  </form>
+  {% else %}
+  <form method="post" action="{{ url_for('admin.customer_grant_sections', customer_id=customer.id) }}" style="margin:0">
+    {{ csrf_input() }}<input type="hidden" name="action" value="grant">
+    <button class="hub-btn hub-btn--primary hub-btn--sm" type="submit"
+            data-confirm="منح «إدارة أقسام الواجهة» لهذا العميل؟ ستظهر صفحة الأقسام في لوحته.">
+      <i class="fa-solid fa-table-cells"></i> منح «إدارة أقسام الواجهة»
+    </button>
+  </form>
+  {% endif %}
+{% endcall %}
+
 <form method="post" action="{{ url_for('admin.customer_service_tiers_save', customer_id=customer.id) }}" class="cst-form">
   {{ csrf_input() }}
 

@@ -4701,6 +4701,14 @@ def customer_service_tiers(customer_id: int):
         "entity_count": mt_cfg.get("entity_count") or "",
         "per_entity_limits": mt_cfg.get("per_entity_limits") or {},
     }
+    # «إدارة أقسام الواجهة» (sections): plain on/off hidden-until-granted grant.
+    # Default OFF — no entitlement / not granted ⇒ the customer's
+    # /admin/radius/sections page stays hidden + route-gated.
+    sec_ent = entitlement_map.get("sections")
+    sec_cfg = (sec_ent.config if sec_ent else {}) or {}
+    sections_grant = {
+        "granted": sec_cfg.get("visibility") == "granted" and bool(sec_ent and sec_ent.enabled),
+    }
     return render_template(
         "admin/customer_service_tiers.html",
         customer=customer,
@@ -4711,6 +4719,7 @@ def customer_service_tiers(customer_id: int):
         trial_cap=TRIAL_ACTIVE_SUBSCRIBERS_CAP,
         entity_fields=ENTITY_LIMIT_FIELDS,
         mt_grant=mt_grant,
+        sections_grant=sections_grant,
     )
 
 
@@ -4758,6 +4767,47 @@ def customer_grant_entities(customer_id: int):
     ent.updated_by_admin_id = session.get("admin_id")
     audit("customer_entities_grant", "customer", str(customer.id),
           f"multi_tenant {action} for {customer.company_name}",
+          {"action": action, "config": ent.config})
+    db.session.commit()
+    flash(msg, "success")
+    return _back
+
+
+@bp.post("/customers/<int:customer_id>/grant-sections")
+@login_required
+def customer_grant_sections(customer_id: int):
+    """Provider grant for «إدارة أقسام الواجهة» (sections): fully hidden until
+    granted — a plain on/off capability (no entity_count/per-entity limits).
+
+    Grant writes the entitlement in the exact shape the customer radius reads as
+    GRANTED: enabled=True, status="active", config["visibility"]="granted" — so
+    services.sections serializes enabled+active and the customer's
+    /admin/radius/sections page + route unlock. Revoke clears it back to hidden
+    (default OFF). Kept OFF for every existing customer until dev is finished."""
+    customer = db.get_or_404(Customer, customer_id)
+    # Honor the entry point: grant can be driven from the service-tiers page OR
+    # the Customer 360 page — return the operator to wherever they posted from.
+    _return_ep = "admin.customer_detail" if request.form.get("return_to") == "detail" else "admin.customer_service_tiers"
+    _back = redirect(url_for(_return_ep, customer_id=customer.id))
+    ent = get_or_create_service_entitlement(customer, "sections")
+    action = (request.form.get("action") or "grant").strip().lower()
+    if action == "revoke":
+        ent.enabled = False
+        ent.status = "disabled"
+        cfg = dict(ent.config or {})
+        cfg.pop("visibility", None)
+        ent.config = cfg
+        msg = "تم إخفاء «إدارة أقسام الواجهة» عن العميل."
+    else:
+        ent.enabled = True
+        ent.status = "active"
+        cfg = dict(ent.config or {})
+        cfg.update({"tier": "paid", "visibility": "granted"})
+        ent.config = cfg
+        msg = "تم منح «إدارة أقسام الواجهة» للعميل."
+    ent.updated_by_admin_id = session.get("admin_id")
+    audit("customer_sections_grant", "customer", str(customer.id),
+          f"sections {action} for {customer.company_name}",
           {"action": action, "config": ent.config})
     db.session.commit()
     flash(msg, "success")

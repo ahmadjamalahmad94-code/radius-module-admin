@@ -122,6 +122,12 @@ PROVIDER_TO_GATE: dict[str, str] = {
     "webhooks": "settings",
     "integration_tokens": "settings",
     "multi_tenant": "settings",
+    # «إدارة أقسام الواجهة» (sections) is a settings-tier admin capability. Like
+    # multi_tenant it is hidden-until-granted, so while hidden it contributes
+    # NOTHING to the settings gate (build_provider_grants drops visibility=hidden
+    # entries); the radius reads services.sections.visibility directly. Mapped
+    # here so the full-catalog coverage test passes and a granted entry buckets.
+    "sections": "settings",
     # ── customer_portal ──
     "customer_portal": "customer_portal",
     "radius_customer_portals": "customer_portal",
