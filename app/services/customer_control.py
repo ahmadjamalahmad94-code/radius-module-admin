@@ -629,6 +629,21 @@ DEFAULT_SERVICE_CATALOG = [
         "sort_order": 290,
         "price_monthly": None,
     },
+    {
+        # «إدارة أقسام الواجهة» (sections) — a FULLY-HIDDEN-until-granted
+        # capability (like multi_tenant). The customer radius gates
+        # /admin/radius/sections on services.sections being enabled+active;
+        # default OFF (hidden) until the provider grants it. Still under
+        # development, so it MUST stay OFF for every existing customer.
+        "service_key": "sections",
+        "name": "إدارة أقسام الواجهة",
+        "name_ar": "إدارة أقسام الواجهة",
+        "description": "التحكم في أقسام واجهة لوحة الريدياس لدى العميل. مخفية تمامًا حتى يمنحها المزوّد.",
+        "category": "ops",
+        "default_enabled": False,
+        "sort_order": 295,
+        "price_monthly": None,
+    },
 ]
 
 # ════════════════════════════════════════════════════════════════════
@@ -681,7 +696,11 @@ def default_service_tier_for_key(service_key: str) -> str:
 #: paid/locked_upgrade state). «الجهات» (multi_tenant) is the first: when granted
 #: the provider sets entity_count + a per-entity limit set (config-stored). The
 #: contract carries ``visibility`` = "hidden" | "granted" for these.
-HIDDEN_UNTIL_GRANTED_SERVICES = {"multi_tenant"}
+#: «sections» joins «الجهات» as a hidden-until-granted capability: the customer
+#: radius gates /admin/radius/sections on services.sections being enabled+active.
+#: Default OFF (hidden) — the provider flips it ON per-customer once dev is done.
+#: Unlike multi_tenant it is a plain on/off grant (no entity_count/per-entity caps).
+HIDDEN_UNTIL_GRANTED_SERVICES = {"multi_tenant", "sections"}
 
 #: Per-entity limit fields for «الجهات» — each granted entity/tenant gets its
 #: own caps. Editable here; the provider sets values per-customer on grant.
@@ -1913,8 +1932,15 @@ def _serialize_service(
             payload["hidden"] = True
             payload.pop("limits", None)
         else:
-            payload["entity_count"] = int((config or {}).get("entity_count") or 0)
-            payload["per_entity_limits"] = (config or {}).get("per_entity_limits") or {}
+            # entity_count / per_entity_limits are «الجهات»-specific — only emit
+            # them when the grant actually carried them, so a plain on/off grant
+            # (e.g. «sections») serializes a clean enabled+active entry that the
+            # customer reads as GRANTED without multi-tenant noise.
+            cfg = config or {}
+            if "entity_count" in cfg:
+                payload["entity_count"] = int(cfg.get("entity_count") or 0)
+            if "per_entity_limits" in cfg:
+                payload["per_entity_limits"] = cfg.get("per_entity_limits") or {}
 
     return payload
 
