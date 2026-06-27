@@ -41,10 +41,13 @@ def test_validate_extension_allows_and_rejects(app):
     with app.app_context():
         assert ar.validate_extension("windows", "setup.exe") == ".exe"
         assert ar.validate_extension("windows", "Setup.MSI") == ".msi"
+        assert ar.validate_extension("windows", "HobeRadius-0.2.0.zip") == ".zip"  # portable/zipped desktop build
         assert ar.validate_extension("android", "app.apk") == ".apk"
         assert ar.validate_extension("android", "bundle.aab") == ".aab"
         with pytest.raises(ar.AppReleaseError):
             ar.validate_extension("windows", "app.apk")   # android ext on windows
+        with pytest.raises(ar.AppReleaseError):
+            ar.validate_extension("android", "build.zip")  # zip is windows-only
         with pytest.raises(ar.AppReleaseError):
             ar.validate_extension("android", "notes.txt")
         with pytest.raises(ar.AppReleaseError):

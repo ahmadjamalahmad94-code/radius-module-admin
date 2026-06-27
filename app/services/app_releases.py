@@ -26,9 +26,11 @@ from ..models import AppProduct, AppRelease, Setting
 PLATFORMS = ("windows", "android")
 CHANNELS = ("stable", "beta")
 
-#: Allowed upload extensions per platform (lowercase, with dot).
+#: Allowed upload extensions per platform (lowercase, with dot). ``.zip`` is
+#: allowed for Windows so portable/zipped desktop builds can be hosted directly
+#: through the panel (not just .exe/.msi installers).
 ALLOWED_EXT_BY_PLATFORM: dict[str, set[str]] = {
-    "windows": {".exe", ".msi"},
+    "windows": {".exe", ".msi", ".zip"},
     "android": {".apk", ".aab"},
 }
 
@@ -41,6 +43,7 @@ _CONTENT_TYPE_BY_EXT = {
     ".msi": "application/x-msi",
     ".apk": "application/vnd.android.package-archive",
     ".aab": "application/octet-stream",
+    ".zip": "application/zip",
 }
 
 #: Setting key for the externally-hosted Card-Print store URL (CMS-editable).
