@@ -389,6 +389,10 @@
           aria-controls="tab-vault" id="tab-btn-vault">
     <i class="fa-solid fa-vault" aria-hidden="true"></i> مفتاح الخزنة
   </button>
+  <button class="cc-tab-btn" role="tab" data-tab="integrations"
+          aria-controls="tab-integrations" id="tab-btn-integrations">
+    <i class="fa-brands fa-google-drive" aria-hidden="true"></i> تكامل Google Drive
+  </button>
   {# Settings#chr (MikroTik CHR singleton) was retired in the zero-central
      work. Per-node RouterOS credentials live on fleet_chr_nodes rows;
      fleet-wide constants live on the «إعدادات بنية الأسطول» page. #}
@@ -868,6 +872,102 @@
 </div>
 </div>{# /cc-tab-pane#vault #}
 
+{# ════════════════════════════════════════════════════════════════════
+   القسم 5 — تكامل Google Drive (OAuth)
+   يُمكّن العميلَ من ربط درايفه الخاص ورفع نسخه الاحتياطية إليه. بيانات
+   الاعتماد تُدخَل هنا من الواجهة (لا من متغيّرات البيئة) وتُقرأ من جدول
+   الإعدادات عبر services/google_drive.py.
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-integrations" role="tabpanel" aria-labelledby="tab-btn-integrations">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-blue-bg);color:var(--tile-blue-fg)" aria-hidden="true">
+      <i class="fa-brands fa-google-drive"></i>
+    </span>
+    <span class="sg-card-head-title">تكامل Google Drive</span>
+    <span class="sg-card-head-sub">يتيح لكل عميل ربط حساب درايفه الخاص لرفع النسخ الاحتياطية تلقائيًا</span>
+  </div>
+  <div class="sg-card-body">
+
+    {# حالة الإعداد #}
+    <div class="sg-smtp-status {% if gd_configured %}is-ok{% else %}is-warn{% endif %}"
+         style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid {% if gd_configured %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+      {% if gd_configured %}
+        ربط Google Drive مُهيّأ — يستطيع العملاء الآن ربط حساباتهم من بوابة العميل.
+      {% else %}
+        ربط جوجل درايف غير مُهيّأ — أدخل بيانات Google OAuth أدناه. حتى تكتمل، سيرى العميل رسالة «لم يتم إعداد تكامل Google من الإدارة بعد».
+      {% endif %}
+      {% if not gd_libs %}
+        <br><strong>تنبيه:</strong> مكتبات Google غير مثبّتة على الخادم بعد — لن يكتمل الربط حتى تُثبَّت.
+      {% endif %}
+    </div>
+
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="integrations">
+
+      <div class="sg-grid">
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-gd-client-id">OAuth Client ID <span class="sg-req">*</span></label>
+          <input class="sg-input" id="sg-gd-client-id" name="google_oauth_client_id" type="text"
+                 value="{{ settings.get('google_oauth_client_id', '') }}"
+                 placeholder="1234567890-abc.apps.googleusercontent.com" dir="ltr" autocomplete="off">
+          <div class="sg-hint">من Google Cloud Console ← APIs &amp; Services ← Credentials ← OAuth client ID (نوع <strong>Web application</strong>).</div>
+        </div>
+
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-gd-client-secret">OAuth Client Secret <span class="sg-req">*</span></label>
+          <input class="sg-input" id="sg-gd-client-secret" name="google_oauth_client_secret" type="password"
+                 autocomplete="new-password" dir="ltr"
+                 placeholder="{{ 'محفوظ — اتركه فارغًا للإبقاء' if settings.get('google_oauth_client_secret') else 'الصق Client Secret' }}">
+          <div class="sg-hint">
+            {% if settings.get('google_oauth_client_secret') %}
+              محفوظ. اتركه فارغًا إن لم ترد تغييره.
+            {% else %}
+              يُحفظ في الإعدادات ويُستخدم لتبادل رموز OAuth مع Google. لا يظهر للعملاء أبدًا.
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-gd-redirect">Authorized redirect URI</label>
+          <input class="sg-input" id="sg-gd-redirect" name="google_oauth_redirect_uri" type="text"
+                 value="{{ settings.get('google_oauth_redirect_uri', '') }}"
+                 placeholder="{{ gd_redirect_uri }}" dir="ltr" autocomplete="off">
+          <div class="sg-hint">اتركه فارغًا ليُحسب تلقائيًا من رابط اللوحة. إن ملأته، يجب أن يطابق تمامًا ما سجّلته في Google Console.</div>
+        </div>
+      </div>
+
+      <div class="sg-divider"></div>
+
+      {# الرابط الذي يجب تسجيله في Google Console #}
+      <div class="sg-label" style="margin-block-end:var(--cc-sp-4)">الرابط المطلوب تسجيله في Google Cloud Console</div>
+      <div class="sg-hint" style="margin-block-end:var(--cc-sp-3)">
+        أضِف هذا الرابط بالضبط تحت <strong>Authorized redirect URIs</strong> في إعداد OAuth client بـ Google، وإلا سيرفض Google الربط:
+      </div>
+      <div class="sg-field is-full" style="margin-block-end:var(--cc-sp-7)">
+        <input class="sg-input" type="text" readonly dir="ltr"
+               value="{{ settings.get('google_oauth_redirect_uri') or gd_redirect_uri }}"
+               onclick="this.select()">
+      </div>
+
+      <div class="sg-hint" style="margin-block-end:var(--cc-sp-7)">
+        <strong>النطاقات (Scopes) المطلوبة:</strong> <code dir="ltr">openid</code>،
+        <code dir="ltr">userinfo.email</code>، <code dir="ltr">drive.file</code> —
+        صلاحية <code dir="ltr">drive.file</code> أقل صلاحية ممكنة: تُتيح الرفع لمجلد العميل فقط ولا تقرأ بقية ملفاته.
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ إعدادات Google Drive
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+</div>{# /cc-tab-pane#integrations #}
+
 
 {# ── Toast container — design-system floating notifications ───────── #}
 <div class="hub-toast" id="sg-toast" role="status" aria-live="polite" hidden></div>
@@ -879,7 +979,7 @@
 (function () {
   'use strict';
 
-  var TABS    = ['site', 'payments', 'email', 'vault', 'chr'];
+  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'chr'];
   var DEFAULT = 'site';
 
   function activateTab(id) {
