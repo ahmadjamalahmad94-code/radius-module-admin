@@ -362,6 +362,79 @@ def test_backup_rejects_checksum_mismatch():
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Backup upload SIZE limits — guards the live "HTTP 413 Payload Too Large"
+# bug. The upload body carries the full SQLite file base64-encoded (~+33%),
+# so a 188 MB backup is a ~250 MB request body — and it keeps growing.
+# ─────────────────────────────────────────────────────────────────────────
+
+_MB = 1024 * 1024
+LIVE_BACKUP_RAW = 188 * _MB     # observed live backup size (and growing)
+LEGACY_STORED_CAP = 200 * _MB   # the old hard cap that caused the app-side 413
+
+
+def test_backup_size_caps_exceed_live_backup_and_legacy_cap():
+    """Both app-side ceilings must clear the live backup with real headroom.
+
+    * MAX_CONTENT_LENGTH (Flask request-body cap) must exceed the ~250 MB
+      base64 body so Flask itself never 413s a large upload.
+    * BACKUP_MAX_STORED_BYTES (decoded-file cap) must exceed both the live
+      188 MB backup and the legacy 200 MB cap that used to reject it.
+    * MAX_CONTENT_LENGTH must also clear the base64 of the FULL decoded cap so
+      a genuinely oversized backup surfaces the app's clean "too_large"
+      message rather than an opaque transport 413.
+    """
+    app = _bearer_app()
+    base64_body = LIVE_BACKUP_RAW * 4 // 3  # base64 inflation ≈ +33%
+    assert app.config["MAX_CONTENT_LENGTH"] > base64_body
+    assert app.config["MAX_CONTENT_LENGTH"] >= 1024 * _MB            # ≥ 1 GB
+    assert app.config["BACKUP_MAX_STORED_BYTES"] > LIVE_BACKUP_RAW
+    assert app.config["BACKUP_MAX_STORED_BYTES"] > LEGACY_STORED_CAP
+    assert app.config["MAX_CONTENT_LENGTH"] >= app.config["BACKUP_MAX_STORED_BYTES"] * 4 // 3
+
+
+def test_backup_stored_cap_is_config_driven_and_enforced():
+    """The decoded-size cap comes from config (the 200 MB hardcode is gone):
+
+    * a backup just OVER a small configured cap → 413 'too_large' (clean JSON);
+    * the SAME backup under a generous cap → 201 stored.
+    This proves the boundary logic. With the production default ≥ 1 GB
+    (asserted above), a 188 MB+ backup falls well inside the accepted range —
+    i.e. the endpoint no longer 413s a >200 MB upload.
+    """
+    import base64
+    import hashlib
+
+    # Tiny real payload; we move the CAP around it instead of allocating 200 MB.
+    raw = b"\x00" * 4096
+    checksum = hashlib.sha256(raw).hexdigest()
+
+    def _upload(cap_bytes: int):
+        app = _bearer_app(BACKUP_MAX_STORED_BYTES=cap_bytes)
+        with app.app_context():
+            lic = _mk_license()
+            client = app.test_client()
+            return client.post(
+                "/api/integration/hoberadius/backups/upload",
+                json=_backup_payload(
+                    lic,
+                    content_base64=base64.b64encode(raw).decode(),
+                    checksum_sha256=checksum,
+                    size=len(raw),
+                    upload_mode="full",
+                ),
+                **HTTPS,
+            )
+
+    over = _upload(1024)          # cap below the 4096-byte payload
+    assert over.status_code == 413, over.get_json()
+    assert over.get_json()["status"] == "too_large"
+
+    under = _upload(1024 * _MB)   # generous cap (1 GB) — the production posture
+    assert under.status_code == 201, under.get_json()
+    assert under.get_json()["stored"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Admin card + regenerate (uses shared fixtures from conftest.py)
 # ─────────────────────────────────────────────────────────────────────────
 
