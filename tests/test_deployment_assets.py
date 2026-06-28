@@ -22,7 +22,25 @@ def test_deployment_assets_use_production_entrypoint_and_proxy_headers():
     assert "gunicorn" in production_requirements
     assert "proxy_set_header X-Forwarded-For" in nginx
     assert "proxy_set_header X-Forwarded-Proto" in nginx
-    assert "client_max_body_size 128k" in nginx
+
+
+def test_nginx_allows_large_backup_upload_body():
+    """The backup upload sends the full SQLite base64 (~250 MB and growing).
+
+    nginx must allow a LARGE body on BOTH the server block (so no request can
+    fall back to a small distro default and 413) AND the dedicated upload
+    location. A tight 128k/300m would 413 the upload before the app sees it —
+    this guards against that regression.
+    """
+    nginx = read("deploy/nginx/hoberadius-license-panel.conf.example")
+    # The upload endpoint must have its own generous override.
+    assert "location = /api/integration/hoberadius/backups/upload" in nginx
+    assert "client_max_body_size 2g" in nginx
+    # The server-block default must also be generous (no 128k/1m fallback).
+    assert "client_max_body_size 1g" in nginx
+    # The old tight values must NOT reappear (silent regression guard).
+    assert "client_max_body_size 128k" not in nginx
+    assert "client_max_body_size 300m" not in nginx
 
 
 def test_deployment_env_keeps_required_production_safety_flags():

@@ -74,6 +74,27 @@ class Config:
     # retired with the bearer-only link contract (docs/SIMPLE_LINK_CONTRACT.md).
     # The license key in the request BODY authenticates the bridge over HTTPS;
     # no HMAC signature / derived bind-secret / nonce replay window remains.
+    # ── Backup upload sizing (fix: HTTP 413 on customer backup upload) ─────
+    # The customer RADIUS instance uploads its full SQLite backup to
+    # /api/integration/hoberadius/backups/upload as a JSON body carrying the
+    # file base64-encoded. base64 inflates the payload by ~33%, so a 188 MB
+    # backup arrives as a ~250 MB request body — and the backup keeps growing.
+    #
+    # Two app-side ceilings must comfortably exceed that body, or the upload 413s:
+    #   * MAX_CONTENT_LENGTH — Flask's own request-body cap. Left UNSET it is
+    #     unlimited, but we set it EXPLICITLY (generous) so a future tightening
+    #     can never silently re-introduce an app-side 413 and so the limit is
+    #     auditable. Sized in MB via MAX_REQUEST_BODY_MB (default 2048 = 2 GB).
+    #   * BACKUP_MAX_STORED_BYTES — the per-upload cap on the DECODED file the
+    #     backup service stores (app/services/customer_backups.py). Default
+    #     1 GB (≈5× the current live backup) so growth does not hit it; base64
+    #     of 1 GB (~1.34 GB) stays below MAX_CONTENT_LENGTH, so a genuinely
+    #     oversized backup yields the app's clean "too_large" message instead
+    #     of an opaque nginx/Flask 413. Sized in MB via BACKUP_MAX_STORED_MB.
+    # nginx (host-managed) must ALSO allow this body — see deploy/nginx/*.conf.example.
+    MAX_CONTENT_LENGTH = _env_int("MAX_REQUEST_BODY_MB", 2048) * 1024 * 1024
+    BACKUP_MAX_STORED_BYTES = _env_int("BACKUP_MAX_STORED_MB", 1024) * 1024 * 1024
+
     TRUST_PROXY_HEADERS = _env_bool("TRUST_PROXY_HEADERS", False)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")

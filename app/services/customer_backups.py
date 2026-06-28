@@ -26,7 +26,28 @@ from ..models import CustomerBackupArtifact, License, utcnow
 from ..services.customer_control import audit_customer_control
 
 
-MAX_STORED_BYTES = 200 * 1024 * 1024  # 200 MB hard cap on stored content
+# Fallback cap on the DECODED backup file we store, used only when there is no
+# app context / config. The EFFECTIVE cap is BACKUP_MAX_STORED_BYTES from config
+# (default 1 GB) — see _max_stored_bytes() and app/config.py. A 188 MB+ (and
+# growing) live backup must stay comfortably under it, so this is intentionally
+# generous; the 200 MB legacy value used to be the cause of an app-side 413.
+MAX_STORED_BYTES = 1024 * 1024 * 1024  # 1 GB default cap on stored content
+
+
+def _max_stored_bytes() -> int:
+    """Effective max size (bytes) of a decoded backup we will store.
+
+    Reads BACKUP_MAX_STORED_BYTES from the app config so the cap is operator-
+    tunable (env BACKUP_MAX_STORED_MB) without a code change; falls back to the
+    module default when called outside an app context.
+    """
+    try:
+        value = int(current_app.config.get("BACKUP_MAX_STORED_BYTES") or 0)
+        if value > 0:
+            return value
+    except Exception:  # noqa: BLE001 — no/invalid app context → use the default
+        pass
+    return MAX_STORED_BYTES
 
 
 class BackupUploadError(Exception):
@@ -131,7 +152,7 @@ def record_backup_upload(
             raw = base64.b64decode(str(content_b64), validate=True)
         except (binascii.Error, ValueError) as exc:
             raise BackupUploadError("invalid_request", "محتوى النسخة (base64) غير صالح.", 422) from exc
-        if len(raw) > MAX_STORED_BYTES:
+        if len(raw) > _max_stored_bytes():
             raise BackupUploadError("too_large", "حجم النسخة يتجاوز الحد المسموح للتخزين.", 413)
         if checksum:
             actual = hashlib.sha256(raw).hexdigest()
