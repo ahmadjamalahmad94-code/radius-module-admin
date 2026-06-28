@@ -49,6 +49,7 @@ from ..services.customer_control import (
     add_service_request_message,
     audit_customer_control,
     build_runtime_contract_for_license,
+    ensure_active_portal_user,
     catalog_default_limits,
     catalog_default_tier,
     clean_role_key,
@@ -623,6 +624,9 @@ def customer_create():
     db.session.add(customer)
     db.session.flush()
     audit("customer_created", "customer", str(customer.id), f"Created customer {customer.company_name}")
+    # Invariant: a customer file always has an active portal user, so the radius
+    # «ربط جوجل درايف» → portal-SSO → /portal chain works with zero manual step.
+    ensure_active_portal_user(customer, reason="customer_created")
     db.session.commit()
     # Owner notification (no-op when event/channels disabled); never blocks the request.
     from ..services.messaging import dispatch_lifecycle as _dispatch_lifecycle
@@ -2358,6 +2362,9 @@ def customer_approve(customer_id: int):
         if not user.active:
             user.active = True
             enabled_users += 1
+    # Guarantee the invariant: an approved customer with no portal user at all
+    # still gets one, so portal-SSO works immediately.
+    ensure_active_portal_user(customer, reason="customer_approved")
     audit_customer_control(
         actor_admin_id=session.get("admin_id"),
         action="customer_approved",

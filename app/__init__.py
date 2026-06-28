@@ -796,6 +796,17 @@ def ensure_schema_compatibility(app: Flask) -> None:
             backfill_wg_data_pubkeys()
         except Exception:  # noqa: BLE001 — schema heal must never crash boot
             db.session.rollback()
+        # Invariant backfill: every set-up customer (active or with a license)
+        # must have an active portal user, so the radius «ربط جوجل درايف» →
+        # portal-SSO → /portal chain works. Runs automatically on every deploy/
+        # boot; idempotent (skips customers that already have one). Never raises.
+        try:
+            from .services.customer_control import backfill_portal_users
+            n = backfill_portal_users()
+            if n:
+                app.logger.info("backfill_portal_users: provisioned %s portal user(s)", n)
+        except Exception:  # noqa: BLE001 — schema heal must never crash boot
+            db.session.rollback()
         # fix/script-service-get-guard-foreach — old POST /fleet/chr-nodes
         # body defaulted routeros_api_port to 8729 (the binary api-ssl
         # port) instead of 8443 (REST/www-ssl). Rows created with that
