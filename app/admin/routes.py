@@ -3225,11 +3225,23 @@ def settings_page():
     from ..services.whatsapp import cloud_settings as wac
     from ..services.whatsapp import embedded_settings as wae
     from ..services import customer_vault_crypto as vc
+    from ..services import google_drive as gd
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
+    # Google Drive OAuth status for the integrations tab. redirect_uri()
+    # resolves the exact URI the owner must register in Google Cloud.
+    try:
+        gd_configured = gd.is_configured()
+        gd_libs = gd.libs_available()
+        gd_redirect_uri = gd.redirect_uri()
+    except Exception:  # noqa: BLE001 — never break the settings page on a probe
+        gd_configured, gd_libs, gd_redirect_uri = False, False, ""
     return render_template(
         "admin/settings/general_new.html",
         settings=settings,
+        gd_configured=gd_configured,
+        gd_libs=gd_libs,
+        gd_redirect_uri=gd_redirect_uri,
         customer_name=_setting("product_name", ""),
         support_email=_setting("support_email", ""),
         wac_enabled=wac.enabled(),
@@ -3526,6 +3538,12 @@ _SETTINGS_SECTION_KEYS = {
         "smtp_host", "smtp_port", "smtp_username",
         "from_name", "from_email", "email_signature",
     ),
+    # Google Drive OAuth — credentials entered from the UI (no env), read back
+    # by services/google_drive.py. The client_secret is handled separately
+    # (preserve-on-blank) so re-saving the form never wipes a stored secret.
+    "integrations": (
+        "google_oauth_client_id", "google_oauth_redirect_uri",
+    ),
 }
 
 # Settings keys whose values are booleans (checkbox: present="1", absent="").
@@ -3600,6 +3618,15 @@ def settings_section_save():
             except WhatsAppCryptoError:
                 flash("لم يُضبط مفتاح التشفير على الخادم — راجع إعداد WHATSAPP_FERNET_KEY.", "error")
                 return redirect(url_for("admin.settings_page"))
+
+    # ─── Integrations panel — Google OAuth client_secret (preserve-on-blank) ──
+    # google_drive.oauth_client() reads this Setting verbatim, so we store it
+    # as-is and only overwrite when the owner actually typed a new value —
+    # leaving the field empty keeps the saved secret intact.
+    if section == "integrations":
+        new_secret = (request.form.get("google_oauth_client_secret") or "").strip()
+        if new_secret:
+            _set_setting("google_oauth_client_secret", new_secret)
 
     audit("settings_section_updated", "settings", section, f"تم حفظ قسم الإعدادات {section}",
           metadata={"section": section})
