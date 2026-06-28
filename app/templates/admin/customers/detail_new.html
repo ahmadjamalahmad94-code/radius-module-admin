@@ -1771,6 +1771,54 @@
 
     </div>
 
+    {# ── ربط Google Drive (مركزي عبر لوحة التراخيص) + النسخ المستلمة ── #}
+    <h2 class="cd-panel-heading" style="margin-block-start:var(--cc-sp-9)">
+      <i class="fa-brands fa-google-drive" aria-hidden="true"></i> النسخ الاحتياطية و Google Drive
+    </h2>
+    <div class="cd-hint">تُرفع نسخ راديوس هذا العميل إلى لوحة التراخيص، ومنها إلى درايف العميل المربوط هنا تلقائيًا.</div>
+
+    <div class="cd-status" style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap;margin-block:var(--cc-sp-6)">
+      <span><i class="fa-brands fa-google-drive" aria-hidden="true"></i> حالة Google Drive:</span>
+      {% if customer_gdrive and customer_gdrive.connected %}
+        <span class="badge badge-green">متصل</span>
+        {% if customer_gdrive.email %}<span class="mono ltr" style="font-size:12px">{{ customer_gdrive.email }}</span>{% endif %}
+        {% if customer_gdrive.last_upload_at %}<span style="font-size:11.5px;color:var(--cc-text-faint)">· آخر رفع {{ customer_gdrive.last_upload_at|dt }}</span>{% endif %}
+        <form method="post" action="{{ url_for('admin.customer_google_drive_disconnect', customer_id=customer.id) }}"
+              style="display:inline" data-confirm="فصل Google Drive عن هذا العميل؟ ستتوقف النسخ عن الرفع إلى درايفه.">
+          {{ csrf_input() }}
+          <button type="submit" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding-inline:var(--cc-sp-7);border:1.5px solid #dc2626;border-radius:var(--cc-btn-radius);background:#fff;color:#dc2626;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);cursor:pointer">
+            <i class="fa-solid fa-link-slash" aria-hidden="true"></i> فصل
+          </button>
+        </form>
+      {% else %}
+        <span class="badge badge-gray">غير متصل</span>
+        {% if customer_gdrive and customer_gdrive.configured %}
+          <a href="{{ url_for('admin.customer_google_drive_connect', customer_id=customer.id) }}"
+             style="display:inline-flex;align-items:center;gap:6px;height:32px;padding-inline:var(--cc-sp-7);border:none;border-radius:var(--cc-btn-radius);background:var(--cc-brand);color:#fff;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);text-decoration:none">
+            <i class="fa-brands fa-google-drive" aria-hidden="true"></i> ربط جوجل درايف
+          </a>
+        {% else %}
+          <a href="{{ url_for('admin.settings_page') }}#integrations" style="font-size:12px;color:var(--cc-brand)">
+            <i class="fa-solid fa-gear" aria-hidden="true"></i> هيّئ بيانات Google OAuth في الإعدادات أولاً
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    {% if customer_backups %}
+      <div class="cd-hint" style="margin-block-end:var(--cc-sp-4)">آخر النسخ المستلمة من راديوس العميل:</div>
+      <ul style="list-style:none;padding:0;margin:0;display:grid;gap:var(--cc-sp-3)">
+        {% for b in customer_backups[:8] %}
+          <li style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap;font-size:12.5px">
+            <span class="mono">{{ b.backup_reference }}</span>
+            <span style="color:var(--cc-text-faint)">{{ b.received_at|dt }}</span>
+            <span>{{ '%.2f'|format((b.size or 0) / 1048576) }} MB</span>
+            {% if b.has_content %}<span class="badge badge-green">ملف مخزّن</span>{% else %}<span class="badge badge-gray">بيانات وصفية</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
   </div>
 
   {# =========================================================

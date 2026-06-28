@@ -892,7 +892,49 @@ def _customer_gdrive_status(customer_id: int) -> dict:
         from ..services import google_drive as gd
         return gd.status(customer_id)
     except Exception:  # noqa: BLE001
-        return {"connected": False, "email": "", "last_upload_at": None}
+        return {"connected": False, "configured": False, "email": "", "last_upload_at": None}
+
+
+@bp.get("/customers/<int:customer_id>/google-drive/connect")
+@login_required
+def customer_google_drive_connect(customer_id: int):
+    """Start the centralized Google Drive link for a customer FROM their file.
+
+    Drive is centralized in licensing: the OAuth client lives in Settings →
+    تكامل Google Drive, the per-customer refresh token in ``customer_google_drive``,
+    and backups received from the customer's radius are forwarded to that token's
+    Drive. Here the owner authorizes a Google account on the customer's behalf; we
+    reuse the SAME redirect URI as the portal flow (no second Google registration)
+    and mark the session so the shared callback knows it's admin-initiated."""
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import google_drive as gd
+    if not gd.is_configured():
+        flash("ربط جوجل درايف غير مُهيّأ — أدخل بيانات Google OAuth في الإعدادات أولاً (الإعدادات ← تكامل Google Drive).", "error")
+        return redirect(url_for("admin.settings_page") + "#integrations")
+    if not gd.libs_available():
+        flash("مكتبات Google غير مثبّتة على الخادم بعد. تواصل مع مزوّد الاستضافة.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    try:
+        auth_url, code_verifier = gd.authorization_url(customer.id)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"تعذّر بدء ربط Google Drive: {exc}", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id))
+    session["gdrive_code_verifier"] = code_verifier
+    session["gdrive_admin_customer_id"] = customer.id
+    return redirect(auth_url)
+
+
+@bp.post("/customers/<int:customer_id>/google-drive/disconnect")
+@login_required
+def customer_google_drive_disconnect(customer_id: int):
+    customer = db.get_or_404(Customer, customer_id)
+    from ..services import google_drive as gd
+    gd.disconnect(customer.id)
+    audit("customer_google_drive_disconnected", "customer", str(customer.id),
+          "فصل الإدارة ربط Google Drive عن العميل")
+    db.session.commit()
+    flash("تم فصل Google Drive عن هذا العميل.", "info")
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
 @bp.get("/service-requests")

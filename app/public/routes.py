@@ -705,8 +705,50 @@ def google_drive_connect():
     return redirect(auth_url)
 
 
+def _google_drive_callback_admin(customer_id: int):
+    """Complete an ADMIN-initiated Drive link (started on the customer file).
+
+    Shares this route's redirect URI with the portal flow; the customer_id is
+    taken from the signed OAuth ``state``, and the token is stored on the
+    customer's ``customer_google_drive`` row — the single source of truth that
+    the backup-forwarding path uploads with."""
+    from ..services import google_drive as gd
+    session.pop("gdrive_admin_customer_id", None)
+    detail = url_for("admin.customer_detail", customer_id=customer_id)
+    if request.args.get("error"):
+        flash("تم إلغاء ربط Google Drive.", "warning")
+        return redirect(detail)
+    if gd.read_state(request.args.get("state") or "") != customer_id:
+        flash("جلسة الربط غير صالحة أو منتهية. أعد المحاولة.", "error")
+        return redirect(detail)
+    qs = request.query_string.decode("utf-8")
+    auth_response = gd.redirect_uri() + (("?" + qs) if qs else "")
+    code_verifier = session.pop("gdrive_code_verifier", "") or ""
+    try:
+        refresh_token, email = gd.exchange_callback(auth_response, code_verifier=code_verifier)
+        gd.store_connection(customer_id, refresh_token=refresh_token, email=email)
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_google_drive_connected_by_admin",
+            entity_type="customer",
+            entity_id=str(customer_id),
+            summary=f"ربط الإدارة حساب Google Drive للعميل ({email})",
+            metadata={"customer_id": customer_id, "google_email": email},
+        )
+        db.session.commit()
+        flash(f"تم ربط Google Drive للعميل بنجاح ({email}). ستُرفع نسخه الاحتياطية إلى هذا الدرايف تلقائيًا.", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"تعذّر إكمال ربط Google Drive: {exc}", "error")
+    return redirect(detail)
+
+
 @bp.get("/portal/google-drive/callback")
 def google_drive_callback():
+    # Admin-initiated linking from the customer file sets this marker; the owner
+    # authorizes on the customer's behalf through the same redirect URI.
+    admin_cid = session.get("gdrive_admin_customer_id")
+    if admin_cid and session.get("admin_id"):
+        return _google_drive_callback_admin(int(admin_cid))
     user = _current_customer_user()
     if not user:
         return redirect(url_for("public.customer_portal_login"))
