@@ -551,6 +551,10 @@ def ensure_schema_compatibility(app: Flask) -> None:
         _add_columns_if_missing("customers", {
             "runtime_url": "VARCHAR(255) NOT NULL DEFAULT ''",
             "portal_config_json": "TEXT NOT NULL DEFAULT '{}'",
+            # Designated owner-admin keys (username/email) synced to the panel.
+            # Additive; existing customers default to '[]' (no designation → the
+            # panel keeps its legacy min-id owner fallback).
+            "owner_admins_json": "TEXT NOT NULL DEFAULT '[]'",
             "currency": "VARCHAR(12) NOT NULL DEFAULT 'USD'",
             # ISO-3166 alpha-2 country key + E.164 dial-code, added with the
             # country/city picker on the add-customer page.
