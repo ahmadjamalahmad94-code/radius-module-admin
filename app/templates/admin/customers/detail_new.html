@@ -773,11 +773,11 @@
 
   <div class="cd-kpi">
     <div class="cd-kpi-icon" style="background:var(--tile-teal-bg);color:var(--tile-teal-fg)">
-      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+      <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
-      <div class="cd-kpi-num">{{ nas_devices|length if nas_devices is defined else '—' }}</div>
-      <div class="cd-kpi-label">أجهزة NAS</div>
+      <div class="cd-kpi-num">{{ radius_admins|length if radius_admins is defined else '—' }}</div>
+      <div class="cd-kpi-label">أدمن الراديوس</div>
     </div>
   </div>
 
@@ -1371,36 +1371,79 @@
         </a>
       </div>
 
-      {# أجهزة NAS #}
-      <div>
+      {# =========================================================
+         أدمن الراديوس — لقطة كل حسابات الأدمن/المدراء المُنشأة محلياً على
+         راديوس العميل، مُستوردة عبر القناة العكسية للجسر (admins/report).
+         تُعدّد جميعها هنا مع التحكّم: «فرض سوبر يوزر» يضبط is_super_admin=1
+         على راديوس العميل في كل مزامنة (idempotent) دون كسر دخوله المحلي.
+         (أُعيد هذا القسم بعد أن سقط سهواً في إعادة تصميم صفحة العميل؛ كان
+         الجدول السابق «أجهزة NAS» يَعرض هذه اللقطة نفسها بحقول NAS فارغة.)
+         ========================================================= #}
+      <div id="radius-admins">
         <div class="cd-section-title">
-          <i class="fa-solid fa-router" aria-hidden="true"></i>
-          أجهزة الشبكة (NAS)
+          <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+          أدمن الراديوس ({{ radius_admins|length if radius_admins is defined else 0 }})
         </div>
-        {% if nas_devices is defined and nas_devices %}
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          حسابات الأدمن/المدراء الموجودة على راديوس العميل (ومنها الأدمن الرئيسي
+          المحلي) — تُستورد تلقائياً عبر الجسر. «فرض سوبر يوزر» يجعل الحساب مشرفاً
+          كاملاً على راديوسه عند كل مزامنة دون المساس بكلمة مروره أو كسر دخوله.
+        </p>
+        {% if radius_admins is defined and radius_admins %}
           <div class="cd-inner-table-wrap">
             <table class="cd-inner-table">
               <thead>
                 <tr>
-                  <th>اسم الجهاز</th>
-                  <th>عنوان IP</th>
-                  <th>{{ _('النوع') }}</th>
+                  <th>{{ _('اسم المستخدم') }}</th>
+                  <th>{{ _('الدور') }}</th>
+                  <th>سوبر</th>
                   <th>{{ _('الحالة') }}</th>
+                  <th>المصدر</th>
+                  <th>آخر ظهور</th>
+                  {% if is_super_admin %}<th>تحكم</th>{% endif %}
                 </tr>
               </thead>
               <tbody>
-                {% for nas in nas_devices %}
+                {% for ra in radius_admins %}
                   <tr>
-                    <td>{{ nas.name or nas.shortname or '—' }}</td>
-                    <td><span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">{{ nas.nasname or nas.ip or '—' }}</span></td>
-                    <td>{{ nas.type or '—' }}</td>
                     <td>
-                      {% set ns = nas.status or 'active' %}
-                      <span class="cd-pill cd-pill--{{ ns }}">
-                        <span class="dot" aria-hidden="true"></span>
-                        {% if ns == 'active' %}نشط{% else %}غير نشط{% endif %}
+                      <span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono);font-size:var(--cc-fs-tiny)">{{ ra.username or ('#' ~ ra.radius_admin_id) }}</span>
+                      {% if ra.is_primary %}
+                        <span class="cd-pill cd-pill--active" title="الأدمن الرئيسي المحلي لراديوس العميل"><span class="dot" aria-hidden="true"></span>رئيسي</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ ra.role or '—' }}</td>
+                    <td>
+                      {% if ra.is_effective_super %}
+                        <span class="cd-pill cd-pill--active" title="{{ 'مفروض من اللوحة عبر الجسر' if ra.force_super else 'سوبر على الراديوس فعلاً' }}">
+                          <span class="dot" aria-hidden="true"></span>سوبر{% if ra.force_super %} (مفروض){% endif %}
+                        </span>
+                      {% else %}
+                        <span class="cd-pill cd-pill--inactive"><span class="dot" aria-hidden="true"></span>عادي</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="cd-pill cd-pill--{{ 'active' if ra.enabled else 'inactive' }}">
+                        <span class="dot" aria-hidden="true"></span>{{ 'مفعل' if ra.enabled else 'معطل' }}
                       </span>
                     </td>
+                    <td style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">
+                      {% if ra.managed_by_license_admin %}مُدار بالجسر{% if ra.external_identity_provider %} ({{ ra.external_identity_provider }}){% endif %}{% else %}محلي{% endif %}
+                    </td>
+                    <td style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">{{ ra.last_seen_at.strftime('%Y-%m-%d %H:%M') if ra.last_seen_at else '—' }}</td>
+                    {% if is_super_admin %}
+                    <td>
+                      <form method="post" action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}" style="display:inline">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="action" value="{{ 'disable' if ra.force_super else 'enable' }}">
+                        <button type="submit"
+                                style="height:30px;padding-inline:var(--cc-sp-5);border-radius:var(--cc-btn-radius);border:1px solid {{ 'var(--cc-border)' if ra.force_super else 'var(--cc-border-2)' }};background:{{ 'transparent' if ra.force_super else 'var(--cc-brand)' }};color:{{ 'var(--cc-text-mute)' if ra.force_super else '#fff' }};font-family:var(--cc-font);font-size:var(--cc-fs-tiny);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-3)">
+                          <i class="fa-solid fa-crown" aria-hidden="true"></i>
+                          {{ 'إلغاء فرض السوبر' if ra.force_super else 'اجعله سوبر يوزر' }}
+                        </button>
+                      </form>
+                    </td>
+                    {% endif %}
                   </tr>
                 {% endfor %}
               </tbody>
@@ -1408,8 +1451,8 @@
           </div>
         {% else %}
           <div class="cd-empty">
-            <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
-            لا توجد أجهزة NAS مرتبطة بهذا العميل
+            <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+            لم تصل لقطة أدمن الراديوس بعد — تظهر هنا تلقائياً بعد أول بلاغ من راديوس العميل عبر الجسر.
           </div>
         {% endif %}
       </div>
