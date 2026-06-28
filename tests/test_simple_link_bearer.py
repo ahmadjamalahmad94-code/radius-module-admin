@@ -278,6 +278,89 @@ def test_backup_unknown_key_404s():
         assert res.status_code == 404
 
 
+def _make_sqlite_backup_bytes() -> bytes:
+    """A tiny but real SQLite file, like an instance's local backup."""
+    import sqlite3
+    import tempfile
+    import os as _os
+    from pathlib import Path as _Path
+
+    path = tempfile.mktemp(suffix=".sqlite3")
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE subscribers(id INTEGER PRIMARY KEY)")
+    con.execute("INSERT INTO subscribers VALUES (1)")
+    con.commit()
+    con.close()
+    try:
+        return _Path(path).read_bytes()
+    finally:
+        _os.unlink(path)
+
+
+def test_backup_stores_uploaded_content_and_downloads_back():
+    """The real 'upload a backup file' path: content_base64 is decoded, the
+    checksum is verified, the file is stored on disk, and the admin download
+    route returns the exact bytes back."""
+    import base64
+    import hashlib
+
+    app = _bearer_app()
+    with app.app_context():
+        lic = _mk_license()
+        raw = _make_sqlite_backup_bytes()
+        checksum = hashlib.sha256(raw).hexdigest()
+        client = app.test_client()
+        res = client.post(
+            "/api/integration/hoberadius/backups/upload",
+            json=_backup_payload(
+                lic,
+                content_base64=base64.b64encode(raw).decode(),
+                checksum_sha256=checksum,
+                size=len(raw),
+                upload_mode="full",
+            ),
+            **HTTPS,
+        )
+        assert res.status_code == 201, res.get_json()
+        body = res.get_json()
+        assert body["stored"] is True
+        assert body["status"] == "stored"
+        assert body["size"] == len(raw)
+
+        # The stored file round-trips byte-for-byte via the admin download route.
+        from app.services.customer_backups import get_artifact_file
+
+        resolved = get_artifact_file(lic.customer_id, body["artifact_id"])
+        assert resolved is not None
+        path, _name = resolved
+        assert path.read_bytes() == raw
+
+
+def test_backup_rejects_checksum_mismatch():
+    """A corrupted upload (checksum ≠ content) is refused with 422 and never
+    stored — protects against silently persisting a damaged backup."""
+    import base64
+
+    app = _bearer_app()
+    with app.app_context():
+        lic = _mk_license()
+        raw = _make_sqlite_backup_bytes()
+        client = app.test_client()
+        res = client.post(
+            "/api/integration/hoberadius/backups/upload",
+            json=_backup_payload(
+                lic,
+                content_base64=base64.b64encode(raw).decode(),
+                checksum_sha256="0" * 64,  # deliberately wrong
+                size=len(raw),
+                upload_mode="full",
+            ),
+            **HTTPS,
+        )
+        assert res.status_code == 422, res.get_json()
+        assert res.get_json()["status"] == "checksum_mismatch"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Admin card + regenerate (uses shared fixtures from conftest.py)
 # ─────────────────────────────────────────────────────────────────────────
