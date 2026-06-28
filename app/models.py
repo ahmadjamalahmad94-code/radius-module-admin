@@ -75,6 +75,13 @@ class Customer(TimestampMixin, db.Model):
     notes = db.Column(db.Text, default="", nullable=False)
     status = db.Column(db.String(20), default="active", nullable=False, index=True)
     portal_config_json = db.Column(db.Text, default="{}", nullable=False)
+    # Designated OWNER admin accounts for this customer's radius panel. A JSON
+    # array of STABLE keys (admin username OR email — never the panel-local
+    # numeric id, which differs per panel). Synced down in the runtime/identity
+    # contract as ``owner_admins``; the customer panel marks the matching admin
+    # rows as owners (full RBAC bypass + uncapped) and supports MULTIPLE owners.
+    # Empty list = no designation → the panel keeps its min-id owner fallback.
+    owner_admins_json = db.Column(db.Text, default="[]", nullable=False)
     # CUSTOMER_RADIUS_TUNNEL_DESIGN §11 — per-customer FQDN. Auto-assigned
     # on customer create as "client<id>.<fleet.tls.zone_base>" (default
     # hoberadius.com). The wildcard cert covers every subdomain; the
@@ -131,6 +138,17 @@ class Customer(TimestampMixin, db.Model):
     @portal_config.setter
     def portal_config(self, value: dict) -> None:
         self.portal_config_json = json_dumps(value or {})
+
+    @property
+    def owner_admins(self) -> list:
+        """List of designated owner-admin keys (username/email) for the panel."""
+        raw = json_loads(self.owner_admins_json, [])
+        return [str(k) for k in raw if str(k or "").strip()] if isinstance(raw, list) else []
+
+    @owner_admins.setter
+    def owner_admins(self, value: list) -> None:
+        cleaned = [str(k).strip() for k in (value or []) if str(k or "").strip()]
+        self.owner_admins_json = json_dumps(cleaned)
 
     licenses = db.relationship("License", back_populates="customer", lazy="dynamic")
     renewals = db.relationship("Renewal", back_populates="customer", lazy="dynamic")

@@ -67,6 +67,7 @@ from ..services.customer_control import (
     parse_optional_decimal as parse_service_decimal,
     normalize_contact_email,
     normalize_contact_phone,
+    normalize_owner_admins,
     radius_admins_for_customer,
     service_catalog_items,
     service_is_hidden,
@@ -1445,6 +1446,59 @@ def customer_radius_admin_super(customer_id: int, row_id: int):
         "success",
     )
     return redirect(_customer_user_return_url(customer.id))
+
+
+@bp.post("/customers/<int:customer_id>/owner-admins")
+@login_required
+def customer_owner_admins(customer_id: int):
+    """تعيين حسابات «المالك» للوحة راديوس هذا العميل (يدعم عدّة مالكين).
+
+    يُعرَّف المالك بمفتاح ثابت عبر الأنظمة: اسم المستخدم أو البريد (لا المعرّف
+    الرقمي المحلّي الذي يختلف بين اللوحات). تُمرَّر القائمة ضمن عقد المزامنة
+    (``owner_admins``)؛ تَسِم لوحة العميل الحسابات المطابقة كمالكين (تجاوز كامل
+    لـRBAC + غير محدودين على سقوف الدين/السلف). كل المالكين المعيَّنين يتأهّلون.
+
+    ``action=clear`` يَمسح التعيين فيعود العميل لاحتياط «المعرّف الأصغر» في لوحته.
+    الحفظ يتطلّب مالكًا واحدًا على الأقلّ (يُسمح باثنين فأكثر)."""
+    customer = db.get_or_404(Customer, customer_id)
+    _back = redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#owner-admins")
+    action = (request.form.get("action") or "save").strip().lower()
+    if action == "clear":
+        customer.owner_admins = []
+        audit_customer_control(
+            actor_admin_id=session.get("admin_id"),
+            action="customer_owner_admins_cleared",
+            entity_type="customer",
+            entity_id=str(customer.id),
+            summary=f"تم إلغاء تعيين حسابات المالك للوحة {customer.company_name}",
+            metadata={"customer_id": customer.id},
+        )
+        db.session.commit()
+        flash("تم إلغاء تعيين حسابات المالك؛ ستعود لوحة العميل لاحتياط المعرّف الأصغر.", "success")
+        return _back
+    # Accept newline- and/or comma-separated keys from the textarea, plus any
+    # quick-add checkboxes (same field name) ticked from the known-admin snapshot.
+    raw = request.form.get("owner_admins") or ""
+    parts: list[str] = []
+    for chunk in raw.replace(",", "\n").splitlines():
+        parts.append(chunk)
+    parts.extend(request.form.getlist("owner_admin_key"))
+    keys = normalize_owner_admins(parts)
+    if not keys:
+        flash("عيّن مالكًا واحدًا على الأقلّ (اسم المستخدم أو البريد)، أو استخدم «إلغاء التعيين».", "error")
+        return _back
+    customer.owner_admins = keys
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="customer_owner_admins_set",
+        entity_type="customer",
+        entity_id=str(customer.id),
+        summary=f"تم تعيين {len(keys)} حساب مالك للوحة {customer.company_name}",
+        metadata={"customer_id": customer.id, "owner_admins": keys},
+    )
+    db.session.commit()
+    flash(f"تم تعيين {len(keys)} حساب مالك؛ سيُطبَّق على لوحة العميل عند المزامنة التالية.", "success")
+    return _back
 
 
 @bp.post("/customers/<int:customer_id>/services/<service_key>")

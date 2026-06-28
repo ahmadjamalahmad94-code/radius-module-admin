@@ -1415,6 +1415,76 @@
       </div>
 
       {# =========================================================
+         حسابات «المالك» للوحة العميل — feat/owner-admins-designation.
+         يُعيَّن المالك صراحةً من هنا بمفتاح ثابت عبر الأنظمة (اسم المستخدم أو
+         البريد، لا المعرّف الرقمي المحلّي). يدعم عدّة مالكين. تُمرَّر القائمة
+         ضمن عقد المزامنة (owner_admins)؛ تَسِم لوحة العميل الحسابات المطابقة
+         كمالكين (تجاوز كامل لـRBAC + غير محدودين على سقوف الدين/السلف). لو لم
+         يُعيَّن أحد بعد، تبقى اللوحة على احتياط «المعرّف الأصغر».
+         ========================================================= #}
+      {% if is_super_admin %}
+      <div id="owner-admins">
+        <div class="cd-section-title">
+          <i class="fa-solid fa-crown" aria-hidden="true"></i>
+          حسابات المالك (وصول كامل غير محدود)
+        </div>
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          عيّن حساب أو أكثر من حسابات أدمن لوحة العميل كـ«مالك»: تجاوز كامل
+          للصلاحيات + بلا سقف على الدين/السلف. يُطابَق المالك على اللوحة بـ
+          <strong>اسم المستخدم أو البريد</strong> (مفتاح ثابت عبر الأنظمة).
+          {% if customer.owner_admins %}
+            <br>المعيَّنون حاليًا:
+            <strong style="direction:ltr;unicode-bidi:embed">{{ customer.owner_admins|join('، ') }}</strong>.
+          {% else %}
+            <br>لم يُعيَّن مالك بعد — لوحة العميل تستخدم احتياط «المعرّف الأصغر».
+          {% endif %}
+        </p>
+
+        <form method="post"
+              action="{{ url_for('admin.customer_owner_admins', customer_id=customer.id) }}"
+              style="display:flex;flex-direction:column;gap:var(--cc-sp-4);max-width:560px">
+          {{ csrf_input() }}
+          {% if radius_admins %}
+            <div style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">
+              اختيار سريع من أدمن الراديوس المعروفين:
+            </div>
+            <div style="display:flex;flex-direction:column;gap:var(--cc-sp-3)">
+              {% for ra in radius_admins %}
+                {% if ra.username %}
+                <label style="display:flex;align-items:center;gap:var(--cc-sp-3);font-size:var(--cc-fs-small)">
+                  <input type="checkbox" name="owner_admin_key" value="{{ ra.username }}"
+                         {% if ra.username|lower in customer.owner_admins|map('lower')|list %}checked{% endif %}>
+                  <span style="direction:ltr;unicode-bidi:embed;font-family:var(--cc-font-mono)">{{ ra.username }}</span>
+                  {% if ra.is_primary %}<span class="cd-pill cd-pill--active"><span class="dot" aria-hidden="true"></span>رئيسي</span>{% endif %}
+                </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+          <label for="cd-owner-admins-ta" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">
+            أو أدخل أسماء المستخدمين/البريد (سطر لكل مالك، أو مفصولة بفواصل):
+          </label>
+          <textarea id="cd-owner-admins-ta" name="owner_admins" rows="3"
+                    placeholder="owner&#10;partner@example.com"
+                    style="direction:ltr;unicode-bidi:embed;padding:var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font-mono);font-size:var(--cc-fs-small)">{{ customer.owner_admins|join('\n') }}</textarea>
+          <div style="display:flex;gap:var(--cc-sp-4);flex-wrap:wrap">
+            <button type="submit" name="action" value="save"
+                    style="height:36px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+              <i class="fa-solid fa-crown" aria-hidden="true"></i>
+              حفظ حسابات المالك
+            </button>
+            {% if customer.owner_admins %}
+            <button type="submit" name="action" value="clear"
+                    style="height:36px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border);background:transparent;color:var(--cc-text-mute);font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer">
+              إلغاء التعيين (العودة للاحتياط)
+            </button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {# =========================================================
          «نقل الـCHR / تغيير الـIP العام» — feat/panel-chr-move-public-ip.
          Each CHR has its own public IP; moving the customer to a different
          CHR gives them a new public IP without provisioning multiple IPs

@@ -1085,6 +1085,8 @@ AUDIT_ACTION_LABELS = {
     "customer_user_password_changed_from_portal": "تغيير كلمة المرور من بوابة العميل",
     "radius_admin_force_super_enabled": "فرض سوبر يوزر على أدمن الراديوس",
     "radius_admin_force_super_disabled": "إلغاء فرض سوبر يوزر عن أدمن الراديوس",
+    "customer_owner_admins_set": "تعيين حسابات المالك للوحة العميل",
+    "customer_owner_admins_cleared": "إلغاء تعيين حسابات المالك للوحة العميل",
     "customer_user_password_set_by_admin": "تعيين كلمة مرور من الإدارة",
     "customer_service_entitlement_updated": "تحديث خدمة عميل",
     "customer_service_payment_request_created": "إنشاء طلب دفع خدمة",
@@ -1488,6 +1490,11 @@ def build_runtime_contract_for_license(
         # disabled/hid/limited now reaches the radius under a key its gate reads.
         "provider_grants": provider_grants,
         "limits": limits,
+        # Designated OWNER admin accounts (stable username/email keys). The
+        # customer panel marks the matching admin rows as owners (full RBAC
+        # bypass + uncapped) and supports MULTIPLE owners. Empty list = no
+        # designation → the panel keeps its legacy min-id owner fallback.
+        "owner_admins": normalize_owner_admins(customer.owner_admins) if customer else [],
         "customer_users_version": customer_users_version(customer) if customer else 0,
         # The bridge_token rotation block was retired with the linking-auth
         # cleanup — there is nothing to rotate; the license key IS the
@@ -1498,18 +1505,43 @@ def build_runtime_contract_for_license(
     # cheaply tell the contract changed (e.g. after the owner saves the tariff)
     # and re-apply on its next sync without diffing the whole payload.
     contract["fingerprint"] = _contract_fingerprint(
-        services, provider_grants, limits, contract["customer_users_version"])
+        services, provider_grants, limits, contract["customer_users_version"],
+        contract["owner_admins"])
     return contract
 
 
+def normalize_owner_admins(values: Any) -> list[str]:
+    """Clean a raw owner-admin key list for the synced contract.
+
+    Trims each key, drops blanks, and de-duplicates case-insensitively while
+    preserving the first-seen original spelling (the customer panel matches
+    case-insensitively, but we keep the operator's spelling for display).
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    if not isinstance(values, (list, tuple)):
+        return out
+    for raw in values:
+        key = str(raw or "").strip()
+        if not key:
+            continue
+        low = key.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        out.append(key)
+    return out
+
+
 def _contract_fingerprint(services: dict, provider_grants: dict, limits: dict,
-                          users_version: int) -> str:
+                          users_version: int, owner_admins: list | None = None) -> str:
     """Stable sha256 over the enforced parts of the contract (order-insensitive)."""
     import hashlib
     import json
     blob = json.dumps(
         {"services": services, "provider_grants": provider_grants,
-         "limits": limits, "customer_users_version": users_version},
+         "limits": limits, "customer_users_version": users_version,
+         "owner_admins": owner_admins or []},
         sort_keys=True, ensure_ascii=False, default=str,
     )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -1526,6 +1558,7 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
             "version": customer_users_version(customer),
             "users": [],
             "admin_super_overrides": [],
+            "owner_admins": normalize_owner_admins(customer.owner_admins),
         }
     users = []
     for user in customer.users.order_by(CustomerUser.id.asc()).all():
@@ -1554,6 +1587,10 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
         # الراديوس يطبّقها idempotent في كل مزامنة: يضبط is_super_admin=1 لهؤلاء
         # دون المساس بكلمة المرور أو مزوّد الهوية، فلا ينكسر الدخول المحلي.
         "admin_super_overrides": build_admin_super_overrides(customer),
+        # حسابات «المالك» المعيَّنة لهذا العميل (مفاتيح username/email ثابتة).
+        # يَسِم الراديوس الحسابات المطابقة كمالكين (تجاوز كامل + غير محدود) ويدعم
+        # عدّة مالكين. قائمة فارغة = لا تعيين → يبقى احتياط المعرّف الأصغر.
+        "owner_admins": normalize_owner_admins(customer.owner_admins),
     }
 
 
