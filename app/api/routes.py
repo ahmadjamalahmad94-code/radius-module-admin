@@ -28,6 +28,7 @@ from ..services.customer_control import (
     build_runtime_contract_for_license,
     clean_username,
     create_customer_service_request,
+    ensure_active_portal_user,
     import_radius_admins,
     visible_service_request_messages,
 )
@@ -386,14 +387,24 @@ def hoberadius_portal_sso():
     if not result.license or not result.active:
         return jsonify({"ok": False, "status": result.status, "message": "الترخيص ليس نشطًا."}), 403
     customer = result.license.customer
-    user = customer.users.filter_by(active=True).order_by(CustomerUser.id.asc()).first() if customer else None
+    if not customer:
+        return jsonify({"ok": False, "status": "not_found", "message": "لا يوجد عميل مرتبط بهذا الترخيص."}), 404
+    user = customer.users.filter_by(active=True).order_by(CustomerUser.id.asc()).first()
     if not user:
-        return jsonify({"ok": False, "status": "no_user", "message": "لا يوجد مستخدم عميل نشط."}), 404
+        # No portal user yet → provision one on demand so the SSO link can be
+        # minted. Without this a brand-new customer could never reach their
+        # /portal Drive-connect page from the radius button.
+        try:
+            user = ensure_active_portal_user(customer)
+            db.session.commit()
+        except Exception:  # noqa: BLE001 — never 500 the bridge
+            db.session.rollback()
+            return jsonify({"ok": False, "status": "no_user", "message": "تعذّر تجهيز مستخدم البوابة. أنشئ مستخدمًا للعميل من ملف العميل ثم أعد المحاولة."}), 409
     from itsdangerous import URLSafeTimedSerializer
 
     serializer = URLSafeTimedSerializer(str(current_app.config.get("SECRET_KEY") or ""), salt="hoberadius-portal-sso")
     sso_token = serializer.dumps({"uid": user.id, "cid": customer.id})
-    sso_url = url_for("public.customer_portal_sso", _external=True) + "?t=" + sso_token
+    sso_url = url_for("public.customer_portal_sso", _external=True) + "?t=" + sso_token + "&focus=gdrive"
     return jsonify({"ok": True, "status": "ok", "sso_url": sso_url, "expires_in": 90})
 
 

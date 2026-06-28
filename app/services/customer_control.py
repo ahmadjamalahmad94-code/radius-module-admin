@@ -1954,6 +1954,59 @@ def create_customer_service_request(
     return row
 
 
+def _portal_username_seed(customer: Customer) -> str:
+    """A valid (USERNAME_RE) base username derived from the customer."""
+    local = str(customer.email or "").split("@", 1)[0]
+    base = re.sub(r"[^A-Za-z0-9_.@-]", "", local)
+    if len(base) < 3:
+        base = f"owner{customer.id}"
+    return base[:72]
+
+
+def ensure_active_portal_user(customer: Customer) -> CustomerUser:
+    """Return the customer's primary ACTIVE portal user, creating one if none.
+
+    The «ربط جوجل درايف» SSO from the radius mints a login link for an active
+    portal user. Customers are NOT auto-given a portal user on creation, so a
+    brand-new customer had nobody to SSO as → the radius showed «لم يصل رابط
+    الدخول من لوحة التراخيص». We provision a single owner user on demand
+    (idempotent: only when there is no active user). The password is random —
+    access is via SSO; the owner can set one later from the customer file.
+    """
+    existing = customer.users.filter_by(active=True).order_by(CustomerUser.id.asc()).first()
+    if existing is not None:
+        return existing
+
+    taken = {(u.username or "").lower() for u in customer.users.all()}
+    seed = _portal_username_seed(customer)
+    username = seed
+    n = 1
+    while username.lower() in taken:
+        n += 1
+        username = f"{seed[:70]}{n}"
+
+    user = CustomerUser(
+        customer_id=customer.id,
+        username=username,
+        email=str(customer.email or "")[:180],
+        full_name=str(getattr(customer, "contact_name", "") or customer.company_name or "")[:160],
+        role_key="owner",
+        active=True,
+    )
+    user.set_password(secrets.token_urlsafe(18), increment_version=True)
+    db.session.add(user)
+    db.session.flush()
+    audit_customer_control(
+        actor_admin_id=None,
+        action="customer_portal_user_auto_provisioned",
+        entity_type="customer_user",
+        entity_id=str(user.id),
+        summary=f"إنشاء مستخدم بوابة تلقائيًا للعميل {customer.company_name} لتمكين الدخول الموحّد",
+        metadata={"customer_id": customer.id, "username": username, "reason": "portal_sso"},
+    )
+    return user
+
+
 def audit_customer_control(
     *,
     actor_admin_id: int | None,
