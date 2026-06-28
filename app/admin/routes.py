@@ -68,6 +68,15 @@ from ..services.customer_control import (
     normalize_contact_email,
     normalize_contact_phone,
     normalize_owner_admins,
+    ManagedAdminError,
+    MANAGED_ADMIN_ROLE_KEYS,
+    managed_admins_for_customer,
+    role_label,
+    _map_snapshot_role,
+    create_managed_admin,
+    update_managed_admin_role,
+    deactivate_managed_admin,
+    reactivate_managed_admin,
     radius_admins_for_customer,
     service_catalog_items,
     service_is_hidden,
@@ -687,6 +696,12 @@ def customer_detail(customer_id: int):
         customer_backups=list_customer_backups(customer.id),
         customer_gdrive=_customer_gdrive_status(customer.id),
         radius_admins=radius_admins_for_customer(customer),
+        # حالة الإدارة المرغوبة (declarative) لأدمن اللوحة، مفهرسة باسم المستخدم
+        # (lowercase) كي يدمجها العرض مع لقطة الجرد ويُظهر «قيد الإنشاء/معطَّل».
+        managed_admins={m.username.strip().lower(): m for m in managed_admins_for_customer(customer)},
+        managed_admin_role_choices=[(k, role_label(k)) for k in MANAGED_ADMIN_ROLE_KEYS],
+        managed_role_label=role_label,
+        map_snapshot_role=_map_snapshot_role,
         nas_devices=radius_admins_for_customer(customer),
         max_nas=getattr(_plan, "max_nas", None),
         max_sub=getattr(_plan, "max_users", None),
@@ -1499,6 +1514,128 @@ def customer_owner_admins(customer_id: int):
     db.session.commit()
     flash(f"تم تعيين {len(keys)} حساب مالك؛ سيُطبَّق على لوحة العميل عند المزامنة التالية.", "success")
     return _back
+
+
+# ─────────────── إدارة أدمن لوحة العميل (إضافة/تعديل صلاحيات/حذف) ───────────────
+# المالك يدير أدمن لوحة راديوس العميل بالكامل من ملف العميل. الإجراءات تصريحية:
+# تُحدَّث الحالة المرغوبة في ``CustomerManagedAdmin`` وتُدفع للراديوس عبر
+# ``admin_directives`` ضمن عقد مزامنة الهوية ليطبّقها idempotent. كلّها محصورة
+# بالسوبر-أدمن (مالك لوحة التراخيص). الحذف = تعطيلٌ آمن قابل للاسترجاع، محروسٌ
+# ضدّ تعطيل مالكٍ معيَّن أو آخِر أدمن مفعّل.
+
+def _panel_admins_back(customer_id: int):
+    return redirect(url_for("admin.customer_detail", customer_id=customer_id) + "#radius-admins")
+
+
+@bp.post("/customers/<int:customer_id>/panel-admins/add")
+@super_admin_required
+def customer_panel_admin_add(customer_id: int):
+    """ينشئ أدمن لوحةٍ جديداً للعميل (اسم مستخدم + كلمة مرور أوليّة + دور).
+
+    كلمة المرور لا تُسجَّل ولا تُخزَّن نصاً صريحاً؛ تُجزَّأ وتُدفع مرّةً مع إلزام
+    التغيير عند أوّل دخول."""
+    customer = db.get_or_404(Customer, customer_id)
+    try:
+        row = create_managed_admin(
+            customer,
+            username=request.form.get("username") or "",
+            password=request.form.get("password") or "",
+            role_key=request.form.get("role_key") or "viewer",
+        )
+    except ManagedAdminError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _panel_admins_back(customer.id)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="panel_admin_created",
+        entity_type="customer_managed_admin",
+        entity_id=str(row.id),
+        summary=f"تم إنشاء أدمن لوحة «{row.username}» (دور {row.role_key}) للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id, "username": row.username, "role_key": row.role_key},
+    )
+    db.session.commit()
+    flash(f"تم إنشاء أدمن اللوحة «{row.username}»؛ سيُنشأ على راديوس العميل عند المزامنة التالية (مع إلزام تغيير كلمة المرور).", "success")
+    return _panel_admins_back(customer.id)
+
+
+@bp.post("/customers/<int:customer_id>/panel-admins/role")
+@super_admin_required
+def customer_panel_admin_role(customer_id: int):
+    """يغيّر صلاحيات (دور) أدمن لوحةٍ — يتبنّاه من اللقطة إن كان محلّياً بحتاً."""
+    customer = db.get_or_404(Customer, customer_id)
+    username = clean_username(request.form.get("username") or "")
+    if not username:
+        flash("اسم المستخدم مطلوب.", "error")
+        return _panel_admins_back(customer.id)
+    try:
+        row = update_managed_admin_role(customer, username, request.form.get("role_key") or "viewer")
+    except ManagedAdminError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _panel_admins_back(customer.id)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="panel_admin_role_changed",
+        entity_type="customer_managed_admin",
+        entity_id=str(row.id),
+        summary=f"تم تغيير دور أدمن اللوحة «{row.username}» إلى {row.role_key} للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id, "username": row.username, "role_key": row.role_key},
+    )
+    db.session.commit()
+    flash(f"تم تحديث صلاحيات «{row.username}»؛ ستُطبَّق على راديوس العميل عند المزامنة التالية.", "success")
+    return _panel_admins_back(customer.id)
+
+
+@bp.post("/customers/<int:customer_id>/panel-admins/deactivate")
+@super_admin_required
+def customer_panel_admin_deactivate(customer_id: int):
+    """يعطّل أدمن لوحةٍ (حذف آمن قابل للاسترجاع) بعد فحص الحارسين."""
+    customer = db.get_or_404(Customer, customer_id)
+    username = clean_username(request.form.get("username") or "")
+    if not username:
+        flash("اسم المستخدم مطلوب.", "error")
+        return _panel_admins_back(customer.id)
+    try:
+        row = deactivate_managed_admin(customer, username)
+    except ManagedAdminError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _panel_admins_back(customer.id)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="panel_admin_deactivated",
+        entity_type="customer_managed_admin",
+        entity_id=str(row.id),
+        summary=f"تم تعطيل أدمن اللوحة «{row.username}» للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id, "username": row.username},
+    )
+    db.session.commit()
+    flash(f"تم تعطيل «{row.username}»؛ سيُعطَّل على راديوس العميل عند المزامنة التالية (قابل للاسترجاع).", "success")
+    return _panel_admins_back(customer.id)
+
+
+@bp.post("/customers/<int:customer_id>/panel-admins/reactivate")
+@super_admin_required
+def customer_panel_admin_reactivate(customer_id: int):
+    """يعيد تفعيل أدمن لوحةٍ مُعطَّل."""
+    customer = db.get_or_404(Customer, customer_id)
+    username = clean_username(request.form.get("username") or "")
+    if not username:
+        flash("اسم المستخدم مطلوب.", "error")
+        return _panel_admins_back(customer.id)
+    row = reactivate_managed_admin(customer, username)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="panel_admin_reactivated",
+        entity_type="customer_managed_admin",
+        entity_id=str(row.id),
+        summary=f"تم إعادة تفعيل أدمن اللوحة «{row.username}» للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id, "username": row.username},
+    )
+    db.session.commit()
+    flash(f"تم إعادة تفعيل «{row.username}»؛ سيُطبَّق على راديوس العميل عند المزامنة التالية.", "success")
+    return _panel_admins_back(customer.id)
 
 
 @bp.post("/customers/<int:customer_id>/services/<service_key>")

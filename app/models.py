@@ -252,6 +252,50 @@ class CustomerRadiusAdmin(TimestampMixin, db.Model):
         return bool(self.force_super) or bool(self.is_super_admin)
 
 
+class CustomerManagedAdmin(TimestampMixin, db.Model):
+    """حالة «مرغوبة» (desired-state) لأدمن على لوحة راديوس العميل، تديرها لوحة
+    التراخيص صراحةً من ملف العميل (feat/panel-admins-full-mgmt).
+
+    بينما ``CustomerRadiusAdmin`` لقطةُ ما هو *واقع* على راديوس العميل (تصل عبر
+    القناة العكسية للجرد)، يُمثّل هذا الجدول ما *يريده* المالك: أدمن أنشأه أو
+    عدّل صلاحياته أو عطّله من اللوحة. المفتاح المستقر هو ``username`` (لا المعرّف
+    الرقمي المحلّي الذي يختلف بين اللوحات) — توافقاً مع مفتاح ``owner_admins``.
+
+    تُمرَّر هذه الصفوف كتعليمات تصريحية (declarative) ضمن عقد مزامنة الهوية تحت
+    ``admin_directives``؛ يطبّقها الراديوس idempotent في كل دورة: ينشئ الأدمن إن
+    غاب (بكلمة المرور الأوليّة المُمرَّرة + إلزام التغيير عند أول دخول)، يضبط
+    دوره/صلاحياته، ويعطّله عند ``active=0``. اللوحة مرجِعٌ للحقول التي تديرها
+    (الدور/الحالة/الوجود)؛ كلمة المرور تُضبط مرّة واحدة مركزياً ثم تُدار محلياً.
+
+    أمان: ``password_hash`` تجزئة Werkzeug فقط — لا يُخزَّن نصّ كلمة المرور الصريح
+    أبداً ولا يُسجَّل. يُرسَل ضمن العقد فقط حتى يُرصد الأدمن في اللقطة، ثم يُمسح
+    (``password_provisioned``) فلا يُعاد إرساله — فلا يُصارع تغيير المالك المحلّي
+    لكلمة مروره.
+    """
+    __tablename__ = "customer_managed_admins"
+    __table_args__ = (
+        db.UniqueConstraint("customer_id", "username", name="uq_customer_managed_admins_customer_username"),
+        db.Index("ix_customer_managed_admins_customer_active", "customer_id", "active"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    # المفتاح المستقر عبر الأنظمة (يطابق owner_admins): اسم مستخدم الأدمن على اللوحة.
+    username = db.Column(db.String(80), nullable=False)
+    # دور اللوحة (يحدّد الصلاحيات): owner/admin/support/billing/viewer.
+    role_key = db.Column(db.String(40), default="viewer", nullable=False)
+    # False = معطَّل/محذوف منطقياً (قابل للاسترجاع) — الحذف الافتراضي تعطيلٌ آمن.
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    # تجزئة Werkzeug لكلمة المرور الأوليّة (للإنشاء فقط). فارغة بعد التزويد.
+    password_hash = db.Column(db.Text, default="", nullable=False)
+    # إلزام تغيير كلمة المرور عند أول دخول للأدمن المُنشأ مركزياً.
+    must_change_password = db.Column(db.Boolean, default=True, nullable=False)
+    # رُصد الأدمن في لقطة الجرد → أُنشئ فعلاً على اللوحة؛ نتوقّف عن إرسال التجزئة.
+    password_provisioned = db.Column(db.Boolean, default=False, nullable=False)
+
+    customer = db.relationship("Customer")
+
+
 class ServiceCatalogItem(TimestampMixin, db.Model):
     __tablename__ = "service_catalog_items"
     __table_args__ = (

@@ -13,6 +13,7 @@ from ..extensions import db
 from ..models import (
     AuditLog,
     Customer,
+    CustomerManagedAdmin,
     CustomerServiceEntitlement,
     CustomerRadiusAdmin,
     CustomerServiceRequest,
@@ -1558,6 +1559,7 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
             "version": customer_users_version(customer),
             "users": [],
             "admin_super_overrides": [],
+            "admin_directives": [],
             "owner_admins": normalize_owner_admins(customer.owner_admins),
         }
     users = []
@@ -1587,6 +1589,9 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
         # الراديوس يطبّقها idempotent في كل مزامنة: يضبط is_super_admin=1 لهؤلاء
         # دون المساس بكلمة المرور أو مزوّد الهوية، فلا ينكسر الدخول المحلي.
         "admin_super_overrides": build_admin_super_overrides(customer),
+        # تعليمات إدارة أدمن اللوحة التصريحية (إنشاء/تعديل دور/تعطيل) التي عيّنها
+        # المالك من ملف العميل. يطبّقها الراديوس idempotent بمفتاح ``username``.
+        "admin_directives": build_admin_directives(customer),
         # حسابات «المالك» المعيَّنة لهذا العميل (مفاتيح username/email ثابتة).
         # يَسِم الراديوس الحسابات المطابقة كمالكين (تجاوز كامل + غير محدود) ويدعم
         # عدّة مالكين. قائمة فارغة = لا تعيين → يبقى احتياط المعرّف الأصغر.
@@ -1669,7 +1674,232 @@ def import_radius_admins(
         row.external_identity_provider = str(raw.get("external_identity_provider") or "").strip()[:40]
         row.last_seen_at = now
         imported += 1
+    # أغلق حلقة التزويد: أيُّ أدمن «مُدار» ظهر اسمه الآن في اللقطة فقد أُنشئ فعلاً
+    # على اللوحة → نوقف إرسال تجزئة كلمته الأوليّة في العقد (idempotent، آمن).
+    snapshot_usernames = {
+        r.username for r in CustomerRadiusAdmin.query
+        .filter_by(customer_id=customer.id).all()
+    }
+    mark_managed_admins_provisioned(customer, snapshot_usernames)
     return imported
+
+
+# ─────────────── أدمن لوحة العميل: إدارة كاملة من ملف العميل ───────────────
+# لوحة التراخيص تدير أدمن لوحة راديوس العميل تصريحياً (declarative) بمفتاح
+# ``username`` المستقر. الحالة المرغوبة تُخزَّن في ``CustomerManagedAdmin`` وتُمرَّر
+# عبر عقد مزامنة الهوية تحت ``admin_directives``. حارسان أمانيّان (هنا وعلى
+# الراديوس): لا يُعطَّل مالكٌ معيَّن، ولا آخِرُ أدمن مفعّل.
+
+#: أدوار اللوحة المسموح إسنادها لأدمن مُدار (تطابق ROLE_LABELS ومفاتيح الراديوس).
+MANAGED_ADMIN_ROLE_KEYS = ("owner", "admin", "support", "billing", "viewer")
+
+
+class ManagedAdminError(CustomerControlValidationError):
+    """خطأ إدارة أدمن لوحة العميل (تحقّق/حارس) — يُعرَض للمشغّل برسالة واضحة."""
+
+
+def clean_managed_admin_role(value: str | None) -> str:
+    role = str(value or "").strip().lower()
+    return role if role in MANAGED_ADMIN_ROLE_KEYS else "viewer"
+
+
+def managed_admins_for_customer(customer: Customer) -> list[CustomerManagedAdmin]:
+    """صفوف الأدمن المُدارة لهذا العميل (المفعّل أولاً ثم أبجدياً)."""
+    return (
+        CustomerManagedAdmin.query
+        .filter_by(customer_id=customer.id)
+        .order_by(CustomerManagedAdmin.active.desc(), CustomerManagedAdmin.username.asc())
+        .all()
+    )
+
+
+def get_managed_admin(customer: Customer, username: str) -> CustomerManagedAdmin | None:
+    key = str(username or "").strip()
+    if not key:
+        return None
+    return (
+        CustomerManagedAdmin.query
+        .filter(CustomerManagedAdmin.customer_id == customer.id)
+        .filter(func.lower(CustomerManagedAdmin.username) == key.lower())
+        .first()
+    )
+
+
+def _is_designated_owner_key(customer: Customer, username: str) -> bool:
+    key = str(username or "").strip().lower()
+    return any(k.strip().lower() == key for k in customer.owner_admins)
+
+
+def _enabled_admin_usernames(customer: Customer) -> set[str]:
+    """أسماء الأدمن المفعّلين فعلياً على اللوحة (من اللقطة) دمجاً مع نيّة الإدارة.
+
+    «المفعّل» = ظاهرٌ مفعّلاً في لقطة الجرد، ما لم تُعطّله نيّةُ إدارةٍ صريحة؛
+    زائداً أيّ أدمن مُدار مفعّل لم يظهر في اللقطة بعد (إنشاء قيد الانتظار)."""
+    managed = {m.username.strip().lower(): m for m in managed_admins_for_customer(customer)}
+    enabled: set[str] = set()
+    for snap in radius_admins_for_customer(customer):
+        uname = (snap.username or "").strip()
+        if not uname:
+            continue
+        m = managed.get(uname.lower())
+        if m is not None and not m.active:
+            continue  # عُطِّل صراحةً من اللوحة
+        if snap.enabled or (m is not None and m.active):
+            enabled.add(uname.lower())
+    for low, m in managed.items():
+        if m.active:
+            enabled.add(low)
+    return enabled
+
+
+def _assert_can_deactivate(customer: Customer, username: str) -> None:
+    """حارسا الحذف/التعطيل: لا مالكاً معيَّناً، ولا آخِرَ أدمن مفعّل."""
+    if _is_designated_owner_key(customer, username):
+        raise ManagedAdminError(
+            "لا يمكن تعطيل حساب «مالك» معيَّن. أزِل تعيينه كمالك أولاً ثم عطّله.")
+    enabled = _enabled_admin_usernames(customer)
+    remaining = {u for u in enabled if u != str(username or "").strip().lower()}
+    if not remaining:
+        raise ManagedAdminError(
+            "لا يمكن تعطيل آخِر أدمن مفعّل للوحة العميل — يجب بقاء حساب إداري واحد على الأقلّ.")
+
+
+def create_managed_admin(customer: Customer, *, username: str, password: str,
+                         role_key: str) -> CustomerManagedAdmin:
+    """ينشئ أدمن لوحة مُداراً جديداً ويجهّز تعليمة إنشائه للراديوس.
+
+    كلمة المرور تُجزَّأ بـWerkzeug ولا تُخزَّن/تُسجَّل نصاً صريحاً أبداً؛ تُرسَل
+    للراديوس مرّةً مع إلزام التغيير عند أول دخول، ثم تُمسح بعد التزويد."""
+    from werkzeug.security import generate_password_hash
+    uname = clean_username(username)
+    if not uname:
+        raise ManagedAdminError("اسم المستخدم مطلوب.")
+    if get_managed_admin(customer, uname) is not None:
+        raise ManagedAdminError(f"يوجد بالفعل أدمن مُدار باسم «{uname}».")
+    # امنع التضارب مع أدمن محلّي معروف يحمل الاسم نفسه (نتبنّاه بدل تكراره).
+    for snap in radius_admins_for_customer(customer):
+        if (snap.username or "").strip().lower() == uname.lower():
+            raise ManagedAdminError(
+                f"«{uname}» موجود فعلاً على لوحة العميل — استخدم «تعديل الصلاحيات» لإدارته.")
+    if len(str(password or "")) < 8:
+        raise ManagedAdminError("كلمة المرور الأوليّة يجب أن تكون 8 أحرف على الأقلّ.")
+    row = CustomerManagedAdmin(
+        customer_id=customer.id,
+        username=uname,
+        role_key=clean_managed_admin_role(role_key),
+        active=True,
+        password_hash=generate_password_hash(str(password)),
+        must_change_password=True,
+        password_provisioned=False,
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+def adopt_managed_admin(customer: Customer, username: str) -> CustomerManagedAdmin:
+    """يضمن وجود صفّ إدارة لأدمن معروف على اللوحة (تبنٍّ للإدارة من اللقطة).
+
+    عند تعديل/تعطيل أدمن محلّي بحت لأوّل مرّة، نُنشئ له صفّ نيّةٍ بلا كلمة مرور
+    (لا نعيد ضبطها) ملتقطين دوره الحالي من اللقطة، فتصبح اللوحة مرجعاً لحقوله."""
+    existing = get_managed_admin(customer, username)
+    if existing is not None:
+        return existing
+    snap_role = ""
+    for snap in radius_admins_for_customer(customer):
+        if (snap.username or "").strip().lower() == str(username or "").strip().lower():
+            snap_role = snap.role or ""
+            break
+    row = CustomerManagedAdmin(
+        customer_id=customer.id,
+        username=str(username).strip()[:80],
+        role_key=clean_managed_admin_role(_map_snapshot_role(snap_role)),
+        active=True,
+        password_hash="",           # تبنٍّ — لا نملك/نضبط كلمة مروره
+        must_change_password=False,
+        password_provisioned=True,   # موجود أصلاً على اللوحة، لا تزويد
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+def _map_snapshot_role(role: str) -> str:
+    """يطابق اسم دور اللقطة (كما على الراديوس) بمفتاح دور اللوحة لدينا."""
+    r = str(role or "").strip().lower()
+    return {
+        "super_admin": "owner",
+        "operator": "admin",
+        "manager": "admin",
+        "support": "support",
+        "billing": "billing",
+        "viewer": "viewer",
+    }.get(r, "viewer")
+
+
+def update_managed_admin_role(customer: Customer, username: str, role_key: str) -> CustomerManagedAdmin:
+    """يغيّر صلاحيات أدمن (دوره) — يتبنّاه من اللقطة إن لزم. يُدفع عند المزامنة."""
+    row = adopt_managed_admin(customer, username)
+    row.role_key = clean_managed_admin_role(role_key)
+    row.active = True
+    db.session.flush()
+    return row
+
+
+def deactivate_managed_admin(customer: Customer, username: str) -> CustomerManagedAdmin:
+    """يعطّل أدمن (حذف آمن قابل للاسترجاع) بعد فحص الحارسين."""
+    _assert_can_deactivate(customer, username)
+    row = adopt_managed_admin(customer, username)
+    row.active = False
+    db.session.flush()
+    return row
+
+
+def reactivate_managed_admin(customer: Customer, username: str) -> CustomerManagedAdmin:
+    """يعيد تفعيل أدمن مُعطَّل."""
+    row = adopt_managed_admin(customer, username)
+    row.active = True
+    db.session.flush()
+    return row
+
+
+def mark_managed_admins_provisioned(customer: Customer, snapshot_usernames: set[str]) -> int:
+    """يَسِم الأدمن المُدارين الذين ظهروا في اللقطة كمُزوَّدين ويمسح تجزئتهم.
+
+    بعد التزويد لا تُعاد التجزئة في العقد فلا تُصارع تغيير المالك المحلّي لكلمته."""
+    lowered = {str(u or "").strip().lower() for u in snapshot_usernames if str(u or "").strip()}
+    changed = 0
+    for row in CustomerManagedAdmin.query.filter_by(customer_id=customer.id, password_provisioned=False).all():
+        if row.username.strip().lower() in lowered:
+            row.password_provisioned = True
+            row.password_hash = ""
+            changed += 1
+    return changed
+
+
+def build_admin_directives(customer: Customer) -> list[dict[str, Any]]:
+    """تعليمات إدارة أدمن اللوحة التصريحية المُرسَلة ضمن عقد مزامنة الهوية.
+
+    كلٌّ منها حالةٌ مرغوبة بمفتاح ``username``: ``op=upsert`` لإنشاء/مزامنة دورٍ
+    وتفعيلٍ، ``op=deactivate`` لتعطيلٍ آمن. تجزئة كلمة المرور تُرفَق فقط للإنشاء
+    غير المُزوَّد بعد (مرّةً واحدة)؛ ولا تُرسَل أيّ كلمة مرور صريحة إطلاقاً."""
+    out: list[dict[str, Any]] = []
+    for row in managed_admins_for_customer(customer):
+        uname = (row.username or "").strip()
+        if not uname:
+            continue
+        directive: dict[str, Any] = {
+            "op": "upsert" if row.active else "deactivate",
+            "username": uname,
+            "role_key": clean_managed_admin_role(row.role_key),
+            "active": bool(row.active),
+        }
+        if row.active and not row.password_provisioned and row.password_hash:
+            directive["password_hash"] = row.password_hash
+            directive["password_hash_scheme"] = "werkzeug"
+            directive["must_change_password"] = bool(row.must_change_password)
+        out.append(directive)
+    return out
 
 
 def create_customer_service_request(
