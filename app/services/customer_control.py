@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from ..extensions import db
 from ..models import (
@@ -1963,15 +1963,16 @@ def _portal_username_seed(customer: Customer) -> str:
     return base[:72]
 
 
-def ensure_active_portal_user(customer: Customer) -> CustomerUser:
+def ensure_active_portal_user(customer: Customer, *, reason: str = "portal_sso") -> CustomerUser:
     """Return the customer's primary ACTIVE portal user, creating one if none.
 
-    The «ربط جوجل درايف» SSO from the radius mints a login link for an active
-    portal user. Customers are NOT auto-given a portal user on creation, so a
-    brand-new customer had nobody to SSO as → the radius showed «لم يصل رابط
-    الدخول من لوحة التراخيص». We provision a single owner user on demand
-    (idempotent: only when there is no active user). The password is random —
-    access is via SSO; the owner can set one later from the customer file.
+    INVARIANT: a customer file (≈ a license) must always have an active portal
+    user so the radius «ربط جوجل درايف» → portal-SSO → /portal chain works with
+    zero manual step. Called at customer creation/approval, by the on-demand
+    SSO path, and by the deploy-time backfill. Idempotent: only creates when
+    there is no active user; never touches existing users or their passwords.
+    The new user's password is random — access is via SSO; the owner can set a
+    password later from the customer file.
     """
     existing = customer.users.filter_by(active=True).order_by(CustomerUser.id.asc()).first()
     if existing is not None:
@@ -2002,9 +2003,32 @@ def ensure_active_portal_user(customer: Customer) -> CustomerUser:
         entity_type="customer_user",
         entity_id=str(user.id),
         summary=f"إنشاء مستخدم بوابة تلقائيًا للعميل {customer.company_name} لتمكين الدخول الموحّد",
-        metadata={"customer_id": customer.id, "username": username, "reason": "portal_sso"},
+        metadata={"customer_id": customer.id, "username": username, "reason": reason},
     )
     return user
+
+
+def backfill_portal_users() -> int:
+    """Enforce the «customer file ⇒ active portal user» invariant for EXISTING
+    customers (deploy-time, idempotent, best-effort).
+
+    Scope is deliberately the set of *set-up* customers — those that are active
+    OR already have a license issued from their file — so we never auto-create
+    an active portal user for an unapproved self-signup (which is intentionally
+    left inactive until approval). Returns the number provisioned.
+    """
+    q = Customer.query.filter(
+        or_(Customer.status == "active", Customer.licenses.any())
+    )
+    provisioned = 0
+    for customer in q.all():
+        if customer.users.filter_by(active=True).first() is not None:
+            continue
+        ensure_active_portal_user(customer, reason="backfill")
+        provisioned += 1
+    if provisioned:
+        db.session.commit()
+    return provisioned
 
 
 def audit_customer_control(
