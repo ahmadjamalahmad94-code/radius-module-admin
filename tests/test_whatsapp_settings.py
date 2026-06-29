@@ -138,6 +138,29 @@ def test_set_connection_status(app):
     assert account.last_error_message == "token expired"
 
 
+def test_normalized_integration_status_folds_to_three_states():
+    """The rich connection states collapse to Connected / Needs action /
+    Disconnected for the spec's 3-state badge."""
+    assert wa.normalized_integration_status("connected") == "connected"
+    for s in ("error", "suspended", "pending"):
+        assert wa.normalized_integration_status(s) == "needs_action"
+    for s in ("disconnected", "not_configured", "", None, "weird"):
+        assert wa.normalized_integration_status(s) == "disconnected"
+
+
+def test_account_public_dict_exposes_integration_status(app):
+    customer = make_customer()
+    # No account row yet → disconnected, with no None-check needed by callers.
+    assert wa.account_public_dict(None) == {"integration_status": "disconnected"}
+
+    wa.upsert_account(customer.id, phone_number_id="123")
+    wa.set_connection_status(customer.id, "connected")
+    public = wa.account_public_dict(wa.get_account(customer.id))
+    assert public["integration_status"] == "connected"
+    # And it never leaks a token.
+    assert "access_token" not in public and "access_token_encrypted" not in public
+
+
 # ---------------------------------------------------------------------------
 # Settings: default creation + allow-list updates
 # ---------------------------------------------------------------------------

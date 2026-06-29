@@ -259,6 +259,8 @@ def test_status_signed_returns_ok_and_no_token(client, app):
     assert body["ok"] is True
     assert body["enabled"] is True
     assert body["account_status"] == "connected"
+    # Normalized 3-state badge for the radius client (Connected/Needs action/Disconnected).
+    assert body["integration_status"] == "connected"
     assert body["display_phone_number"] == "+970599000000"
     assert body["business_display_name"] == "Acme ISP"
     assert body["limits"]["daily"]["limit"] == 100
