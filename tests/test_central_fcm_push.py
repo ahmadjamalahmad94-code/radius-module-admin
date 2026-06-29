@@ -328,3 +328,41 @@ def test_push_send_requires_https():
             json={"license_key": lic.license_key, "title": "x", "body": "y"},
         )
         assert res.status_code == 426
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Settings page: the «دفع الإشعارات (Firebase)» tab must actually route
+# (regression for the same mis-routed-tab bug fixed for WhatsApp in 040ceba —
+# the tab id was missing from the settings-page TABS allowlist, so clicking it
+# and the post-upload #firebase redirect silently fell back to the 'site' tab)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _login_super(app, client):
+    from app.models import Admin
+    with app.app_context():
+        admin = Admin.query.filter_by(
+            username=app.config.get("ADMIN_USERNAME", "admin")).first()
+        admin_id = admin.id
+    with client.session_transaction() as s:
+        s["admin_id"] = admin_id
+
+
+def test_settings_page_routes_firebase_tab():
+    app = _app()
+    client = app.test_client()
+    _login_super(app, client)
+    res = client.get("/admin/settings")
+    assert res.status_code == 200
+    body = res.get_data(as_text=True)
+    # The Firebase tab button + pane + upload field render …
+    assert 'data-tab="firebase"' in body
+    assert 'id="tab-firebase"' in body
+    assert 'name="firebase_credential"' in body
+    assert "service account JSON" in body
+    # … and crucially the tab id is REGISTERED in the routing allowlist, so the
+    # click handler binds and #firebase (the upload redirect anchor) resolves
+    # to this tab instead of falling back to the default 'site' tab.
+    assert "'whatsapp', 'firebase'" in body
+    # Section-anchor aliases for the Firebase card map to the firebase tab.
+    assert "'fcm':" in body and "'firebase'" in body
+    assert 'id="firebase-push"' in body

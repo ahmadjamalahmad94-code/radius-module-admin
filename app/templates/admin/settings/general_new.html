@@ -1039,7 +1039,7 @@
    وتُرسل به الإشعارات لكل أجهزة العملاء. نسخ الراديوس تُحوّل الطلب فقط.
    ════════════════════════════════════════════════════════════════════ #}
 <div class="cc-tab-pane" id="tab-firebase" role="tabpanel" aria-labelledby="tab-btn-firebase">
-<div class="sg-card">
+<div class="sg-card" id="firebase-push">
   <div class="sg-card-head">
     <span class="sg-card-head-icon" style="background:var(--tile-amber-bg,#fef3c7);color:var(--tile-amber-fg,#b45309)" aria-hidden="true">
       <i class="fa-solid fa-bell"></i>
@@ -1315,15 +1315,20 @@
 (function () {
   'use strict';
 
-  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'whatsapp'];
+  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'whatsapp', 'firebase'];
   var DEFAULT = 'site';
 
   /* Deep-link section anchors → their containing tab. A bare redirect like
      /admin/settings/whatsapp → #whatsapp-cloud must open the واتساب tab and
-     scroll to that section, not silently fall back to the default tab. */
+     scroll to that section, not silently fall back to the default tab.
+     دفع الإشعارات (Firebase): الرفع/الحذف يعيد التوجيه إلى #firebase (= مُعرّف
+     التبويب نفسه، يُحلّ عبر TABS)؛ نُبقي أيضًا أسماء بديلة (#fcm / #firebase-push)
+     تشير إلى بطاقة الإعداد لتفتح التبويب وتُمرِّر إليها. */
   var SECTION_TO_TAB = {
     'whatsapp-cloud':    'whatsapp',
-    'whatsapp-embedded': 'whatsapp'
+    'whatsapp-embedded': 'whatsapp',
+    'fcm':               'firebase',
+    'firebase-push':     'firebase'
   };
 
   /* Resolve a raw hash to {tab, section}: a tab id, a known section anchor,
