@@ -1572,6 +1572,36 @@ class Setting(db.Model):
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class DeviceToken(TimestampMixin, db.Model):
+    """Central FCM device-token registry for the ONE global mobile app.
+
+    The HobeRadius app (``com.hoberadius.app``) is a single global app that
+    connects to ALL customer radius instances; the central Firebase project
+    lives in this licensing panel. So device tokens are registered HERE, keyed
+    to the resolved ``customer`` (via the radius instance's license_key bearer)
+    — never stored per-customer-panel. Licensing reads these to dispatch FCM
+    when any radius instance forwards a push for that customer.
+    """
+    __tablename__ = "device_tokens"
+    __table_args__ = (
+        db.Index("ix_device_tokens_customer", "customer_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(
+        db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    # The FCM registration token IS the device secret — unique across the fleet
+    # (a dead token is dead wherever it appears, so prune is global by token).
+    token = db.Column(db.String(512), unique=True, nullable=False, index=True)
+    platform = db.Column(db.String(16), default="", nullable=False)
+    app_version = db.Column(db.String(40), default="", nullable=False)
+    # Optional portal-user identity the app was logged in as when it registered.
+    external_user_id = db.Column(db.String(120), default="", nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    customer = db.relationship("Customer")
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Customer Secure Vault — ADMIN-ONLY. NEVER exposed to customers, the customer
 # portal, or any public/integration API. Two data classes:

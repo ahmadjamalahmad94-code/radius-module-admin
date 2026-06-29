@@ -142,6 +142,132 @@ def hoberadius_runtime_contract():
     })
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# Central FCM push — the ONE global mobile app (com.hoberadius.app) connects to
+# ALL radius instances and is backed by a single central Firebase project owned
+# by THIS licensing panel. So device tokens are registered HERE and FCM is sent
+# HERE. A customer radius instance never holds the Firebase key: it FORWARDS
+# both (a) the app's token registration and (b) push requests over this signed
+# bridge, authenticating with its ``license_key`` bearer. The customer is
+# resolved from that license; the push reaches only that customer's devices.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+def _customer_from_result(result):
+    """Resolve the Customer from a checked license result, or None."""
+    return getattr(getattr(result, "license", None), "customer", None) if result else None
+
+
+@bp.post("/integration/hoberadius/push/register-token")
+def hoberadius_push_register_token():
+    """Register/upsert the global app's FCM token for this customer.
+
+    The radius instance forwards the app's ``token`` (+ platform/app_version/
+    external_user_id) here; it is stored centrally keyed to the resolved
+    customer. Idempotent on the token."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "تسجيل رمز الجهاز يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    customer = _customer_from_result(result)
+    if customer is None:
+        return jsonify({"ok": False, "status": "not_found", "message": "لا يوجد عميل مرتبط بهذا الترخيص."}), 404
+    try:
+        token = clean_text(body.get("token") or body.get("fcm_token"), 512)
+        platform = clean_text(body.get("platform"), 16)
+        app_version = clean_text(body.get("app_version"), 40)
+        external_user_id = clean_text(body.get("external_user_id"), 120)
+    except ValueError as exc:
+        return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+    if not token:
+        return jsonify({"ok": False, "status": "invalid_request", "message": "رمز الجهاز (token) مطلوب."}), 422
+    from ..services import device_tokens
+    device_tokens.register(customer.id, token, platform=platform,
+                           app_version=app_version, external_user_id=external_user_id)
+    return jsonify({"ok": True, "status": "registered",
+                    "devices": device_tokens.count_for_customer(customer.id)}), 201
+
+
+@bp.post("/integration/hoberadius/push/unregister-token")
+def hoberadius_push_unregister_token():
+    """Unregister the global app's FCM token (app logout). Idempotent."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "إلغاء رمز الجهاز يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if _customer_from_result(result) is None:
+        return jsonify({"ok": False, "status": "not_found", "message": "لا يوجد عميل مرتبط بهذا الترخيص."}), 404
+    try:
+        token = clean_text(body.get("token") or body.get("fcm_token"), 512)
+    except ValueError as exc:
+        return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+    if not token:
+        return jsonify({"ok": False, "status": "invalid_request", "message": "رمز الجهاز (token) مطلوب."}), 422
+    from ..services import device_tokens
+    removed = device_tokens.unregister(token)
+    return jsonify({"ok": True, "status": "unregistered", "removed": removed})
+
+
+@bp.post("/integration/hoberadius/push/send")
+def hoberadius_push_send():
+    """Dispatch an FCM push to the customer's registered devices.
+
+    A radius instance forwards a notification's ``title``/``body`` (+ optional
+    ``data``/``link``/``type``) here; licensing sends the FCM to that customer's
+    devices. ``mode="sync"`` dispatches inline and returns the result (used by
+    the «أرسل إشعار تجريبي» test-push so the owner sees it); the default
+    ``async`` mode queues off-thread and returns ``{queued, devices}`` so a
+    normal notification never blocks on the FCM network."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "دفع الإشعار يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    customer = _customer_from_result(result)
+    if customer is None:
+        return jsonify({"ok": False, "status": "not_found", "message": "لا يوجد عميل مرتبط بهذا الترخيص."}), 404
+    try:
+        title = clean_text(body.get("title"), 200)
+        msg = clean_text(body.get("body") or body.get("message"), 1000)
+        link = clean_text(body.get("link"), 500)
+        ntype = clean_text(body.get("type"), 40)
+    except ValueError as exc:
+        return jsonify({"ok": False, "status": "invalid_request", "message": str(exc)}), 422
+    if not title and not msg:
+        return jsonify({"ok": False, "status": "invalid_request", "message": "عنوان أو نصّ الإشعار مطلوب."}), 422
+    raw_data = body.get("data")
+    data = {str(k): str(v) for k, v in raw_data.items()} if isinstance(raw_data, dict) else {}
+    if link:
+        data.setdefault("link", link)
+    if ntype:
+        data.setdefault("type", ntype)
+
+    from ..services import device_tokens, push_dispatch
+    devices = device_tokens.count_for_customer(customer.id)
+    if str(body.get("mode") or "").strip().lower() == "sync":
+        res = push_dispatch.dispatch_to_customer(customer.id, title=title, body=msg, data=data)
+        return jsonify({"ok": bool(res.get("ok")), "status": res.get("reason") or "sent",
+                        "sent": res.get("sent", 0), "failed": res.get("failed", 0),
+                        "devices": devices})
+    push_dispatch.spawn_dispatch(current_app._get_current_object(), customer.id,
+                                 title=title, body=msg, data=data)
+    return jsonify({"ok": True, "status": "queued", "devices": devices}), 202
+
+
 @bp.post("/integration/hoberadius/capacity-contract")
 def hoberadius_capacity_contract():
     body = request.get_json(silent=True) or {}
