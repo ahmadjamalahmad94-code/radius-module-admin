@@ -257,6 +257,61 @@
 }
 .sg-btn-secondary:hover { background: var(--cc-brand-soft2); }
 
+/* ── واتساب: شارة المصدر + إظهار السرّ + قوالب ───────── */
+.sg-src {
+  display: inline-block;
+  margin-inline-start: var(--cc-sp-3);
+  padding: 1px 8px;
+  border-radius: var(--cc-r-pill);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.sg-src--panel { background: #dcfce7; color: #166534; }
+.sg-src--env   { background: var(--tile-amber-bg); color: var(--tile-amber-fg); }
+.sg-reveal-btn {
+  margin-inline-start: var(--cc-sp-3);
+  padding: 1px 8px;
+  border-radius: var(--cc-r-sm);
+  border: 1px solid var(--cc-border-2);
+  background: var(--cc-brand-softer);
+  color: var(--cc-brand);
+  font-family: var(--cc-font);
+  font-size: var(--cc-fs-tiny);
+  font-weight: var(--cc-fw-bold);
+  cursor: pointer;
+}
+.sg-reveal-btn:hover { background: var(--cc-brand-soft2); }
+.sg-secret-out {
+  display: inline-block;
+  margin-inline-start: var(--cc-sp-3);
+  padding: 1px 8px;
+  border-radius: var(--cc-r-sm);
+  background: var(--cc-tint-bg);
+  font-family: var(--cc-font-mono);
+  font-size: var(--cc-fs-tiny);
+  word-break: break-all;
+}
+.wac-tpl-list { display: flex; flex-wrap: wrap; gap: var(--cc-sp-4); margin-block-start: var(--cc-sp-5); }
+.wac-tpl-note { font-size: var(--cc-fs-body-s); color: var(--cc-text-soft); width: 100%; }
+.wac-tpl-chip {
+  display: inline-flex; align-items: center; gap: var(--cc-sp-3);
+  padding: 4px 10px; border-radius: var(--cc-r-pill);
+  border: 1px solid var(--cc-border-2); background: var(--cc-card-bg);
+  font-family: var(--cc-font); font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-bold);
+  color: var(--cc-text); cursor: pointer;
+}
+.wac-tpl-chip:hover { background: var(--hb-bg); }
+.wac-tpl-chip.is-dim { opacity: .55; }
+.wac-tpl-chip.is-rec { border-color: #86efac; }
+.wac-tpl-chip .lng { color: var(--cc-text-mute); }
+.wac-tpl-chip .st--ok  { color: #166534; }
+.wac-tpl-chip .st--no  { color: var(--tile-amber-fg); }
+.wac-tpl-chip .req--ok   { color: #166534; }
+.wac-tpl-chip .req--warn { color: var(--hb-red); }
+.wac-tpl-chip .rec { color: #166534; }
+
 /* ── بوابات الدفع chips ──────────────────────────────── */
 .sg-gateway-grid {
   display:    grid;
@@ -392,6 +447,10 @@
   <button class="cc-tab-btn" role="tab" data-tab="integrations"
           aria-controls="tab-integrations" id="tab-btn-integrations">
     <i class="fa-brands fa-google-drive" aria-hidden="true"></i> تكامل Google Drive
+  </button>
+  <button class="cc-tab-btn" role="tab" data-tab="whatsapp"
+          aria-controls="tab-whatsapp" id="tab-btn-whatsapp">
+    <i class="fa-brands fa-whatsapp" aria-hidden="true"></i> {{ _('واتساب') }}
   </button>
   {# Settings#chr (MikroTik CHR singleton) was retired in the zero-central
      work. Per-node RouterOS credentials live on fleet_chr_nodes rows;
@@ -969,6 +1028,195 @@
 </div>{# /cc-tab-pane#integrations #}
 
 
+{# ════════════════════════════════════════════════════════════════════
+   القسم 6 — واتساب (Cloud API + الربط التلقائي Embedded Signup)
+   صفحة /admin/settings/whatsapp تعيد التوجيه إلى #whatsapp-cloud أدناه؛
+   موجّه التبويبات يفتح هذا التبويب ويُمرّر للقسم المطلوب.
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-whatsapp" role="tabpanel" aria-labelledby="tab-btn-whatsapp">
+
+{# ── 6a · واتساب Cloud API (بيانات اعتماد الإرسال — house credentials) ── #}
+{% if wac_enabled and wac_state %}
+<div class="sg-card" id="whatsapp-cloud"
+     data-wac-js
+     data-reveal-url="{{ url_for('admin.whatsapp_cloud_reveal') }}"
+     data-templates-url="{{ url_for('admin.whatsapp_cloud_templates') }}">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:#dcfce7;color:#166534" aria-hidden="true">
+      <i class="fa-brands fa-whatsapp"></i>
+    </span>
+    <span class="sg-card-head-title">واتساب Cloud API</span>
+    <span class="sg-card-head-sub">بيانات اعتماد Meta للإرسال — تُخزَّن مشفّرة؛ متغيّرات البيئة تعمل كاحتياط</span>
+  </div>
+  <div class="sg-card-body">
+
+    {# نموذج حفظ البيانات #}
+    <form method="post" action="{{ url_for('admin.whatsapp_cloud_save') }}">
+      {{ csrf_input() }}
+      <div class="sg-grid">
+        {% for fname in ['access_token', 'phone_number_id', 'whatsapp_business_account_id', 'meta_app_id', 'meta_app_secret', 'meta_config_id'] %}
+        {% set f = wac_state.fields[fname] %}
+        {% set is_secret = fname in ['access_token', 'meta_app_secret'] %}
+        <div class="sg-field {% if is_secret %}is-full{% endif %}">
+          <label class="sg-label" for="wac-{{ fname }}">
+            {{ f.label }}
+            {% if fname in ['access_token', 'phone_number_id', 'whatsapp_business_account_id'] %}<span class="sg-req">*</span>{% endif %}
+            {% if f.source == 'panel' %}
+              <span class="sg-src sg-src--panel">محفوظ في إعدادات اللوحة</span>
+            {% elif f.source == 'env' %}
+              <span class="sg-src sg-src--env">مُحمّل من البيئة</span>
+            {% endif %}
+          </label>
+          {% if is_secret %}
+          <input class="sg-input" id="wac-{{ fname }}" name="{{ fname }}" type="password" autocomplete="new-password"
+                 value="" dir="ltr"
+                 placeholder="{{ 'محفوظ مشفّرًا (' ~ f.masked ~ ') — اتركه فارغًا للإبقاء عليه' if f.present else 'الصق القيمة من Meta' }}">
+          <div class="sg-hint">
+            سرّي — يُخزَّن مشفّرًا ولا يُعرض. اتركه فارغًا للإبقاء على المحفوظ.
+            {% if f.present %}
+              <button type="button" class="sg-reveal-btn" data-wac-reveal="{{ fname }}">إظهار مؤقت</button>
+              <code class="sg-secret-out" data-wac-secret="{{ fname }}" dir="ltr" hidden></code>
+            {% endif %}
+          </div>
+          {% else %}
+          <input class="sg-input" id="wac-{{ fname }}" name="{{ fname }}" type="text"
+                 value="{{ f.value }}" dir="ltr"
+                 placeholder="{{ 'أرقام فقط' }}">
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات
+        </button>
+      </div>
+    </form>
+
+    <div class="sg-divider"></div>
+
+    {# اختبار الاتصال #}
+    <form method="post" action="{{ url_for('admin.whatsapp_cloud_test') }}" style="margin-block-end:var(--cc-sp-7)">
+      {{ csrf_input() }}
+      <button class="sg-btn-secondary" type="submit">
+        <i class="fa-solid fa-plug-circle-check"></i> اختبار الاتصال
+      </button>
+      <span class="sg-hint" style="margin-inline-start:var(--cc-sp-5)">يتحقّق من رمز الوصول و Phone Number ID لدى Meta — لا يُرسل رسالة.</span>
+    </form>
+
+    {# اكتشاف القوالب المعتمدة + إرسال رسالة اختبار #}
+    <form method="post" action="{{ url_for('admin.whatsapp_cloud_test_message') }}">
+      {{ csrf_input() }}
+      <div style="margin-block-end:var(--cc-sp-6)">
+        <button class="sg-btn-secondary" type="button" data-wac-templates>
+          <i class="fa-solid fa-list-check"></i> اكتشاف القوالب المعتمدة
+        </button>
+        <div class="wac-tpl-list" data-wac-templates-out hidden></div>
+      </div>
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="wac-recipient">رقم المستلم (دولي بدون +)</label>
+          <input class="sg-input" id="wac-recipient" name="recipient" type="text" dir="ltr" placeholder="9705xxxxxxxx">
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="wac-tpl-name">اسم القالب</label>
+          <input class="sg-input" id="wac-tpl-name" name="template_name" type="text" dir="ltr" placeholder="hello_world">
+        </div>
+        <div class="sg-field">
+          <label class="sg-label" for="wac-tpl-lang">لغة القالب</label>
+          <input class="sg-input" id="wac-tpl-lang" name="language" type="text" dir="ltr" placeholder="en_US">
+        </div>
+      </div>
+      <div class="sg-hint" data-wac-tpl-warn hidden style="margin-block-end:var(--cc-sp-5)"></div>
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-paper-plane"></i> إرسال رسالة اختبار
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ── 6b · ربط واتساب التلقائي (Embedded Signup) — يُدار من اللوحة ── #}
+<div class="sg-card" id="whatsapp-embedded"
+     data-wae-js
+     data-reveal-url="{{ url_for('admin.whatsapp_embedded_reveal') }}">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-blue-bg);color:var(--tile-blue-fg)" aria-hidden="true">
+      <i class="fa-solid fa-link"></i>
+    </span>
+    <span class="sg-card-head-title">ربط واتساب التلقائي (Embedded Signup)</span>
+    <span class="sg-card-head-sub">يتيح للعميل ربط حساب واتساب الخاص به ذاتيًا من بوابة العميل — دون أي تحرير للبيئة</span>
+  </div>
+  <div class="sg-card-body">
+
+    {% if not wae_state.encryption_ready %}
+    <div class="sg-smtp-status is-warn" style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      مفتاح التشفير <code dir="ltr">WHATSAPP_FERNET_KEY</code> غير مضبوط — لا يمكن حفظ App Secret حتى يُضبط في بيئة الخادم.
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('admin.whatsapp_embedded_save') }}">
+      {{ csrf_input() }}
+
+      <label class="sg-toggle-row" style="display:flex;align-items:center;gap:var(--cc-sp-5);margin-block-end:var(--cc-sp-7)">
+        <input type="checkbox" name="enabled" value="1" {% if wae_state.enabled %}checked{% endif %}>
+        <span class="sg-label" style="margin:0">تفعيل الربط التلقائي للعملاء</span>
+        {% if wae_state.enabled_source == 'env' %}<span class="sg-src sg-src--env">مُحمّل من البيئة</span>{% endif %}
+      </label>
+
+      <div class="sg-grid">
+        {% for fname in ['app_id', 'config_id', 'graph_version'] %}
+        {% set f = wae_state.fields[fname] %}
+        <div class="sg-field">
+          <label class="sg-label" for="wae-{{ fname }}">
+            {{ f.label }}
+            {% if f.source == 'panel' %}<span class="sg-src sg-src--panel">محفوظ في إعدادات اللوحة</span>
+            {% elif f.source == 'env' %}<span class="sg-src sg-src--env">مُحمّل من البيئة</span>{% endif %}
+          </label>
+          <input class="sg-input" id="wae-{{ fname }}" name="{{ fname }}" type="text"
+                 value="{{ f.value }}" dir="ltr"
+                 placeholder="{{ 'مثال: v21.0' if fname == 'graph_version' else 'أرقام فقط' }}">
+        </div>
+        {% endfor %}
+
+        {% set sec = wae_state.fields['app_secret'] %}
+        <div class="sg-field is-full">
+          <label class="sg-label" for="wae-app_secret">
+            {{ sec.label }}
+            {% if sec.source == 'panel' %}<span class="sg-src sg-src--panel">محفوظ في إعدادات اللوحة</span>
+            {% elif sec.source == 'env' %}<span class="sg-src sg-src--env">مُحمّل من البيئة</span>{% endif %}
+          </label>
+          <input class="sg-input" id="wae-app_secret" name="app_secret" type="password" autocomplete="new-password"
+                 value="" dir="ltr"
+                 placeholder="{{ 'محفوظ مشفّرًا (' ~ sec.masked ~ ') — اتركه فارغًا للإبقاء عليه' if sec.present else 'الصق Meta App Secret' }}">
+          <div class="sg-hint">
+            {% if sec.present %}
+              محفوظ مشفّرًا. اتركه فارغًا للإبقاء عليه.
+              <button type="button" class="sg-reveal-btn" data-wae-reveal="app_secret">إظهار مؤقت</button>
+              <code class="sg-secret-out" data-wae-secret="app_secret" dir="ltr" hidden></code>
+            {% else %}
+              سرّي — يُخزَّن مشفّرًا ولا يُعرض بعد الحفظ.
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ إعدادات الربط التلقائي
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+</div>{# /cc-tab-pane#whatsapp #}
+
+
 {# ── Toast container — design-system floating notifications ───────── #}
 <div class="hub-toast" id="sg-toast" role="status" aria-live="polite" hidden></div>
 
@@ -979,8 +1227,24 @@
 (function () {
   'use strict';
 
-  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'chr'];
+  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'whatsapp'];
   var DEFAULT = 'site';
+
+  /* Deep-link section anchors → their containing tab. A bare redirect like
+     /admin/settings/whatsapp → #whatsapp-cloud must open the واتساب tab and
+     scroll to that section, not silently fall back to the default tab. */
+  var SECTION_TO_TAB = {
+    'whatsapp-cloud':    'whatsapp',
+    'whatsapp-embedded': 'whatsapp'
+  };
+
+  /* Resolve a raw hash to {tab, section}: a tab id, a known section anchor,
+     or the default tab. */
+  function resolve(hash) {
+    if (TABS.indexOf(hash) !== -1) return { tab: hash, section: '' };
+    if (SECTION_TO_TAB[hash])      return { tab: SECTION_TO_TAB[hash], section: hash };
+    return { tab: DEFAULT, section: '' };
+  }
 
   function activateTab(id) {
     if (TABS.indexOf(id) === -1) id = DEFAULT;
@@ -999,10 +1263,21 @@
     } catch (_) {}
   }
 
+  /* Apply a raw hash: open its tab, and if it pointed at a section anchor,
+     keep that anchor in the URL and scroll the section into view. */
+  function applyHash(hash) {
+    var r = resolve(hash);
+    activateTab(r.tab);
+    if (r.section) {
+      try { history.replaceState(null, '', '#' + r.section); } catch (_) {}
+      var el = document.getElementById(r.section);
+      if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'start' }); }
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
-    /* قراءة التبويب من hash أو الافتراضي */
-    var hash = (window.location.hash || '').replace('#', '');
-    activateTab(hash || DEFAULT);
+    /* قراءة التبويب/القسم من hash أو الافتراضي */
+    applyHash((window.location.hash || '').replace('#', ''));
 
     /* ربط أزرار التبويبات */
     TABS.forEach(function (t) {
@@ -1012,10 +1287,9 @@
       }
     });
 
-    /* دعم زر الرجوع للمتصفح */
+    /* دعم زر الرجوع للمتصفح + الروابط العميقة (#whatsapp-cloud …) */
     window.addEventListener('hashchange', function () {
-      var h = (window.location.hash || '').replace('#', '');
-      activateTab(h || DEFAULT);
+      applyHash((window.location.hash || '').replace('#', ''));
     });
 
     /* ── Vault key — generate + toast ─────────────────────── */
@@ -1062,4 +1336,11 @@
   });
 }());
 </script>
+{# WhatsApp settings interactivity (reveal secret + discover templates). The
+   panel CSP is `script-src 'self'`, so these live in external files and read
+   their route URLs from the [data-wac-js]/[data-wae-js] data-* attributes. #}
+{% if wac_enabled %}
+<script src="{{ url_for('static', filename='js/whatsapp_cloud_settings.js') }}" defer></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/whatsapp_embedded_settings.js') }}" defer></script>
 {% endblock %}
