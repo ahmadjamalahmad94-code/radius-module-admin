@@ -431,13 +431,17 @@
   // initial view from the URL (deep-link). Supports both ?view=<name>
   // (used by server-side post-redirects, e.g. the WhatsApp PRG) and #<name>.
   // ?view= wins; falling back to the hash keeps the old behavior intact.
+  // Anchor → view aliases: some #anchors point at a card INSIDE a pane rather
+  // than naming a pane. Map them to the owning view so a deep-link opens it.
+  var VIEW_ALIASES = { gdrive: "backups" };
   function initialView() {
+    var v = "";
     try {
       var qs = new URLSearchParams(location.search || "");
-      var v = (qs.get("view") || "").trim();
-      if (v) return v;
+      v = (qs.get("view") || "").trim();
     } catch (e) { /* URLSearchParams unsupported → fall through to hash */ }
-    return (location.hash || "").replace("#", "");
+    if (!v) v = (location.hash || "").replace("#", "");
+    return VIEW_ALIASES[v] || v;
   }
   function boot() {
     var h = initialView();
