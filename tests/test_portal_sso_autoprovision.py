@@ -100,6 +100,27 @@ def test_sso_reuses_existing_active_user(app, client):
     assert CustomerUser.query.filter_by(customer_id=cid).count() == 1
 
 
+def test_portal_dashboard_renders_drive_card_for_authed_customer(app, client):
+    from app.models import CustomerUser
+    cid, _key = _customer_with_license()
+    u = CustomerUser(customer_id=cid, username="owner1", email="o@x.test",
+                     full_name="Owner", role_key="owner", active=True)
+    u.set_password("pw-12345678")
+    db.session.add(u)
+    db.session.commit()
+    with client.session_transaction() as s:
+        s["customer_user_id"] = u.id
+        s["customer_id"] = cid
+        s["customer_name"] = u.username
+    body = client.get("/portal?view=backups").get_data(as_text=True)
+    # The body is NOT empty: the backups pane + Google Drive card render
+    # server-side (the connect button OR the not-configured admin notice).
+    assert 'data-pp-pane="backups"' in body
+    assert 'id="gdrive"' in body
+    assert "Google Drive" in body
+    assert ("ربط Google Drive" in body) or ("قيد التهيئة" in body)
+
+
 def test_sso_landing_with_focus_redirects_to_gdrive_anchor(app, client):
     cid, key = _customer_with_license()
     data = client.post(SSO_PATH, json=_body(key), base_url=HTTPS_BASE).get_json()
@@ -108,4 +129,8 @@ def test_sso_landing_with_focus_redirects_to_gdrive_anchor(app, client):
     parts = urlsplit(data["sso_url"])
     r = client.get(parts.path + "?" + parts.query, base_url=HTTPS_BASE, follow_redirects=False)
     assert r.status_code in (301, 302)
-    assert r.headers["Location"].endswith("#gdrive")
+    # Lands on the backups VIEW (the SPA pane that holds the Drive card), with
+    # the #gdrive anchor — not a bare #gdrive that the SPA reads as an unknown
+    # view and blanks the page.
+    loc = r.headers["Location"]
+    assert "view=backups" in loc and loc.endswith("#gdrive")

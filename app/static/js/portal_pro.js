@@ -15,14 +15,18 @@
     var root = app();
     if (!root || !view) return;
     var views = root.querySelectorAll("[data-pp-pane]");
-    var found = false;
+    // Guard FIRST: if no pane matches (e.g. an unknown #hash like #gdrive, which
+    // is an in-pane anchor, not a view name), bail BEFORE touching any styles —
+    // otherwise the loop would set display:none on EVERY pane and blank the whole
+    // body, hiding even the server-rendered default (overview).
+    var exists = false;
+    views.forEach(function (v) { if (v.getAttribute("data-pp-pane") === view) exists = true; });
+    if (!exists) return;
     views.forEach(function (v) {
       var on = v.getAttribute("data-pp-pane") === view;
       v.style.display = on ? "flex" : "none";
       v.classList.toggle("is-active", on);
-      if (on) found = true;
     });
-    if (!found) return;
     root.querySelectorAll("[data-pp-view]").forEach(function (l) {
       l.classList.toggle("is-active", l.getAttribute("data-pp-view") === view);
     });
