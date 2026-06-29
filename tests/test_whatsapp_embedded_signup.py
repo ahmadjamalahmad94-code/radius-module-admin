@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.extensions import db
-from app.models import Customer, CustomerUser, WhatsAppTenantAccount
+from app.models import Customer, CustomerUser, WhatsAppTenantAccount, utcnow
 from app.services.customer_control import get_or_create_service_entitlement
 from app.services.whatsapp import embedded_signup as es
 from app.services.whatsapp import settings as wa_settings
@@ -48,7 +48,7 @@ def _csrf(client) -> str:
         return s.get("_csrf_token", "")
 
 
-def _mock_meta(monkeypatch, *, token=LIVE_TOKEN, fail_exchange=False, no_token=False):
+def _mock_meta(monkeypatch, *, token=LIVE_TOKEN, fail_exchange=False, no_token=False, expires_in=0):
     """Install canned Graph responses; record POSTs in the returned dict."""
     posts: dict = {}
 
@@ -56,7 +56,7 @@ def _mock_meta(monkeypatch, *, token=LIVE_TOKEN, fail_exchange=False, no_token=F
         if path == "oauth/access_token":
             if fail_exchange:
                 raise es.EmbeddedSignupError("auth_failed", "تعذّر إكمال الربط.")
-            return {} if no_token else {"access_token": token, "expires_in": 0}
+            return {} if no_token else {"access_token": token, "expires_in": expires_in}
         if path == "debug_token":
             return {"data": {"scopes": ["whatsapp_business_management", "whatsapp_business_messaging"]}}
         if path.startswith("PNID"):
@@ -119,6 +119,25 @@ def test_complete_signup_persists_encrypted_and_connected(app, monkeypatch):
         # token stored ENCRYPTED, recoverable, never plaintext
         assert acc.access_token_encrypted and acc.access_token_encrypted != LIVE_TOKEN
         assert decrypt_secret(acc.access_token_encrypted) == LIVE_TOKEN
+        # A non-expiring business token (expires_in=0) leaves expiry unset.
+        assert acc.token_expires_at is None
+
+
+def test_complete_signup_stores_token_expiry_when_meta_returns_expires_in(app, monkeypatch):
+    """When Meta returns a positive ``expires_in``, the embedded flow persists a
+    ``token_expires_at`` (≈ now + expires_in) so the UI can flag a token that
+    will need re-auth. Mirrors the manual-entry path which already stores it."""
+    with app.app_context():
+        cid = _customer()
+        _mock_meta(monkeypatch, expires_in=3600)
+        before = utcnow()
+        es.complete_signup(cid, code="C", waba_id="WABA-1", phone_number_id="PNID-1")
+
+        acc = wa_settings.get_account(cid)
+        assert acc.token_expires_at is not None
+        delta = (acc.token_expires_at - before).total_seconds()
+        # Allow a wide window for clock/commit latency; the point is ~1h, not 0.
+        assert 3500 <= delta <= 3700
 
 
 # ───────────────────────── 3. service: failures ─────────────────────────

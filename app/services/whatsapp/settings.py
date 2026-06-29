@@ -218,6 +218,7 @@ def account_public_dict(account: WhatsAppTenantAccount | None) -> dict:
         "messaging_limit_tier": account.messaging_limit_tier or "",
         "connected_at": account.connected_at,
         "disconnected_at": account.disconnected_at,
+        "token_expires_at": account.token_expires_at,
         "last_error": {
             "code": account.last_error_code or "",
             "message": account.last_error_message or "",

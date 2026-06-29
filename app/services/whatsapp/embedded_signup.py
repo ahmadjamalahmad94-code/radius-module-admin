@@ -431,7 +431,9 @@ def complete_signup(
             "لم يكتمل اختيار حساب واتساب أو الرقم. أعد المحاولة من زر الربط.",
         )
 
-    token = exchange_code(code, redirect_uri=redirect_uri)["access_token"]
+    exchanged = exchange_code(code, redirect_uri=redirect_uri)
+    token = exchanged["access_token"]
+    expires_in = exchanged.get("expires_in")
     scopes = granted_scopes(token)
     phone = _phone_metadata(token, phone_number_id)
     waba = _waba_metadata(token, waba_id)
@@ -455,6 +457,13 @@ def complete_signup(
     account.connection_status = "connected"
     account.connected_at = utcnow()
     account.last_sync_at = utcnow()
+    # Capture the long-lived token's expiry when Meta returns one. Embedded
+    # Signup business tokens are usually non-expiring (expires_in absent/0),
+    # in which case we clear any stale expiry so the UI shows "no expiry"
+    # rather than a wrong, past date carried over from a prior manual entry.
+    account.token_expires_at = (
+        utcnow() + timedelta(seconds=int(expires_in)) if expires_in else None
+    )
     account.last_error_code = None
     account.last_error_message = None
     db.session.commit()
