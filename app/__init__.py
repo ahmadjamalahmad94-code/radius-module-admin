@@ -499,13 +499,21 @@ def _install_security_headers(app: Flask) -> None:
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
             "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-            "img-src 'self' data:; "
+            # نطاقات Meta (fbcdn/facebook) مطلوبة فقط لتسجيل واتساب المضمّن
+            # (WhatsApp Embedded Signup) لعرض صور/بكسلات الـSDK. data: يبقى للأيقونات المضمّنة.
+            "img-src 'self' data: https://*.fbcdn.net https://www.facebook.com; "
             # السكربتات المضمّنة (inline) ومعالِجات onclick في قوالب اللوحة المُعاد
             # تصميمها كانت محجوبة بـ'self' فقط → السايدبار والأزرار لا تعمل. السماح
             # بـ'unsafe-inline' للسكربتات يعيد تشغيل واجهة اللوحة (أداة إدارية خلف
             # مصادقة، قوالبها كلها داخلية). الأنسب أمنيًا لاحقًا: نقل السكربتات لملفات
             # خارجية أو استخدام nonce لكل <script> وإزالة onclick.
-            "script-src 'self' 'unsafe-inline'; "
+            # connect.facebook.net مطلوب لتحميل Meta JS SDK الخاص بتسجيل واتساب المضمّن.
+            "script-src 'self' 'unsafe-inline' https://connect.facebook.net; "
+            # connect-src: نداءات FB.init/FB.login عبر XHR إلى graph/www.facebook + تحميل الـSDK.
+            # frame-src: الـSDK ينشئ iframe مخفيًا على facebook.com + نافذة حوار التسجيل.
+            # كلاهما مطلوب حصريًا لتسجيل واتساب المضمّن (Meta JS SDK) — لا شيء أوسع من ذلك.
+            "connect-src 'self' https://graph.facebook.com https://www.facebook.com https://connect.facebook.net; "
+            "frame-src https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com https://connect.facebook.net; "
             "frame-ancestors 'none'",
         )
         if app.config.get("SESSION_COOKIE_SECURE"):

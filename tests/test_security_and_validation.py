@@ -235,6 +235,55 @@ def test_security_headers_and_secure_cookie_flags_are_set(client):
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
+def _csp_directive(policy: str, name: str) -> str:
+    """Return the value of a single CSP directive (e.g. ``script-src``)."""
+    for part in policy.split(";"):
+        part = part.strip()
+        if part.startswith(name + " "):
+            return part
+    return ""
+
+
+def test_csp_allows_meta_embedded_signup_sdk_exactly(client):
+    """The CSP must permit Meta's JS SDK (WhatsApp Embedded Signup) and nothing
+    broader, while the rest of the policy stays intact ('self', frame-ancestors
+    none). Regression guard for the SDK being blocked by 'self'-only directives."""
+    policy = client.get("/login").headers["Content-Security-Policy"]
+
+    # script-src now allows the Facebook SDK origin (kept 'self' + 'unsafe-inline').
+    script_src = _csp_directive(policy, "script-src")
+    assert "https://connect.facebook.net" in script_src
+    assert "'self'" in script_src
+    assert "'unsafe-inline'" in script_src
+
+    # connect-src: SDK load + FB.init/FB.login XHR to graph/www.facebook.
+    connect_src = _csp_directive(policy, "connect-src")
+    assert "'self'" in connect_src
+    assert "https://graph.facebook.com" in connect_src
+    assert "https://www.facebook.com" in connect_src
+    assert "https://connect.facebook.net" in connect_src
+
+    # frame-src: the SDK's hidden facebook.com iframe + the signup dialog.
+    frame_src = _csp_directive(policy, "frame-src")
+    assert "https://www.facebook.com" in frame_src
+    assert "https://web.facebook.com" in frame_src
+    assert "https://staticxx.facebook.com" in frame_src
+    assert "https://connect.facebook.net" in frame_src
+
+    # img-src keeps data: and adds only the fbcdn images + www.facebook.
+    img_src = _csp_directive(policy, "img-src")
+    assert "'self'" in img_src
+    assert "data:" in img_src
+    assert "https://*.fbcdn.net" in img_src
+
+    # Nothing else weakened: base policy + clickjacking protections intact.
+    assert "default-src 'self'" in policy
+    assert "frame-ancestors 'none'" in policy
+    # No broad wildcards crept in (only the scoped fbcdn image wildcard is allowed).
+    assert "*.facebook.com" not in policy
+    assert " https://*" not in policy.replace("https://*.fbcdn.net", "")
+
+
 def test_secure_cookie_and_hsts_when_enabled():
     app = create_app(TestingConfig, SESSION_COOKIE_SECURE=True)
     with app.app_context():
