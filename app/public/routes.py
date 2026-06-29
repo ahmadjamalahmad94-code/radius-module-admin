@@ -1299,6 +1299,45 @@ def customer_portal_whatsapp_embedded_complete():
                     "redirect": _whatsapp_pane_url()})
 
 
+@bp.get("/integrations/whatsapp/callback")
+@bp.get("/portal/integrations/whatsapp/callback")
+def integrations_whatsapp_callback():
+    """Meta WhatsApp Embedded Signup OAuth redirect landing page.
+
+    This is the public **Valid OAuth Redirect URI** registered in the Meta App
+    (``https://<panel-domain>/integrations/whatsapp/callback``). Meta requires a
+    real, reachable redirect URI even though the primary embedded-signup flow
+    completes via the browser popup + ``postMessage`` (POST
+    ``/portal/whatsapp/embedded/complete``). This endpoint simply renders a clean
+    RTL landing page acknowledging the redirect.
+
+    Query params (all optional, all from Meta):
+    ``code`` / ``state`` on success; ``error`` / ``error_reason`` /
+    ``error_description`` on denial.
+
+    Safety contract:
+    * The authorization ``code`` is a short-lived, single-use grant — it is
+      NEVER logged here and the final token exchange is deliberately NOT done in
+      this slice (that lives in ``embedded_signup.complete_with_state``, driven
+      by the popup flow). No access token is ever produced or displayed here.
+    * ``state`` is echoed back into the page only via Jinja autoescaping; it is
+      intentionally NOT consumed/validated here, because consuming it would
+      invalidate the live pending attempt that the popup flow must redeem. Real
+      tenant-scoped state validation stays in ``complete_with_state``.
+    * Meta error fields are user-facing strings (never secrets) and are rendered
+      escaped by Jinja autoescaping.
+    """
+    args = request.args
+    return render_template(
+        "public/integrations_whatsapp_callback.html",
+        code=(args.get("code") or "").strip(),
+        state=(args.get("state") or "").strip(),
+        error=(args.get("error") or "").strip(),
+        error_reason=(args.get("error_reason") or "").strip(),
+        error_description=(args.get("error_description") or "").strip(),
+    )
+
+
 def _runtime_setup_for_license(lic: License | None) -> dict:
     """Bridge setup snippet shown in the customer portal.
 
