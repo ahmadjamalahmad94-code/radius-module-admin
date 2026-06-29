@@ -737,6 +737,9 @@ def hoberadius_whatsapp_status():
         "ok": True,
         "enabled": bool(settings.enabled),
         "account_status": account_status,
+        # Normalized 3-state badge (Connected / Needs action / Disconnected) so
+        # the radius client can render the spec's status without re-mapping.
+        "integration_status": account_public.get("integration_status", "disconnected"),
         "onboarding_state": onboarding_state,
         "embedded_available": bool(wa_embed.embedded_signup_available()),
         "display_phone_number": account_public.get("display_phone_number") or "",

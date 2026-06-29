@@ -186,6 +186,23 @@ def set_connection_status(
     return account
 
 
+# The panel tracks a rich set of connection states (connected / disconnected /
+# error / suspended / pending / not_configured). The product spec asks for a
+# clean THREE-state badge — Connected / Needs action / Disconnected — so we
+# fold the rich states into that triad for any consumer (UI badge, bridge
+# status, radius client) that wants the simple view. "error"/"suspended"/
+# "pending" all mean "the operator must do something" → needs_action.
+def normalized_integration_status(connection_status: str | None) -> str:
+    """Fold the rich connection_status into {connected, needs_action, disconnected}."""
+    status = (connection_status or "").strip().lower()
+    if status == "connected":
+        return "connected"
+    if status in ("error", "suspended", "pending"):
+        return "needs_action"
+    # disconnected / not_configured / unknown / "" → disconnected
+    return "disconnected"
+
+
 def account_public_dict(account: WhatsAppTenantAccount | None) -> dict:
     """Public, secret-free view of an account.
 
@@ -194,7 +211,9 @@ def account_public_dict(account: WhatsAppTenantAccount | None) -> dict:
     can show that a token exists without revealing it.
     """
     if account is None:
-        return {}
+        # No account row yet = nothing connected. Still expose the normalized
+        # triad so callers can render the badge without a None-check.
+        return {"integration_status": "disconnected"}
 
     masked = "—"
     try:
@@ -207,6 +226,7 @@ def account_public_dict(account: WhatsAppTenantAccount | None) -> dict:
     return {
         "status": account.connection_status,
         "connection_status": account.connection_status,
+        "integration_status": normalized_integration_status(account.connection_status),
         "provider": account.provider,
         "meta_business_id": account.meta_business_id or "",
         "whatsapp_business_account_id": account.whatsapp_business_account_id or "",
