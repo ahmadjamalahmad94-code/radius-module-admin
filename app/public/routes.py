@@ -291,10 +291,13 @@ def customer_portal_sso():
     session["customer_id"] = user.customer_id
     session["customer_name"] = user.full_name or user.username
     flash("تم الدخول إلى بوابة العميل من الريدياس.", "success")
-    # When the radius sent the customer here to link Drive, land on the
-    # Google Drive card so the connect button is right there.
+    # When the radius sent the customer here to link Drive, open the «backups»
+    # view (the portal SPA selects the pane from ?view=) — that pane holds the
+    # Google Drive card. ``#gdrive`` is only an in-pane anchor; on its own the
+    # SPA would read it as an unknown view name. The anchor still scrolls to the
+    # card once the pane is shown.
     if (request.args.get("focus") or "") == "gdrive":
-        return redirect(url_for("public.customer_portal_dashboard") + "#gdrive")
+        return redirect(url_for("public.customer_portal_dashboard") + "?view=backups#gdrive")
     return redirect(url_for("public.customer_portal_dashboard"))
 
 
