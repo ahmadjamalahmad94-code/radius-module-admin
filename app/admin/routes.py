@@ -3275,6 +3275,7 @@ def settings_page():
     from ..services.whatsapp import embedded_settings as wae
     from ..services import customer_vault_crypto as vc
     from ..services import google_drive as gd
+    from ..services import firebase_fcm as fcm
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
     # Google Drive OAuth status for the integrations tab. redirect_uri()
@@ -3285,12 +3286,19 @@ def settings_page():
         gd_redirect_uri = gd.redirect_uri()
     except Exception:  # noqa: BLE001 — never break the settings page on a probe
         gd_configured, gd_libs, gd_redirect_uri = False, False, ""
+    # Central Firebase / FCM credential status (masked) for the integrations tab.
+    try:
+        fcm_state = fcm.status()
+    except Exception:  # noqa: BLE001 — never break the settings page on a probe
+        fcm_state = {"configured": False, "enabled": False, "library_ok": False,
+                     "project_id": "", "client_email": "", "uploaded_at": ""}
     return render_template(
         "admin/settings/general_new.html",
         settings=settings,
         gd_configured=gd_configured,
         gd_libs=gd_libs,
         gd_redirect_uri=gd_redirect_uri,
+        fcm_state=fcm_state,
         customer_name=_setting("product_name", ""),
         support_email=_setting("support_email", ""),
         wac_enabled=wac.enabled(),
@@ -3593,7 +3601,16 @@ _SETTINGS_SECTION_KEYS = {
     "integrations": (
         "google_oauth_client_id", "google_oauth_redirect_uri",
     ),
+    # Central Firebase / FCM — the credential is a FILE upload (handled
+    # specially below, like the logo). No text keys: the public identity fields
+    # (firebase_project_id/client_email/uploaded_at) are written by
+    # firebase_fcm.store_uploaded, never from the form. The empty tuple keeps
+    # the section "known" while the whitelist loop is a no-op for it.
+    "firebase": (),
 }
+
+# Max size for an uploaded Firebase service-account JSON (~2 KB; allow margin).
+_FIREBASE_MAX_BYTES = 64 * 1024
 
 # Settings keys whose values are booleans (checkbox: present="1", absent="").
 _SETTINGS_BOOL_KEYS = {
@@ -3621,9 +3638,51 @@ _LOGO_MAX_BYTES = 500 * 1024  # 500 KB (matches the template hint)
 def settings_section_save():
     section = (request.form.get("section") or "").strip().lower()
     allowed = _SETTINGS_SECTION_KEYS.get(section)
-    if not allowed:
+    # ``allowed`` may legitimately be an empty tuple (file-only sections like
+    # ``firebase``), so test for membership, not truthiness.
+    if allowed is None:
         flash("قسم الإعدادات غير معروف.", "error")
         return redirect(url_for("admin.settings_page"))
+
+    # ─── Firebase / FCM credential (integrations panel) ───────────────
+    # Super-admin only: the credential holds a private key. Upload validates +
+    # stores securely via firebase_fcm; "remove" clears it. Never echoed back.
+    if section == "firebase":
+        admin = current_admin()
+        if not (admin and getattr(admin, "is_super_admin", False)):
+            flash("رفع اعتماد الدفع مقصور على المالك (سوبر أدمن).", "error")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        from ..services import firebase_fcm
+        if (request.form.get("firebase_action") or "").strip() == "remove":
+            firebase_fcm.clear()
+            audit("settings_section_updated", "settings", "firebase",
+                  "تم حذف اعتماد Firebase", metadata={"section": "firebase"})
+            db.session.commit()
+            flash("تم حذف اعتماد Firebase. دفع الإشعارات للجوال متوقّف حتى يُرفَع اعتماد جديد.", "success")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        file = request.files.get("firebase_credential")
+        if not (file and getattr(file, "filename", "")):
+            flash("اختر ملفّ firebase-admin-sdk.json أولًا.", "error")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        raw = file.read(_FIREBASE_MAX_BYTES + 1)
+        if len(raw) > _FIREBASE_MAX_BYTES:
+            flash("الملفّ أكبر من المتوقَّع لملفّ حساب خدمة. تأكّد من الملفّ الصحيح.", "error")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        try:
+            info = firebase_fcm.store_uploaded(raw)
+        except firebase_fcm.FirebaseCredentialError as exc:
+            flash(f"ملفّ غير صالح: {exc}", "error")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        except Exception:  # noqa: BLE001 — unexpected storage failure
+            current_app.logger.warning("firebase credential store failed", exc_info=True)
+            flash("تعذّر حفظ الاعتماد على الخادم. حاول مرة أخرى.", "error")
+            return redirect(url_for("admin.settings_page") + "#firebase")
+        audit("settings_section_updated", "settings", "firebase",
+              "تم رفع اعتماد Firebase", metadata={"section": "firebase",
+              "project_id": info.get("project_id")})
+        db.session.commit()
+        flash(f"تم رفع اعتماد Firebase وتفعيل الدفع المركزي ✓ — المشروع {info.get('project_id') or '—'}.", "success")
+        return redirect(url_for("admin.settings_page") + "#firebase")
 
     # ─── Logo upload (site_info panel) ────────────────────────────────
     if section == "site_info":

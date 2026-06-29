@@ -448,6 +448,10 @@
           aria-controls="tab-integrations" id="tab-btn-integrations">
     <i class="fa-brands fa-google-drive" aria-hidden="true"></i> تكامل Google Drive
   </button>
+  <button class="cc-tab-btn" role="tab" data-tab="firebase"
+          aria-controls="tab-firebase" id="tab-btn-firebase">
+    <i class="fa-solid fa-bell" aria-hidden="true"></i> دفع الإشعارات (Firebase)
+  </button>
   <button class="cc-tab-btn" role="tab" data-tab="whatsapp"
           aria-controls="tab-whatsapp" id="tab-btn-whatsapp">
     <i class="fa-brands fa-whatsapp" aria-hidden="true"></i> {{ _('واتساب') }}
@@ -1026,6 +1030,90 @@
   </div>
 </div>
 </div>{# /cc-tab-pane#integrations #}
+
+{# ════════════════════════════════════════════════════════════════════
+   القسم 6 — دفع الإشعارات للجوال (Firebase Cloud Messaging) — مركزيّ
+   التطبيق الجوّال تطبيق عالميّ واحد (com.hoberadius.app) يتّصل بكل
+   نسخ الراديوس، ومشروع Firebase مركزيّ لهذه اللوحة. يُرفع ملفّ حساب
+   الخدمة هنا مرّة واحدة؛ تُخزّنه اللوحة بأمان (instance/ + نسخة مشفّرة)
+   وتُرسل به الإشعارات لكل أجهزة العملاء. نسخ الراديوس تُحوّل الطلب فقط.
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-firebase" role="tabpanel" aria-labelledby="tab-btn-firebase">
+<div class="sg-card">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:var(--tile-amber-bg,#fef3c7);color:var(--tile-amber-fg,#b45309)" aria-hidden="true">
+      <i class="fa-solid fa-bell"></i>
+    </span>
+    <span class="sg-card-head-title">دفع الإشعارات للجوال (Firebase)</span>
+    <span class="sg-card-head-sub">اعتماد مركزيّ واحد للتطبيق الجوّال العالميّ — نسخ الراديوس تُحوّل طلبات الدفع إلى هنا، واللوحة تُرسل FCM</span>
+  </div>
+  <div class="sg-card-body">
+
+    {# حالة الإعداد (مُقنَّعة — لا يُعرَض محتوى الملفّ أبدًا) #}
+    <div class="sg-smtp-status {% if fcm_state and fcm_state.enabled %}is-ok{% else %}is-warn{% endif %}"
+         style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid {% if fcm_state and fcm_state.enabled %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+      {% if fcm_state and fcm_state.enabled %}
+        دفع الإشعارات مُفعَّل — يصل التطبيق الجوّال إشعارات كل العملاء عبر هذه اللوحة.
+      {% elif fcm_state and fcm_state.configured and not fcm_state.library_ok %}
+        الاعتماد مرفوع لكن مكتبة <code dir="ltr">firebase-admin</code> غير مثبّتة على الخادم بعد — سيعمل الدفع تلقائيًّا بمجرّد تثبيتها.
+      {% elif fcm_state and fcm_state.configured %}
+        الاعتماد مرفوع. إن لم يُفعَّل الدفع فراجع سجلّ الخادم.
+      {% else %}
+        لم يُرفَع اعتماد Firebase بعد — ارفع ملفّ <code dir="ltr">firebase-admin-sdk.json</code> لمشروع <code dir="ltr">hoberadius</code> أدناه لتفعيل دفع الإشعارات للجوال.
+      {% endif %}
+    </div>
+
+    {% if fcm_state and fcm_state.configured %}
+    <div class="sg-field is-full" style="margin-block-end:var(--cc-sp-6)">
+      <div class="sg-label">الاعتماد المُخزَّن</div>
+      <div class="sg-hint" style="line-height:1.9">
+        <i class="fa-solid fa-key" style="color:#15803d"></i>
+        <strong>مشروع Firebase:</strong> <code dir="ltr">{{ fcm_state.project_id or '—' }}</code><br>
+        <strong>حساب الخدمة:</strong> <code dir="ltr">{{ fcm_state.client_email or '—' }}</code> <span class="sg-hint">(مُقنَّع — لا يُكشف المفتاح الخاصّ)</span>
+        {% if fcm_state.uploaded_at %}<br><strong>آخر رفع:</strong> <span dir="ltr">{{ fcm_state.uploaded_at }}</span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# رفع/تحديث ملفّ الاعتماد (super-only يُفرَض في الخادم) #}
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}" enctype="multipart/form-data">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="firebase">
+      <div class="sg-grid">
+        <div class="sg-field is-full">
+          <label class="sg-label" for="sg-fcm-cred">ملفّ Firebase (service account JSON) <span class="sg-req">*</span></label>
+          <input class="sg-input" id="sg-fcm-cred" name="firebase_credential" type="file"
+                 accept="application/json,.json">
+          <div class="sg-hint">
+            من Firebase Console ← Project settings ← Service accounts ← <strong>Generate new private key</strong>.
+            يُخزَّن بأمان على الخادم (نسخة مشفّرة احتياطيّة) ولا يُعرَض محتواه أبدًا. مقصور على المالك (سوبر أدمن).
+          </div>
+        </div>
+      </div>
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-cloud-arrow-up"></i> رفع الاعتماد وتفعيل الدفع
+        </button>
+      </div>
+    </form>
+
+    {% if fcm_state and fcm_state.configured %}
+    <div class="sg-divider"></div>
+    <form method="post" action="{{ url_for('admin.settings_section_save') }}"
+          onsubmit="return confirm('حذف اعتماد Firebase؟ سيتوقّف دفع الإشعارات للجوال حتى رفع اعتماد جديد.');">
+      {{ csrf_input() }}
+      <input type="hidden" name="section" value="firebase">
+      <input type="hidden" name="firebase_action" value="remove">
+      <button class="sg-btn-secondary" type="submit">
+        <i class="fa-solid fa-trash-can"></i> حذف الاعتماد المُخزَّن
+      </button>
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+</div>{# /cc-tab-pane#firebase #}
 
 
 {# ════════════════════════════════════════════════════════════════════
