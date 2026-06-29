@@ -218,16 +218,33 @@ def test_unsigned_request_is_rejected_401(client, app, path, extra):
 
 
 @pytest.mark.parametrize("path,extra", ENDPOINTS)
-def test_bad_signature_request_is_rejected_401(client, app, path, extra):
-    """Tampered signature -> 401."""
+def test_garbage_signature_is_ignored_in_bearer_mode(client, app, path, extra):
+    """Bearer-only contract (docs/SIMPLE_LINK_CONTRACT.md): the legacy
+    ``signature`` field is no longer part of authentication. So a garbage
+    signature must be IGNORED when the body's ``license_key`` is valid (the
+    request authenticates → NOT 401); the SAME garbage signature with an
+    unresolvable key must still be rejected (401).
+
+    This replaces the pre-migration "tampered signature -> 401" assertion,
+    which contradicted bearer-only auth (a valid key authenticates regardless
+    of any signature, exactly as ``_signed``'s docstring and the bearer-only
+    ``verify_license_signature`` describe).
+    """
     customer_id, _license_id, license_key = _make_customer_with_license("BadSig Co")
     _provision_whatsapp(customer_id)
 
+    # Valid key + garbage signature -> signature ignored, request authenticates.
     body = _signed(app, license_key, nonce=f"bad-{path}", extra=extra)
-    body["signature"] = "deadbeef" * 8  # corrupt it
+    body["signature"] = "deadbeef" * 8  # ignored in bearer mode
     res = client.post(path, json=body, base_url=HTTPS_BASE)
-    assert res.status_code == 401
-    assert res.get_json()["ok"] is False
+    assert res.status_code != 401
+
+    # Unresolvable key + garbage signature -> still rejected (auth is the key).
+    bad = _signed(app, "HBR-2026-NONE-NONE-NONE", nonce=f"bad2-{path}", extra=extra)
+    bad["signature"] = "deadbeef" * 8
+    res_bad = client.post(path, json=bad, base_url=HTTPS_BASE)
+    assert res_bad.status_code == 401
+    assert res_bad.get_json()["ok"] is False
 
 
 # --------------------------------------------------------------------------- status
