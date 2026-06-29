@@ -64,6 +64,36 @@ def terms_of_service():
     )
 
 
+# ── Data-deletion contact (ONE obvious place to change) ──────────────────────
+# Shown on the public /data-deletion page that Meta requires for the WhatsApp
+# Embedded Signup app. We prefer a real configured SUPPORT_EMAIL when the owner
+# has set one, but fall back to this brand address so the live Meta-facing page
+# never shows the generic ``support@example.com`` config default. To change the
+# contact, set the SUPPORT_EMAIL env var OR edit this constant.
+DATA_DELETION_CONTACT_EMAIL = "support@hoberadius.com"
+
+
+@bp.get("/data-deletion")
+def data_deletion():
+    """Public Data Deletion Instructions (no login required).
+
+    Required by Meta/Facebook for the WhatsApp Embedded Signup app — registered
+    in the app's "User data deletion" field as
+    ``https://hoberadius.com/data-deletion``. Mirrors the privacy/terms pages:
+    same RTL Cairo layout, same brand header, same base styling.
+    """
+    configured = (current_app.config.get("SUPPORT_EMAIL") or "").strip()
+    # The base config default is the generic "support@example.com"; treat that
+    # (and an empty value) as "unset" so the compliance page shows the brand
+    # address instead of a placeholder.
+    contact_email = configured if configured and configured != "support@example.com" else DATA_DELETION_CONTACT_EMAIL
+    return render_template(
+        "public/data_deletion.html",
+        contact_email=contact_email,
+        support_phone=current_app.config.get("SUPPORT_PHONE", ""),
+    )
+
+
 def _get_portal_request(request_id: int) -> LicensePaymentRequest | None:
     token = (request.args.get("token") or request.form.get("token") or "").strip()
     return LicensePaymentRequestRepository().get_for_portal(request_id, token)
