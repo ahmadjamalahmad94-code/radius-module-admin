@@ -1380,8 +1380,29 @@ def whatsapp_webhook():
     raw = request.get_data()
     payload = request.get_json(silent=True) or {}
     signature = request.headers.get("X-Hub-Signature-256")
+
+    # Authenticate Meta's POST against the app-secret X-Hub-Signature-256 BEFORE
+    # storing anything. Policy (see app/services/whatsapp/webhook.py):
+    #   * a secret is configured (per-tenant or app-level) -> a MISSING,
+    #     malformed, or non-matching signature is rejected with 401 (strict).
+    #   * no secret configured yet (tenant mid-onboarding) -> we cannot verify;
+    #     accept but flag the events unverified and log a warning (Phase-1).
+    # We NEVER log the signature or the secret.
+    sig_status = wa_webhook.verify_signature(payload, signature, raw)
+    if sig_status == wa_webhook.SIG_FAILED:
+        current_app.logger.warning(
+            "WhatsApp webhook rejected (401): app-secret signature missing or invalid"
+        )
+        abort(401)
+    if sig_status == wa_webhook.SIG_UNVERIFIED_NO_SECRET:
+        current_app.logger.warning(
+            "WhatsApp webhook accepted UNVERIFIED: no app secret configured for the "
+            "targeted account; events stored but not applied. Configure the tenant "
+            "webhook secret or META_APP_SECRET to enable strict verification."
+        )
+
     try:
-        summary = wa_webhook.ingest(payload, signature_header=signature, raw_body=raw)
+        summary = wa_webhook.ingest(payload, signature_status=sig_status)
     except Exception:  # noqa: BLE001 — never 5xx to Meta; that triggers retries.
         current_app.logger.exception("WhatsApp webhook ingest failed")
         db.session.rollback()

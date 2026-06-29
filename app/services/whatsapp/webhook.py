@@ -20,10 +20,23 @@ Design rules the route + tests rely on:
   id, else a content hash) is used to skip a duplicate delivery. Meta retries
   aggressively, so a re-POST of the same status must not double-apply the queue
   update.
-* The app-secret signature check is Phase-1 lenient: an account with NO stored
-  secret is trusted (``signature_ok=True``). When a secret IS stored and the
-  header is present, a mismatch stores the event with
-  ``processing_error="signature_mismatch"`` and does NOT apply updates.
+* App-secret signature policy (:func:`verify_signature`):
+    - STRICT once a secret exists. When an app secret resolves for the targeted
+      account — the per-tenant ``webhook_secret_encrypted`` (manual path) OR the
+      app-level ``META_APP_SECRET`` (Embedded Signup path) — the POST MUST carry a
+      well-formed ``X-Hub-Signature-256: sha256=<hex>`` header equal to
+      ``HMAC_SHA256(secret, raw_body)`` compared in constant time. A MISSING,
+      malformed, or NON-MATCHING signature is a hard failure: the route rejects
+      the delivery with HTTP 401 and NOTHING is stored or applied. This is the
+      core fix for the prior lenient behavior that accepted tampered/absent
+      signatures with a 200.
+    - PHASE-1 LENIENT only while NO secret is configured yet (a tenant still
+      mid-onboarding). We cannot verify, so we do not hard-break inbound: the
+      route logs a clear warning, the events are stored, but they are flagged
+      ``processing_error="unverified_no_app_secret"`` and NOT applied — i.e.
+      explicitly unverified, never silently trusted. The moment a secret exists,
+      the strict path above is the default.
+  Signatures and secrets are NEVER logged.
 """
 from __future__ import annotations
 
@@ -149,17 +162,21 @@ def _event_id_for(event: dict) -> str:
     return f"meta:hash:{digest}"
 
 
-def _signature_ok(account, signature_header, raw_body) -> bool:
-    """Verify Meta's ``X-Hub-Signature-256`` app-secret signature.
+# Signature verdicts returned by :func:`verify_signature`.
+SIG_VERIFIED = "verified"               # secret resolved AND header matches -> process
+SIG_FAILED = "failed"                   # secret resolved but header missing/bad -> 401
+SIG_UNVERIFIED_NO_SECRET = "unverified_no_secret"  # no secret yet -> store, flag, 200
 
-    Secret resolution order:
+
+def _resolve_app_secret(account) -> str:
+    """Resolve the app secret used to verify Meta's signature, or "" if none.
+
+    Resolution order:
       1. the account's per-account ``webhook_secret_encrypted`` (manual path), else
       2. the app-level ``META_APP_SECRET`` — Embedded Signup connections don't
          store a per-account secret; their webhooks are signed with the Meta app
          secret, so we verify against it.
-    Phase-1 lenient: if neither secret exists (or no header is presented) the
-    event is trusted. When a secret IS resolved AND a header is presented, the
-    header must equal ``"sha256=" + HMAC_SHA256(secret, raw_body)`` (constant-time).
+    A corrupt stored secret or a missing app context degrades to "" (no secret).
     """
     secret = ""
     encrypted = getattr(account, "webhook_secret_encrypted", None) if account is not None else None
@@ -173,12 +190,17 @@ def _signature_ok(account, signature_header, raw_body) -> bool:
             secret = (current_app.config.get("META_APP_SECRET") or "").strip()
         except Exception:  # noqa: BLE001 — outside app context, etc.
             secret = ""
-    if not secret:
-        return True
-    if not signature_header:
-        # A secret is configured but Meta sent no signature header. Stay lenient
-        # in Phase 1 (do not block delivery); upgrade to strict later if needed.
-        return True
+    return secret
+
+
+def _hmac_matches(secret, signature_header, raw_body) -> bool:
+    """Constant-time check that ``signature_header`` is Meta's valid signature.
+
+    Returns False on no secret, no/empty header, or any mismatch. The HMAC is
+    computed over the EXACT raw request bytes (never a re-serialized body).
+    """
+    if not secret or not signature_header:
+        return False
     body = raw_body if isinstance(raw_body, (bytes, bytearray)) else str(raw_body or "").encode("utf-8")
     expected = "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     try:
@@ -187,8 +209,53 @@ def _signature_ok(account, signature_header, raw_body) -> bool:
         return False
 
 
-def ingest(payload, *, signature_header=None, raw_body=b"") -> dict:
+def _signature_ok(account, signature_header, raw_body) -> bool:
+    """Low-level: True iff a secret resolves for ``account`` AND the presented
+    ``X-Hub-Signature-256`` header matches it (constant-time). False on no
+    secret / no header / mismatch. The verdict POLICY (401 vs. Phase-1 lenient)
+    lives in :func:`verify_signature`; this is the raw cryptographic check.
+    """
+    return _hmac_matches(_resolve_app_secret(account), signature_header, raw_body)
+
+
+def _account_for_payload(payload):
+    """Resolve (phone_number_id, account) for a webhook payload, or (id|None, None)."""
+    phone_number_id = _phone_number_id_from_payload(payload)
+    account = None
+    if phone_number_id:
+        account = WhatsAppTenantAccount.query.filter_by(
+            phone_number_id=phone_number_id
+        ).first()
+    return phone_number_id, account
+
+
+def verify_signature(payload, signature_header, raw_body) -> str:
+    """Classify Meta's POST signature into a verdict (see module docstring).
+
+    Returns one of:
+      * ``SIG_VERIFIED``            — a secret resolves and the header matches it.
+      * ``SIG_FAILED``             — a secret resolves but the header is missing,
+                                     malformed, or non-matching. The route MUST
+                                     reject this with HTTP 401 and store nothing.
+      * ``SIG_UNVERIFIED_NO_SECRET`` — no secret configured yet (Phase-1): the
+                                     route accepts but flags events unverified.
+
+    The HMAC is taken over the raw request bytes; the secret is never logged.
+    """
+    _phone_number_id, account = _account_for_payload(payload)
+    secret = _resolve_app_secret(account)
+    if not secret:
+        return SIG_UNVERIFIED_NO_SECRET
+    return SIG_VERIFIED if _hmac_matches(secret, signature_header, raw_body) else SIG_FAILED
+
+
+def ingest(payload, *, signature_status=SIG_VERIFIED) -> dict:
     """Ingest a Meta webhook POST. Store + (optionally) process each event.
+
+    ``signature_status`` is the verdict from :func:`verify_signature`. A
+    ``SIG_FAILED`` delivery is rejected upstream with HTTP 401 and never reaches
+    here, so this only sees ``SIG_VERIFIED`` (process normally) or
+    ``SIG_UNVERIFIED_NO_SECRET`` (store but flag unverified, do not apply).
 
     Returns ``{"stored": n, "processed": m, "skipped_duplicates": d}``. Never
     raises: the caller wraps this and always returns HTTP 200 so Meta does not
@@ -197,16 +264,8 @@ def ingest(payload, *, signature_header=None, raw_body=b"") -> dict:
     summary = {"stored": 0, "processed": 0, "skipped_duplicates": 0}
 
     events = MetaCloudWhatsAppProvider().parse_webhook(payload)
-    phone_number_id = _phone_number_id_from_payload(payload)
-
-    account = None
-    if phone_number_id:
-        account = WhatsAppTenantAccount.query.filter_by(
-            phone_number_id=phone_number_id
-        ).first()
+    phone_number_id, account = _account_for_payload(payload)
     customer_id = account.customer_id if account is not None else None
-
-    sig_ok = _signature_ok(account, signature_header, raw_body)
 
     for event in events:
         if not isinstance(event, dict):
@@ -236,8 +295,11 @@ def ingest(payload, *, signature_header=None, raw_body=b"") -> dict:
         if account is None:
             row.processing_error = "webhook_unmatched_phone_number"
             continue
-        if not sig_ok:
-            row.processing_error = "signature_mismatch"
+        if signature_status == SIG_UNVERIFIED_NO_SECRET:
+            # No app secret configured yet (tenant mid-onboarding). Store the
+            # event but do NOT apply state changes — it is explicitly unverified,
+            # never silently trusted. The route has already logged a warning.
+            row.processing_error = "unverified_no_app_secret"
             continue
 
         try:
