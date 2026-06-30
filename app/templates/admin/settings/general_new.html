@@ -456,6 +456,10 @@
           aria-controls="tab-whatsapp" id="tab-btn-whatsapp">
     <i class="fa-brands fa-whatsapp" aria-hidden="true"></i> {{ _('واتساب') }}
   </button>
+  <button class="cc-tab-btn" role="tab" data-tab="sms"
+          aria-controls="tab-sms" id="tab-btn-sms">
+    <i class="fa-solid fa-comment-sms" aria-hidden="true"></i> الرسائل النصية (SMS)
+  </button>
   {# Settings#chr (MikroTik CHR singleton) was retired in the zero-central
      work. Per-node RouterOS credentials live on fleet_chr_nodes rows;
      fleet-wide constants live on the «إعدادات بنية الأسطول» page. #}
@@ -1305,6 +1309,142 @@
 </div>{# /cc-tab-pane#whatsapp #}
 
 
+{# ════════════════════════════════════════════════════════════════════
+   القسم 7 — الرسائل النصية (TweetSMS) — حساب المالك للتواصل مع عملائه
+   ════════════════════════════════════════════════════════════════════ #}
+<div class="cc-tab-pane" id="tab-sms" role="tabpanel" aria-labelledby="tab-btn-sms">
+<div class="sg-card" id="tweetsms"
+     data-tweetsms-js
+     data-reveal-url="{{ url_for('admin.tweetsms_reveal') }}"
+     data-balance-url="{{ url_for('admin.tweetsms_balance') }}">
+  <div class="sg-card-head">
+    <span class="sg-card-head-icon" style="background:#e0f2fe;color:#0369a1" aria-hidden="true">
+      <i class="fa-solid fa-comment-sms"></i>
+    </span>
+    <span class="sg-card-head-title">الرسائل النصية (TweetSMS)</span>
+    <span class="sg-card-head-sub">حساب المزوّد الخاصّ بالمالك (tweetsms.ps) للتواصل مع العملاء عبر SMS — يُخزَّن مشفّرًا ولا يُعرَض المفتاح أبدًا</span>
+  </div>
+  <div class="sg-card-body">
+
+    {% if tweetsms_state %}
+    {# حالة الإعداد #}
+    <div class="sg-smtp-status {% if tweetsms_state.configured %}is-ok{% else %}is-warn{% endif %}"
+         style="margin-block-end:var(--cc-sp-8)">
+      <i class="fa-solid {% if tweetsms_state.configured %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>
+      {% if tweetsms_state.configured %}
+        إعداد TweetSMS مكتمل — يمكنك إرسال SMS للعملاء من صفحة العميل أو قائمة العملاء.
+      {% else %}
+        أكمل بيانات الدخول (مفتاح API أو مستخدم/كلمة مرور) و«اسم المُرسِل» لتفعيل الإرسال.
+      {% endif %}
+    </div>
+
+    {# نموذج حفظ البيانات #}
+    <form method="post" action="{{ url_for('admin.tweetsms_settings_save') }}">
+      {{ csrf_input() }}
+      <div class="sg-grid">
+        {% set f_key = tweetsms_state.fields['api_key'] %}
+        <div class="sg-field is-full">
+          <label class="sg-label" for="tss-api_key">
+            {{ f_key.label }}
+            {% if f_key.present %}<span class="sg-src sg-src--panel">محفوظ ({{ f_key.masked }})</span>{% endif %}
+          </label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="sg-input" id="tss-api_key" name="api_key" type="password" autocomplete="new-password"
+                   value="" dir="ltr" placeholder="{% if f_key.present %}اتركه فارغًا للإبقاء على المحفوظ{% else %}مفتاح API من حساب TweetSMS{% endif %}">
+            {% if f_key.present %}
+            <button type="button" class="sg-btn-secondary" data-tss-reveal="api_key" title="كشف مؤقت">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+            {% endif %}
+          </div>
+          <div class="sg-hint">استخدم «مفتاح API» <strong>أو</strong> «اسم المستخدم وكلمة المرور» معًا.</div>
+        </div>
+
+        {% set f_user = tweetsms_state.fields['user'] %}
+        <div class="sg-field">
+          <label class="sg-label" for="tss-user">{{ f_user.label }}</label>
+          <input class="sg-input" id="tss-user" name="user" type="text" dir="ltr"
+                 value="{{ f_user.value }}" autocomplete="off" placeholder="اختياري (بديل عن المفتاح)">
+        </div>
+
+        {% set f_pass = tweetsms_state.fields['pass'] %}
+        <div class="sg-field">
+          <label class="sg-label" for="tss-pass">
+            {{ f_pass.label }}
+            {% if f_pass.present %}<span class="sg-src sg-src--panel">محفوظ ({{ f_pass.masked }})</span>{% endif %}
+          </label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="sg-input" id="tss-pass" name="pass" type="password" autocomplete="new-password"
+                   value="" dir="ltr" placeholder="{% if f_pass.present %}اتركه فارغًا للإبقاء{% else %}اختياري{% endif %}">
+            {% if f_pass.present %}
+            <button type="button" class="sg-btn-secondary" data-tss-reveal="pass" title="كشف مؤقت">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+            {% endif %}
+          </div>
+        </div>
+
+        {% set f_sender = tweetsms_state.fields['sender'] %}
+        <div class="sg-field is-full">
+          <label class="sg-label" for="tss-sender">{{ f_sender.label }} <span class="sg-req">*</span></label>
+          <input class="sg-input" id="tss-sender" name="sender" type="text" dir="ltr"
+                 value="{{ f_sender.value }}" placeholder="اسم المُرسِل المعتمَد لدى TweetSMS">
+          <div class="sg-hint">اسم المُرسِل يجب أن يكون معتمدًا في حسابك لدى المزوّد (وإلّا تُرفَض الرسائل برمز -115/-116).</div>
+        </div>
+      </div>
+      <div class="sg-foot">
+        <button class="sg-btn-primary" type="submit">
+          <i class="fa-solid fa-floppy-disk"></i> حفظ إعدادات TweetSMS
+        </button>
+      </div>
+    </form>
+
+    <div class="sg-divider"></div>
+
+    {# فحص الرصيد + إرسال تجربة #}
+    <div class="sg-grid">
+      <div class="sg-field">
+        <div class="sg-label">رصيد الحساب</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="sg-btn-secondary" id="tss-balance-btn"
+                  {% if not tweetsms_state.configured %}disabled{% endif %}>
+            <i class="fa-solid fa-coins"></i> فحص الرصيد
+          </button>
+          <span id="tss-balance-out" class="sg-hint" dir="ltr" style="font-weight:700"></span>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('admin.tweetsms_test') }}" style="margin-block-start:var(--cc-sp-6)">
+      {{ csrf_input() }}
+      <div class="sg-grid">
+        <div class="sg-field">
+          <label class="sg-label" for="tss-test-to">رقم تجربة</label>
+          <input class="sg-input" id="tss-test-to" name="recipient" type="text" dir="ltr"
+                 placeholder="0599xxxxxx أو 970599xxxxxx">
+        </div>
+        <div class="sg-field is-full">
+          <label class="sg-label" for="tss-test-msg">نص التجربة</label>
+          <input class="sg-input" id="tss-test-msg" name="message" type="text"
+                 value="رسالة تجربة من لوحة الترخيص (TweetSMS).">
+        </div>
+      </div>
+      <div class="sg-foot">
+        <button class="sg-btn-secondary" type="submit"
+                {% if not tweetsms_state.configured %}disabled{% endif %}>
+          <i class="fa-solid fa-paper-plane"></i> إرسال تجربة
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="sg-smtp-status is-warn"><i class="fa-solid fa-triangle-exclamation"></i> تعذّر تحميل حالة TweetSMS.</div>
+    {% endif %}
+
+  </div>
+</div>
+</div>{# /cc-tab-pane#sms #}
+
+
 {# ── Toast container — design-system floating notifications ───────── #}
 <div class="hub-toast" id="sg-toast" role="status" aria-live="polite" hidden></div>
 
@@ -1315,7 +1455,7 @@
 (function () {
   'use strict';
 
-  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'whatsapp', 'firebase'];
+  var TABS    = ['site', 'payments', 'email', 'vault', 'integrations', 'whatsapp', 'firebase', 'sms'];
   var DEFAULT = 'site';
 
   /* Deep-link section anchors → their containing tab. A bare redirect like
@@ -1328,7 +1468,8 @@
     'whatsapp-cloud':    'whatsapp',
     'whatsapp-embedded': 'whatsapp',
     'fcm':               'firebase',
-    'firebase-push':     'firebase'
+    'firebase-push':     'firebase',
+    'tweetsms':          'sms'
   };
 
   /* Resolve a raw hash to {tab, section}: a tab id, a known section anchor,
@@ -1436,4 +1577,5 @@
 <script src="{{ url_for('static', filename='js/whatsapp_cloud_settings.js') }}" defer></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/whatsapp_embedded_settings.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/tweetsms_settings.js') }}" defer></script>
 {% endblock %}

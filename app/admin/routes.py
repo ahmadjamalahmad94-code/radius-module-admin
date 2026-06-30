@@ -3276,8 +3276,13 @@ def settings_page():
     from ..services import customer_vault_crypto as vc
     from ..services import google_drive as gd
     from ..services import firebase_fcm as fcm
+    from ..services.tweetsms import settings as tss
     from ..models import ProxyRealmRoute
     settings = {row.key: row.value for row in Setting.query.order_by(Setting.key.asc()).all()}
+    try:
+        tweetsms_state = tss.get_state()
+    except Exception:  # noqa: BLE001 — never break the settings page on a probe
+        tweetsms_state = None
     # Google Drive OAuth status for the integrations tab. redirect_uri()
     # resolves the exact URI the owner must register in Google Cloud.
     try:
@@ -3311,6 +3316,7 @@ def settings_page():
         chr_state=None,
         proxy_route_count=ProxyRealmRoute.query.filter_by(status="active").count(),
         vault_key_state=vc.vault_key_state(),
+        tweetsms_state=tweetsms_state,
     )
 
 
@@ -3939,6 +3945,146 @@ def whatsapp_cloud_templates():
     except wac.CloudSettingsError as exc:
         return jsonify({"ok": False, "message": str(exc)}), 400
     return jsonify(result)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TweetSMS (tweetsms.ps) — OWNER→customer SMS.
+#
+# The owner bought provider credit and contacts HIS OWN customers by SMS. ONE
+# encrypted credential set (settings/tweetsms) + a per-recipient send action from
+# the customers list/detail. Every route is super-admin (owner) only — this is
+# provider→customer comms — and CSRF is enforced app-wide on POST.
+# ════════════════════════════════════════════════════════════════════════════
+
+def _tweetsms_redirect():
+    return redirect(url_for("admin.settings_page") + "#tweetsms")
+
+
+@bp.post("/settings/tweetsms")
+@super_admin_required
+def tweetsms_settings_save():
+    from ..services.tweetsms import settings as tss
+    try:
+        tss.validate_and_save(request.form, actor_audit=audit)
+    except tss.TweetSmsSettingsError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return _tweetsms_redirect()
+    db.session.commit()
+    flash("تم حفظ إعدادات TweetSMS بنجاح.", "success")
+    return _tweetsms_redirect()
+
+
+@bp.post("/settings/tweetsms/reveal")
+@super_admin_required
+def tweetsms_reveal():
+    """Temporarily reveal a stored secret (super-admin only, audited, JSON)."""
+    from ..services.tweetsms import settings as tss
+    field = (request.form.get("field") or "").strip()
+    try:
+        value = tss.reveal(field, actor_audit=audit)
+    except tss.TweetSmsSettingsError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "value": value})
+
+
+@bp.post("/settings/tweetsms/balance")
+@super_admin_required
+def tweetsms_balance():
+    """Check the owner's TweetSMS account balance (JSON)."""
+    from ..services.tweetsms import settings as tss
+    try:
+        ok, balance, message = tss.check_balance()
+    except tss.TweetSmsSettingsError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    audit("tweetsms_balance_checked", "tweetsms", "global",
+          "فحص رصيد TweetSMS", {"ok": ok})
+    db.session.commit()
+    if ok:
+        return jsonify({"ok": True, "balance": balance})
+    return jsonify({"ok": False, "message": message or "تعذّر جلب الرصيد."})
+
+
+@bp.post("/settings/tweetsms/test")
+@super_admin_required
+def tweetsms_test():
+    """Send a one-off trial SMS to a number the owner types in Settings."""
+    from ..services.tweetsms import service as tsvc
+    number = (request.form.get("recipient") or "").strip()
+    if not number:
+        flash("أدخل رقم المستلم للتجربة.", "error")
+        return _tweetsms_redirect()
+    message = (request.form.get("message") or "").strip() or "رسالة تجربة من لوحة الترخيص (TweetSMS)."
+    result = tsvc.send_to_recipients([{"phone": number, "label": number}], message)
+    db.session.commit()
+    r0 = (result.get("results") or [{}])[0]
+    if r0.get("ok"):
+        flash(f"تم إرسال رسالة التجربة ✅ — {r0.get('label')}.", "success")
+    else:
+        flash("تعذّر إرسال رسالة التجربة: " + (r0.get("message") or result.get("error") or "حاول مجددًا."), "error")
+    return _tweetsms_redirect()
+
+
+def _flash_sms_results(result: dict) -> None:
+    """Flash a concise per-recipient summary after a send."""
+    if result.get("error") and not result.get("results"):
+        flash("تعذّر الإرسال: " + result["error"], "error")
+        return
+    sent = result.get("sent", 0)
+    failed = result.get("failed", 0)
+    lines = []
+    for r in result.get("results", []):
+        mark = "✓" if r.get("ok") else "✗"
+        lines.append(f"{mark} {r.get('label')}" + ("" if r.get("ok") else f" — {r.get('message')}"))
+    summary = f"تم الإرسال: {sent} ✓ / {failed} ✗ — " + " | ".join(lines)
+    flash(summary, "success" if sent and not failed else ("warning" if sent else "error"))
+
+
+@bp.post("/customers/<int:customer_id>/sms")
+@super_admin_required
+def customer_send_sms(customer_id: int):
+    """Send an SMS to a single customer's phone (owner→customer)."""
+    from ..services.tweetsms import service as tsvc
+    customer = db.session.get(Customer, customer_id)
+    if not customer:
+        abort(404)
+    message = (request.form.get("message") or "").strip()
+    if not message:
+        flash("اكتب نص الرسالة أولًا.", "error")
+        return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#sms")
+    result = tsvc.send_to_recipients(
+        [{"phone": customer.phone, "label": customer.company_name, "customer_id": customer.id}],
+        message,
+    )
+    db.session.commit()
+    _flash_sms_results(result)
+    return redirect(url_for("admin.customer_detail", customer_id=customer.id) + "#sms")
+
+
+@bp.post("/customers/sms/bulk")
+@super_admin_required
+def customers_bulk_sms():
+    """Send an SMS to multiple SELECTED customers from the customers list."""
+    from ..services.tweetsms import service as tsvc
+    ids = [int(x) for x in request.form.getlist("customer_ids") if str(x).strip().isdigit()]
+    message = (request.form.get("message") or "").strip()
+    if not ids:
+        flash("اختر عميلًا واحدًا على الأقل.", "error")
+        return redirect(url_for("admin.customers_list"))
+    if not message:
+        flash("اكتب نص الرسالة أولًا.", "error")
+        return redirect(url_for("admin.customers_list"))
+    customers = Customer.query.filter(Customer.id.in_(ids)).all()
+    recipients = [
+        {"phone": c.phone, "label": c.company_name, "customer_id": c.id}
+        for c in customers
+    ]
+    result = tsvc.send_to_recipients(recipients, message)
+    db.session.commit()
+    _flash_sms_results(result)
+    return redirect(url_for("admin.customers_list"))
 
 
 # ── WhatsApp Embedded Signup settings (panel-managed, zero-terminal) ───────

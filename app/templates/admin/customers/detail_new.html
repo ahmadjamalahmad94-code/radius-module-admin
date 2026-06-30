@@ -997,6 +997,42 @@
 
     </div>
 
+    {# ── إرسال SMS للعميل (TweetSMS) — للمالك فقط ── #}
+    {% if is_super_admin %}
+    <div id="sms" class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
+      <i class="fa-solid fa-comment-sms" aria-hidden="true"></i>
+      إرسال رسالة نصية (SMS)
+      <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
+        — عبر حساب TweetSMS الخاصّ بك للتواصل المباشر مع العميل
+      </span>
+    </div>
+    <div class="cd-info-card" style="margin-block-start:var(--cc-sp-6)">
+      {% if customer.phone %}
+      <form method="post" action="{{ url_for('admin.customer_send_sms', customer_id=customer.id) }}" data-sms-compose>
+        {{ csrf_input() }}
+        <div class="cd-info-row">
+          <span class="cd-info-key">المستلم</span>
+          <span class="cd-info-val">{{ customer.company_name }} · <span class="mono" style="direction:ltr;unicode-bidi:embed">{{ customer.phone }}</span></span>
+        </div>
+        <textarea name="message" rows="3" data-sms-input maxlength="480"
+                  placeholder="اكتب نص الرسالة… كل رسالة بتكلفة، أبقِها ضمن 60 محرفًا قدر الإمكان."
+                  style="width:100%;margin-block-start:var(--cc-sp-5);resize:vertical;padding:var(--cc-sp-5);border:1px solid var(--cc-input-border);border-radius:var(--cc-input-radius);background:var(--cc-input-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-body)"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-block-start:var(--cc-sp-4)">
+          <span data-sms-counter aria-live="polite" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-bold)">0 / 60 محرف · جزء واحد</span>
+          <button type="submit"
+                  style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:36px;padding-inline:var(--cc-sp-9);border-radius:var(--cc-btn-radius);background:var(--cc-brand);color:#fff;border:none;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);cursor:pointer">
+            <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> إرسال SMS
+          </button>
+        </div>
+      </form>
+      {% else %}
+      <div class="cd-info-row">
+        <span class="cd-info-val" style="color:var(--cc-text-mute)">لا يوجد رقم هاتف لهذا العميل — أضِف رقمًا من «تعديل البيانات» لتتمكّن من الإرسال.</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# ── «الجهات» (multi_tenant) grant — fully hidden until granted here ── #}
     <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
       <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
@@ -1992,6 +2028,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/tweetsms_compose.js') }}" defer></script>
 <script>
 (function () {
   'use strict';
