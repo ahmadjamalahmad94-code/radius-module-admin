@@ -1572,6 +1572,37 @@ class Setting(db.Model):
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 
+class SmsLog(TimestampMixin, db.Model):
+    """Audit log of OWNER→customer SMS sends via TweetSMS.
+
+    One row per recipient send attempt. Records WHO (actor admin), WHEN
+    (created_at), TO (destination), and the STATUS — but NEVER the provider
+    api_key/password (those live encrypted in the ``settings`` table). The
+    message body is the owner's own content (not a secret), stored as a short
+    preview for traceability.
+    """
+    __tablename__ = "sms_logs"
+    __table_args__ = (
+        db.Index("ix_sms_logs_created_at", "created_at"),
+        db.Index("ix_sms_logs_customer", "customer_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_admin_id = db.Column(db.Integer, db.ForeignKey("admins.id"), nullable=True, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=True, index=True)
+    # Destination as it was dialed (normalized international, no '+'). Not a secret.
+    to_phone = db.Column(db.String(40), default="", nullable=False)
+    sender = db.Column(db.String(40), default="", nullable=False)
+    # Short preview of the owner's message content (not a secret).
+    body_preview = db.Column(db.String(200), default="", nullable=False)
+    segments = db.Column(db.Integer, default=1, nullable=False)
+    # sent | failed | invalid
+    status = db.Column(db.String(16), default="failed", nullable=False, index=True)
+    provider_sms_id = db.Column(db.String(64), default="", nullable=False)
+    error_code = db.Column(db.String(16), default="", nullable=False)
+    error_message = db.Column(db.String(255), default="", nullable=False)
+
+
 class DeviceToken(TimestampMixin, db.Model):
     """Central FCM device-token registry for the ONE global mobile app.
 

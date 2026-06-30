@@ -722,6 +722,10 @@
 {% endif %}
 
 {# ── الجدول ── #}
+{% if is_super_admin %}
+<form method="post" action="{{ url_for('admin.customers_bulk_sms') }}" data-sms-compose>
+  {{ csrf_input() }}
+{% endif %}
 <div class="clist-card" role="region" aria-label="{{ _('قائمة العملاء') }}">
 
   <div class="clist-card-header">
@@ -752,6 +756,7 @@
     <table class="clist-table" id="tbl-customers" role="table" aria-label="{{ _('قائمة العملاء') }}">
       <thead>
         <tr role="row">
+          {% if is_super_admin %}<th scope="col" class="col-center" style="width:34px"><input type="checkbox" data-sms-check-all aria-label="تحديد الكل"></th>{% endif %}
           <th scope="col" class="cc-th-sort">اسم الشركة / العميل</th>
           <th scope="col" class="cc-th-sort">{{ _('البريد الإلكتروني') }}</th>
           <th scope="col" class="cc-th-sort">{{ _('الهاتف') }}</th>
@@ -765,6 +770,14 @@
 
       {% for customer in customers %}
         <tr role="row">
+
+          {% if is_super_admin %}
+          {# تحديد للإرسال الجماعي بالـSMS #}
+          <td style="text-align:center">
+            <input type="checkbox" name="customer_ids" value="{{ customer.id }}"
+                   data-sms-row {% if not customer.phone %}disabled title="لا يوجد رقم هاتف"{% endif %}>
+          </td>
+          {% endif %}
 
           {# الاسم + أفاتار #}
           <td>
@@ -877,7 +890,7 @@
       {% else %}
         {# Empty State #}
         <tr>
-          <td colspan="7" style="padding:0;border:none">
+          <td colspan="{{ 8 if is_super_admin else 7 }}" style="padding:0;border:none">
             <div class="clist-empty" role="status" aria-label="لا يوجد عملاء">
               <div class="clist-empty-icon" aria-hidden="true">
                 <i class="fa-solid fa-users-slash"></i>
@@ -911,6 +924,26 @@
       </tbody>
     </table>
   </div>
+
+  {% if is_super_admin %}
+  {# ── شريط الإرسال الجماعي بالـSMS (TweetSMS) — للمالك فقط ── #}
+  <div style="padding:var(--cc-sp-7) var(--cc-sp-11);border-block-start:1px solid var(--cc-border);background:var(--cc-table-head-bg)">
+    <div style="display:flex;align-items:center;gap:var(--cc-sp-3);margin-block-end:var(--cc-sp-4);font-weight:var(--cc-fw-heavy);color:var(--cc-text)">
+      <i class="fa-solid fa-comment-sms" style="color:var(--cc-brand)"></i>
+      إرسال رسالة نصية (SMS) للعملاء المحدَّدين
+    </div>
+    <textarea name="message" rows="2" data-sms-input maxlength="480"
+              placeholder="اكتب نص الرسالة… حدِّد عميلًا واحدًا أو أكثر من الجدول أعلاه ثم أرسِل. كل رسالة بتكلفة — أبقِها ضمن 60 محرفًا."
+              style="width:100%;resize:vertical;padding:var(--cc-sp-5);border:1px solid var(--cc-input-border);border-radius:var(--cc-input-radius);background:var(--cc-input-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-body)"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-block-start:var(--cc-sp-4)">
+      <span data-sms-counter aria-live="polite" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-bold)">0 / 60 محرف · جزء واحد</span>
+      <button class="clist-btn clist-btn--primary" type="submit">
+        <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+        إرسال للمحدَّدين
+      </button>
+    </div>
+  </div>
+  {% endif %}
 
   {# ── Pagination ── #}
   {% if customers|length > 0 %}
@@ -967,10 +1000,12 @@
   {% endif %}
 
 </div>{# /.clist-card #}
+{% if is_super_admin %}</form>{% endif %}
 
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/tweetsms_compose.js') }}" defer></script>
 <script>
 (function () {
   /* البحث الفوري عند التوقف عن الكتابة (debounce 500ms) */
