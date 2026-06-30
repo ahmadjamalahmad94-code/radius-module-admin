@@ -328,6 +328,50 @@ def test_route_settings_save_and_balance(app, client, monkeypatch):
     assert rb.get_json()["balance"] == "777"
 
 
+def test_route_balance_error_returns_json_message(app, client, monkeypatch):
+    """A failed balance lookup returns a clean JSON {ok:false, message} the
+    live poller can render inline (not an HTML error page)."""
+    _login_super(client)
+    client.post("/admin/settings/tweetsms",
+                data={"api_key": "K", "sender": "Brand"})
+    monkeypatch.setattr(adapter, "check_balance",
+                        lambda creds, **k: (False, "", "بيانات اعتماد غير صحيحة"))
+    rb = client.post("/admin/settings/tweetsms/balance")
+    assert rb.status_code == 200
+    body = rb.get_json()
+    assert body["ok"] is False
+    assert body["message"] == "بيانات اعتماد غير صحيحة"
+
+
+def test_settings_page_wires_balance_autopoll(app, client):
+    """The Settings page exposes the data-* the JS needs to auto-poll the
+    balance (URL, interval, configured flag) and loads the poller script."""
+    _login_super(client)
+    client.post("/admin/settings/tweetsms",
+                data={"api_key": "K", "sender": "Brand"})
+    r = client.get("/admin/settings")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'data-balance-url="/admin/settings/tweetsms/balance"' in html
+    assert 'data-balance-poll-ms="60000"' in html
+    assert 'data-balance-configured="1"' in html
+    assert 'id="tss-balance-out"' in html
+    assert 'id="tss-balance-meta"' in html
+    assert "js/tweetsms_settings.js" in html
+
+
+def test_balance_poller_js_has_autorefresh_logic():
+    """The static poller implements: interval scheduling, visibility pause,
+    failure back-off, and reuses the existing balance endpoint."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "js" / "tweetsms_settings.js").read_text(encoding="utf-8")
+    assert "data-balance-poll-ms" in src
+    assert "visibilitychange" in src and "document.hidden" in src
+    assert "backoff" in src              # repeated-failure back-off
+    assert "setTimeout" in src           # interval re-scheduling
+
+
 def test_route_reveal_requires_super_admin(app, client):
     # Configure first as super.
     _login_super(client)

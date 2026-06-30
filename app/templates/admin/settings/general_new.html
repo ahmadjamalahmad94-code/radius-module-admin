@@ -1316,7 +1316,9 @@
 <div class="sg-card" id="tweetsms"
      data-tweetsms-js
      data-reveal-url="{{ url_for('admin.tweetsms_reveal') }}"
-     data-balance-url="{{ url_for('admin.tweetsms_balance') }}">
+     data-balance-url="{{ url_for('admin.tweetsms_balance') }}"
+     data-balance-poll-ms="60000"
+     data-balance-configured="{{ '1' if tweetsms_state and tweetsms_state.configured else '0' }}">
   <div class="sg-card-head">
     <span class="sg-card-head-icon" style="background:#e0f2fe;color:#0369a1" aria-hidden="true">
       <i class="fa-solid fa-comment-sms"></i>
@@ -1401,17 +1403,25 @@
 
     <div class="sg-divider"></div>
 
-    {# فحص الرصيد + إرسال تجربة #}
+    {# رصيد الحساب — عدّاد حيّ يتحدّث تلقائيًا (كل ~60 ثانية) + تحديث يدوي #}
     <div class="sg-grid">
       <div class="sg-field">
-        <div class="sg-label">رصيد الحساب</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button type="button" class="sg-btn-secondary" id="tss-balance-btn"
-                  {% if not tweetsms_state.configured %}disabled{% endif %}>
-            <i class="fa-solid fa-coins"></i> فحص الرصيد
-          </button>
-          <span id="tss-balance-out" class="sg-hint" dir="ltr" style="font-weight:700"></span>
+        <div class="sg-label">رصيد الحساب
+          <span class="sg-src sg-src--panel" style="background:#ecfdf5;color:#15803d">حيّ — تحديث تلقائي</span>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="display:inline-flex;align-items:center;gap:6px;color:#0f172a;font-weight:700">
+            <i class="fa-solid fa-coins" style="color:#ca8a04" aria-hidden="true"></i>
+            <span id="tss-balance-out" dir="ltr" style="font-size:1.1rem;min-width:3ch">—</span>
+          </span>
+          <button type="button" class="sg-btn-secondary" id="tss-balance-btn"
+                  title="تحديث الرصيد الآن" aria-label="تحديث الرصيد الآن"
+                  {% if not (tweetsms_state and tweetsms_state.configured) %}disabled{% endif %}>
+            <i class="fa-solid fa-arrows-rotate" id="tss-balance-icon" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div id="tss-balance-meta" class="sg-hint" dir="rtl"
+             style="margin-block-start:6px;font-size:.82rem;color:#64748b" aria-live="polite"></div>
       </div>
     </div>
 
