@@ -1172,7 +1172,9 @@
                 حدود الاستخدام
               </div>
               {% set max_sub = contract.limits.subscribers.max_total if contract and contract.limits and contract.limits.subscribers else 0 %}
-              {% set cur_sub = customer_users|length %}
+              {# cur_sub = real reported subscriber count from the route (falls
+                 back to the portal-user count until the first heartbeat). #}
+              {% set cur_sub = cur_sub if cur_sub is defined else customer_users|length %}
               {% set sub_pct = ((cur_sub / max_sub * 100) | int) if max_sub > 0 else 0 %}
               <div class="cd-usage-bar-wrap">
                 <div class="cd-usage-bar-header">
@@ -1185,7 +1187,9 @@
                 </div>
               </div>
               {% set max_nas = contract.limits.nas.max_total if contract and contract.limits and contract.limits.nas else 0 %}
-              {% set cur_nas = nas_devices|length if nas_devices is defined else 0 %}
+              {# cur_nas = real registered-NAS count from the route (COUNT of the
+                 customer's nas_devices), NOT the admin roster / radacct history. #}
+              {% set cur_nas = cur_nas if cur_nas is defined else 0 %}
               {% set nas_pct = ((cur_nas / max_nas * 100) | int) if max_nas > 0 else 0 %}
               <div class="cd-usage-bar-wrap">
                 <div class="cd-usage-bar-header">

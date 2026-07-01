@@ -1256,6 +1256,20 @@ def hoberadius_instance_heartbeat():
             "instance-heartbeat: radius_tunnel block degraded to no-op",
         )
 
+    # Registered-inventory snapshot — persist the REAL registered-entity counts
+    # the customer radius reports so the licensing usage bars («أجهزة NAS»،
+    # «المشتركون») show the truth instead of a proxy (previously the admin
+    # roster / accounting history inflated "NAS used"). ``nas_count`` here is
+    # COUNT(nas_devices) on the customer side (radacct-independent). Never
+    # breaks the heartbeat; a missing/blank inventory simply leaves the prior
+    # value untouched.
+    try:
+        _persist_reported_inventory(result.license, body.get("inventory"))
+    except Exception:  # noqa: BLE001 — inventory persistence must never break the heartbeat
+        current_app.logger.exception(
+            "instance-heartbeat: inventory persistence degraded to no-op",
+        )
+
     db.session.commit()
 
     response_body: dict = {
@@ -1278,6 +1292,49 @@ def hoberadius_instance_heartbeat():
     except Exception:  # noqa: BLE001 — never break the heartbeat over a hint
         current_app.logger.exception("instance-heartbeat: capacity_fingerprint degraded")
     return jsonify(response_body)
+
+
+def _persist_reported_inventory(license_obj, inventory) -> None:
+    """Store the heartbeat's registered-inventory snapshot on the customer's
+    ``CustomerRadiusInstance`` (the per-customer instance record).
+
+    Only ``nas_count`` / ``subscribers_total`` are persisted today — the fields
+    the licensing usage bars display. Values are clamped to ``>= 0``; a missing
+    key leaves the prior stored value untouched (partial reports never regress a
+    good number to the "-1 = never reported" sentinel). The caller wraps this in
+    try/except so a bad payload can never break the heartbeat.
+    """
+    if not isinstance(inventory, dict) or not inventory:
+        return
+    customer_id = getattr(license_obj, "customer_id", None)
+    if not customer_id:
+        return
+    from datetime import datetime, timezone
+
+    from ..models import CustomerRadiusInstance
+    instance = CustomerRadiusInstance.query.filter_by(customer_id=customer_id).first()
+    if instance is None:
+        return
+
+    def _clamped(key):
+        if key not in inventory:
+            return None
+        try:
+            return max(0, int(inventory.get(key)))
+        except (TypeError, ValueError):
+            return None
+
+    nas = _clamped("nas_count")
+    subs = _clamped("subscribers_total")
+    touched = False
+    if nas is not None:
+        instance.reported_nas_count = nas
+        touched = True
+    if subs is not None:
+        instance.reported_subscribers_count = subs
+        touched = True
+    if touched:
+        instance.inventory_reported_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @bp.post("/integration/hoberadius/usage-snapshot/push")

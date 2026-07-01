@@ -648,6 +648,12 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "last_reported_fingerprint": "VARCHAR(80) NOT NULL DEFAULT ''",
             "last_fingerprint_reported_at": datetime_type,
             "drift_cycles": "INTEGER NOT NULL DEFAULT 0",
+            # Registered-inventory snapshot from the heartbeat ``inventory``
+            # block. ``-1`` sentinel = "never reported yet" (≠ a real 0), so the
+            # usage bars can fall back before the first heartbeat lands.
+            "reported_nas_count": "INTEGER NOT NULL DEFAULT -1",
+            "reported_subscribers_count": "INTEGER NOT NULL DEFAULT -1",
+            "inventory_reported_at": datetime_type,
         })
     if "license_payment_requests" in tables:
         datetime_type = "TIMESTAMP" if db.engine.dialect.name == "postgresql" else "DATETIME"
