@@ -640,6 +640,43 @@ def customer_create():
     return redirect(url_for("admin.customer_detail", customer_id=customer.id))
 
 
+def _registered_nas_used(customer) -> int:
+    """The REAL registered-NAS count for the licensing usage bar.
+
+    Source of truth = ``CustomerRadiusInstance.reported_nas_count``, reported by
+    the customer radius every heartbeat as ``COUNT(nas_devices)`` — the routers/
+    APs registered on the «أجهزة الشبكة/NAS» page. This is deliberately NOT the
+    admin roster (``radius_admins_for_customer``) and NOT ``radacct`` accounting
+    history: an imported accounting history with thousands of ``nasipaddress``
+    rows must never inflate "NAS used". Before the first heartbeat lands the
+    stored sentinel is ``-1`` → we report 0 (no registered NAS observed yet).
+    """
+    instance = getattr(customer, "radius_instance", None)
+    reported = getattr(instance, "reported_nas_count", -1) if instance is not None else -1
+    try:
+        reported = int(reported)
+    except (TypeError, ValueError):
+        reported = -1
+    return reported if reported >= 0 else 0
+
+
+def _registered_subscribers_used(customer, *, fallback: int) -> int:
+    """Real registered-subscriber count for the usage bar.
+
+    Uses ``CustomerRadiusInstance.reported_subscribers_count`` (the customer
+    radius's ``subscribers_total``). Until the first heartbeat reports it (the
+    ``-1`` sentinel) we fall back to ``fallback`` (the previously-shown
+    portal-user count) so an established customer never regresses to a bare 0.
+    """
+    instance = getattr(customer, "radius_instance", None)
+    reported = getattr(instance, "reported_subscribers_count", -1) if instance is not None else -1
+    try:
+        reported = int(reported)
+    except (TypeError, ValueError):
+        reported = -1
+    return reported if reported >= 0 else int(fallback or 0)
+
+
 @bp.get("/customers/<int:customer_id>")
 @login_required
 def customer_detail(customer_id: int):
@@ -706,11 +743,12 @@ def customer_detail(customer_id: int):
         managed_admin_role_choices=[(k, role_label(k)) for k in MANAGED_ADMIN_ROLE_KEYS],
         managed_role_label=role_label,
         map_snapshot_role=_map_snapshot_role,
-        nas_devices=radius_admins_for_customer(customer),
         max_nas=getattr(_plan, "max_nas", None),
         max_sub=getattr(_plan, "max_users", None),
-        cur_nas=len(radius_admins_for_customer(customer)),
-        cur_sub=len(_customer_users),
+        # Real registered counts for the usage bars — NOT the admin roster and
+        # NOT radacct history. See _registered_nas_used / _registered_subscribers_used.
+        cur_nas=_registered_nas_used(customer),
+        cur_sub=_registered_subscribers_used(customer, fallback=len(_customer_users)),
         paid_count=_paid_count,
         pending_count=_pending_count,
         total_paid=_total_paid,
@@ -2798,7 +2836,9 @@ def license_detail(license_id: int):
             return 0
         return min(100, int(used * 100 / mx))
     _used_users = lic.customer.users.count() if lic.customer else 0
-    _used_nas = len(radius_admins_for_customer(lic.customer)) if lic.customer else 0
+    # Real registered-NAS count (COUNT of the customer's nas_devices reported
+    # via heartbeat), NOT the admin roster or radacct accounting history.
+    _used_nas = _registered_nas_used(lic.customer) if lic.customer else 0
     _used_admins = AuditLog.query.filter_by(entity_type="license", entity_id=str(lic.id)).count()
     _used_fp = len(lic.fingerprints)
     return render_template(

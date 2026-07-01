@@ -1802,6 +1802,18 @@ class CustomerRadiusInstance(TimestampMixin, db.Model):
     last_fingerprint_reported_at = db.Column(db.DateTime, nullable=True)
     drift_cycles = db.Column(db.Integer, default=0, nullable=False)
 
+    # Registered-inventory snapshot reported by the customer radius on every
+    # heartbeat (``inventory`` block). These are the REAL registered-entity
+    # counts the licensing usage bars display — ``reported_nas_count`` counts
+    # the customer's ``nas_devices`` table (registered routers/APs), NOT the
+    # admin roster and NOT ``radacct`` accounting history, so an imported
+    # accounting history can never inflate the panel's "NAS used" bar.
+    # ``-1`` sentinel = "never reported yet" (distinct from a real 0), letting
+    # the view fall back gracefully before the first heartbeat lands.
+    reported_nas_count = db.Column(db.Integer, default=-1, nullable=False)
+    reported_subscribers_count = db.Column(db.Integer, default=-1, nullable=False)
+    inventory_reported_at = db.Column(db.DateTime, nullable=True)
+
     customer = db.relationship("Customer", back_populates="radius_instance")
     proxy_realm_route = db.relationship(
         "ProxyRealmRoute", back_populates="radius_instance",
