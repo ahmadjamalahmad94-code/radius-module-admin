@@ -5,6 +5,7 @@ from flask import Blueprint, Response, abort, current_app, jsonify, request, url
 from ..extensions import db
 from ..license_signing import (
     LicenseSignatureError,
+    attach_bridge_signature,
     mask_license_key as _mask_license_key,
     verify_license_signature,
 )
@@ -111,11 +112,16 @@ def hoberadius_identity_sync():
         return error_response
     if not result.license:
         return jsonify({"ok": False, "status": result.status, "users": []}), 404
-    return jsonify(build_identity_sync_contract(
+    payload = build_identity_sync_contract(
         result.license,
         license_active=result.active,
         status=result.status,
-    ))
+    )
+    # SEC C1 — sign the response with the customer's own license key so it can
+    # verify these (possibly privilege-escalating) directives really came from
+    # us. Additive field; older clients ignore it.
+    attach_bridge_signature(payload, str(result.license.license_key or ""))
+    return jsonify(payload)
 
 
 @bp.post("/integration/hoberadius/runtime-contract")

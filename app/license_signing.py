@@ -66,6 +66,48 @@ def sign_license_payload(body: dict[str, Any], secret: str) -> str:
     return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+# ── SEC C1 — outbound bridge-RESPONSE signing ────────────────────────────────
+#
+# This is NOT a return to the retired request-auth secret chain. Request auth
+# stays bearer-only. This signs the RESPONSE the panel sends to a radius
+# instance, keyed by that instance's own ``license_key`` — a secret both sides
+# already hold and which never travels except in the request the customer
+# itself made over TLS. Its sole purpose: let the customer prove an
+# identity-sync response (which can carry admin_super_overrides / owner_admins)
+# really came from the panel that knows its key, so a rogue/repointed endpoint
+# cannot forge privilege-escalation directives.
+#
+# Canonical spec (MUST stay identical to the radius-module verifier):
+#   msg = json.dumps(payload_without__bridge_sig,
+#                    ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+#   sig = hex( HMAC-SHA256( key=license_key.strip().upper().utf8, msg.utf8 ) )
+_BRIDGE_SIG_FIELD = "_bridge_sig"
+
+
+def canonical_bridge_response(payload: dict[str, Any]) -> str:
+    body = {k: v for k, v in payload.items() if k != _BRIDGE_SIG_FIELD}
+    return json.dumps(body, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def sign_bridge_response(payload: dict[str, Any], license_key: str) -> str:
+    """HMAC-SHA256 (hex) of the canonical payload, keyed by the license key."""
+    key = str(license_key or "").strip().upper().encode("utf-8")
+    return hmac.new(
+        key, canonical_bridge_response(payload).encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def attach_bridge_signature(payload: dict[str, Any], license_key: str) -> dict[str, Any]:
+    """Return ``payload`` with a ``_bridge_sig`` field added (mutates + returns).
+
+    A no-op when there's no license key to sign with — the customer then simply
+    finds no signature and (correctly) refuses to apply escalation directives.
+    """
+    if license_key:
+        payload[_BRIDGE_SIG_FIELD] = sign_bridge_response(payload, license_key)
+    return payload
+
+
 def mask_license_key(license_key: str) -> str:
     """Display/log-safe form of a license key: ``HBR-…-1234``.
 
