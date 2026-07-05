@@ -32,6 +32,24 @@ class HttpResult:
         return not self.error and 200 <= self.status < 300
 
 
+# SEC M4 — the SMS adapter forwards an admin-configured ``base_url`` here.
+# urllib's default opener also handles file://, ftp://, gopher:// … so an
+# unrestricted URL turns a gateway-config field into an arbitrary local-file
+# read / internal-request primitive. Restrict every request this module makes
+# to http(s); anything else fails closed WITHOUT a network (or filesystem) hit.
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _scheme_error(url: str) -> "HttpResult | None":
+    scheme = urllib.parse.urlparse(url or "").scheme.lower()
+    if scheme in _ALLOWED_SCHEMES:
+        return None
+    return HttpResult(
+        0, None,
+        error=f"blocked URL scheme {scheme or '(none)'!r} — only http/https allowed",
+    )
+
+
 def post_json(
     url: str,
     payload: dict | None = None,
@@ -50,6 +68,9 @@ def post_json(
     headers = dict(headers or {})
     if form is not None and payload is not None:
         raise ValueError("post_json: pass either payload or form, not both")
+    blocked = _scheme_error(url)
+    if blocked is not None:
+        return blocked
     if form is not None:
         data = urllib.parse.urlencode(form).encode("utf-8")
         headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
@@ -90,6 +111,9 @@ def get_json(
     timeout: float = 15.0,
 ) -> HttpResult:
     """GET helper used by lightweight liveness probes."""
+    blocked = _scheme_error(url)
+    if blocked is not None:
+        return blocked
     if params:
         sep = "&" if "?" in url else "?"
         url = url + sep + urllib.parse.urlencode(params)
