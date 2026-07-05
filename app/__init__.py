@@ -357,6 +357,14 @@ def _validate_production_config(app: Flask) -> None:
     bootstrap_mode = _is_bootstrap_mode(app)
     production_mode = env in {"prod", "production"} and not bootstrap_mode
     if not production_mode and not bootstrap_mode:
+        # SEC M7 — the strong-credential gate below only runs for an
+        # explicitly-declared prod/bootstrap env. If an operator deploys to
+        # production but forgets LICENSE_PANEL_ENV, that gate is silently
+        # skipped and the panel boots on dev-secret-change-me / admin12345.
+        # We can't force prod behaviour (that would break local dev), but we
+        # refuse to let it be SILENT: scream whenever default credentials are
+        # in use, so a misconfigured deploy is impossible to miss in the logs.
+        _warn_on_default_credentials(app)
         return
 
     if os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"} or app.config.get("DEBUG"):
@@ -408,6 +416,31 @@ def _validate_production_config(app: Flask) -> None:
     # link contract (docs/SIMPLE_LINK_CONTRACT.md). Production now only
     # requires DATABASE_URL + RATE_LIMITS_ENABLED + SESSION_COOKIE_SECURE,
     # all checked above.
+
+
+def _warn_on_default_credentials(app: Flask) -> None:
+    """SEC M7 — log a loud warning if the panel is booting on default secret
+    or admin password outside an explicitly-declared prod/bootstrap env. This
+    is the safety net for a production deploy that forgot LICENSE_PANEL_ENV:
+    the hard gate can't fire (no positive prod signal), but the fail-open must
+    not be silent."""
+    weak_secrets = {"", Config.DEFAULT_SECRET_KEY}
+    weak_passwords = {"", Config.DEFAULT_ADMIN_PASSWORD}
+    offenders = []
+    if str(app.config.get("SECRET_KEY", "")) in weak_secrets:
+        offenders.append("FLASK_SECRET (default dev secret)")
+    if str(app.config.get("ADMIN_PASSWORD", "")) in weak_passwords:
+        offenders.append("LICENSE_ADMIN_PASSWORD (default dev password)")
+    if not offenders:
+        return
+    logging.getLogger(__name__).warning(
+        "INSECURE BOOT: %s in use while LICENSE_PANEL_ENV is not "
+        "prod/production. If this is a real deployment, set "
+        "LICENSE_PANEL_ENV=production and strong FLASK_SECRET / "
+        "LICENSE_ADMIN_PASSWORD — otherwise the panel is running with "
+        "publicly-known credentials.",
+        " + ".join(offenders),
+    )
 
 
 def _is_bootstrap_mode(app: Flask) -> bool:
