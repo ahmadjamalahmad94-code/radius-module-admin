@@ -127,6 +127,19 @@ KEYS: dict[str, Spec] = {
         "أقصى عدد فحوصات لمفتاح ترخيص واحد خلال النافذة.",
         min_value=1, max_value=100000,
     ),
+    # SEC C4 — throttle the public (customer-initiated) payment-request create.
+    "PAYMENT_REQUEST_RATE_LIMIT_MAX": Spec(
+        "PAYMENT_REQUEST_RATE_LIMIT_MAX", "int", 20, _GROUP_RATE,
+        "إنشاء طلب دفع — الأقصى لكل IP",
+        "أقصى عدد طلبات إنشاء دفع لكل IP خلال النافذة (يحدّ التعداد/الإغراق).",
+        min_value=1, max_value=100000,
+    ),
+    "PAYMENT_REQUEST_RATE_LIMIT_WINDOW_SECONDS": Spec(
+        "PAYMENT_REQUEST_RATE_LIMIT_WINDOW_SECONDS", "int", 300, _GROUP_RATE,
+        "نافذة إنشاء طلب الدفع (ثانية)",
+        "النافذة الزمنية لاحتساب طلبات إنشاء الدفع لكل IP.",
+        min_value=10, max_value=3600,
+    ),
     "LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS": Spec(
         "LICENSE_KEY_RATE_LIMIT_WINDOW_SECONDS", "int", 300, _GROUP_RATE,
         "نافذة الفحص لكل مفتاح (ثانية)",

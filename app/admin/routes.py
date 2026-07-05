@@ -4372,7 +4372,7 @@ def payment_request_reject(payment_request_id: int):
 
 
 @bp.post("/payments/requests/<int:payment_request_id>/apply-license")
-@login_required
+@super_admin_required          # SEC C3 — financial action; super-only (matches approve/reject).
 def payment_request_apply_license(payment_request_id: int):
     payment_request = db.get_or_404(LicensePaymentRequest, payment_request_id)
     try:
@@ -4400,7 +4400,7 @@ def payment_request_apply_license(payment_request_id: int):
 
 
 @bp.post("/payments/requests/<int:payment_request_id>/approve-and-credit")
-@login_required
+@super_admin_required          # SEC C3 — financial action; super-only (matches approve/reject).
 def payment_request_approve_and_credit(payment_request_id: int):
     """One-click: approve the proof AND credit the customer in a single action.
 
