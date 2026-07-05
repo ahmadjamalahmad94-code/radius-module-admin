@@ -467,6 +467,17 @@ def _install_rate_limits(app: Flask) -> None:
             )
             if retry_after:
                 return rate_limited_response(retry_after)
+        # SEC C4 — the customer-initiated payment-request creation endpoint is
+        # public by design (token-gated only AFTER creation), so throttle it per
+        # IP to blunt customer_id enumeration + review-queue flooding.
+        if request.endpoint == "api.create_license_payment_request":
+            retry_after = retry_after_for(
+                f"pay-req-create-ip:{client_ip(app.config.get('TRUST_PROXY_HEADERS', False))}",
+                ps.get_int("PAYMENT_REQUEST_RATE_LIMIT_MAX") or 20,
+                ps.get_int("PAYMENT_REQUEST_RATE_LIMIT_WINDOW_SECONDS") or 300,
+            )
+            if retry_after:
+                return rate_limited_response(retry_after)
         if request.endpoint == "api.license_check":
             body = request.get_json(silent=True) or {}
             license_key = str(body.get("license_key") or "").strip().upper()
