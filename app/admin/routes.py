@@ -79,6 +79,9 @@ from ..services.customer_control import (
     deactivate_managed_admin,
     reactivate_managed_admin,
     radius_admins_for_customer,
+    radius_admins_last_sync_at,
+    radius_admins_sync_pending,
+    request_radius_admins_sync,
     service_catalog_items,
     service_is_hidden,
     service_label,
@@ -1364,6 +1367,16 @@ def customer_users(customer_id: int):
         customer_users=portal_users,
         radius_admins=radius_admins_for_customer(customer),
         users_version=customer_users_version(customer),
+        # الحالة المرغوبة (declarative) لأدمن اللوحة، مفهرسة بالاسم (lowercase)
+        # كي يدمجها العرض مع لقطة الجرد فيُظهر «قيد الإنشاء/معطَّل» بدقّة —
+        # نفس الدمج المعتمد في صفحة تفاصيل العميل.
+        managed_admins={m.username.strip().lower(): m for m in managed_admins_for_customer(customer)},
+        managed_admin_role_choices=[(k, role_label(k)) for k in MANAGED_ADMIN_ROLE_KEYS],
+        managed_role_label=role_label,
+        map_snapshot_role=_map_snapshot_role,
+        # حالة مزامنة جرد أدمن الراديوس: «آخر مزامنة» + هل من طلبٍ معلّق.
+        radius_admins_last_sync=radius_admins_last_sync_at(customer),
+        radius_admins_sync_pending=radius_admins_sync_pending(customer),
     )
 
 
@@ -1547,6 +1560,34 @@ def customer_radius_admin_super(customer_id: int, row_id: int):
     return redirect(_customer_user_return_url(customer.id))
 
 
+@bp.post("/customers/<int:customer_id>/radius-admins/sync")
+@login_required
+def customer_radius_admins_sync(customer_id: int):
+    """«مزامنة الآن» — اطلب من راديوس العميل جردَ أدمنياته الطازج عبر الجسر.
+
+    الجسر سحبيّ (اللوحة لا تتصل بالخارج)، فنضع علامةَ طلبٍ معلّقة يحملها عقدُ
+    مزامنة الهوية كـ``request_admin_report: true``؛ يستجيب راديوسُ العميل عند
+    استطلاعه التالي (ثوانٍ للنشِط) ببلاغ جردٍ كامل يُحدِّث اللقطة، يقلّم المحذوف،
+    ويمسح العلامة تلقائياً."""
+    customer = db.get_or_404(Customer, customer_id)
+    request_radius_admins_sync(customer)
+    audit_customer_control(
+        actor_admin_id=session.get("admin_id"),
+        action="radius_admins_sync_requested",
+        entity_type="customer",
+        entity_id=str(customer.id),
+        summary=f"طلب مزامنة جرد أدمن الراديوس للعميل {customer.company_name}",
+        metadata={"customer_id": customer.id},
+    )
+    db.session.commit()
+    flash(
+        "تم طلب المزامنة؛ سيرفع راديوس العميل جردَ أدمنياته الطازج عند استطلاعه "
+        "التالي فتتحدّث القائمة تلقائياً (حدّث الصفحة بعد لحظات).",
+        "success",
+    )
+    return redirect(_customer_user_return_url(customer.id))
+
+
 @bp.post("/customers/<int:customer_id>/owner-admins")
 @login_required
 def customer_owner_admins(customer_id: int):
@@ -1608,6 +1649,11 @@ def customer_owner_admins(customer_id: int):
 # ضدّ تعطيل مالكٍ معيَّن أو آخِر أدمن مفعّل.
 
 def _panel_admins_back(customer_id: int):
+    # يعود إلى صفحة «مستخدمو العميل» المستقلة إن جاء الإجراء منها (return_to=users)،
+    # وإلا إلى قسم أدمن الراديوس في صفحة العميل 360.
+    target = (request.form.get("return_to") or request.args.get("return_to") or "").strip()
+    if target == "users":
+        return redirect(url_for("admin.customer_users", customer_id=customer_id) + "#radius-admins")
     return redirect(url_for("admin.customer_detail", customer_id=customer_id) + "#radius-admins")
 
 

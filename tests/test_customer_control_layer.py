@@ -599,6 +599,185 @@ def test_radius_admins_report_marks_primary_and_sorts_it_first():
         assert rows[1].is_primary is False
 
 
+def test_radius_admins_report_prunes_admin_deleted_on_radius():
+    """المحذوف يختفي: بلاغُ جردٍ كامل لا يذكر أدمناً سابقاً يُقلّم صفَّه من اللقطة."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        # جردٌ أوليّ فيه ثلاثة أدمن.
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "support", "enabled": True},
+            {"id": 3, "username": "gone", "role": "viewer", "enabled": True},
+        ])
+        db.session.commit()
+        assert {r.username for r in radius_admins_for_customer(customer)} == {"root", "helpdesk", "gone"}
+
+        # على الراديوس حُذف «gone» → الجرد التالي (الكامل) لا يذكره.
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "support", "enabled": True},
+        ])
+        db.session.commit()
+        rows = radius_admins_for_customer(customer)
+        # اختفى المحذوف فعلاً (لم يَعُد «لسا مسجل»).
+        assert {r.username for r in rows} == {"root", "helpdesk"}
+        assert not CustomerRadiusAdmin.query.filter_by(customer_id=customer.id, radius_admin_id=3).first()
+
+
+def test_radius_admins_report_reflects_live_role_and_status_changes():
+    """القائمة تعكس الحالي فعلياً: الأدوار/التفعيل تتحدّث مع كل جردٍ كامل."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "support", "enabled": True},
+        ])
+        db.session.commit()
+        # الراديوس يبلّغ بتغيّرٍ واقع: helpdesk صار admin ومُعطَّلاً.
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "admin", "enabled": False},
+        ])
+        db.session.commit()
+        rows = {r.radius_admin_id: r for r in radius_admins_for_customer(customer)}
+        assert rows[2].role == "admin"
+        assert rows[2].enabled is False
+
+
+def test_radius_admins_report_empty_does_not_wipe_snapshot():
+    """حارس أمان: بلاغٌ خالٍ/بلا معرّفات صالحة لا يمحو الجرد كلَّه بالخطأ."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+        ])
+        db.session.commit()
+        # بلاغٌ خالٍ (مثلاً خطأ عابر على الراديوس) — يجب ألّا يقلّم أي شيء.
+        import_radius_admins(customer, lic, [])
+        db.session.commit()
+        assert {r.username for r in radius_admins_for_customer(customer)} == {"root"}
+
+
+def test_radius_admins_report_explicit_tombstone_deletes_in_partial_batch():
+    """شاهدة حذف صريحة تُزيل الأدمن حتى في دفعةٍ جزئية (full_snapshot=false)."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "support", "enabled": True},
+        ])
+        db.session.commit()
+        # دفعة جزئية (لا تُقلّم بالغياب) تحمل شاهدة حذف صريحة لـhelpdesk فقط.
+        import_radius_admins(customer, lic, [
+            {"id": 2, "deleted": True},
+        ], prune=False)
+        db.session.commit()
+        names = {r.username for r in radius_admins_for_customer(customer)}
+        # حُذف المُشاهَد صراحةً، وبقي البقية (لم يُقلَّم root بالغياب في الوضع الجزئي).
+        assert names == {"root"}
+        assert not CustomerRadiusAdmin.query.filter_by(customer_id=customer.id, radius_admin_id=2).first()
+
+
+def test_manual_sync_request_flags_contract_and_report_clears_it():
+    """«مزامنة الآن» تعلّق طلباً يظهر بالعقد، وبلاغُ الراديوس يمسحه."""
+    from app.services.customer_control import (
+        build_identity_sync_contract,
+        import_radius_admins,
+        radius_admins_sync_pending,
+        request_radius_admins_sync,
+    )
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        # لا طلب في البداية.
+        contract = build_identity_sync_contract(lic, license_active=True, status="active")
+        assert contract["request_admin_report"] is False
+
+        # المشغّل يضغط «مزامنة الآن».
+        request_radius_admins_sync(customer)
+        db.session.commit()
+        assert radius_admins_sync_pending(customer) is True
+        contract = build_identity_sync_contract(lic, license_active=True, status="active")
+        assert contract["request_admin_report"] is True
+
+        # الراديوس يستجيب ببلاغ جردٍ طازج → يُمسح الطلب المعلّق.
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+        ])
+        db.session.commit()
+        assert radius_admins_sync_pending(customer) is False
+        contract = build_identity_sync_contract(lic, license_active=True, status="active")
+        assert contract["request_admin_report"] is False
+
+
+def test_admin_sync_now_button_sets_pending_request(client):
+    """زر «مزامنة الآن» في صفحة مستخدمي العميل يعلّق طلبَ مزامنة الجرد."""
+    from app.services.customer_control import radius_admins_sync_pending
+
+    _login(client)
+    customer, _lic = _customer_with_license()
+    res = client.post(
+        f"/admin/customers/{customer.id}/radius-admins/sync",
+        data={"return_to": "users"}, follow_redirects=True,
+    )
+    assert res.status_code == 200
+    db.session.refresh(customer)
+    assert radius_admins_sync_pending(customer) is True
+
+
+def test_customer_users_page_merges_snapshot_and_managed_state(client):
+    """صفحة /users تعرض الحيّ: قيد الإنشاء يظهر، والمحذوف على الراديوس يغيب.
+
+    Assertions are ASCII/structural to stay robust on any console encoding.
+    """
+    from app.services.customer_control import import_radius_admins
+
+    _login(client)
+    customer, lic = _customer_with_license()
+    # لقطة راديوس فيها أدمن محلي «root» وأدمن سابق «legacy».
+    import_radius_admins(customer, lic, [
+        {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+    ])
+    # أدمن أنشأه المالك من اللوحة ولم يُرصد بعد → «قيد الإنشاء».
+    client.post(f"/admin/customers/{customer.id}/panel-admins/add",
+                data={"username": "pendingadmin", "password": "Sup3rSecret", "role_key": "support",
+                      "return_to": "users"})
+    db.session.commit()
+
+    body = client.get(f"/admin/customers/{customer.id}/users").get_data(as_text=True)
+    # الصفحة تُصيّر بلا خطأ وتحمل زر «مزامنة الآن» (بمسار ASCII).
+    assert f"/admin/customers/{customer.id}/radius-admins/sync" in body
+    # المرصود في اللقطة + المُدار قيد الإنشاء كلاهما يظهر.
+    assert "root" in body
+    assert "pendingadmin" in body
+    # add/deactivate تُصدَّر بمسارات الإدارة (round-trip).
+    assert f"/admin/customers/{customer.id}/panel-admins/deactivate" in body
+    assert f"/admin/customers/{customer.id}/panel-admins/add" in body
+
+
 def test_identity_sync_carries_admin_super_overrides():
     """عقد مزامنة الهوية يحمل تعليمات فرض السوبر لأدمن الراديوس المحليين فقط."""
     app = _strict_app()
