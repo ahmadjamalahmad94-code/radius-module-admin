@@ -148,7 +148,7 @@ def hoberadius_runtime_contract():
     })
 
 
-@bp.get("/integration/hoberadius/update/latest")
+@bp.route("/integration/hoberadius/update/latest", methods=["GET", "POST"])
 def hoberadius_update_latest():
     """OPT-IN self-update feed: the LATEST module version advertised to this
     customer, PLUS the cumulative changelog of everything they missed. The
@@ -156,10 +156,13 @@ def hoberadius_update_latest():
     availability + Arabic changelog (no forced push).
 
     Same integration guard triad as every other bridge endpoint (HTTPS + HMAC
-    signature + license_key/server_fingerprint resolution). GET carries the
-    signed envelope as a JSON body exactly like the POST endpoints, so signature
-    verification is identical. The customer is resolved from the verified
-    license; only THAT customer's applicable releases are ever returned.
+    signature + license_key/server_fingerprint resolution). Accepts BOTH GET and
+    POST: the radius side POSTs the signed envelope as the request BODY because a
+    plain GET-with-body gets its body stripped by reverse proxies. The handler
+    reads the envelope from ``request.get_json`` (body) + ``request.args``
+    (query) either way, so both methods behave identically. The customer is
+    resolved from the verified license; only THAT customer's applicable releases
+    are ever returned.
 
     Accumulated updates: a customer on 1.0.0 who skipped 1.1/1.2/1.3 updates
     once to the latest. The caller's CURRENT version is read from

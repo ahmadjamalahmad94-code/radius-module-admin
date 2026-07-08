@@ -80,6 +80,39 @@ def test_update_latest_returns_published_release(client):
     assert body["released_at"] and body["released_at"].endswith("Z")
 
 
+# ── POST with the signed body returns the feed (not 405) ─────────────────────
+def test_update_latest_accepts_post_body(client):
+    """The radius side POSTs the signed envelope as the body (reverse proxies
+    strip GET bodies). The endpoint must accept POST, not answer 405."""
+    from app.services import module_updates as mu
+    _customer, lic = _customer_with_license()
+    mu.publish_release(version="2.1.0", changelog_md="via post", min_version="2.0.0")
+    db.session.commit()
+
+    res = client.post(UPDATE_URL, json=_envelope(lic.license_key, version="1.0.0"), base_url=HTTPS)
+    assert res.status_code == 200            # not 405 Method Not Allowed
+    body = res.get_json()
+    assert body["version"] == "2.1.0"
+    assert body["min_version"] == "2.0.0"
+    assert body["changelog_md"] == "via post"
+
+    # GET keeps working identically (both methods share the handler).
+    res_get = client.get(UPDATE_URL, json=_envelope(lic.license_key, version="1.0.0"), base_url=HTTPS)
+    assert res_get.status_code == 200
+    assert res_get.get_json()["version"] == "2.1.0"
+
+
+# ── POST guards are preserved (HTTPS + license resolution) ───────────────────
+def test_update_latest_post_keeps_guards(client):
+    _customer, lic = _customer_with_license()
+    # HTTPS still required on POST.
+    assert client.post(UPDATE_URL, json=_envelope(lic.license_key),
+                       base_url="http://license-panel.test").status_code == 426
+    # unknown license still rejected on POST.
+    assert client.post(UPDATE_URL, json=_envelope("NOSUCHLICENSEKEY0000000000000000"),
+                       base_url=HTTPS).status_code == 401
+
+
 # ── nothing published → version:null ─────────────────────────────────────────
 def test_update_latest_empty_returns_null(client):
     _customer, lic = _customer_with_license()
