@@ -489,6 +489,13 @@
             <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
             {{ _('تخصيص الأقسام') }}
           </a>
+          {% if is_super_admin %}
+          <a href="{{ url_for('admin.updates_list') }}"
+             class="adm-link {% if ep.startswith('admin.update') %}is-active{% endif %}">
+            <i class="fa-solid fa-cloud-arrow-up fa-xs" aria-hidden="true"></i>
+            {{ _('تحديثات وحدة الراديوس') }}
+          </a>
+          {% endif %}
         </div>
       </div>
       {% endif %}

@@ -2275,6 +2275,88 @@ class AppRelease(TimestampMixin, db.Model):
         return bool((self.download_url or "").strip())
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Per-customer OPT-IN self-update advertisements for the customer RADIUS
+# module (radius-module). The provider PUBLISHES an available version here;
+# customer instances poll GET /api/integration/hoberadius/update/latest and
+# their OWN panel decides whether to install. This table only ADVERTISES
+# availability + changelog — the panel never force-pushes an install.
+# ─────────────────────────────────────────────────────────────────────────
+
+class ModuleRelease(TimestampMixin, db.Model):
+    """A published radius-module version the provider advertises to customers.
+
+    NOT the landing mobile-app downloads (``AppRelease``) — that ships end-user
+    APK/EXE binaries. This is the customer *panel software's* self-update feed:
+    metadata + Arabic changelog only, no hosted binary. The customer instance
+    resolves the single "latest applicable" row on poll and shows it as an
+    available update; installing is the customer's own opt-in choice.
+
+    Targeting: ``target_all`` (default) advertises to every customer; otherwise
+    only customers whose id is in ``target_customer_ids`` see it. ``published``
+    lets the provider stage a draft and flip it live. ``mandatory`` is advisory
+    metadata the customer panel may surface more prominently — it does NOT force
+    an install here (opt-in is preserved). ``min_version`` (optional) tells the
+    customer the minimum current version required before jumping to this one.
+    """
+    __tablename__ = "module_releases"
+    __table_args__ = (
+        db.Index("ix_module_releases_published_released_at", "published", "released_at"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Semantic version string, e.g. "1.4.2". Stored verbatim; compared via a
+    # tolerant semver parse (module_updates.parse_semver) to pick "latest".
+    version = db.Column(db.String(40), nullable=False, index=True)
+    released_at = db.Column(db.DateTime, default=utcnow, nullable=False, index=True)
+    changelog_md = db.Column(db.Text, default="", nullable=False)   # Arabic markdown
+    mandatory = db.Column(db.Boolean, default=False, nullable=False)
+    # Optional minimum current version required to take this update ("" = none).
+    min_version = db.Column(db.String(40), default="", nullable=False)
+    # Draft vs live. Only published rows are ever served by the endpoint.
+    published = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    # Targeting: True = all customers; else restrict to target_customer_ids.
+    target_all = db.Column(db.Boolean, default=True, nullable=False)
+    target_customer_ids_json = db.Column(db.Text, default="[]", nullable=False)
+    created_by = db.Column(db.Integer, nullable=True)  # admin id (best-effort)
+
+    @property
+    def target_customer_ids(self) -> list[int]:
+        raw = json_loads(self.target_customer_ids_json, [])
+        out: list[int] = []
+        if isinstance(raw, list):
+            for v in raw:
+                try:
+                    out.append(int(v))
+                except (TypeError, ValueError):
+                    continue
+        return out
+
+    @target_customer_ids.setter
+    def target_customer_ids(self, value) -> None:
+        cleaned: list[int] = []
+        for v in (value or []):
+            try:
+                cleaned.append(int(v))
+            except (TypeError, ValueError):
+                continue
+        # De-dupe while keeping deterministic order for stable JSON.
+        self.target_customer_ids_json = json_dumps(sorted(set(cleaned)))
+
+    def applies_to_customer(self, customer_id: int) -> bool:
+        """Is this (published) release advertised to the given customer?"""
+        if self.target_all:
+            return True
+        return int(customer_id) in set(self.target_customer_ids)
+
+    def released_at_iso(self) -> str | None:
+        """UTC 'Z' timestamp used in the bridge feed (None when unset)."""
+        return (
+            self.released_at.replace(microsecond=0).isoformat() + "Z"
+            if self.released_at else None
+        )
+
+
 # ``InstanceActivationToken`` was retired with the activation-code mechanism
 # (legacy linking auth). Bearer license-key is the only link path now —
 # docs/SIMPLE_LINK_CONTRACT.md. The ``instance_activation_tokens`` table is

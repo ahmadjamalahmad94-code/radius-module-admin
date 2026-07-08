@@ -1324,6 +1324,31 @@
             </p>
           {% endif %}
 
+          {# ── حالة تحديث وحدة الراديوس (اختياري ذاتي التثبيت) ── #}
+          {% if module_update_status is defined %}
+          <div class="cd-section-title" style="margin-block-start:var(--cc-sp-8);font-size:var(--cc-fs-body)">
+            <i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i>
+            تحديث وحدة الراديوس
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap;font-size:var(--cc-fs-small)">
+            {% set _mu = module_update_status %}
+            <span>الحالي: <strong class="mono ltr">{{ _mu.current_version or '—' }}</strong></span>
+            <span>الأحدث: <strong class="mono ltr">{{ _mu.latest_version or '—' }}</strong></span>
+            {% if _mu.state == 'up_to_date' %}
+              <span style="color:#15803d;font-weight:700"><i class="fa-solid fa-circle-check"></i> على أحدث إصدار</span>
+            {% elif _mu.state == 'outdated' %}
+              <span style="color:#b45309;font-weight:700"><i class="fa-solid fa-triangle-exclamation"></i> إصدار قديم ({{ _mu.current_version or '؟' }}){% if _mu.mandatory %} — تحديث إلزامي{% endif %}</span>
+            {% elif _mu.state == 'unknown' %}
+              <span style="color:var(--cc-text-mute)">لم يُبلَّغ بالإصدار بعد</span>
+            {% else %}
+              <span style="color:var(--cc-text-mute)">لا إصدار موجّه لهذا العميل</span>
+            {% endif %}
+            {% if is_super_admin %}
+              <a href="{{ url_for('admin.updates_list') }}" style="font-size:var(--cc-fs-tiny)">إدارة التحديثات</a>
+            {% endif %}
+          </div>
+          {% endif %}
+
           {% if is_super_admin %}
           <script>
           function cdRevealKey() {
