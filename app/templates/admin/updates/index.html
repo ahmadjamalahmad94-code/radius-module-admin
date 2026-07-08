@@ -1,0 +1,161 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}تحديثات وحدة الراديوس{% endblock %}
+{% block page_title %}تحديثات وحدة الراديوس{% endblock %}
+{% block page_subtitle %}انشر إصداراً متاحاً؛ لوحات العملاء تفحصه عبر الجسر وتقرّر التثبيت بنفسها (اختياري، بلا دفع قسري).{% endblock %}
+
+{% block content %}
+
+{# ── نشر إصدار جديد ─────────────────────────────────────────── #}
+{% call hub.section("نشر إصدار جديد", icon="cloud-arrow-up") %}
+  <p style="font-size:13px;color:#64748b;margin:0 0 14px">
+    يُعلن هذا الإصدار لعملائك عبر
+    <span dir="ltr" style="font-family:var(--cc-font-mono,monospace)">GET /api/integration/hoberadius/update/latest</span>.
+    لوحة العميل تعرض التوفّر وسجل التغييرات وتترك قرار التثبيت للعميل.
+  </p>
+  <form method="post" action="{{ url_for('admin.update_publish') }}"
+        style="display:flex;flex-direction:column;gap:14px;max-width:860px">
+    {{ csrf_input() }}
+    <div style="display:flex;flex-wrap:wrap;gap:14px">
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label for="up-version" style="font-size:12px;font-weight:700;color:#475569">الإصدار (semver) *</label>
+        <input id="up-version" class="hub-input" name="version" required placeholder="1.4.2"
+               dir="ltr" style="width:160px;font-family:var(--cc-font-mono,monospace)">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label for="up-min" style="font-size:12px;font-weight:700;color:#475569">الحد الأدنى للإصدار (اختياري)</label>
+        <input id="up-min" class="hub-input" name="min_version" placeholder="1.0.0"
+               dir="ltr" style="width:160px;font-family:var(--cc-font-mono,monospace)">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <label for="up-released" style="font-size:12px;font-weight:700;color:#475569">تاريخ الإصدار (اختياري)</label>
+        <input id="up-released" class="hub-input" name="released_at" type="datetime-local" style="width:220px">
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <label for="up-changelog" style="font-size:12px;font-weight:700;color:#475569">سجل التغييرات (Markdown، عربي)</label>
+      <textarea id="up-changelog" class="hub-input" name="changelog_md" rows="6"
+                placeholder="## الجديد&#10;- ...&#10;## إصلاحات&#10;- ..."
+                style="width:100%;font-family:var(--cc-font-mono,monospace);line-height:1.7"></textarea>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center">
+      <label style="display:inline-flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:#334155">
+        <input type="checkbox" name="mandatory"> إلزامي (شارة أبرز على لوحة العميل — يبقى القرار للعميل)
+      </label>
+      <label style="display:inline-flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:#334155">
+        <input type="checkbox" name="published" checked> منشور الآن (أزِل العلامة لحفظه كمسودّة)
+      </label>
+    </div>
+
+    {# التوجيه: كل العملاء (الافتراضي) أو مجموعة #}
+    <fieldset style="border:1px solid var(--cc-line,#e5e7eb);border-radius:12px;padding:12px 14px;margin:0">
+      <legend style="font-size:12px;font-weight:800;color:#475569;padding:0 6px">التوجيه</legend>
+      <label style="display:inline-flex;gap:8px;align-items:center;font-size:13px;margin-inline-end:20px">
+        <input type="radio" name="target_mode" value="all" checked> كل العملاء
+      </label>
+      <label style="display:inline-flex;gap:8px;align-items:center;font-size:13px">
+        <input type="radio" name="target_mode" value="subset"> مجموعة محدّدة (اختر أدناه)
+      </label>
+      <div style="margin-top:10px">
+        <select name="target_customer_ids" multiple size="6"
+                style="width:100%;max-width:420px;border:1px solid var(--cc-line,#e5e7eb);border-radius:8px;padding:6px;font-size:13px">
+          {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.company_name }} (#{{ c.id }})</option>
+          {% endfor %}
+        </select>
+        <div style="font-size:11px;color:#94a3b8;margin-top:4px">يُقرأ فقط عند اختيار «مجموعة محدّدة».</div>
+      </div>
+    </fieldset>
+
+    <div>
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-cloud-arrow-up"></i> نشر الإصدار
+      </button>
+    </div>
+  </form>
+{% endcall %}
+
+{# ── الإصدارات المنشورة ─────────────────────────────────────── #}
+{% call hub.section("الإصدارات", icon="tags", meta=(releases|length ~ ' إصدار')) %}
+  {% if releases %}
+    <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+      <thead><tr>
+        <th>الإصدار</th><th>تاريخ الإصدار</th><th>الحالة</th><th>إلزامي</th>
+        <th>الحد الأدنى</th><th>التوجيه</th><th>سجل التغييرات</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for r in releases %}
+        <tr>
+          <td dir="ltr" style="font-family:var(--cc-font-mono,monospace);font-weight:700">{{ r.version }}</td>
+          <td style="white-space:nowrap">{{ r.released_at.strftime('%Y-%m-%d %H:%M') if r.released_at else '—' }}</td>
+          <td>
+            {% if r.published %}{{ hub.pill("منشور", variant="green") }}{% else %}{{ hub.pill("مسودّة", variant="grey") }}{% endif %}
+          </td>
+          <td>{% if r.mandatory %}{{ hub.pill("إلزامي", variant="amber") }}{% else %}—{% endif %}</td>
+          <td dir="ltr" style="font-family:var(--cc-font-mono,monospace)">{{ r.min_version or '—' }}</td>
+          <td style="font-size:12px">
+            {% if r.target_all %}كل العملاء{% else %}{{ r.target_customer_ids|length }} عميل{% endif %}
+          </td>
+          <td style="max-width:280px">
+            <div style="max-height:64px;overflow:auto;font-size:12px;color:#475569;white-space:pre-wrap">{{ r.changelog_md or '—' }}</div>
+          </td>
+          <td style="white-space:nowrap">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <form method="post" action="{{ url_for('admin.update_set_published', release_id=r.id) }}" style="display:inline">
+                {{ csrf_input() }}
+                <input type="hidden" name="action" value="{{ 'unpublish' if r.published else 'publish' }}">
+                <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit">
+                  {% if r.published %}<i class="fa-solid fa-eye-slash"></i> إخفاء{% else %}<i class="fa-solid fa-eye"></i> نشر{% endif %}
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('admin.update_delete', release_id=r.id) }}" style="display:inline"
+                    onsubmit="return confirm('حذف الإصدار {{ r.version }}؟');">
+                {{ csrf_input() }}
+                <button class="hub-btn hub-btn--ghost hub-btn--sm" type="submit" style="color:#dc2626">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% else %}
+    <p style="font-size:13px;color:#94a3b8;margin:0">لا إصدارات منشورة بعد — العملاء لا يرون أي تحديث.</p>
+  {% endif %}
+{% endcall %}
+
+{# ── حالة العملاء (إصدار كل عميل مقابل الأحدث) ──────────────── #}
+{% call hub.section("حالة العملاء", icon="server", meta="من آخر فحص ترخيص") %}
+  <p style="font-size:12px;color:#94a3b8;margin:0 0 10px">
+    الإصدار الحالي = آخر إصدار أبلغ به راديوس العميل في مغلّف التكامل الموقّع.
+  </p>
+  {% if customers %}
+    <div style="overflow-x:auto"><table class="hub-table" style="width:100%">
+      <thead><tr><th>العميل</th><th>الإصدار الحالي</th><th>الأحدث المتاح</th><th>الحالة</th></tr></thead>
+      <tbody>
+        {% for c in customers %}
+          {% set st = statuses[c.id] %}
+          <tr>
+            <td><a href="{{ url_for('admin.customer_detail', customer_id=c.id) }}">{{ c.company_name }}</a></td>
+            <td dir="ltr" style="font-family:var(--cc-font-mono,monospace)">{{ st.current_version or '—' }}</td>
+            <td dir="ltr" style="font-family:var(--cc-font-mono,monospace)">{{ st.latest_version or '—' }}</td>
+            <td>
+              {% if st.state == 'up_to_date' %}{{ hub.pill("على أحدث إصدار", variant="green") }}
+              {% elif st.state == 'outdated' %}{{ hub.pill("إصدار قديم", variant="amber") }}
+              {% elif st.state == 'unknown' %}{{ hub.pill("لم يُبلَّغ بعد", variant="grey") }}
+              {% else %}{{ hub.pill("لا إصدار موجّه", variant="grey") }}{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% else %}
+    <p style="font-size:13px;color:#94a3b8;margin:0">لا عملاء بعد.</p>
+  {% endif %}
+{% endcall %}
+
+{% endblock %}

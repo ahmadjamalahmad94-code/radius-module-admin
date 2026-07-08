@@ -148,6 +148,74 @@ def hoberadius_runtime_contract():
     })
 
 
+@bp.get("/integration/hoberadius/update/latest")
+def hoberadius_update_latest():
+    """OPT-IN self-update feed: the LATEST module version advertised to this
+    customer, PLUS the cumulative changelog of everything they missed. The
+    instance's OWN panel decides whether to install — this only ADVERTISES
+    availability + Arabic changelog (no forced push).
+
+    Same integration guard triad as every other bridge endpoint (HTTPS + HMAC
+    signature + license_key/server_fingerprint resolution). GET carries the
+    signed envelope as a JSON body exactly like the POST endpoints, so signature
+    verification is identical. The customer is resolved from the verified
+    license; only THAT customer's applicable releases are ever returned.
+
+    Accumulated updates: a customer on 1.0.0 who skipped 1.1/1.2/1.3 updates
+    once to the latest. The caller's CURRENT version is read from
+    ``current_version`` (body or ``?current_version=`` query) and falls back to
+    the envelope ``version``. The response returns the latest at the top and the
+    concatenated notes of every release ABOVE the caller's version.
+
+    Response — the exact contract the radius side consumes:
+        {
+          "version": "1.3.0",              # latest applicable release
+          "released_at": "..Z",
+          "mandatory": false,              # true if ANY missed release is mandatory
+          "min_version": "1.0.0" | null,   # hard floor to jump straight to latest
+          "changelog_md": "<all missed notes, newest-first>",
+          "releases": [                    # each missed release, newest-first
+            {"version": "..", "released_at": "..Z", "changelog_md": "..", "mandatory": bool},
+            ...
+          ]
+        }
+    Nothing published/applicable, or already at/above the latest → ``{"version":
+    null}``. Advertised regardless of license active-state: an update check must
+    keep working even on an expired license so the customer can update.
+    """
+    from ..services.module_updates import build_update_feed
+
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required", "message": "فحص التحديثات يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    customer = getattr(getattr(result, "license", None), "customer", None) if result else None
+    if customer is None:
+        # No customer bound to this license → nothing to advertise (never leak).
+        return jsonify({"version": None})
+    # Caller's current version: explicit override wins, else the running version
+    # reported in the signed envelope. An over-long/garbage value degrades to
+    # "unknown" (→ show the full backlog) rather than erroring.
+    def _ver(*vals: object) -> str:
+        for v in vals:
+            try:
+                cleaned = clean_text(v, 40)
+            except ValueError:
+                continue
+            if cleaned:
+                return cleaned
+        return ""
+    current_version = _ver(
+        body.get("current_version"), request.args.get("current_version"), body.get("version")
+    )
+    return jsonify(build_update_feed(customer, current_version))
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Central FCM push — the ONE global mobile app (com.hoberadius.app) connects to
 # ALL radius instances and is backed by a single central Firebase project owned

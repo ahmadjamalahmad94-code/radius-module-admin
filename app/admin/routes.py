@@ -30,6 +30,7 @@ from ..models import (
     LicensePaymentRequest,
     LicensePaymentTransaction,
     LicenseServiceOverride,
+    ModuleRelease,
     Plan,
     ProvisioningOrder,
     Renewal,
@@ -759,7 +760,19 @@ def customer_detail(customer_id: int):
         masked_license_key=_mask_key(current_license.license_key) if current_license else "",
         chr_move_targets=_chr_move_targets,
         chr_move_current_ips=_chr_move_current_ips,
+        # OPT-IN self-update status: reported running version vs the latest
+        # advertised release for this customer («على أحدث إصدار» / «إصدار قديم»).
+        module_update_status=_module_update_status(customer),
     )
+
+
+def _module_update_status(customer) -> dict:
+    """Read-only self-update state for the customer 360 card; never breaks the page."""
+    try:
+        from ..services.module_updates import customer_update_status
+        return customer_update_status(customer)
+    except Exception:  # noqa: BLE001 — a status probe must never break the page
+        return {"state": "unknown", "current_version": "", "latest_version": "", "mandatory": False}
 
 
 @bp.get("/customers/<int:customer_id>/messages")
@@ -3352,6 +3365,118 @@ def audit_logs():
         stats=_audit_stats,
         pagination=_pagination,
     )
+
+
+# ─────────────── تحديثات وحدة الراديوس (نشر إصدار للعملاء) ───────────────
+# المزوّد ينشر إصداراً متاحاً من هنا؛ لوحات العملاء تستعلم عنه عبر الجسر
+# (GET /api/integration/hoberadius/update/latest) وتقرّر بنفسها التثبيت. اختيارية
+# بالكامل: هذه الصفحة تُعلن التوفّر + سجل التغييرات فقط، بلا دفعٍ قسري.
+
+@bp.get("/updates")
+@super_admin_required
+def updates_list():
+    from ..services import module_updates as mu
+    releases = mu.list_releases()
+    # لوحة الحالة لكل عميل (على أحدث إصدار / إصدار قديم) — للوحة النشر.
+    customers = Customer.query.order_by(Customer.company_name.asc()).all()
+    statuses = {c.id: mu.customer_update_status(c) for c in customers}
+    return render_template(
+        "admin/updates/index.html",
+        releases=releases,
+        customers=customers,
+        statuses=statuses,
+    )
+
+
+@bp.post("/updates")
+@super_admin_required
+def update_publish():
+    from ..services import module_updates as mu
+    target_mode = (request.form.get("target_mode") or "all").strip().lower()
+    target_all = target_mode != "subset"
+    target_ids: list[int] = []
+    if not target_all:
+        for raw in request.form.getlist("target_customer_ids"):
+            try:
+                target_ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        if not target_ids:
+            flash("اختر عميلاً واحداً على الأقل للتوجيه، أو اختر «كل العملاء».", "error")
+            return redirect(url_for("admin.updates_list"))
+    released_at = parse_optional_datetime(request.form.get("released_at")) or utcnow()
+    try:
+        row = mu.publish_release(
+            version=request.form.get("version") or "",
+            changelog_md=request.form.get("changelog_md") or "",
+            released_at=released_at,
+            mandatory=bool(request.form.get("mandatory")),
+            min_version=request.form.get("min_version") or "",
+            published=bool(request.form.get("published", "on")),
+            target_all=target_all,
+            target_customer_ids=target_ids,
+            created_by=session.get("admin_id"),
+        )
+    except mu.ModuleUpdateError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.updates_list"))
+    audit(
+        "module_release_published",
+        "module_release",
+        str(row.id),
+        f"نشر إصدار وحدة الراديوس {row.version}",
+        {"version": row.version, "mandatory": row.mandatory, "published": row.published,
+         "target_all": row.target_all, "target_customer_ids": row.target_customer_ids},
+    )
+    db.session.commit()
+    flash(
+        f"تم نشر الإصدار {row.version}. ستراه لوحات العملاء المستهدفين عند فحص التحديثات القادم."
+        if row.published else
+        f"تم حفظ الإصدار {row.version} كمسودّة (غير منشور). فعّل النشر ليظهر للعملاء.",
+        "success",
+    )
+    return redirect(url_for("admin.updates_list"))
+
+
+@bp.post("/updates/<int:release_id>/publish")
+@super_admin_required
+def update_set_published(release_id: int):
+    from ..services import module_updates as mu
+    row = mu.get_release(release_id)
+    if row is None:
+        abort(404)
+    publish = (request.form.get("action") or "publish") != "unpublish"
+    mu.set_published(row, publish)
+    audit(
+        "module_release_published_toggled",
+        "module_release",
+        str(row.id),
+        f"{'نشر' if publish else 'إخفاء'} إصدار وحدة الراديوس {row.version}",
+        {"version": row.version, "published": publish},
+    )
+    db.session.commit()
+    flash(
+        f"تم نشر الإصدار {row.version} للعملاء." if publish
+        else f"تم إخفاء الإصدار {row.version} (لن تراه لوحات العملاء).",
+        "success",
+    )
+    return redirect(url_for("admin.updates_list"))
+
+
+@bp.post("/updates/<int:release_id>/delete")
+@super_admin_required
+def update_delete(release_id: int):
+    from ..services import module_updates as mu
+    row = mu.get_release(release_id)
+    if row is None:
+        abort(404)
+    version = row.version
+    mu.delete_release(row)
+    audit("module_release_deleted", "module_release", str(release_id),
+          f"حذف إصدار وحدة الراديوس {version}", {"version": version})
+    db.session.commit()
+    flash(f"تم حذف الإصدار {version}.", "success")
+    return redirect(url_for("admin.updates_list"))
 
 
 @bp.get("/settings")
