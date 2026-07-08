@@ -673,6 +673,31 @@ def test_radius_admins_report_empty_does_not_wipe_snapshot():
         assert {r.username for r in radius_admins_for_customer(customer)} == {"root"}
 
 
+def test_radius_admins_report_explicit_tombstone_deletes_in_partial_batch():
+    """شاهدة حذف صريحة تُزيل الأدمن حتى في دفعةٍ جزئية (full_snapshot=false)."""
+    from app.services.customer_control import import_radius_admins, radius_admins_for_customer
+
+    app = _strict_app()
+    with app.app_context():
+        db.create_all()
+        seed_defaults(app)
+        customer, lic = _customer_with_license()
+        import_radius_admins(customer, lic, [
+            {"id": 1, "username": "root", "role": "owner", "is_primary": True, "enabled": True},
+            {"id": 2, "username": "helpdesk", "role": "support", "enabled": True},
+        ])
+        db.session.commit()
+        # دفعة جزئية (لا تُقلّم بالغياب) تحمل شاهدة حذف صريحة لـhelpdesk فقط.
+        import_radius_admins(customer, lic, [
+            {"id": 2, "deleted": True},
+        ], prune=False)
+        db.session.commit()
+        names = {r.username for r in radius_admins_for_customer(customer)}
+        # حُذف المُشاهَد صراحةً، وبقي البقية (لم يُقلَّم root بالغياب في الوضع الجزئي).
+        assert names == {"root"}
+        assert not CustomerRadiusAdmin.query.filter_by(customer_id=customer.id, radius_admin_id=2).first()
+
+
 def test_manual_sync_request_flags_contract_and_report_clears_it():
     """«مزامنة الآن» تعلّق طلباً يظهر بالعقد، وبلاغُ الراديوس يمسحه."""
     from app.services.customer_control import (

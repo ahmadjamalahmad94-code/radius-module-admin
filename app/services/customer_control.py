@@ -1683,24 +1683,38 @@ def import_radius_admins(
     للّوحة ``force_super`` لا يُداس هنا أبداً — الراديوس يبلّغ بحالته الواقعة فقط،
     واللوحة هي من تتحكم بالفرض. يتجاهل العناصر بلا معرّف رقمي صالح.
 
-    البلاغ **جرد كامل** لأدمن الراديوس (انظر RADIUS_ADMINS_BRIDGE.md §أ)، لذا
-    عند ``prune=True`` (الافتراضي) تُحذف أيُّ لقطة محليّة لأدمن لم يَعُد في البلاغ
-    — فيختفي الأدمن المحذوف على الراديوس بدل أن يبقى عالقاً في العرض إلى الأبد.
-    حارس أمان: لا نقلّم أبداً عند بلاغٍ خالٍ/بلا معرّفات صالحة (قد يكون بلاغاً
-    جزئياً معطوباً) كي لا نمحو الجرد كلّه بالخطأ. البلاغ يُرضي أيضاً طلبَ
-    «مزامنة الآن» المعلّق فيُمسح.
+    حذفُ أدمنٍ على الراديوس يُبلَّغ بطريقتين متكاملتين (عقد v2، متوافق رجعياً):
+      • **جرد كامل** (الافتراضي، ``prune=True``): أيُّ لقطة محليّة لأدمن لم يَعُد
+        في البلاغ تُحذف — فيختفي المحذوف بدل أن يبقى عالقاً في العرض إلى الأبد.
+      • **شاهدة حذف صريحة (tombstone):** عنصرٌ يحمل ``deleted: true`` (أو
+        ``op: "delete"``) يُحذف صفُّه فوراً حتى في دفعةٍ جزئية (``full_snapshot:
+        false``) — فيستطيع الراديوس الإبلاغ عن حذفٍ واحد بلا إرسال الجرد كلّه.
+    حارس أمان: لا نقلّم بالغياب أبداً عند بلاغٍ خالٍ/بلا معرّفات صالحة (قد يكون
+    بلاغاً جزئياً معطوباً) كي لا نمحو الجرد كلّه بالخطأ؛ الشواهد الصريحة تبقى
+    تعمل. البلاغ يُرضي أيضاً طلبَ «مزامنة الآن» المعلّق فيُمسح.
     """
     if not isinstance(admins, list):
         return 0
     now = utcnow()
     imported = 0
     reported_ids: set[int] = set()
+    tombstoned_ids: set[int] = set()
     for raw in admins[:200]:  # سقف دفاعي على حجم الدفعة.
         if not isinstance(raw, dict):
             continue
         try:
             radius_admin_id = int(raw.get("id") if raw.get("id") is not None else raw.get("radius_admin_id"))
         except (TypeError, ValueError):
+            continue
+        # شاهدة حذف صريحة: احذف الصفّ ولا تُدرجه في مجموعة «المُبلَّغ عنها» (كي لا
+        # يُنقذ نفسه من التقليم بالغياب في وضع الجرد الكامل).
+        if bool(raw.get("deleted")) or str(raw.get("op") or "").strip().lower() == "delete":
+            existing = CustomerRadiusAdmin.query.filter_by(
+                customer_id=customer.id, radius_admin_id=radius_admin_id
+            ).first()
+            if existing is not None:
+                db.session.delete(existing)
+            tombstoned_ids.add(radius_admin_id)
             continue
         reported_ids.add(radius_admin_id)
         row = CustomerRadiusAdmin.query.filter_by(
@@ -1721,8 +1735,8 @@ def import_radius_admins(
         row.last_seen_at = now
         imported += 1
     # قلّم اللقطات العالقة: أدمنٌ حُذف على الراديوس لم يَعُد يظهر في الجرد الكامل،
-    # فنزيل صفّه هنا بدل أن يبقى «مسجّلاً» للأبد. لا نقلّم عند بلاغ بلا معرّفات
-    # صالحة (حارس ضد محو الجرد كلّه ببلاغ خالٍ/معطوب).
+    # فنزيل صفّه هنا بدل أن يبقى «مسجّلاً» للأبد. لا نقلّم بالغياب إلا عند وصول
+    # جردٍ فيه معرّفات فعلية (حارس ضد محو الجرد كلّه ببلاغ خالٍ/معطوب).
     if prune and reported_ids:
         stale = (
             CustomerRadiusAdmin.query
