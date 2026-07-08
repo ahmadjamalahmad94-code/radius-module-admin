@@ -670,6 +670,10 @@ def ensure_schema_compatibility(app: Flask) -> None:
             "dns_record_id": "VARCHAR(64) NOT NULL DEFAULT ''",
             "dns_synced_at": datetime_type,
             "cert_status": "VARCHAR(24) NOT NULL DEFAULT 'unknown'",
+            # Operator-triggered «مزامنة الآن» pending marker for the radius-admin
+            # roster. NULL = no refresh pending; the identity-sync contract turns
+            # a non-NULL value into ``request_admin_report: true`` for the radius.
+            "radius_admins_sync_requested_at": datetime_type,
         })
     if "plans" in tables:
         _add_columns_if_missing("plans", {

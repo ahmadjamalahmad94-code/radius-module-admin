@@ -117,6 +117,16 @@ class Customer(TimestampMixin, db.Model):
     # panel only knows the cert exists once the VPS reports it.
     cert_status = db.Column(db.String(24), default="unknown", nullable=False)
 
+    # Operator-triggered «مزامنة الآن» for the customer's radius-admin roster.
+    # The bridge is pull-based (the panel never reaches out), so this is a
+    # PENDING-REQUEST marker: the «مزامنة الآن» button stamps it, the
+    # identity-sync contract exposes it as ``request_admin_report: true``, and
+    # the customer radius honours it on its next poll by POSTing a fresh
+    # ``admins/report`` — which clears it. NULL = no refresh pending. The
+    # "last synced" time is derived from the newest CustomerRadiusAdmin
+    # ``last_seen_at`` (set on every report), so no separate column is needed.
+    radius_admins_sync_requested_at = db.Column(db.DateTime, nullable=True)
+
     @property
     def dns_status(self) -> str:
         """Derived DNS-record state for the read-only status surface.

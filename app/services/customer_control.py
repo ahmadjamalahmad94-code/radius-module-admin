@@ -1561,6 +1561,7 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
             "admin_super_overrides": [],
             "admin_directives": [],
             "owner_admins": normalize_owner_admins(customer.owner_admins),
+            "request_admin_report": radius_admins_sync_pending(customer),
         }
     users = []
     for user in customer.users.order_by(CustomerUser.id.asc()).all():
@@ -1596,6 +1597,11 @@ def build_identity_sync_contract(lic: License, *, license_active: bool, status: 
         # يَسِم الراديوس الحسابات المطابقة كمالكين (تجاوز كامل + غير محدود) ويدعم
         # عدّة مالكين. قائمة فارغة = لا تعيين → يبقى احتياط المعرّف الأصغر.
         "owner_admins": normalize_owner_admins(customer.owner_admins),
+        # «مزامنة الآن»: عند وجود طلبٍ معلّق من اللوحة، يُطلَب من الراديوس أن يرفع
+        # جرد أدمنياته الطازج فوراً (POST admins/report) في هذا الاستطلاع بدل
+        # انتظار دورته الدورية. البلاغ يمسح العلامة تلقائياً. حقلٌ إضافي: العملاء
+        # الأقدم يتجاهلونه بأمان (يواصلون البلاغ الدوري المعتاد فقط).
+        "request_admin_report": radius_admins_sync_pending(customer),
     }
 
 
@@ -1635,21 +1641,60 @@ def radius_admins_for_customer(customer: Customer) -> list[CustomerRadiusAdmin]:
     )
 
 
+def radius_admins_last_sync_at(customer: Customer):
+    """آخر لحظة أبلغ فيها راديوس العميل بجرد أدمنياته (أحدث ``last_seen_at``).
+
+    مشتقّة من اللقطة نفسها فلا تحتاج عموداً منفصلاً: ``import_radius_admins``
+    يَسِم كل صف مُبلَّغ بـ``last_seen_at = now``، فأحدثُها = زمن آخر بلاغ. تُرجع
+    ``None`` قبل وصول أوّل بلاغ."""
+    row = (
+        CustomerRadiusAdmin.query
+        .filter_by(customer_id=customer.id)
+        .order_by(CustomerRadiusAdmin.last_seen_at.desc())
+        .first()
+    )
+    return row.last_seen_at if row is not None else None
+
+
+def radius_admins_sync_pending(customer: Customer) -> bool:
+    """هل هناك طلب «مزامنة الآن» معلّق لم يُرضِه بلاغُ راديوسٍ طازج بعد."""
+    return getattr(customer, "radius_admins_sync_requested_at", None) is not None
+
+
+def request_radius_admins_sync(customer: Customer) -> None:
+    """يَسِم طلبَ «مزامنة الآن» لجرد أدمن الراديوس (نمط سحبي، بلا اتصال صادر).
+
+    الجسر سحبيّ: لا تدفع اللوحة للراديوس. نضع علامةً معلّقة فقط؛ يحملها عقدُ
+    مزامنة الهوية كـ``request_admin_report: true``، فيستجيب راديوسُ العميل عند
+    استطلاعه التالي ببلاغ ``admins/report`` طازج يُحدِّث اللقطة ويمسح العلامة."""
+    customer.radius_admins_sync_requested_at = utcnow()
+
+
 def import_radius_admins(
     customer: Customer,
     license_obj: License | None,
     admins: list[Any],
+    *,
+    prune: bool = True,
 ) -> int:
     """تحديث لقطة أدمن الراديوس من بلاغ الراديوس (القناة العكسية للجسر).
 
     upsert idempotent بالمفتاح (customer_id, radius_admin_id). الحقل المملوك
     للّوحة ``force_super`` لا يُداس هنا أبداً — الراديوس يبلّغ بحالته الواقعة فقط،
     واللوحة هي من تتحكم بالفرض. يتجاهل العناصر بلا معرّف رقمي صالح.
+
+    البلاغ **جرد كامل** لأدمن الراديوس (انظر RADIUS_ADMINS_BRIDGE.md §أ)، لذا
+    عند ``prune=True`` (الافتراضي) تُحذف أيُّ لقطة محليّة لأدمن لم يَعُد في البلاغ
+    — فيختفي الأدمن المحذوف على الراديوس بدل أن يبقى عالقاً في العرض إلى الأبد.
+    حارس أمان: لا نقلّم أبداً عند بلاغٍ خالٍ/بلا معرّفات صالحة (قد يكون بلاغاً
+    جزئياً معطوباً) كي لا نمحو الجرد كلّه بالخطأ. البلاغ يُرضي أيضاً طلبَ
+    «مزامنة الآن» المعلّق فيُمسح.
     """
     if not isinstance(admins, list):
         return 0
     now = utcnow()
     imported = 0
+    reported_ids: set[int] = set()
     for raw in admins[:200]:  # سقف دفاعي على حجم الدفعة.
         if not isinstance(raw, dict):
             continue
@@ -1657,6 +1702,7 @@ def import_radius_admins(
             radius_admin_id = int(raw.get("id") if raw.get("id") is not None else raw.get("radius_admin_id"))
         except (TypeError, ValueError):
             continue
+        reported_ids.add(radius_admin_id)
         row = CustomerRadiusAdmin.query.filter_by(
             customer_id=customer.id, radius_admin_id=radius_admin_id
         ).first()
@@ -1674,6 +1720,18 @@ def import_radius_admins(
         row.external_identity_provider = str(raw.get("external_identity_provider") or "").strip()[:40]
         row.last_seen_at = now
         imported += 1
+    # قلّم اللقطات العالقة: أدمنٌ حُذف على الراديوس لم يَعُد يظهر في الجرد الكامل،
+    # فنزيل صفّه هنا بدل أن يبقى «مسجّلاً» للأبد. لا نقلّم عند بلاغ بلا معرّفات
+    # صالحة (حارس ضد محو الجرد كلّه ببلاغ خالٍ/معطوب).
+    if prune and reported_ids:
+        stale = (
+            CustomerRadiusAdmin.query
+            .filter_by(customer_id=customer.id)
+            .filter(CustomerRadiusAdmin.radius_admin_id.notin_(reported_ids))
+            .all()
+        )
+        for row in stale:
+            db.session.delete(row)
     # أغلق حلقة التزويد: أيُّ أدمن «مُدار» ظهر اسمه الآن في اللقطة فقد أُنشئ فعلاً
     # على اللوحة → نوقف إرسال تجزئة كلمته الأوليّة في العقد (idempotent، آمن).
     snapshot_usernames = {
@@ -1681,6 +1739,8 @@ def import_radius_admins(
         .filter_by(customer_id=customer.id).all()
     }
     mark_managed_admins_provisioned(customer, snapshot_usernames)
+    # البلاغ يُرضي طلب «مزامنة الآن» المعلّق (وصلنا جردٌ طازج من الراديوس فعلاً).
+    customer.radius_admins_sync_requested_at = None
     return imported
 
 

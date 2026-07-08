@@ -618,6 +618,11 @@ def hoberadius_admins_report():
     ``CustomerRadiusAdmin`` (للعرض والتحكم في تفاصيل العميل). الحقل المملوك
     للّوحة ``force_super`` لا يُداس — هو تحكّم اللوحة وحدها. لا تُخزَّن ولا تُعاد
     أي كلمات مرور.
+
+    البلاغ **جرد كامل** افتراضاً، فتُقلَّم أيُّ لقطة لأدمن لم يَعُد في البلاغ
+    (يختفي المحذوف على الراديوس). يمرّر الراديوس ``full_snapshot: false`` صراحةً
+    فقط إن أرسل دفعةً جزئية لا يجوز التقليم عليها. يُرضي البلاغُ أيضاً طلب
+    «مزامنة الآن» المعلّق فيُمسح.
     """
     body = request.get_json(silent=True) or {}
     if not _integration_request_is_secure():
@@ -631,7 +636,12 @@ def hoberadius_admins_report():
     if not result.license or not result.license.customer:
         return jsonify({"ok": False, "status": "not_found"}), 404
     admins = body.get("admins")
-    imported = import_radius_admins(result.license.customer, result.license, admins if isinstance(admins, list) else [])
+    # A full inventory prunes stale rows; older clients omit the flag → default True.
+    prune = bool(body.get("full_snapshot", True))
+    imported = import_radius_admins(
+        result.license.customer, result.license,
+        admins if isinstance(admins, list) else [], prune=prune,
+    )
     db.session.commit()
     return jsonify({"ok": True, "status": "ok", "imported": imported})
 

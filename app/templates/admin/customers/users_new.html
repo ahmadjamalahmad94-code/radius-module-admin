@@ -86,6 +86,26 @@
   .cu-badge--super { background: #fce7f3; color: #be185d; }
   .cu-badge--primary { background: #eff6ff; color: #1d4ed8; }
   .cu-badge--dist  { background: #ede9fe; color: #5b21b6; }
+  .cu-badge--pending { background: #fff7ed; color: #c2410c; }
+  .cu-badge--managed { background: #eef2ff; color: #4338ca; }
+
+  .cu-sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: #475569; }
+  .cu-sync-time strong { color: #1f2937; font-weight: 700; }
+  .cu-sync-pending { color: #c2410c; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+
+  .cu-addbar {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+    margin-block-start: 16px; padding: 14px; border: 1.5px dashed #e5e7eb; border-radius: 12px; max-width: 780px;
+  }
+  .cu-addbar .fld { display: flex; flex-direction: column; gap: 5px; }
+  .cu-addbar label { font-size: 11px; font-weight: 700; color: #6b7280; }
+  .cu-addbar input, .cu-addbar select {
+    height: 34px; padding-inline: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; background: #fff;
+  }
+  .cu-addbar input { direction: ltr; unicode-bidi: embed; font-family: var(--cc-font-mono, ui-monospace, monospace); }
+  .cu-addbar-note { flex-basis: 100%; margin: 0; font-size: 11px; color: #6b7280; }
+  .cu-roleform { display: inline-flex; gap: 6px; align-items: center; }
+  .cu-roleform select { height: 30px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12px; background: #fff; }
 
   .cu-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .cu-btn {
@@ -308,42 +328,71 @@
   {% endif %}
 </div>
 
-{# Section 2: Radius-synced identities (admins/managers/distributors) #}
-<div class="cu-card">
+{# Section 2: Radius admins — LIVE roster (snapshot merged with panel desired-state) #}
+{# lowercased snapshot usernames → distinguish «قيد الإنشاء» managed rows not yet reported #}
+{% set snap_unames = (radius_admins or [])|map(attribute='username')|map('lower')|list %}
+{% set owner_keys = customer.owner_admins|map('lower')|list %}
+<div class="cu-card" id="radius-admins">
   <div class="cu-card-head">
     <div class="cu-card-title">
-      <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
-      هويات مزامنة من راديوس العميل
-      <span class="cu-card-sub">— يضيفها العميل في نظامه (أدمن/مدير/موزع) ويبلّغ بها الجسرَ تلقائياً.</span>
+      <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+      أدمن الراديوس (المدراء)
+      <span class="cu-card-sub">— الحسابات الفعلية على راديوس العميل (ومنها الأدمن الرئيسي). تُدار مركزياً: إضافة/تعديل صلاحيات/تعطيل.</span>
+    </div>
+    <div class="cu-card-spacer"></div>
+    <div class="cu-sync">
+      <span class="cu-sync-time">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+        آخر مزامنة: <strong>{{ radius_admins_last_sync|dt if radius_admins_last_sync else 'لم تصل بعد' }}</strong>
+      </span>
+      {% if radius_admins_sync_pending %}
+        <span class="cu-sync-pending" title="طلب مزامنة معلّق — سيرفع الراديوس جرده الطازج عند استطلاعه التالي">
+          <i class="fa-solid fa-hourglass-half"></i> قيد المزامنة…
+        </span>
+      {% endif %}
+      <form method="post"
+            action="{{ url_for('admin.customer_radius_admins_sync', customer_id=customer.id) }}"
+            style="display:inline">
+        {{ csrf_input() }}
+        <input type="hidden" name="return_to" value="users">
+        <button class="cu-btn cu-btn--primary" type="submit" title="اطلب من راديوس العميل جردَ أدمنياته الطازج الآن">
+          <i class="fa-solid fa-rotate"></i> {{ _('مزامنة الآن') }}
+        </button>
+      </form>
     </div>
   </div>
 
   <div class="cu-note">
     <i class="fa-solid fa-circle-info"></i>
     <span>
-      هذه لقطة <strong>قراءة فقط</strong> عن الحسابات الموجودة على راديوس العميل. تظهر فور أن يبلّغ راديوسه
-      عبر <span class="mono" dir="ltr">POST /api/integration/hoberadius/admins/report</span> بمزامنة دورية.
-      كلمات المرور لا تُخزَّن ولا تُعاد هنا أبداً. التحكم الوحيد المتاح من اللوحة هو
-      «فرض سوبر يوزر» — يضمن أن يكون هذا الأدمن مشرفاً كاملاً عند كل مزامنة دون كسر دخوله المحلي.
+      قائمة <strong>حيّة</strong> بأدمن راديوس العميل: يبلّغ راديوسه جردَه الكامل عبر
+      <span class="mono" dir="ltr">POST /api/integration/hoberadius/admins/report</span>، فتتحدّث اللقطة
+      ويُحذف تلقائياً من حُذف على الراديوس. الإضافة/تعديل الصلاحيات/التعطيل تُطبَّق على راديوس العميل عند المزامنة
+      التالية (تعليمات تصريحية بمفتاح اسم المستخدم). كلمات المرور لا تُخزَّن ولا تُعاد هنا أبداً. «فرض سوبر يوزر»
+      يجعل الحساب مشرفاً كاملاً دون كسر دخوله المحلي.
     </span>
   </div>
 
-  {% if radius_admins %}
+  {% if radius_admins or managed_admins %}
     <div class="cu-tbl-wrap">
       <table class="cu-tbl">
         <thead>
           <tr>
             <th>المستخدم</th>
-            <th>{{ _('الدور') }}</th>
+            <th>{{ _('الدور') }} / الصلاحيات</th>
             <th>سوبر</th>
             <th>{{ _('الحالة') }}</th>
             <th>المصدر</th>
             <th>آخر ظهور</th>
-            <th style="text-align:end">تحكم اللوحة</th>
+            {% if is_super_admin %}<th style="text-align:end">تحكم اللوحة</th>{% endif %}
           </tr>
         </thead>
         <tbody>
+          {# (1) الحسابات الظاهرة في لقطة الجرد — الحالة الفعلية مدموجة مع نيّة اللوحة #}
           {% for ra in radius_admins %}
+            {% set mng = managed_admins.get((ra.username or '')|lower) if managed_admins else None %}
+            {% set eff_active = ra.enabled if mng is none else mng.active %}
+            {% set is_owner_key = (ra.username or '')|lower in owner_keys %}
             <tr>
               <td class="mono">
                 {{ ra.username or ('#' ~ ra.radius_admin_id) }}
@@ -352,9 +401,17 @@
                     <i class="fa-solid fa-star"></i> رئيسي
                   </span>
                 {% endif %}
+                {% if is_owner_key %}
+                  <span class="cu-badge cu-badge--managed" title="حساب «مالك» معيَّن — محميٌّ من الحذف">
+                    <i class="fa-solid fa-shield-halved"></i> مالك
+                  </span>
+                {% endif %}
               </td>
               <td>
-                {% if ra.role == 'distributor' %}
+                {% if mng is not none %}
+                  {{ managed_role_label(mng.role_key) }}
+                  <span class="cu-badge cu-badge--managed" title="الدور تديره لوحة التراخيص"><i class="fa-solid fa-sliders"></i> مُدار</span>
+                {% elif ra.role == 'distributor' %}
                   <span class="cu-badge cu-badge--dist"><i class="fa-solid fa-handshake"></i> موزع</span>
                 {% elif ra.role == 'manager' %}
                   <span class="cu-badge cu-badge--primary">مدير</span>
@@ -377,10 +434,10 @@
                 {% endif %}
               </td>
               <td>
-                {% if ra.enabled %}
+                {% if eff_active %}
                   <span class="cu-badge cu-badge--ok">مفعل</span>
                 {% else %}
-                  <span class="cu-badge cu-badge--off">معطل</span>
+                  <span class="cu-badge cu-badge--off">معطل{% if mng is not none and not mng.active %} (من اللوحة){% endif %}</span>
                 {% endif %}
               </td>
               <td class="cu-source">
@@ -391,36 +448,125 @@
                 {% endif %}
               </td>
               <td>{{ ra.last_seen_at|dt if ra.last_seen_at else '—' }}</td>
+              {% if is_super_admin %}
               <td style="text-align:end">
                 <div class="cu-row-actions" style="justify-content:flex-end">
-                  {% if ra.force_super %}
-                    <form method="post"
-                          action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}"
-                          style="display:inline">
+                  {% if ra.username %}
+                    {# تعديل الصلاحيات (الدور) — يتبنّى الأدمن المحلي للإدارة عند الحفظ #}
+                    <form method="post" action="{{ url_for('admin.customer_panel_admin_role', customer_id=customer.id) }}" class="cu-roleform">
                       {{ csrf_input() }}
-                      <input type="hidden" name="action" value="disable">
+                      <input type="hidden" name="username" value="{{ ra.username }}">
                       <input type="hidden" name="return_to" value="users">
-                      <button class="cu-btn cu-btn--ghost" type="submit"
-                              data-cu-confirm="إلغاء فرض السوبر عن {{ ra.username or ('#' ~ ra.radius_admin_id) }}؟ سيعتمد على إعداده على الراديوس فقط.">
-                        <i class="fa-solid fa-crown"></i> إلغاء فرض السوبر
+                      {% set cur_role = mng.role_key if mng is not none else map_snapshot_role(ra.role) %}
+                      <select name="role_key" aria-label="الصلاحيات">
+                        {% for rk, rl in managed_admin_role_choices %}
+                          <option value="{{ rk }}" {% if rk == cur_role %}selected{% endif %}>{{ rl }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="cu-btn cu-btn--ghost" type="submit" title="حفظ الصلاحيات"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+                    </form>
+                    {# فرض السوبر #}
+                    <form method="post" action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}" style="display:inline">
+                      {{ csrf_input() }}
+                      <input type="hidden" name="action" value="{{ 'disable' if ra.force_super else 'enable' }}">
+                      <input type="hidden" name="return_to" value="users">
+                      <button class="cu-btn {{ 'cu-btn--ghost' if ra.force_super else 'cu-btn--primary' }}" type="submit"
+                              {% if ra.force_super %}data-cu-confirm="إلغاء فرض السوبر عن {{ ra.username }}؟ سيعتمد على إعداده على الراديوس فقط."{% endif %}>
+                        <i class="fa-solid fa-crown"></i> {{ 'إلغاء فرض السوبر' if ra.force_super else 'اجعله سوبر يوزر' }}
                       </button>
                     </form>
-                  {% else %}
-                    <form method="post"
-                          action="{{ url_for('admin.customer_radius_admin_super', customer_id=customer.id, row_id=ra.id) }}"
-                          style="display:inline">
-                      {{ csrf_input() }}
-                      <input type="hidden" name="action" value="enable">
-                      <input type="hidden" name="return_to" value="users">
-                      <button class="cu-btn cu-btn--primary" type="submit">
-                        <i class="fa-solid fa-crown"></i> اجعله سوبر يوزر
-                      </button>
-                    </form>
+                    {# تعطيل / إعادة تفعيل (حذف آمن قابل للاسترجاع) #}
+                    {% if eff_active %}
+                      <form method="post" action="{{ url_for('admin.customer_panel_admin_deactivate', customer_id=customer.id) }}" style="display:inline">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="username" value="{{ ra.username }}">
+                        <input type="hidden" name="return_to" value="users">
+                        <button class="cu-btn cu-btn--danger" type="submit"
+                                {% if is_owner_key %}disabled title="حساب مالك معيَّن — محميٌّ من الحذف"{% else %}data-cu-confirm="تعطيل {{ ra.username }} على راديوس العميل؟ حذفٌ آمن قابل للاسترجاع."{% endif %}>
+                          <i class="fa-solid fa-user-slash"></i> تعطيل
+                        </button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="{{ url_for('admin.customer_panel_admin_reactivate', customer_id=customer.id) }}" style="display:inline">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="username" value="{{ ra.username }}">
+                        <input type="hidden" name="return_to" value="users">
+                        <button class="cu-btn cu-btn--ghost" type="submit"><i class="fa-solid fa-user-check"></i> تفعيل</button>
+                      </form>
+                    {% endif %}
                   {% endif %}
                 </div>
               </td>
+              {% endif %}
             </tr>
           {% endfor %}
+
+          {# (2) أدمن مُدارون من اللوحة لم يظهروا في اللقطة بعد = «قيد الإنشاء» على الراديوس #}
+          {% if managed_admins %}
+            {% for low, mng in managed_admins.items() %}
+              {% if low not in snap_unames %}
+                <tr>
+                  <td class="mono">
+                    {{ mng.username }}
+                    <span class="cu-badge cu-badge--pending" title="أُنشئ من اللوحة — يظهر على راديوس العميل بعد المزامنة">
+                      <i class="fa-solid fa-hourglass-start"></i> قيد الإنشاء
+                    </span>
+                  </td>
+                  <td>
+                    {{ managed_role_label(mng.role_key) }}
+                    <span class="cu-badge cu-badge--managed"><i class="fa-solid fa-sliders"></i> مُدار</span>
+                  </td>
+                  <td><span class="cu-badge cu-badge--off">—</span></td>
+                  <td>
+                    {% if mng.active %}
+                      <span class="cu-badge cu-badge--ok">مفعل</span>
+                    {% else %}
+                      <span class="cu-badge cu-badge--off">معطل (من اللوحة)</span>
+                    {% endif %}
+                  </td>
+                  <td class="cu-source">
+                    <strong>مُنشأ بالجسر</strong>{% if mng.must_change_password and not mng.password_provisioned %} · تغيير كلمة المرور عند أول دخول{% endif %}
+                  </td>
+                  <td>—</td>
+                  {% if is_super_admin %}
+                  <td style="text-align:end">
+                    <div class="cu-row-actions" style="justify-content:flex-end">
+                      <form method="post" action="{{ url_for('admin.customer_panel_admin_role', customer_id=customer.id) }}" class="cu-roleform">
+                        {{ csrf_input() }}
+                        <input type="hidden" name="username" value="{{ mng.username }}">
+                        <input type="hidden" name="return_to" value="users">
+                        <select name="role_key" aria-label="الصلاحيات">
+                          {% for rk, rl in managed_admin_role_choices %}
+                            <option value="{{ rk }}" {% if rk == mng.role_key %}selected{% endif %}>{{ rl }}</option>
+                          {% endfor %}
+                        </select>
+                        <button class="cu-btn cu-btn--ghost" type="submit" title="حفظ الصلاحيات"><i class="fa-solid fa-floppy-disk"></i> حفظ</button>
+                      </form>
+                      {% if mng.active %}
+                        <form method="post" action="{{ url_for('admin.customer_panel_admin_deactivate', customer_id=customer.id) }}" style="display:inline">
+                          {{ csrf_input() }}
+                          <input type="hidden" name="username" value="{{ mng.username }}">
+                          <input type="hidden" name="return_to" value="users">
+                          <button class="cu-btn cu-btn--danger" type="submit"
+                                  data-cu-confirm="تعطيل {{ mng.username }}؟ حذفٌ آمن قابل للاسترجاع.">
+                            <i class="fa-solid fa-user-slash"></i> تعطيل
+                          </button>
+                        </form>
+                      {% else %}
+                        <form method="post" action="{{ url_for('admin.customer_panel_admin_reactivate', customer_id=customer.id) }}" style="display:inline">
+                          {{ csrf_input() }}
+                          <input type="hidden" name="username" value="{{ mng.username }}">
+                          <input type="hidden" name="return_to" value="users">
+                          <button class="cu-btn cu-btn--ghost" type="submit"><i class="fa-solid fa-user-check"></i> تفعيل</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  </td>
+                  {% endif %}
+                </tr>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
         </tbody>
       </table>
     </div>
@@ -428,8 +574,39 @@
     <div class="cu-empty">
       <i class="fa-solid fa-arrow-up-from-bracket"></i>
       لم تصل أي لقطة من راديوس العميل حتى الآن.<br>
-      تظهر هنا تلقائياً بعد أول بلاغ عبر قناة الجسر العكسية.
+      اضغط «مزامنة الآن» أو أضِف أدمن أدناه — يظهر هنا بعد أوّل بلاغ عبر قناة الجسر.
     </div>
+  {% endif %}
+
+  {# نموذج إضافة أدمن لوحة جديد — سوبر-أدمن فقط. round-trips back to this page. #}
+  {% if is_super_admin %}
+  <form method="post" action="{{ url_for('admin.customer_panel_admin_add', customer_id=customer.id) }}" class="cu-addbar">
+    {{ csrf_input() }}
+    <input type="hidden" name="return_to" value="users">
+    <div class="fld">
+      <label for="cu-pa-username">اسم المستخدم</label>
+      <input id="cu-pa-username" name="username" required autocomplete="off">
+    </div>
+    <div class="fld">
+      <label for="cu-pa-password">كلمة المرور الأوليّة (8+)</label>
+      <input id="cu-pa-password" name="password" type="password" required minlength="8" autocomplete="new-password">
+    </div>
+    <div class="fld">
+      <label for="cu-pa-role">الصلاحيات (الدور)</label>
+      <select id="cu-pa-role" name="role_key">
+        {% for rk, rl in managed_admin_role_choices %}
+          <option value="{{ rk }}" {% if rk == 'viewer' %}selected{% endif %}>{{ rl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="cu-btn cu-btn--primary" type="submit" style="height:34px">
+      <i class="fa-solid fa-user-plus"></i> إضافة أدمن
+    </button>
+    <p class="cu-addbar-note">
+      تُجزَّأ كلمة المرور مركزياً ولا تُسجَّل نصاً صريحاً؛ يُلزَم الأدمن بتغييرها عند أول دخول.
+      الحذف تعطيلٌ آمن قابل للاسترجاع — لا يمكن تعطيل حساب «مالك» معيَّن أو آخِر أدمن مفعّل.
+    </p>
+  </form>
   {% endif %}
 </div>
 
