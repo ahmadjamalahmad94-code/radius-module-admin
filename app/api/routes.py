@@ -148,6 +148,69 @@ def hoberadius_runtime_contract():
     })
 
 
+@bp.post("/integration/hoberadius/bridge-token/report")
+def hoberadius_bridge_token_report():
+    """Reverse channel — the customer's radius reports its current bridge
+    token; the panel reconciles (higher version wins; tie → panel wins) and
+    returns the canonical state so the two sides converge. Same guard triad
+    as identity-sync (HTTPS + HMAC signature + license resolution). The
+    resolver lives in ``bridge_token_sync.apply_customer_report`` and is
+    version-tolerant: a missing/None ``bridge_token_version`` is treated as
+    0 (never an error), so older customers converge to the panel token.
+
+    NOTE: this only SYNCS the token value bidirectionally; it does NOT change
+    how license signatures are verified (that stays on the legacy derived
+    secret) — so identity-sync / signing / the lock are untouched."""
+    body = request.get_json(silent=True) or {}
+    if not _integration_request_is_secure():
+        return jsonify({"ok": False, "status": "https_required",
+                        "message": "تقرير مفتاح الجسر يتطلب HTTPS."}), 426
+    signed = _verify_integration_signature(body)
+    if signed is not None:
+        return signed
+    result, error_response = _checked_license_from_integration_body(body)
+    if error_response is not None:
+        return error_response
+    if not result or not result.license:
+        return jsonify({"ok": False, "status": "not_found",
+                        "message": "ترخيص غير موجود."}), 404
+
+    from ..services.bridge_token_sync import BridgeTokenError, apply_customer_report
+
+    claimed_token = body.get("bridge_token")
+    claimed_version = body.get("bridge_token_version")
+    claimed_fingerprint = body.get("bridge_token_fingerprint") or ""
+    try:
+        rr = apply_customer_report(
+            result.license,
+            claimed_token=claimed_token if isinstance(claimed_token, str) else "",
+            claimed_version=claimed_version,
+            claimed_fingerprint=(claimed_fingerprint
+                                 if isinstance(claimed_fingerprint, str) else None),
+        )
+    except BridgeTokenError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "status": exc.code, "message": exc.message}), 400
+    db.session.commit()
+
+    payload = {
+        "ok": True,
+        "status": "ok",
+        "outcome": rr.outcome,
+        "license_key": result.license.license_key,
+        # Plaintext leaves the panel ONLY over this signed, HTTPS-guarded channel.
+        "token": rr.plaintext,
+        "version": rr.version,
+        "fingerprint": rr.fingerprint,
+        "rotated_at": rr.rotated_at.isoformat() + "Z" if rr.rotated_at else None,
+        "rotated_by": rr.rotated_by,
+    }
+    # Sign the response like identity-sync so the customer can verify it came
+    # from us before adopting a (possibly rotated) token.
+    attach_bridge_signature(payload, str(result.license.license_key or ""))
+    return jsonify(payload)
+
+
 @bp.route("/integration/hoberadius/update/latest", methods=["GET", "POST"])
 def hoberadius_update_latest():
     """OPT-IN self-update feed: the LATEST module version advertised to this

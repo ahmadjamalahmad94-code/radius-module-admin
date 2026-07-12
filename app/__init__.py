@@ -589,6 +589,9 @@ def _install_error_handlers(app: Flask) -> None:
 
 
 def init_database(app: Flask) -> None:
+    # Register the bridge-token ORM model on db.metadata so db.create_all()
+    # builds the bridge_token_states table (bidirectional bridge-token sync).
+    from .services import bridge_token_sync as _bridge_token_sync  # noqa: F401
     db.create_all()
     ensure_schema_compatibility(app)
     seed_defaults(app)
