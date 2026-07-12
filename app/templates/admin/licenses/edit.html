@@ -59,10 +59,27 @@
 
     {% call hub.fieldset("المدة والتواريخ", icon="calendar-days") %}
       <div class="hub-form-grid">
+        <div class="hub-field full">
+          <label>تمديد سريع</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <button type="submit" name="extend_preset" value="20d" class="hub-btn hub-btn--secondary hub-btn--sm">+20 يوم</button>
+            <button type="submit" name="extend_preset" value="1m"  class="hub-btn hub-btn--secondary hub-btn--sm">+شهر</button>
+            <button type="submit" name="extend_preset" value="2m"  class="hub-btn hub-btn--secondary hub-btn--sm">+شهرين</button>
+            <button type="submit" name="extend_preset" value="3m"  class="hub-btn hub-btn--secondary hub-btn--sm">+3 شهور</button>
+            <button type="submit" name="extend_preset" value="6m"  class="hub-btn hub-btn--secondary hub-btn--sm">+6 شهور</button>
+            <button type="submit" name="extend_preset" value="1y"  class="hub-btn hub-btn--secondary hub-btn--sm">+سنة</button>
+          </div>
+          <div class="hub-field-hint">اضغط أيّ زر ليُضيف المدة فوق تاريخ الانتهاء الحاليّ ويحفظ فورًا — يحترم أطوال الأشهر (يناير/فبراير…). أو استخدم الحقلين أدناه لمدّة مخصّصة.</div>
+        </div>
         <div class="hub-field">
-          <label>تمديد سريع — أضِف أيّامًا</label>
-          <input class="hub-input ltr" name="add_days" type="number" min="0" step="1" value="0" placeholder="0">
-          <div class="hub-field-hint">تُضاف فوق تاريخ الانتهاء أدناه (مثلاً 30). اتركها 0 لتغيير التاريخ يدويًّا فقط.</div>
+          <label>أشهر مخصّصة (+)</label>
+          <input class="hub-input ltr" name="extend_months" type="number" min="0" step="1" value="0">
+          <div class="hub-field-hint">تُضاف كأشهر تقويميّة فوق تاريخ الانتهاء.</div>
+        </div>
+        <div class="hub-field">
+          <label>أيّام مخصّصة (+)</label>
+          <input class="hub-input ltr" name="add_days" type="number" min="0" step="1" value="0">
+          <div class="hub-field-hint">تُضاف كأيّام (تجمع مع الأشهر أعلاه إن ملأت الاثنين).</div>
         </div>
         <div class="hub-field">
           <label>بداية الترخيص</label>

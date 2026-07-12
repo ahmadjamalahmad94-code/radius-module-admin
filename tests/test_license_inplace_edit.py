@@ -80,3 +80,43 @@ def test_edit_sets_explicit_expiry_date(client):
     u = db.session.get(License, lic_id)
     assert u.status == "trial"
     assert abs((u.expires_at - target).total_seconds()) < 120   # honored the set date
+
+
+def test_extend_preset_one_month(client):
+    _login(client)
+    lic = _customer_with_license()
+    lic_id, old_expiry = lic.id, lic.expires_at
+    r = client.post(f"/admin/licenses/{lic_id}/edit", data={
+        "plan_id": str(lic.plan_id), "auto_grace": "1",
+        "max_fingerprints": "3", "status": "active", "extend_preset": "1m",
+    })
+    assert r.status_code in (302, 303)
+    u = db.session.get(License, lic_id)
+    assert 28 <= (u.expires_at - old_expiry).days <= 31        # one calendar month
+
+
+def test_extend_preset_one_year(client):
+    _login(client)
+    lic = _customer_with_license()
+    lic_id, old_expiry = lic.id, lic.expires_at
+    r = client.post(f"/admin/licenses/{lic_id}/edit", data={
+        "plan_id": str(lic.plan_id), "auto_grace": "1",
+        "max_fingerprints": "3", "status": "active", "extend_preset": "1y",
+    })
+    assert r.status_code in (302, 303)
+    u = db.session.get(License, lic_id)
+    assert 360 <= (u.expires_at - old_expiry).days <= 366      # ~one year
+
+
+def test_extend_months_and_days_combine(client):
+    _login(client)
+    lic = _customer_with_license()
+    lic_id, old_expiry = lic.id, lic.expires_at
+    r = client.post(f"/admin/licenses/{lic_id}/edit", data={
+        "plan_id": str(lic.plan_id), "auto_grace": "1",
+        "max_fingerprints": "3", "status": "active",
+        "extend_months": "3", "add_days": "20",
+    })
+    assert r.status_code in (302, 303)
+    u = db.session.get(License, lic_id)
+    assert 108 <= (u.expires_at - old_expiry).days <= 113      # 3 months + 20 days

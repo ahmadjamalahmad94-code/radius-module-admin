@@ -2907,6 +2907,17 @@ def license_detail(license_id: int):
         checks=checks,
         renewals=renewals,
         suspicious=suspicious,
+        # The template's usage bars read from `usage.*`; wire the REAL computed
+        # counts here (previously `usage` was never passed, so users/nas/admins
+        # bars silently showed 0). whatsapp/backups have no source yet (the
+        # per-service usage-snapshot push seam is unimplemented) → 0.
+        usage={
+            "users": _used_users,
+            "nas": _used_nas,
+            "admins": _used_admins,
+            "whatsapp_numbers": 0,
+            "backups": 0,
+        },
         max_users=getattr(_plan, "max_users", None),
         max_nas=getattr(_plan, "max_nas", None),
         max_admins=getattr(_plan, "max_admins", None),
@@ -3255,13 +3266,19 @@ def license_update(license_id: int):
     # مهلة السماح: افتراضيًّا تُحسب تلقائيًّا من تاريخ الانتهاء؛ إن أُلغيت
     # علامة «تلقائيّة» نأخذ التاريخ اليدويّ.
     grace = None if request.form.get("auto_grace") else _dt("grace_until", None)
+    # تمديد سريع مرن: زرّ الحفظ قد يحمل extend_preset (شهر/شهرين/3 شهور/20 يوم/سنة)
+    # ويُضاف فوق أي extend_months / add_days يدويَّين.
+    _PRESET = {"20d": (0, 20), "1m": (1, 0), "2m": (2, 0),
+               "3m": (3, 0), "6m": (6, 0), "1y": (12, 0)}
+    pm, pd = _PRESET.get(request.form.get("extend_preset") or "", (0, 0))
     update_license(
         lic,
         plan_id=_int("plan_id", lic.plan_id) or lic.plan_id,
         starts_at=_dt("starts_at", lic.starts_at),
         expires_at=_dt("expires_at", None),
         grace_until=grace,
-        add_days=_int("add_days", 0),
+        extend_months=_int("extend_months", 0) + pm,
+        add_days=_int("add_days", 0) + pd,
         max_fingerprints=_int("max_fingerprints", lic.max_fingerprints),
         status=request.form.get("status") or lic.status,
         notes=request.form.get("notes"),

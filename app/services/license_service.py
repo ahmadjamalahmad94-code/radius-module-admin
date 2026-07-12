@@ -258,6 +258,7 @@ def update_license(
     starts_at: datetime | None = None,
     expires_at: datetime | None = None,
     grace_until: datetime | None = None,
+    extend_months: int = 0,
     add_days: int = 0,
     max_fingerprints: int | None = None,
     status: str | None = None,
@@ -285,12 +286,17 @@ def update_license(
     if starts_at:
         lic.starts_at = starts_at
 
-    # Expiry — an explicit date wins; add_days then increments it (or the
-    # current expiry when no explicit date was given).
+    # Expiry — an explicit date wins; extend_months (calendar months) then
+    # add_days increment it (or the current expiry when no explicit date given).
+    # Both combine, e.g. 3 months + 20 days.
     new_expiry = expires_at or lic.expires_at
-    if add_days:
+    if extend_months or add_days:
         base = new_expiry or utcnow()
-        new_expiry = base + timedelta(days=int(add_days))
+        if extend_months:
+            base = add_months(base, int(extend_months))
+        if add_days:
+            base = base + timedelta(days=int(add_days))
+        new_expiry = base
     if new_expiry and new_expiry != lic.expires_at:
         changes["expires_at"] = [iso_z(lic.expires_at), iso_z(new_expiry)]
         lic.expires_at = new_expiry
