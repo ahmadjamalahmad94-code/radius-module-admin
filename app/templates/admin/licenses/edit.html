@@ -1,0 +1,107 @@
+{% extends "admin/base_new.html" %}
+{% import "_partials/hub.html" as hub %}
+{% block title %}تعديل الترخيص — {{ license.license_key }}{% endblock %}
+{% block page_title %}تعديل الترخيص{% endblock %}
+{% block page_subtitle %}نفس المفتاح — غيّر الباقة والتواريخ وأضِف أيّامًا دون توليد مفتاح جديد.{% endblock %}
+
+{% block content %}
+{{ hub.hero(
+  "تعديل الترخيص",
+  subtitle="التجديد على نفس المفتاح: بدّل الباقة، مدّد المدة أو غيّر تاريخ الانتهاء، واضبط الحالة والبصمات. العميل لا يحتاج إعادة ربط.",
+  icon="pen-to-square"
+) }}
+
+{% call hub.section("بيانات الترخيص", icon="file-signature") %}
+  <form method="post" action="{{ url_for('admin.license_update', license_id=license.id) }}">
+    {{ csrf_input() }}
+
+    {% call hub.fieldset("المفتاح والعميل (ثابتان)", icon="lock") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>مفتاح الترخيص</label>
+          <input class="hub-input ltr" value="{{ license.license_key }}" readonly disabled>
+          <div class="hub-field-hint">المفتاح لا يتغيّر — التجديد يتم عليه.</div>
+        </div>
+        <div class="hub-field">
+          <label>{{ _('العميل') }}</label>
+          <input class="hub-input" value="{{ license.customer.company_name if license.customer else '—' }}" readonly disabled>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("الباقة (العرض)", icon="box") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>الباقة <span class="req">*</span></label>
+          <select class="hub-select" name="plan_id" required>
+            {% for plan in plans %}
+              <option value="{{ plan.id }}" {% if plan.id == license.plan_id %}selected{% endif %}>
+                {{ plan.name }} — {{ plan.monthly_price|money }} {{ plan.currency }}
+              </option>
+            {% endfor %}
+          </select>
+          <div class="hub-field-hint">تغيير الباقة يُحدّث الحدود في عقد الترخيص فورًا (نفس المفتاح).</div>
+        </div>
+        <div class="hub-field">
+          <label>{{ _('الحالة') }}</label>
+          <select class="hub-select" name="status">
+            {% for s in statuses %}
+              <option value="{{ s }}" {% if s == license.status %}selected{% endif %}>{{ s|status_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div style="height:14px"></div>
+
+    {% call hub.fieldset("المدة والتواريخ", icon="calendar-days") %}
+      <div class="hub-form-grid">
+        <div class="hub-field">
+          <label>تمديد سريع — أضِف أيّامًا</label>
+          <input class="hub-input ltr" name="add_days" type="number" min="0" step="1" value="0" placeholder="0">
+          <div class="hub-field-hint">تُضاف فوق تاريخ الانتهاء أدناه (مثلاً 30). اتركها 0 لتغيير التاريخ يدويًّا فقط.</div>
+        </div>
+        <div class="hub-field">
+          <label>بداية الترخيص</label>
+          <input class="hub-input ltr" name="starts_at" type="datetime-local"
+                 value="{{ license.starts_at.strftime('%Y-%m-%dT%H:%M') if license.starts_at else '' }}">
+        </div>
+        <div class="hub-field">
+          <label>{{ _('تاريخ الانتهاء') }}</label>
+          <input class="hub-input ltr" name="expires_at" type="datetime-local"
+                 value="{{ license.expires_at.strftime('%Y-%m-%dT%H:%M') if license.expires_at else '' }}">
+          <div class="hub-field-hint">غيّره مباشرة، أو استخدم «أضِف أيّامًا» فوقه.</div>
+        </div>
+        <div class="hub-field">
+          <label>مهلة السماح</label>
+          <input class="hub-input ltr" name="grace_until" type="datetime-local"
+                 value="{{ license.grace_until.strftime('%Y-%m-%dT%H:%M') if license.grace_until else '' }}">
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-weight:400">
+            <input type="checkbox" name="auto_grace" value="1" checked>
+            احسبها تلقائيًّا بعد تاريخ الانتهاء (تتجاهل الحقل أعلاه)
+          </label>
+        </div>
+        <div class="hub-field">
+          <label>أقصى عدد بصمات</label>
+          <input class="hub-input ltr" name="max_fingerprints" type="number" min="1" step="1"
+                 value="{{ license.max_fingerprints or 1 }}">
+        </div>
+        <div class="hub-field full">
+          <label>ملاحظات داخلية</label>
+          <textarea class="hub-textarea" name="notes" rows="3">{{ license.notes or '' }}</textarea>
+        </div>
+      </div>
+    {% endcall %}
+
+    <div class="hub-form-foot" style="padding-top:16px">
+      <button class="hub-btn hub-btn--primary" type="submit">
+        <i class="fa-solid fa-floppy-disk"></i> حفظ التعديلات
+      </button>
+      <a class="hub-btn hub-btn--ghost" href="{{ url_for('admin.license_detail', license_id=license.id) }}">{{ _('إلغاء') }}</a>
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}

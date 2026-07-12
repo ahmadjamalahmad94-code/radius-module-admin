@@ -119,6 +119,7 @@ from ..services.license_service import (
     renew_license,
     reset_fingerprints,
     set_license_status,
+    update_license,
 )
 from ..services.vpn_entitlements import (
     VpnEntitlementValidationError,
@@ -3231,6 +3232,42 @@ def license_renew(license_id: int):
         actor_admin_id=session.get("admin_id"),
     )
     flash("تم تجديد الترخيص.", "success")
+    return redirect(url_for("admin.license_detail", license_id=lic.id))
+
+
+@bp.get("/licenses/<int:license_id>/edit")
+@login_required
+def license_edit(license_id: int):
+    lic = db.get_or_404(License, license_id)
+    plans = Plan.query.order_by(Plan.status.desc(), Plan.name).all()
+    return render_template(
+        "admin/licenses/edit.html",
+        license=lic,
+        plans=plans,
+        statuses=["active", "suspended", "expired", "trial", "revoked"],
+    )
+
+
+@bp.post("/licenses/<int:license_id>/edit")
+@login_required
+def license_update(license_id: int):
+    lic = db.get_or_404(License, license_id)
+    # مهلة السماح: افتراضيًّا تُحسب تلقائيًّا من تاريخ الانتهاء؛ إن أُلغيت
+    # علامة «تلقائيّة» نأخذ التاريخ اليدويّ.
+    grace = None if request.form.get("auto_grace") else _dt("grace_until", None)
+    update_license(
+        lic,
+        plan_id=_int("plan_id", lic.plan_id) or lic.plan_id,
+        starts_at=_dt("starts_at", lic.starts_at),
+        expires_at=_dt("expires_at", None),
+        grace_until=grace,
+        add_days=_int("add_days", 0),
+        max_fingerprints=_int("max_fingerprints", lic.max_fingerprints),
+        status=request.form.get("status") or lic.status,
+        notes=request.form.get("notes"),
+        actor_admin_id=session.get("admin_id"),
+    )
+    flash("تم حفظ تعديلات الترخيص.", "success")
     return redirect(url_for("admin.license_detail", license_id=lic.id))
 
 

@@ -251,6 +251,93 @@ def renew_license(
     return renewal
 
 
+def update_license(
+    lic: License,
+    *,
+    plan_id: int | None = None,
+    starts_at: datetime | None = None,
+    expires_at: datetime | None = None,
+    grace_until: datetime | None = None,
+    add_days: int = 0,
+    max_fingerprints: int | None = None,
+    status: str | None = None,
+    notes: str | None = None,
+    actor_admin_id: int | None = None,
+) -> License:
+    """In-place edit of an EXISTING license — same ``license_key`` preserved.
+
+    Lets an operator renew/adjust a license without minting a new key: repoint
+    the plan (الباقة/العرض), set start/expiry/grace dates explicitly, extend by
+    ``add_days`` (adds on top of the resolved expiry), set ``max_fingerprints``,
+    ``status`` and ``notes``. When the expiry moves forward, a ``Renewal`` row is
+    logged so the change surfaces in «سجل التجديدات». Emits an audit entry.
+
+    Grace handling: an explicit ``grace_until`` wins; otherwise it is recomputed
+    as expiry + ``default_grace_days()`` so it always trails the new expiry.
+    """
+    changes: dict = {}
+    old_expiry = lic.expires_at
+
+    if plan_id and int(plan_id) != int(lic.plan_id or 0):
+        changes["plan_id"] = [lic.plan_id, int(plan_id)]
+        lic.plan_id = int(plan_id)
+
+    if starts_at:
+        lic.starts_at = starts_at
+
+    # Expiry — an explicit date wins; add_days then increments it (or the
+    # current expiry when no explicit date was given).
+    new_expiry = expires_at or lic.expires_at
+    if add_days:
+        base = new_expiry or utcnow()
+        new_expiry = base + timedelta(days=int(add_days))
+    if new_expiry and new_expiry != lic.expires_at:
+        changes["expires_at"] = [iso_z(lic.expires_at), iso_z(new_expiry)]
+        lic.expires_at = new_expiry
+
+    # Grace — explicit, else always recompute so it trails the (new) expiry.
+    if grace_until:
+        lic.grace_until = grace_until
+    elif lic.expires_at:
+        lic.grace_until = lic.expires_at + timedelta(days=default_grace_days())
+
+    if max_fingerprints is not None:
+        lic.max_fingerprints = int(max_fingerprints)
+    if status:
+        changes.setdefault("status", [None, status])
+        lic.status = status
+    if notes is not None:
+        lic.notes = notes.strip()
+
+    db.session.add(lic)
+
+    # Log a Renewal row whenever the expiry advanced, so «سجل التجديدات»
+    # reflects the extension (day-granular; no payment attached to a manual edit).
+    if lic.expires_at and old_expiry and lic.expires_at > old_expiry:
+        db.session.add(Renewal(
+            customer_id=lic.customer_id,
+            license_id=lic.id,
+            amount=Decimal("0"),
+            currency=(lic.plan.currency if lic.plan else "USD"),
+            period_months=0,
+            period_start=old_expiry,
+            period_end=lic.expires_at,
+            method="manual_edit",
+            status="paid",
+            notes=(notes or "تعديل يدويّ للترخيص")[:500],
+        ))
+
+    _audit(actor_admin_id, "license_edited", "license", str(lic.id),
+           f"Edited license {mask_license_key(lic.license_key)}", {
+               "changes": changes,
+               "expires_at": iso_z(lic.expires_at),
+               "grace_until": iso_z(lic.grace_until),
+               "status": lic.status,
+           })
+    db.session.commit()
+    return lic
+
+
 def set_license_status(lic: License, status: str, actor_admin_id: int | None) -> None:
     lic.status = status
     db.session.add(lic)
