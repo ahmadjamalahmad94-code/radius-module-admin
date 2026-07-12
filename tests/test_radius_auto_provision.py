@@ -496,3 +496,25 @@ def test_legacy_license_integration_secret_is_not_importable():
     assert not hasattr(ls, "license_integration_secret")
     assert not hasattr(ls, "_hmac_root_secret")
     assert not hasattr(ls, "_bearer_license_key_ok")
+
+
+def test_provision_realm_conflict_returns_status_instead_of_crashing(app):
+    """A 2nd customer sending an already-owned (non-unique) realm must get a
+    clean ``realm_conflict`` status, not an uncaught UNIQUE(realm) 500."""
+    from app.services.radius_auto_provision import provision_on_link
+
+    with app.app_context():
+        lic1 = _mk_license("Realm Clash A")
+        lic2 = _mk_license("Realm Clash B")
+
+        r1 = provision_on_link(app, lic1, realm="hr-hbr-2026", radius_auth_ip="10.0.0.1")
+        assert r1.get("ok") is not False
+        db.session.commit()
+
+        r2 = provision_on_link(app, lic2, realm="hr-hbr-2026", radius_auth_ip="10.0.0.2")
+        assert r2["status"] == "realm_conflict"
+        assert r2["ok"] is False
+        # no half-built instance leaked for the 2nd customer
+        assert CustomerRadiusInstance.query.filter_by(customer_id=lic2.customer_id).count() == 0
+        # the 1st customer's row is intact
+        assert CustomerRadiusInstance.query.filter_by(customer_id=lic1.customer_id).count() == 1

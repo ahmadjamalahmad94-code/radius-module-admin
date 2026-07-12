@@ -286,6 +286,30 @@ def provision_on_link(
     auth_ip = _resolve_auth_ip(customer, radius_auth_ip)
     mgmt_ip = (mgmt_wg_ip or "").strip()[:64]
 
+    # Guard against a realm collision with ANOTHER customer. A customer still
+    # running the old client derived its realm from the license-year prefix
+    # (e.g. "hr-hbr-2026"), which is identical for every same-year license — so
+    # the 2nd+ such customer's INSERT would raise UNIQUE(realm) and 500 the
+    # heartbeat. Detect it and return a clear status instead of crashing; the
+    # customer provisions cleanly once it updates to the per-key realm.
+    clash = (
+        CustomerRadiusInstance.query
+        .filter(
+            CustomerRadiusInstance.realm == realm_value,
+            CustomerRadiusInstance.customer_id != customer.id,
+        )
+        .first()
+    )
+    if clash is not None:
+        db.session.rollback()
+        _log.warning(
+            "radius_auto_provision: realm '%s' already owned by customer_id=%s; "
+            "customer_id=%s sent a non-unique realm — skipping until its client "
+            "is updated to the deterministic per-key realm.",
+            realm_value, clash.customer_id, customer.id,
+        )
+        return {"status": "realm_conflict", "ok": False, "realm": realm_value}
+
     if instance is None:
         instance = CustomerRadiusInstance(
             customer_id=customer.id,
