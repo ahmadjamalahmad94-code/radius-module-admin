@@ -54,10 +54,33 @@
         </span>
       {% endif %}
     </div>
-    <a class="ldet-hero-btn" href="{{ url_for('admin.license_detail', license_id=license.id) }}">
-      <i class="fa-solid fa-sliders fa-xs" aria-hidden="true"></i>
-      إجراءات سريعة
-    </a>
+    <div style="display:flex; gap:var(--cc-sp-4); flex-wrap:wrap; align-items:center;">
+      {# تجديد — يقفز لتبويب التجديدات حيث النموذج #}
+      {% if license.status != 'revoked' %}
+      <button type="button" class="ldet-hero-btn"
+              onclick="switchTab('renewals'); document.getElementById('tab-renewals').scrollIntoView({behavior:'smooth'});">
+        <i class="fa-solid fa-calendar-plus fa-xs" aria-hidden="true"></i>
+        تجديد / تمديد المدة
+      </button>
+      {% endif %}
+      {# تعليق أو تفعيل حسب الحالة #}
+      {% if license.status == 'active' %}
+      <form method="post" action="{{ url_for('admin.license_suspend', license_id=license.id) }}"
+            data-confirm="سيتم تعليق هذا الترخيص مؤقتًا — متأكد؟" style="display:inline">
+        {{ csrf_input() }}
+        <button type="submit" class="ldet-hero-btn">
+          <i class="fa-solid fa-pause fa-xs" aria-hidden="true"></i> تعليق
+        </button>
+      </form>
+      {% elif license.status in ['suspended', 'expired'] %}
+      <form method="post" action="{{ url_for('admin.license_activate', license_id=license.id) }}" style="display:inline">
+        {{ csrf_input() }}
+        <button type="submit" class="ldet-hero-btn">
+          <i class="fa-solid fa-play fa-xs" aria-hidden="true"></i> تفعيل
+        </button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 
   {# ── تنبيه النشاط المشبوه ──────────────────────────────────────────── #}
@@ -423,6 +446,66 @@
        Tab 4 — سجل التجديدات
        ══════════════════════════════════════════ #}
     <div class="ldet-tab-panel" id="tab-renewals" role="tabpanel" aria-labelledby="btn-renewals">
+
+      {# ── تجديد / تمديد المدة — يمدّد تاريخ الانتهاء بلا إنشاء ترخيص جديد ── #}
+      {% if license.status != 'revoked' %}
+      <form method="post" action="{{ url_for('admin.license_renew', license_id=license.id) }}"
+            class="ldet-renew-card"
+            style="background:var(--cc-brand-softer); border:1px solid var(--cc-border-cool);
+                   border-radius:var(--cc-r-card); padding:var(--cc-sp-9); margin-block-end:var(--cc-sp-10);">
+        {{ csrf_input() }}
+        <div style="display:flex; align-items:center; gap:var(--cc-sp-4); margin-block-end:var(--cc-sp-7);">
+          <span style="width:38px;height:38px;border-radius:var(--cc-r-lg);background:var(--cc-brand);
+                       color:#fff;display:grid;place-items:center;flex-shrink:0;">
+            <i class="fa-solid fa-calendar-plus"></i>
+          </span>
+          <div>
+            <div style="font-weight:var(--cc-fw-heavy);font-size:var(--cc-fs-h3);">تجديد / تمديد المدة</div>
+            <div style="font-size:var(--cc-fs-small);color:var(--cc-text-soft);">
+              يمدّد تاريخ الانتهاء الحالي
+              {% if license.expires_at %}(ينتهي {{ license.expires_at | date }}){% endif %}
+              دون إنشاء ترخيص جديد — ويُسجَّل في السجل أدناه.
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--cc-sp-6);align-items:end;">
+          <label style="display:grid;gap:var(--cc-sp-2);">
+            <span style="font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);">المدة</span>
+            <select name="period_months" style="height:var(--cc-input-h);border-radius:var(--cc-input-radius);border:1px solid var(--cc-input-border);padding:0 var(--cc-sp-6);">
+              <option value="1">شهر واحد</option>
+              <option value="3">3 أشهر</option>
+              <option value="6">6 أشهر</option>
+              <option value="12" selected>سنة (12 شهرًا)</option>
+            </select>
+          </label>
+          <label style="display:grid;gap:var(--cc-sp-2);">
+            <span style="font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);">المبلغ</span>
+            <input type="number" step="0.01" min="0" name="amount"
+                   value="{{ license.plan.monthly_price if license.plan else 0 }}"
+                   style="height:var(--cc-input-h);border-radius:var(--cc-input-radius);border:1px solid var(--cc-input-border);padding:0 var(--cc-sp-6);">
+          </label>
+          <label style="display:grid;gap:var(--cc-sp-2);">
+            <span style="font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);">طريقة الدفع</span>
+            <select name="method" style="height:var(--cc-input-h);border-radius:var(--cc-input-radius);border:1px solid var(--cc-input-border);padding:0 var(--cc-sp-6);">
+              <option value="manual">يدوي</option>
+              <option value="cash">نقدًا</option>
+              <option value="bank">تحويل بنكي</option>
+            </select>
+          </label>
+          <label style="display:grid;gap:var(--cc-sp-2);">
+            <span style="font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);">حالة الدفع</span>
+            <select name="status" style="height:var(--cc-input-h);border-radius:var(--cc-input-radius);border:1px solid var(--cc-input-border);padding:0 var(--cc-sp-6);">
+              <option value="paid">مدفوع</option>
+              <option value="unpaid">غير مدفوع</option>
+              <option value="waived">معفى</option>
+            </select>
+          </label>
+          <button type="submit" class="hub-btn hub-btn--primary" style="height:var(--cc-input-h);justify-content:center;">
+            <i class="fa-solid fa-calendar-plus"></i> تجديد الآن
+          </button>
+        </div>
+      </form>
+      {% endif %}
 
       <div class="ldet-section-title">
         <i class="fa-solid fa-rotate" aria-hidden="true" style="color: var(--cc-brand); margin-inline-end: var(--cc-sp-3);"></i>

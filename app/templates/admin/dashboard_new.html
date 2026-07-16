@@ -142,7 +142,7 @@
     {% for lic in expiring_licenses %}
       {% set _days = lic.days_remaining | default(0) | int %}
       {% set _is_critical = _days <= 3 %}
-      <a href="{{ url_for('admin.license_detail', id=lic.id) }}"
+      <a href="{{ url_for('admin.license_detail', license_id=lic.id) }}"
          class="dash-expiry-card {% if _is_critical %}dash-expiry-card--critical{% else %}dash-expiry-card--soon{% endif %}"
          role="listitem">
         <div class="dash-expiry-name">{{ lic.customer_name | default('عميل غير محدد') }}</div>

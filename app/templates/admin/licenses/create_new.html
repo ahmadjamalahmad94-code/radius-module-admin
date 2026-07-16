@@ -93,7 +93,7 @@
                       aria-required="true" aria-describedby="customer_id-hint">
                 <option value="">— اختر شركة العميل —</option>
                 {% for customer in customers %}
-                  <option value="{{ customer.id }}">{{ customer.company_name }}</option>
+                  <option value="{{ customer.id }}" {% if preselect_customer_id and customer.id == preselect_customer_id %}selected{% endif %}>{{ customer.company_name }}</option>
                 {% endfor %}
               </select>
               <div class="lcr-hint" id="customer_id-hint">

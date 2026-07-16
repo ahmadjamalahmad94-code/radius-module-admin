@@ -557,12 +557,29 @@ def dashboard():
     }
     recent_checks = LicenseCheck.query.order_by(LicenseCheck.checked_at.desc()).limit(8).all()
     recent_renewals = Renewal.query.order_by(Renewal.created_at.desc()).limit(8).all()
+    # التراخيص المنتهية قريبًا — بطاقات قابلة للنقر في اللوحة (القالب يعرضها،
+    # لكن المسار لم يكن يمرّرها فكانت شفرة ميتة). كل بطاقة: اسم العميل + المتبقّي.
+    _expiring_rows = (
+        License.query.filter(License.expires_at >= now, License.expires_at <= soon)
+        .order_by(License.expires_at.asc()).limit(12).all()
+    )
+    expiring_licenses = []
+    for _lic in _expiring_rows:
+        _cust = db.session.get(Customer, _lic.customer_id)
+        expiring_licenses.append({
+            "id": _lic.id,
+            "customer_name": _cust.company_name if _cust else "عميل غير محدد",
+            "expires_at": _lic.expires_at,
+            "days_remaining": max(0, (_lic.expires_at - now).days) if _lic.expires_at else 0,
+        })
     health = {
         "env": _setting("environment_label", "local"),
         "support_email": _setting("support_email", ""),
         "api_base": _setting("license_api_base_url", ""),
     }
-    return render_template("admin/dashboard_new.html", stats=stats, recent_checks=recent_checks, recent_renewals=recent_renewals, health=health)
+    return render_template("admin/dashboard_new.html", stats=stats, recent_checks=recent_checks,
+                           recent_renewals=recent_renewals, health=health,
+                           expiring_licenses=expiring_licenses)
 
 
 @bp.get("/customers")
@@ -2846,7 +2863,15 @@ def license_new():
     customers = Customer.query.order_by(Customer.company_name.asc()).all()
     plans = Plan.query.filter_by(status="active").order_by(Plan.name.asc()).all()
     today = utcnow()
-    return render_template("admin/licenses/create_new.html", customers=customers, plans=plans, today=today, timedelta=timedelta)
+    # عند الفتح من صفحة العميل نمرّر ?customer_id= لاختياره مسبقًا (لا إعادة اختيار).
+    # ملاحظة: _int يقرأ من النموذج؛ هنا القيمة في args (طلب GET).
+    try:
+        preselect_customer_id = int(request.args.get("customer_id") or 0) or None
+    except (TypeError, ValueError):
+        preselect_customer_id = None
+    return render_template("admin/licenses/create_new.html", customers=customers, plans=plans,
+                           today=today, timedelta=timedelta,
+                           preselect_customer_id=preselect_customer_id)
 
 
 @bp.post("/licenses/new")

@@ -450,7 +450,14 @@
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-licenses" role="tabpanel" aria-labelledby="tbtn-licenses">
 
-    <h2 class="cd-panel-heading"><i class="fa-solid fa-key" aria-hidden="true"></i> التراخيص والاشتراكات<span class="cd-tab-count">{{ licenses|length }}</span></h2>
+    <h2 class="cd-panel-heading" style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap">
+      <i class="fa-solid fa-key" aria-hidden="true"></i> التراخيص والاشتراكات<span class="cd-tab-count">{{ licenses|length }}</span>
+      {# إصدار ترخيص لهذا العميل مباشرة — يفتح النموذج والعميل مُختار مسبقًا #}
+      <a href="{{ url_for('admin.license_new', customer_id=customer.id) }}"
+         class="hub-btn hub-btn--primary hub-btn--sm" style="margin-inline-start:auto">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> إصدار ترخيص
+      </a>
+    </h2>
 
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -552,7 +559,7 @@
       <div class="cd-empty">
         <i class="fa-solid fa-key-skeleton" aria-hidden="true"></i>
         لا يوجد أي ترخيص مرتبط بهذا العميل
-        <a href="{{ url_for('admin.license_new') }}" class="clist-btn clist-btn--primary"
+        <a href="{{ url_for('admin.license_new', customer_id=customer.id) }}" class="clist-btn clist-btn--primary"
            style="height:36px;padding-inline:var(--cc-sp-8);border-radius:var(--cc-btn-radius);
                   display:inline-flex;align-items:center;gap:var(--cc-sp-3);font-size:var(--cc-fs-body-s);
                   font-weight:var(--cc-fw-bold);background:var(--cc-brand);color:#fff;text-decoration:none;
