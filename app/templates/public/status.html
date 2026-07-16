@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F766E">
+  <meta name="robots" content="index, follow">
+  <title>حالة الخدمة — HobeRadius</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    :root{
+      --ok:#0D9488; --ok-bg:#F0FDFA; --ok-line:#99F6E4;
+      --deg:#B45309; --deg-bg:#FFFBEB; --deg-line:#FDE68A;
+      --dn:#B91C1C; --dn-bg:#FEF2F2; --dn-line:#FECACA;
+      --un:#5B6470; --un-bg:#F1F5F9; --un-line:#E2E8F0;
+    }
+    .st-body{min-height:100dvh;margin:0;font-family:'Cairo',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0f172a;
+      background:radial-gradient(820px 520px at 88% -8%, rgba(13,148,136,.10) 0%, transparent 55%), #f1f5f9;}
+    .st-wrap{max-width:720px;margin:auto;padding:28px 22px 60px;}
+    .st-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:22px;}
+    .st-brand{display:flex;align-items:center;gap:11px;}
+    .st-mark{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#0F766E,#14B8A6);color:#fff;display:grid;place-items:center;font-weight:900;font-size:14px;box-shadow:0 6px 16px rgba(13,148,136,.30);}
+    .st-brand b{display:block;font-size:15px;font-weight:900;}
+    .st-brand span{font-size:11px;color:#64748b;}
+    .st-home{display:inline-flex;align-items:center;gap:8px;text-decoration:none;padding:9px 15px;border-radius:11px;font-size:13px;font-weight:800;color:#475569;border:1px solid #cbd5e1;background:#fff;}
+    .st-hero{border-radius:20px;padding:30px;text-align:center;border:1px solid;margin-bottom:22px;}
+    .st-hero.operational{background:var(--ok-bg);border-color:var(--ok-line);}
+    .st-hero.degraded{background:var(--deg-bg);border-color:var(--deg-line);}
+    .st-hero.down{background:var(--dn-bg);border-color:var(--dn-line);}
+    .st-hero.unknown{background:var(--un-bg);border-color:var(--un-line);}
+    .st-hero-ic{font-size:44px;margin-bottom:12px;}
+    .st-hero.operational .st-hero-ic{color:var(--ok);}
+    .st-hero.degraded .st-hero-ic{color:var(--deg);}
+    .st-hero.down .st-hero-ic{color:var(--dn);}
+    .st-hero.unknown .st-hero-ic{color:var(--un);}
+    .st-hero h1{margin:0;font-size:24px;font-weight:900;}
+    .st-list{background:#fff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(15,23,42,.05);}
+    .st-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 22px;border-bottom:1px solid #eef2f7;}
+    .st-row:last-child{border-bottom:0;}
+    .st-row-name{font-weight:800;font-size:14.5px;}
+    .st-row-sub{font-size:12px;color:#64748b;font-weight:700;margin-top:2px;}
+    .st-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px;font-weight:800;font-size:12.5px;white-space:nowrap;}
+    .st-pill.operational{background:var(--ok-bg);color:var(--ok);}
+    .st-pill.degraded{background:var(--deg-bg);color:var(--deg);}
+    .st-pill.down{background:var(--dn-bg);color:var(--dn);}
+    .st-pill.unknown{background:var(--un-bg);color:var(--un);}
+    .st-dot{width:8px;height:8px;border-radius:50%;background:currentColor;}
+    .st-foot{text-align:center;margin-top:22px;font-size:12.5px;color:#64748b;font-weight:700;}
+    .st-foot a{color:#0F766E;font-weight:800;}
+  </style>
+</head>
+<body class="st-body">
+  <div class="st-wrap">
+    <div class="st-top">
+      <div class="st-brand">
+        <div class="st-mark">HR</div>
+        <div><b>HobeRadius</b><span>حالة الخدمة</span></div>
+      </div>
+      <a class="st-home" href="/"><i class="fa-solid fa-arrow-right-long"></i> الصفحة الرئيسية</a>
+    </div>
+
+    {% set ov = summary.overall %}
+    <div class="st-hero {{ ov }}">
+      <div class="st-hero-ic">
+        {% if ov == 'operational' %}<i class="fa-solid fa-circle-check"></i>
+        {% elif ov == 'degraded' %}<i class="fa-solid fa-triangle-exclamation"></i>
+        {% elif ov == 'down' %}<i class="fa-solid fa-circle-xmark"></i>
+        {% else %}<i class="fa-solid fa-circle-question"></i>{% endif %}
+      </div>
+      <h1>
+        {% if ov == 'operational' %}كل الأنظمة تعمل بشكل طبيعي
+        {% elif ov == 'degraded' %}بعض الأنظمة تشهد أداءً منخفضًا
+        {% elif ov == 'down' %}يوجد انقطاع في الخدمة
+        {% else %}حالة الخدمة غير متاحة حاليًا{% endif %}
+      </h1>
+    </div>
+
+    <div class="st-list">
+      {% for c in summary.components %}
+      <div class="st-row">
+        <div>
+          <div class="st-row-name">{{ c.name }}</div>
+          {% if c.total is defined %}
+          <div class="st-row-sub">{{ c.up }} من {{ c.total }} عقدة تعمل</div>
+          {% endif %}
+        </div>
+        <span class="st-pill {{ c.state }}"><span class="st-dot"></span>{{ label(c.state) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="st-foot">
+      {% if support_email %}لأي استفسار: <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% endif %}
+    </div>
+  </div>
+</body>
+</html>

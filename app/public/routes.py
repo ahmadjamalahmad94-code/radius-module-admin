@@ -94,6 +94,26 @@ def data_deletion():
     )
 
 
+@bp.get("/status")
+def status_page():
+    """صفحة حالة عامّة (بلا تسجيل دخول) — ملخّص تشغيلي آمن للخصوصية."""
+    from ..services import public_status
+    return render_template(
+        "public/status.html",
+        summary=public_status.status_summary(),
+        label=public_status.component_label,
+        support_email=current_app.config.get("SUPPORT_EMAIL", ""),
+    )
+
+
+@bp.get("/status.json")
+def status_json():
+    """نفس الملخّص كـ JSON — لصفحات مراقبة خارجية/uptime robots."""
+    from flask import jsonify
+    from ..services import public_status
+    return jsonify(public_status.status_summary())
+
+
 def _get_portal_request(request_id: int) -> LicensePaymentRequest | None:
     token = (request.args.get("token") or request.form.get("token") or "").strip()
     return LicensePaymentRequestRepository().get_for_portal(request_id, token)
