@@ -41,7 +41,21 @@ class Admin(TimestampMixin, db.Model):
     active = db.Column(db.Boolean, default=True, nullable=False)
     # Elevated admin: required to create/rotate/reveal Customer Secure Vault secrets.
     is_super_admin = db.Column(db.Boolean, default=False, nullable=False)
+    # RBAC (2026-07): الدور الدقيق — super_admin/operator/support/viewer.
+    # is_super_admin يبقى مصدر الحقيقة لـ super؛ role_key يميّز غير-super.
+    role_key = db.Column(db.String(20), default="operator", nullable=False)
+    # 2FA/TOTP (اختياري لكل مدير).
+    totp_secret = db.Column(db.String(64), default="", nullable=False)
+    totp_enabled = db.Column(db.Boolean, default=False, nullable=False)
     last_login_at = db.Column(db.DateTime)
+
+    @property
+    def role(self) -> str:
+        """الدور الفعّال (super_admin يفوز). للاستخدام في القوالب والفحص."""
+        if self.is_super_admin:
+            return "super_admin"
+        key = (self.role_key or "").strip().lower()
+        return key if key in {"super_admin", "operator", "support", "viewer"} else "operator"
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)

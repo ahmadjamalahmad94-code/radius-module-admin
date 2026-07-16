@@ -1,0 +1,84 @@
+{% extends "admin/base_new.html" %}
+{% block title %}الأمان والتحقق الثنائي{% endblock %}
+{% block page_title %}الأمان والتحقق الثنائي{% endblock %}
+
+{% block head_extra %}
+<style>
+  .sec-wrap{max-width:640px;display:grid;gap:var(--cc-gap-section)}
+  .sec-card{background:var(--cc-card-bg);border:1px solid var(--cc-border);
+    border-radius:var(--cc-r-card);box-shadow:var(--cc-sh-card);padding:var(--cc-sp-11)}
+  .sec-status{display:inline-flex;align-items:center;gap:var(--cc-sp-3);
+    padding:var(--cc-sp-2) var(--cc-sp-7);border-radius:var(--cc-r-pill);
+    font-weight:var(--cc-fw-bold);font-size:var(--cc-fs-body-s)}
+  .sec-on{background:var(--pill-green-bg);color:var(--pill-green-fg)}
+  .sec-off{background:var(--pill-grey-bg);color:var(--pill-grey-fg)}
+  .sec-qr{display:block;margin:var(--cc-sp-8) auto;width:200px;height:200px;
+    border:1px solid var(--cc-border);border-radius:var(--cc-r-lg);padding:var(--cc-sp-4);background:#fff}
+  .sec-secret{font-family:var(--cc-font-mono);background:var(--hb-bg);padding:var(--cc-sp-4) var(--cc-sp-6);
+    border-radius:var(--cc-r);text-align:center;letter-spacing:.15em;word-break:break-all;font-size:var(--cc-fs-body-s)}
+  .sec-code-input{width:100%;text-align:center;letter-spacing:.4em;font-size:20px;
+    padding:var(--cc-sp-6);border:1px solid var(--cc-input-border);border-radius:var(--cc-input-radius)}
+  .sec-steps{padding-inline-start:var(--cc-sp-9);color:var(--cc-text-soft);line-height:var(--cc-lh-loose)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sec-wrap">
+  <div class="sec-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--cc-sp-6);flex-wrap:wrap">
+      <div>
+        <h2 style="margin:0 0 4px"><i class="fa-solid fa-shield-halved"></i> التحقق الثنائي (2FA)</h2>
+        <p style="margin:0;color:var(--cc-text-soft)">طبقة حماية إضافية عبر تطبيق مصادقة (Google Authenticator / Authy).</p>
+      </div>
+      {% if admin.totp_enabled %}
+        <span class="sec-status sec-on"><i class="fa-solid fa-circle-check"></i> مُفعّل</span>
+      {% else %}
+        <span class="sec-status sec-off"><i class="fa-solid fa-circle-xmark"></i> غير مُفعّل</span>
+      {% endif %}
+    </div>
+
+    {% if enroll_qr %}
+      {# مرحلة التسجيل — امسح ثم أثبت رمزًا #}
+      <hr style="border:0;border-top:1px solid var(--cc-border);margin:var(--cc-sp-9) 0">
+      <ol class="sec-steps">
+        <li>افتح تطبيق المصادقة وامسح الرمز أدناه.</li>
+        <li>أو أدخل المفتاح يدويًا إن تعذّر المسح.</li>
+        <li>أدخل الرمز المكوّن من 6 أرقام لتأكيد التفعيل.</li>
+      </ol>
+      <img class="sec-qr" src="{{ enroll_qr }}" alt="رمز QR لإعداد التحقق الثنائي">
+      <div class="sec-secret">{{ enroll_secret }}</div>
+      <form method="post" action="{{ url_for('admin.settings_2fa_enable') }}" style="margin-top:var(--cc-sp-9);display:grid;gap:var(--cc-sp-6)">
+        {{ csrf_input() }}
+        <input class="sec-code-input" name="code" inputmode="numeric" pattern="[0-9]*"
+               maxlength="6" autocomplete="one-time-code" placeholder="000000" required autofocus>
+        <button type="submit" class="hub-btn hub-btn--primary" style="justify-content:center">
+          <i class="fa-solid fa-check"></i> تفعيل التحقق الثنائي
+        </button>
+      </form>
+    {% elif admin.totp_enabled %}
+      {# مُفعّل — إمكان التعطيل برمز صحيح #}
+      <hr style="border:0;border-top:1px solid var(--cc-border);margin:var(--cc-sp-9) 0">
+      <form method="post" action="{{ url_for('admin.settings_2fa_disable') }}"
+            data-confirm="سيُلغى التحقق الثنائي عن حسابك — متأكد؟"
+            style="display:grid;gap:var(--cc-sp-6)">
+        {{ csrf_input() }}
+        <label style="color:var(--cc-text-soft)">أدخل رمزًا حاليًا للتعطيل:</label>
+        <input class="sec-code-input" name="code" inputmode="numeric" pattern="[0-9]*"
+               maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
+        <button type="submit" class="hub-btn hub-btn--danger" style="justify-content:center">
+          <i class="fa-solid fa-shield-xmark"></i> تعطيل التحقق الثنائي
+        </button>
+      </form>
+    {% else %}
+      {# غير مُفعّل — ابدأ التسجيل #}
+      <hr style="border:0;border-top:1px solid var(--cc-border);margin:var(--cc-sp-9) 0">
+      <form method="post" action="{{ url_for('admin.settings_2fa_begin') }}">
+        {{ csrf_input() }}
+        <button type="submit" class="hub-btn hub-btn--primary">
+          <i class="fa-solid fa-qrcode"></i> ابدأ إعداد التحقق الثنائي
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

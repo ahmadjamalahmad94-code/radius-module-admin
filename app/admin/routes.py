@@ -3556,6 +3556,69 @@ def sections_settings():
     return render_template("admin/settings/sections_new.html", hidden_sections=hidden)
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# 2FA/TOTP self-service — كل مدير يفعّل/يعطّل تحقّقه الثنائي على حسابه.
+# صفحة مستقلة عن إدارة المشرفين (لا تتطلب super — يخصّ حساب المدير نفسه).
+# ────────────────────────────────────────────────────────────────────────────
+@bp.get("/settings/security")
+@login_required
+def settings_security():
+    admin = current_admin()
+    return render_template("admin/settings/security_new.html", admin=admin)
+
+
+@bp.post("/settings/security/2fa/begin")
+@login_required
+def settings_2fa_begin():
+    """يولّد سرًّا مؤقتًا ويعرض QR للمسح — لا يُفعَّل حتى إثبات رمز."""
+    from ..services import two_factor as tf
+    admin = current_admin()
+    secret = tf.new_secret()
+    session["pending_totp_secret"] = secret
+    qr = tf.qr_data_uri(secret, admin.email or admin.username)
+    return render_template("admin/settings/security_new.html", admin=admin,
+                           enroll_secret=secret, enroll_qr=qr)
+
+
+@bp.post("/settings/security/2fa/enable")
+@login_required
+def settings_2fa_enable():
+    from ..services import two_factor as tf
+    admin = current_admin()
+    secret = session.get("pending_totp_secret") or ""
+    code = request.form.get("code") or ""
+    if not secret or not tf.verify(secret, code):
+        flash("الرمز غير صحيح — أعد المحاولة أو امسح الرمز من جديد.", "error")
+        return redirect(url_for("admin.settings_security"))
+    admin.totp_secret = secret
+    admin.totp_enabled = True
+    session.pop("pending_totp_secret", None)
+    audit("admin_2fa_enabled", "admin", str(admin.id),
+          f"فعّل {admin.username} التحقق الثنائي")
+    db.session.commit()
+    flash("تم تفعيل التحقق الثنائي بنجاح.", "success")
+    return redirect(url_for("admin.settings_security"))
+
+
+@bp.post("/settings/security/2fa/disable")
+@login_required
+def settings_2fa_disable():
+    """تعطيل التحقق الثنائي — يتطلب رمزًا صحيحًا حاليًا (لا تعطيل أعمى)."""
+    from ..services import two_factor as tf
+    admin = current_admin()
+    code = request.form.get("code") or ""
+    if admin.totp_enabled and not tf.verify(admin.totp_secret, code):
+        flash("أدخل رمزًا صحيحًا لتعطيل التحقق الثنائي.", "error")
+        return redirect(url_for("admin.settings_security"))
+    admin.totp_enabled = False
+    admin.totp_secret = ""
+    audit("admin_2fa_disabled", "admin", str(admin.id),
+          f"عطّل {admin.username} التحقق الثنائي")
+    db.session.commit()
+    flash("تم تعطيل التحقق الثنائي.", "info")
+    return redirect(url_for("admin.settings_security"))
+
+
 @bp.get("/settings/admins")
 @login_required
 def settings_admins():
@@ -3568,7 +3631,8 @@ def settings_admins():
             return getattr(self._a, name)
         @property
         def role(self):
-            return "super_admin" if self._a.is_super_admin else "operator"
+            # الدور الحقيقي (super_admin/operator/support/viewer) عبر خاصية النموذج.
+            return self._a.role
         @property
         def enabled(self):
             return self._a.active
@@ -3654,12 +3718,14 @@ def settings_admins_post():
             while _Admin.query.filter_by(username=f"{username}{i}").first():
                 i += 1
             username = f"{username}{i}"
+        from ..services import rbac as _rbac
         admin = _Admin(
             username=username,
             email=email,
             full_name=full_name,
             active=True,
             is_super_admin=_admin_role_to_super(role),
+            role_key=_rbac.clean_role(role),
         )
         admin.set_password(password)
         db.session.add(admin)
@@ -3707,9 +3773,11 @@ def settings_admins_post():
             if other_super == 0:
                 flash("لا يمكنك خفض رتبة نفسك — أنت المسؤول العام الوحيد المُفعَّل.", "error")
                 return redirect(url_for("admin.settings_admins"))
+        from ..services import rbac as _rbac
         admin.full_name = full_name
         admin.email = email
         admin.is_super_admin = new_super
+        admin.role_key = _rbac.clean_role(role)
         if password:
             err = _admin_validate_password(password)
             if err:

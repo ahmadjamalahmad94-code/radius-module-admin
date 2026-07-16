@@ -110,18 +110,33 @@ def enforce_admin_blueprint(blueprint, exempt_endpoints: frozenset[str] | set[st
         if request.endpoint in exempt_endpoints:
             return None
         admin = current_admin()
-        if admin is not None and admin.active:
-            return None
-        session.clear()
         wants_json = (request.headers.get("X-Requested-With") == "XMLHttpRequest"
                       or "application/json" in (request.headers.get("Accept") or "")
                       or request.path.startswith("/admin/api/"))
-        if wants_json:
-            from flask import jsonify
-            return jsonify({"ok": False, "error": "unauthorized",
-                            "message": "سجل الدخول للمتابعة."}), 401
-        flash("سجل الدخول للمتابعة.", "warning")
-        return redirect(url_for("auth.login", next=request.path))
+        # (1) مصادقة — لا نمسح الجلسة هنا كي لا نُتلف مصافحة 2FA المؤقتة
+        # (pending_2fa_admin)؛ تسجيل الدخول الناجح يمسحها بنفسه.
+        if admin is None or not admin.active:
+            if wants_json:
+                from flask import jsonify
+                return jsonify({"ok": False, "error": "unauthorized",
+                                "message": "سجل الدخول للمتابعة."}), 401
+            flash("سجل الدخول للمتابعة.", "warning")
+            return redirect(url_for("auth.login", next=request.path))
+        # (2) RBAC — القدرة المطلوبة لهذه (endpoint, method) مقابل دور المدير.
+        from ..services import rbac
+        needed = rbac.required_capability(request.endpoint or "", request.method)
+        if not rbac.can(admin, needed):
+            audit("rbac_denied", "admin", str(admin.id),
+                  f"رُفض {admin.username} ({rbac.role_of(admin)}) — يتطلب {needed}",
+                  {"endpoint": request.endpoint, "method": request.method})
+            db.session.commit()
+            if wants_json:
+                from flask import jsonify
+                return jsonify({"ok": False, "error": "forbidden",
+                                "message": "ليس لديك صلاحية لهذا الإجراء."}), 403
+            flash("ليس لديك صلاحية لتنفيذ هذا الإجراء بدورك الحالي.", "error")
+            return redirect(request.referrer or url_for("admin.dashboard"))
+        return None
 
 
 def audit(action: str, entity_type: str, entity_id: str = "", summary: str = "", metadata=None) -> None:
@@ -149,15 +164,7 @@ def login():
     return render_template("auth/login.html")
 
 
-@bp.post("/login")
-def login_post():
-    username = (request.form.get("username") or "").strip()
-    password = request.form.get("password") or ""
-    admin = Admin.query.filter_by(username=username).first()
-    if not admin or not admin.active or not admin.check_password(password):
-        flash("بيانات الدخول غير صحيحة.", "error")
-        return render_template("auth/login.html", username=username), 401
-
+def _complete_login(admin, next_url: str | None):
     admin.last_login_at = utcnow()
     db.session.add(admin)
     session.clear()
@@ -168,7 +175,53 @@ def login_post():
     db.session.commit()
     current_app.logger.info("Admin login succeeded for %s", admin.username)
     flash("تم تسجيل الدخول بنجاح.", "success")
-    return redirect(safe_next_url(request.args.get("next")))
+    return redirect(safe_next_url(next_url))
+
+
+@bp.post("/login")
+def login_post():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    next_url = request.args.get("next")
+    admin = Admin.query.filter_by(username=username).first()
+    if not admin or not admin.active or not admin.check_password(password):
+        flash("بيانات الدخول غير صحيحة.", "error")
+        return render_template("auth/login.html", username=username), 401
+
+    # 2FA: كلمة المرور صحيحة لكن المدير فعّل TOTP → مرحلة ثانية.
+    if getattr(admin, "totp_enabled", False) and getattr(admin, "totp_secret", ""):
+        # هوية مؤقتة موقّعة في الجلسة حتى يجتاز الرمز (لا admin_id بعد).
+        session["pending_2fa_admin"] = admin.id
+        session["pending_2fa_next"] = next_url or ""
+        return redirect(url_for("auth.two_factor"))
+
+    return _complete_login(admin, next_url)
+
+
+@bp.get("/login/2fa")
+def two_factor():
+    if not session.get("pending_2fa_admin"):
+        return redirect(url_for("auth.login"))
+    return render_template("auth/two_factor.html")
+
+
+@bp.post("/login/2fa")
+def two_factor_post():
+    from ..services import two_factor as tf
+    admin_id = session.get("pending_2fa_admin")
+    if not admin_id:
+        return redirect(url_for("auth.login"))
+    admin = db.session.get(Admin, int(admin_id))
+    code = request.form.get("code") or ""
+    if not admin or not admin.active or not tf.verify(admin.totp_secret, code):
+        audit("login_2fa_failed", "admin", str(admin_id), "رمز التحقق الثنائي غير صحيح")
+        db.session.commit()
+        flash("رمز التحقق غير صحيح — حاول مجددًا.", "error")
+        return render_template("auth/two_factor.html"), 401
+    next_url = session.get("pending_2fa_next") or None
+    session.pop("pending_2fa_admin", None)
+    session.pop("pending_2fa_next", None)
+    return _complete_login(admin, next_url)
 
 
 @bp.post("/logout")

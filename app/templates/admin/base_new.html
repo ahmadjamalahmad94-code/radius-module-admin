@@ -461,6 +461,12 @@
             {{ _('إدارة المشرفين') }}
           </a>
           {% endif %}
+          {# الأمان/2FA — خدمة ذاتية لكل مدير، تظهر دائمًا #}
+          <a href="{{ url_for('admin.settings_security') }}"
+             class="adm-link {% if ep in ['admin.settings_security','admin.settings_2fa_begin'] %}is-active{% endif %}">
+            <i class="fa-solid fa-shield-halved fa-xs" aria-hidden="true"></i>
+            {{ _('الأمان والتحقق الثنائي') }}
+          </a>
           {% if 'settings.whatsapp' not in hidden_sections %}
           <a href="{{ url_for('admin.settings_whatsapp') }}"
              class="adm-link {% if ep == 'admin.settings_whatsapp' %}is-active{% endif %}">

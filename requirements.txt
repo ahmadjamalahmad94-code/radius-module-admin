@@ -14,3 +14,5 @@ google-api-python-client>=2.130,<3
 firebase-admin>=6.5,<7
 psutil>=5.9,<8
 alembic>=1.13,<2
+pyotp>=2.9,<3
+qrcode[pil]>=7.4,<9

@@ -633,11 +633,25 @@ def ensure_schema_compatibility(app: Flask) -> None:
     # Customer Secure Vault: elevated-admin flag on existing admins tables.
     # The 3 vault tables themselves are created fresh by db.create_all().
     if "admins" in tables:
+        _bool_false = ("BOOLEAN NOT NULL DEFAULT 0"
+                       if db.engine.dialect.name == "sqlite"
+                       else "BOOLEAN NOT NULL DEFAULT FALSE")
         _add_columns_if_missing("admins", {
-            "is_super_admin": "BOOLEAN NOT NULL DEFAULT 0"
-            if db.engine.dialect.name == "sqlite"
-            else "BOOLEAN NOT NULL DEFAULT FALSE",
+            "is_super_admin": _bool_false,
+            # RBAC + 2FA (2026-07)
+            "role_key": "VARCHAR(20) NOT NULL DEFAULT 'operator'",
+            "totp_secret": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "totp_enabled": _bool_false,
         })
+        # مواءمة رجعية: كل super موجود = role_key super_admin (idempotent).
+        try:
+            db.session.execute(text(
+                "UPDATE admins SET role_key='super_admin' "
+                "WHERE is_super_admin=1 AND role_key!='super_admin'"
+            ))
+            db.session.commit()
+        except Exception:  # noqa: BLE001
+            db.session.rollback()
     # سوبر يوزر صريح على مستخدمي العميل. العمود يُنشأ تلقائياً عبر db.create_all()
     # على القواعد الجديدة؛ هذا البلوك المحمي يداوي العمود الإضافي على القواعد القائمة
     # فقط (idempotent: يتجاهل إن كان موجوداً).
@@ -1384,10 +1398,14 @@ def _install_csrf(app: Flask) -> None:
         # Also exposes `hidden_sections` for sidebar visibility control.
         from .auth.routes import current_admin
         from .admin.section_visibility import get_hidden_sections
+        from .services import rbac
         admin = current_admin()
         return {
             "is_super_admin": bool(admin and getattr(admin, "is_super_admin", False)),
             "hidden_sections": get_hidden_sections(),
+            # RBAC: can('manage_customers') إلخ لإخفاء أزرار الكتابة عن المشاهد/الدعم.
+            "admin_role": rbac.role_of(admin),
+            "admin_can": (lambda cap, _a=admin: rbac.can(_a, cap)),
         }
 
     @app.before_request
