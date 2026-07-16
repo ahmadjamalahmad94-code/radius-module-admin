@@ -700,25 +700,7 @@
 (function () {
   'use strict';
 
-  /* ══════════════════════════════════════════════
-     Toast — تنبيه عائم بدل alert/confirm
-  ══════════════════════════════════════════════ */
-  function showToast(msg, kind) {
-    /* kind: 'info' (default) | 'warn' | 'error' | 'ok' */
-    var el = document.createElement('div');
-    el.className = 'cadd-toast' + (kind ? ' cadd-toast--' + kind : '');
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
-    el.textContent = String(msg || '');
-    document.body.appendChild(el);
-    /* عرض → إخفاء برشاقة */
-    requestAnimationFrame(function () { el.classList.add('is-visible'); });
-    setTimeout(function () {
-      el.classList.remove('is-visible');
-      setTimeout(function () { el.remove(); }, 400);
-    }, 2400);
-  }
-  window.showToast = showToast;
+  /* Toast: window.showToast(msg, kind) comes from admin_design_sweep.js (base). */
 
   /* ══════════════════════════════════════════════
      متغيرات عامة

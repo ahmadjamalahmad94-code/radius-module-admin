@@ -224,16 +224,6 @@
   }
   .p8-empty-icon{ font-size: 32px; opacity:.35; margin-block-end: var(--cc-sp-4); }
 
-  /* ── Toast ──────────────────────────────────────────────────────────── */
-  #p8-toast{
-    position: fixed; inset-block-end: 24px; inset-inline-start: 24px;
-    background: var(--cc-text); color:#fff;
-    padding: 10px 18px; border-radius: var(--cc-r-pill);
-    font-size: var(--cc-fs-tiny); font-weight: 800; font-family: var(--cc-font);
-    z-index: 9999; box-shadow: var(--cc-sh-pop);
-    opacity: 0; pointer-events: none;
-    transition: opacity 250ms ease;
-  }
 </style>
 {% endblock %}
 
@@ -542,22 +532,6 @@
   </div>
 </section>
 
-{# ── Toast slot (for any JS feedback besides flash) ───────────────────── #}
-<div id="p8-toast" role="status" aria-live="polite"></div>
-
-<script>
-/* Small helper toast (used only when JS wants to show non-flash feedback;
-   the design-system confirm modal in hub.js handles destructive intents.) */
-(function(){
-  var t = document.getElementById('p8-toast');
-  if(!t) return;
-  window.p8Toast = function(msg){
-    t.textContent = msg;
-    t.style.opacity = '1';
-    clearTimeout(window.p8Toast._h);
-    window.p8Toast._h = setTimeout(function(){ t.style.opacity = '0'; }, 2000);
-  };
-})();
-</script>
+{# Toast: window.showToast(msg, kind) — global from admin_design_sweep.js. #}
 
 {% endblock %}

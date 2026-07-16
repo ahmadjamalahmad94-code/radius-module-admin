@@ -469,8 +469,7 @@ button.is-busy::after,
 }
 .adm-toast.is-visible,
 .hub-toast.is-visible,
-.fd-toast.is-visible,
-.p7-toast.is-visible {
+.fd-toast.is-visible {
   animation: polish-toast-in 220ms var(--cc-ease-out) both;
 }
 

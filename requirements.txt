@@ -13,3 +13,4 @@ google-api-python-client>=2.130,<3
 # app is backed by a single central Firebase project owned by this panel.
 firebase-admin>=6.5,<7
 psutil>=5.9,<8
+alembic>=1.13,<2

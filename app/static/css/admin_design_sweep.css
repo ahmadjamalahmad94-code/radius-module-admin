@@ -301,6 +301,10 @@
 .hub-toast--ok   { background: var(--hb-green); color: #fff; }
 .hub-toast--err  { background: var(--hb-red);   color: #fff; }
 .hub-toast--warn { background: var(--hb-amber); color: var(--cc-text); }
+/* Aliases — window.showToast(msg, 'success'|'error') is the documented
+   contract used by page templates; keep both spellings styled. */
+.hub-toast--success { background: var(--hb-green); color: #fff; }
+.hub-toast--error   { background: var(--hb-red);   color: #fff; }
 
 
 /* ============================================================

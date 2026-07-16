@@ -374,31 +374,4 @@
   border:     1px solid #f5dfa5;
 }
 
-/* ── Toast (design-system floating notification) ─────────── */
-.hub-toast {
-  position: fixed;
-  inset-block-end: 24px;
-  inset-inline-start: 50%;
-  transform: translateX(-50%) translateY(20px);
-  min-width: 240px;
-  max-width: 480px;
-  padding: 12px 20px;
-  border-radius: 14px;
-  font-family: var(--cc-font);
-  font-size: var(--cc-fs-body-s);
-  font-weight: var(--cc-fw-bold);
-  background: #0f172a;
-  color: #fff;
-  box-shadow: 0 24px 60px rgba(15,23,42,.35);
-  opacity: 0;
-  transition: opacity .25s, transform .25s;
-  z-index: 9000;
-  text-align: center;
-}
-.hub-toast.is-visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-.hub-toast--success { background: #047857; }
-.hub-toast--error   { background: #b91c1c; }
-.hub-toast--info    { background: #1d4ed8; }
+/* Toast: styled globally by admin_design_sweep.css (window.showToast). */

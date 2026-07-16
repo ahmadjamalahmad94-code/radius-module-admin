@@ -348,28 +348,8 @@
   </div>
 </div>
 
-{# Toast صغير بدل alert() #}
-<div id="svc-toast" role="status" aria-live="polite"
-     style="position:fixed; bottom:24px; inset-inline-start:24px;
-            background:var(--cc-text); color:#fff;
-            padding:8px 16px; border-radius:var(--cc-r-pill);
-            font-size:var(--cc-fs-tiny); font-weight:700; font-family:var(--cc-font);
-            z-index:9999; box-shadow:var(--cc-sh-pop);
-            opacity:0; pointer-events:none; transition:opacity 250ms ease;">
-</div>
-
 <script>
-/* ──────────────────────────────────────────────────────────
-   Toast بسيط — بديل alert()
-   ────────────────────────────────────────────────────────── */
-function svcToast(msg) {
-  var t = document.getElementById('svc-toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.style.opacity = '1';
-  clearTimeout(svcToast._h);
-  svcToast._h = setTimeout(function () { t.style.opacity = '0'; }, 1800);
-}
+/* Toast: window.showToast(msg, kind) — global from admin_design_sweep.js. */
 
 /* ──────────────────────────────────────────────────────────
    فلترة الفئات
@@ -427,7 +407,7 @@ document.getElementById('modal-edit-form').addEventListener('submit', function (
   var v = parseInt(document.getElementById('modal-new-limit').value, 10);
   if (!v || v < 1) {
     e.preventDefault();
-    svcToast('الرجاء إدخال رقم صحيح أكبر من صفر');
+    window.showToast('الرجاء إدخال رقم صحيح أكبر من صفر', 'error');
     return;
   }
   document.getElementById('modal-new-limit-hidden').value = String(v);

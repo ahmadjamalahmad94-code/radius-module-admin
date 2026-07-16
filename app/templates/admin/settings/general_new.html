@@ -1051,9 +1051,6 @@
 </div>{# /cc-tab-pane#sms #}
 
 
-{# ── Toast container — design-system floating notifications ───────── #}
-<div class="hub-toast" id="sg-toast" role="status" aria-live="polite" hidden></div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -1132,19 +1129,7 @@
       applyHash((window.location.hash || '').replace('#', ''));
     });
 
-    /* ── Vault key — generate + toast ─────────────────────── */
-    var toast = document.getElementById('sg-toast');
-    function showToast(msg, variant) {
-      if (!toast) return;
-      toast.className = 'hub-toast hub-toast--' + (variant || 'info') + ' is-visible';
-      toast.textContent = msg;
-      toast.hidden = false;
-      setTimeout(function () {
-        toast.classList.remove('is-visible');
-        setTimeout(function () { toast.hidden = true; }, 320);
-      }, 2400);
-    }
-
+    /* ── Vault key — generate + toast (global window.showToast) ────── */
     var genBtn = document.getElementById('sg-vault-generate');
     if (genBtn) {
       genBtn.addEventListener('click', function () {
@@ -1163,13 +1148,13 @@
           if (j && j.ok && j.key) {
             var inp = document.getElementById('sg-vault-key');
             if (inp) { inp.value = j.key; inp.focus(); inp.select(); }
-            showToast('تم توليد مفتاح جديد — راجِعه ثم احفظ.', 'success');
+            window.showToast('تم توليد مفتاح جديد — راجِعه ثم احفظ.', 'success');
           } else {
-            showToast((j && j.message) || 'تعذّر توليد المفتاح.', 'error');
+            window.showToast((j && j.message) || 'تعذّر توليد المفتاح.', 'error');
           }
         }).catch(function () {
           genBtn.disabled = false;
-          showToast('تعذّر الاتصال بالخادم.', 'error');
+          window.showToast('تعذّر الاتصال بالخادم.', 'error');
         });
       });
     }

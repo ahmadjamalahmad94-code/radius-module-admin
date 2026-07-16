@@ -171,12 +171,6 @@
   </div>
 </div>
 
-{# Toast نسخ تم بنجاح #}
-<div class="mc-toast" id="mc-toast" role="status" aria-live="polite" aria-atomic="true">
-  <i class="fa-solid fa-check" aria-hidden="true"></i>
-  تم نسخ الكود بنجاح!
-</div>
-
 {% block scripts %}
 <style>
 :root {
@@ -194,7 +188,6 @@
   --vr-hero-grey:     rgba(255,255,255,.65);
   --vr-code-bg:       #1E1E2E;
   --vr-code-text:     #CDD6F4;
-  --vr-toast-bg:      #1F2937;
 }
 /* ── Header ──────────────────────────────────────────── */
 .mc-header {
@@ -421,23 +414,6 @@
 .mc-empty-full p, .mc-no-results p { margin:0; font-size:var(--cc-fs-body-l); }
 .mc-hidden { display:none !important; }
 
-/* ── Toast ───────────────────────────────────────────── */
-.mc-toast {
-  position:fixed; bottom:var(--cc-sp-11); left:50%;
-  transform:translateX(-50%) translateY(80px);
-  background:#1F2937; color:var(--vr-white);
-  padding:var(--cc-sp-6) var(--cc-sp-11);
-  border-radius:var(--cc-r-pill); font-family:var(--cc-font);
-  font-size:var(--cc-fs-body-s); font-weight:var(--cc-fw-medium);
-  display:flex; align-items:center; gap:var(--cc-sp-6);
-  box-shadow:var(--cc-sh-pop); z-index:2000;
-  transition:transform var(--cc-anim-med) var(--cc-ease-out),
-             opacity var(--cc-anim-med) var(--cc-ease-out);
-  opacity:0; pointer-events:none;
-}
-.mc-toast.is-visible { transform:translateX(-50%) translateY(0); opacity:1; }
-.mc-toast i { color:var(--hb-green); }
-
 @media(max-width:640px){
   .mc-grid{grid-template-columns:1fr;}
   .mc-header{flex-direction:column;}
@@ -450,7 +426,6 @@
   'use strict';
 
   var currentCode = '';
-  var toastTimer  = null;
 
   /* ── helpers ── */
   function getScript(id) {
@@ -487,11 +462,14 @@
     copyText(getScript(id).code);
   };
 
+  function copied() { window.showToast('تم نسخ الكود بنجاح!', 'success'); }
+
   function copyText(text) {
     if (!text) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(showToast, showToast);
+      navigator.clipboard.writeText(text).then(copied, copied);
     } else {
+      /* Single fallback for plain-HTTP deployments (no async clipboard). */
       var ta = document.createElement('textarea');
       ta.value = text;
       ta.style.cssText = 'position:fixed;opacity:0;left:-9999px';
@@ -499,16 +477,8 @@
       ta.select();
       try { document.execCommand('copy'); } catch(e) {}
       document.body.removeChild(ta);
-      showToast();
+      copied();
     }
-  }
-
-  function showToast() {
-    var t = document.getElementById('mc-toast');
-    if (!t) return;
-    t.classList.add('is-visible');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){ t.classList.remove('is-visible'); }, 2400);
   }
 
   /* ── Category filter ── */

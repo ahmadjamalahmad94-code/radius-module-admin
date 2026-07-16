@@ -88,7 +88,8 @@ def _make_node(**kw) -> FleetChrNode:
 # ════════════════════════════════════════════════════════════════════════
 class TestActionRowCss:
 
-    HTML = Path("app/templates/admin/fleet/dashboard.html")
+    # CSS اللوحة استُخرج من القالب إلى ملف ثابت (إعادة تصميم 2026-07)
+    HTML = Path("app/static/css/pages/fleet_dashboard.css")
 
     def test_nc_actions_has_flex_wrap(self):
         body = self.HTML.read_text(encoding="utf-8")

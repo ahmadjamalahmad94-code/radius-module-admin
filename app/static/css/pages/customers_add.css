@@ -690,31 +690,7 @@
     line-height: var(--cc-lh-default);
   }
 
-  /* ============================================================
-     Toast (يحلّ مكان alert/confirm — لا نستخدم النوافذ المتصفّحيّة)
-  ============================================================ */
-  .cadd-toast {
-    position: fixed;
-    inset-block-end: var(--cc-sp-11);
-    inset-inline-start: var(--cc-sp-11);
-    background: var(--cc-text);
-    color: #fff;
-    padding: var(--cc-sp-5) var(--cc-sp-9);
-    border-radius: var(--cc-r-pill);
-    font-family: var(--cc-font);
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-bold);
-    box-shadow: var(--cc-sh-pop);
-    z-index: 9999;
-    opacity: 0;
-    transition: opacity var(--cc-anim-med) var(--cc-ease);
-    pointer-events: none;
-    max-width: 60ch;
-  }
-  .cadd-toast.is-visible { opacity: 1; }
-  .cadd-toast--warn   { background: var(--hb-amber); color: #1F2937; }
-  .cadd-toast--error  { background: var(--hb-red);   color: #fff; }
-  .cadd-toast--ok     { background: var(--hb-green); color: #fff; }
+  /* Toast: styled globally by admin_design_sweep.css (window.showToast). */
 
   /* ============================================================
      Responsive

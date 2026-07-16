@@ -238,28 +238,6 @@
 .pf-btn--ghost { background: transparent; color: var(--cc-text-mute); }
 .pf-btn--ghost:hover { color: var(--hb-red); }
 
-/* Toast */
-.pf-toast {
-  position: fixed;
-  inset-block-end: var(--cc-sp-11);
-  inset-inline-start: var(--cc-sp-11);
-  background: var(--cc-text);
-  color: #fff;
-  padding: var(--cc-sp-5) var(--cc-sp-9);
-  border-radius: var(--cc-r-pill);
-  font-family: var(--cc-font);
-  font-size: var(--cc-fs-tiny);
-  font-weight: var(--cc-fw-bold);
-  box-shadow: var(--cc-sh-pop);
-  z-index: 9999;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--cc-anim-med) var(--cc-ease);
-}
-.pf-toast.is-visible { opacity: 1; }
-.pf-toast--ok    { background: var(--hb-green); color:#fff; }
-.pf-toast--err   { background: var(--hb-red);   color:#fff; }
-.pf-toast--warn  { background: var(--hb-amber); color: var(--cc-text); }
 </style>
 {% endblock %}
 
@@ -455,7 +433,6 @@
   </div>
 </div>
 
-<div class="pf-toast" id="pf-toast" role="status" aria-live="polite" hidden></div>
 {% endblock %}
 
 {% block scripts %}
@@ -463,19 +440,7 @@
 (function () {
   'use strict';
 
-  /* Toast — no native alert anywhere. */
-  function showToast(msg, kind) {
-    var t = document.getElementById('pf-toast');
-    if (!t) return;
-    t.className = 'pf-toast' + (kind ? ' pf-toast--' + kind : '') + ' is-visible';
-    t.textContent = String(msg || '');
-    t.hidden = false;
-    setTimeout(function () {
-      t.classList.remove('is-visible');
-      setTimeout(function () { t.hidden = true; }, 320);
-    }, 2400);
-  }
-  window.showToast = showToast;
+  /* Toast: window.showToast(msg, kind) — global from admin_design_sweep.js. */
 
   /* Styled confirm — replaces native confirm() for any [data-reset-key]. */
   var overlay   = document.getElementById('pf-confirm-overlay');

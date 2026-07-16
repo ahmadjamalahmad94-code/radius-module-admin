@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = (ROOT / "app" / "static" / "css" / "admin_base.css").read_text(encoding="utf-8")
-DETAIL = (ROOT / "app" / "templates" / "admin" / "customers" / "detail_new.html").read_text(encoding="utf-8")
+# CSS الصفحة استُخرج من القالب إلى ملف ثابت (إعادة تصميم 2026-07)
+DETAIL = (ROOT / "app" / "static" / "css" / "pages" / "customers_detail.css").read_text(encoding="utf-8")
 
 
 def _mobile_block() -> str:
@@ -59,4 +60,5 @@ def test_customer360_renders(app, client):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "admin_base.css" in body
-    assert "max-width: 640px" in body          # the page's own stacking media query
+    # قواعد التكديس انتقلت لملف مستخرج — يكفي أن الصفحة تُحمّله
+    assert "css/pages/customers_detail.css" in body

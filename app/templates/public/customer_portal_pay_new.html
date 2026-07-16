@@ -243,7 +243,6 @@
 
 </div>
 
-<div class="hub-toast" id="pay-toast" role="status" aria-live="polite" hidden></div>
 {% endblock %}
 
 {% block scripts %}
@@ -251,18 +250,8 @@
 (function () {
   'use strict';
 
-  /* ── Toast بدل alert/confirm ───────────────────────────────── */
-  window.showToast = function (msg, variant) {
-    var t = document.getElementById('pay-toast');
-    if (!t) return;
-    t.className = 'hub-toast hub-toast--' + (variant || 'info') + ' is-visible';
-    t.textContent = String(msg || '');
-    t.hidden = false;
-    setTimeout(function () {
-      t.classList.remove('is-visible');
-      setTimeout(function () { t.hidden = true; }, 320);
-    }, 2400);
-  };
+  /* Toast: window.showToast(msg, kind) — global from portal_base
+     (admin_design_sweep.js + #hub-toast-root). */
 
   /* ── Method radio → toggle receipt pane ──────────────────── */
   var pane = document.getElementById('pay-receipt-pane');
@@ -291,12 +280,12 @@
   function showFile(f) {
     if (!f) { preview.classList.remove('is-active'); return; }
     if (OK_TYPES.indexOf(f.type) === -1) {
-      showToast('صيغة الملف غير مدعومة. JPG / PNG / WEBP / PDF فقط.', 'error');
+      window.showToast('صيغة الملف غير مدعومة. JPG / PNG / WEBP / PDF فقط.', 'error');
       fileInput.value = '';
       return;
     }
     if (f.size > MAX) {
-      showToast('حجم الملف يتجاوز ٥ ميغابايت.', 'error');
+      window.showToast('حجم الملف يتجاوز ٥ ميغابايت.', 'error');
       fileInput.value = '';
       return;
     }

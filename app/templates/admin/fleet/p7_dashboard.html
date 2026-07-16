@@ -150,13 +150,6 @@
   .la-input:focus{border-color:var(--fdx-brand);box-shadow:0 0 0 3px rgba(79,70,229,.12);}
   .la-check{flex-direction:row!important;align-items:center;}
 
-  /* ── toast ────────────────────────────────────────────────────────── */
-  .p7-toast{position:fixed;inset-block-end:24px;inset-inline-start:50%;transform:translateX(-50%) translateY(20px);
-    background:#0f172a;color:#fff;padding:12px 22px;border-radius:14px;font-size:13.5px;font-weight:800;
-    box-shadow:0 24px 60px rgba(15,23,42,.35);opacity:0;transition:opacity .25s,transform .25s;z-index:9000;}
-  .p7-toast.is-visible{opacity:1;transform:translateX(-50%) translateY(0);}
-  .p7-toast--success{background:#047857;} .p7-toast--warning{background:#b45309;} .p7-toast--error{background:#b91c1c;}
-
   /* ── animations ───────────────────────────────────────────────────── */
   @keyframes la-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
   @keyframes la-pop{0%{opacity:0;transform:scale(.5);}60%{transform:scale(1.12);}100%{opacity:1;transform:scale(1);}}
@@ -403,21 +396,20 @@
   </details>
 </div>
 
-{# Floating toast for flash messages — design-system replacement for alert(). #}
-<div class="p7-toast" id="p7Toast" role="status" aria-live="polite"></div>
+{# Surface the last server flash as a toast via the global window.showToast
+   (admin_design_sweep.js, loaded with defer — hence the DOMContentLoaded wait). #}
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
   'use strict';
-  var toast = document.getElementById('p7Toast');
   var flashes = document.querySelectorAll('.hub-flash');
-  if (flashes.length && toast) {
-    var last = flashes[flashes.length - 1];
-    var variant = (last.className.match(/hub-flash--(\w+)/) || [,'info'])[1];
-    toast.className = 'p7-toast p7-toast--' + variant + ' is-visible';
-    toast.textContent = last.textContent.trim();
-    setTimeout(function () { toast.classList.remove('is-visible'); }, 2800);
-  }
-})();
+  if (!flashes.length || !window.showToast) return;
+  var last = flashes[flashes.length - 1];
+  var variant = (last.className.match(/hub-flash--(\w+)/) || [,'info'])[1];
+  var kind = variant === 'success' ? 'success'
+           : (variant === 'error' || variant === 'danger') ? 'error'
+           : (variant === 'warning' ? 'warn' : '');
+  window.showToast(last.textContent.trim(), kind);
+});
 </script>
 
 {% endblock %}

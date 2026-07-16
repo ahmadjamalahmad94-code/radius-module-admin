@@ -1429,14 +1429,15 @@
     }
   }());
 
-  /* ── نسخ النص ── */
+  /* ── نسخ النص — التأكيد عبر window.showToast (base) ── */
   window.cdCopy = function (text) {
     if (!text || text === '—') return;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(function () {
-        cdFlash('تم النسخ ✓');
+        window.showToast('تم النسخ ✓', 'success');
       });
     } else {
+      /* Single fallback for plain-HTTP deployments (no async clipboard). */
       var el = document.createElement('textarea');
       el.value = text;
       el.style.position = 'fixed';
@@ -1445,7 +1446,7 @@
       el.select();
       document.execCommand('copy');
       document.body.removeChild(el);
-      cdFlash('تم النسخ ✓');
+      window.showToast('تم النسخ ✓', 'success');
     }
   };
 
@@ -1464,29 +1465,6 @@
         : 'fa-solid fa-eye';
     }
   };
-
-  /* ── flash toast داخلي ── */
-  function cdFlash(msg) {
-    var el = document.createElement('div');
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
-    el.textContent = msg;
-    el.style.cssText = [
-      'position:fixed', 'bottom:24px', 'inset-inline-start:24px',
-      'background:var(--cc-text)', 'color:#fff',
-      'padding:8px 16px', 'border-radius:var(--cc-r-pill)',
-      'font-size:var(--cc-fs-tiny)', 'font-weight:700',
-      'font-family:var(--cc-font)', 'z-index:9999',
-      'transition:opacity 300ms ease', 'opacity:1',
-      'box-shadow:var(--cc-sh-pop)'
-    ].join(';');
-    document.body.appendChild(el);
-    setTimeout(function () {
-      el.style.opacity = '0';
-      setTimeout(function () { el.remove(); }, 350);
-    }, 1800);
-  }
-  window.cdFlash = cdFlash;
 
 }());
 </script>

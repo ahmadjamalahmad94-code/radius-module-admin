@@ -185,19 +185,6 @@
 .sv-btn-save:hover   { background: var(--cc-btn-primary-hover); }
 .sv-btn-save:disabled { opacity: .6; cursor: not-allowed; }
 
-/* ── رسالة النجاح/الخطأ ───────────────────────────────── */
-.sv-toast {
-  display:       none;
-  align-items:   center;
-  gap:           var(--cc-sp-4);
-  padding:       var(--cc-sp-4) var(--cc-sp-7);
-  border-radius: var(--cc-r);
-  font-size:     var(--cc-fs-body-s);
-  font-weight:   var(--cc-fw-medium);
-}
-.sv-toast.is-success { display: flex; background: var(--cc-flash-success-bg); color: var(--cc-flash-success-fg); }
-.sv-toast.is-error   { display: flex; background: var(--cc-flash-danger-bg);  color: var(--cc-flash-danger-fg); }
-
 /* ── ألوان أيقونات الأقسام ────────────────────────────── */
 .sv-icon-customers { background: var(--tile-blue-bg);   color: var(--tile-blue-fg); }
 .sv-icon-licenses  { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
@@ -488,7 +475,6 @@
     <strong>تنبيه:</strong>
     إخفاء القسم الرئيسي يُخفيه بالكامل من القائمة. يمكنك الوصول لهذه الصفحة دائماً من قائمة الإعدادات.
   </div>
-  <div class="sv-toast" id="sv-toast" role="alert" aria-live="polite"></div>
   <button type="button" class="sv-btn-save" id="sv-save-btn">
     <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
     {{ _('حفظ الإعدادات') }}
@@ -518,15 +504,8 @@
     chk.addEventListener('change', syncCard);
   });
 
-  /* ── حفظ الإعدادات عبر fetch ──────────────────────────────────── */
+  /* ── حفظ الإعدادات عبر fetch — التنبيهات عبر window.showToast ──── */
   var saveBtn  = document.getElementById('sv-save-btn');
-  var toast    = document.getElementById('sv-toast');
-
-  function showToast(type, msg) {
-    toast.className = 'sv-toast is-' + type;
-    toast.innerHTML = '<i class="fa-solid fa-' + (type === 'success' ? 'check' : 'triangle-exclamation') + '"></i> ' + msg;
-    setTimeout(function () { toast.className = 'sv-toast'; }, 3500);
-  }
 
   saveBtn.addEventListener('click', function () {
     saveBtn.disabled = true;
@@ -547,13 +526,13 @@
     .then(function (r) { return r.json(); })
     .then(function (json) {
       if (json.success) {
-        showToast('success', 'تم حفظ إعدادات الأقسام بنجاح');
+        window.showToast('تم حفظ إعدادات الأقسام بنجاح', 'success');
       } else {
-        showToast('error', 'حدث خطأ أثناء الحفظ');
+        window.showToast('حدث خطأ أثناء الحفظ', 'error');
       }
     })
     .catch(function () {
-      showToast('error', 'تعذّر الاتصال بالخادم');
+      window.showToast('تعذّر الاتصال بالخادم', 'error');
     })
     .finally(function () {
       saveBtn.disabled = false;
