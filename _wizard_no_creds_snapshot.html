@@ -14,7 +14,7 @@
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
         crossorigin="anonymous" referrerpolicy="no-referrer">
 
-  <link rel="stylesheet" href="/static/css/app.css?v=1781352301">
+  <link rel="stylesheet" href="/static/css/app.css?v=1784213342">
   
   <style>
     .live-indicator {
@@ -42,14 +42,17 @@
       100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
     }
   </style>
-  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1781352301">
-  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781352301">
-  <link rel="stylesheet" href="/static/css/admin_components.css?v=1781352301">
+  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1784213310">
+  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781884792">
+  <link rel="stylesheet" href="/static/css/admin_components.css?v=1784213344">
   
-  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781352301">
+  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781125253">
 
   
-  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781352301">
+  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781260272">
+
+  
+  <link rel="stylesheet" href="/static/css/hb_theme.css?v=1784213389">
 
   <style>
     /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
@@ -241,6 +244,9 @@
 <body class="adm-body">
 
 
+<a class="hb-skip" href="#adm-page">تخطّي إلى المحتوى</a>
+
+
 <div class="adm-side-overlay" id="adm-overlay" aria-hidden="true"></div>
 
 
@@ -270,6 +276,22 @@
           <i class="fa-solid fa-gauge-high"></i>
         </span>
         <span class="adm-solo-label">لوحة التحكم</span>
+      </a>
+
+      
+      <a href="/admin/notifications/"
+         class="adm-solo "
+         data-notif-bell
+         data-unread-url="/admin/notifications/unread-count"
+         aria-current="false">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-bell"></i>
+        </span>
+        <span class="adm-solo-label">مركز الإشعارات</span>
+        <span class="adm-badge adm-badge--alert" data-notif-badge hidden
+              style="margin-inline-start:auto;min-width:20px;height:20px;display:inline-flex;
+                     align-items:center;justify-content:center;border-radius:10px;
+                     background:#dc2626;color:#fff;font-size:11px;font-weight:800;padding:0 6px">0</span>
       </a>
 
       
@@ -343,6 +365,14 @@
             خطط الاشتراك
           </a>
           
+          <a href="/admin/packages"
+             class="adm-link ">
+            الباقات والأسعار
+          </a>
+          <a href="/admin/discounts"
+             class="adm-link ">
+            عروض الخصومات
+          </a>
           <a href="/admin/services"
              class="adm-link ">
             الخدمات
@@ -389,27 +419,6 @@
       </div>
       
 
-      
-      
-      
-      <div class="adm-group " data-group="infra">
-        <button class="adm-group-head"
-                type="button"
-                aria-expanded="false"
-                aria-controls="grp-infra">
-          <span class="adm-group-icon" aria-hidden="true">
-            <i class="fa-solid fa-server"></i>
-          </span>
-          <span class="adm-group-label">البنية التحتية</span>
-          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
-        </button>
-        <div class="adm-group-links" id="grp-infra">
-          <a href="/admin/infra/system-health"
-             class="adm-link ">
-            صحة الخدمات
-          </a>
-        </div>
-      </div>
       
 
       
@@ -491,10 +500,16 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-clipboard-list"></i>
           </span>
-          <span class="adm-group-label">السجلات</span>
+          <span class="adm-group-label">السجلات والمراقبة</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-logs">
+          
+          <a href="/admin/infra/system-health"
+             class="adm-link ">
+            صحة الخدمات
+          </a>
+          
           <a href="/admin/checks"
              class="adm-link ">
             سجل الفحوصات
@@ -532,6 +547,10 @@
           <a href="/admin/landing/preview"
              class="adm-link ">
             معاينة الصفحة
+          </a>
+          <a href="/admin/landing/apps"
+             class="adm-link ">
+            التطبيقات والتنزيلات
           </a>
           <a href="/admin/landing/social-links"
              class="adm-link ">
@@ -594,6 +613,13 @@
             <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
             تخصيص الأقسام
           </a>
+          
+          <a href="/admin/updates"
+             class="adm-link ">
+            <i class="fa-solid fa-cloud-arrow-up fa-xs" aria-hidden="true"></i>
+            تحديثات وحدة الراديوس
+          </a>
+          
         </div>
       </div>
       
@@ -612,7 +638,7 @@
         </span>
       </div>
       <form method="post" action="/logout">
-        <input type="hidden" name="_csrf_token" value="0h0V4IkHmpadDwnasRq0DEpPvmtr4UzZAqq2sN-HQXQ">
+        <input type="hidden" name="_csrf_token" value="ggx4_nEc9piQZw0LuN5OtsemZ5gLFHChFcqVbn4sqfU">
         <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
           <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
         </button>
@@ -635,15 +661,15 @@
         <i class="fa-solid fa-bars" aria-hidden="true"></i>
       </button>
 
-      <div class="adm-topbar-page-title">
+      <h1 class="adm-topbar-page-title">
         لوحة التحكم
-      </div>
+      </h1>
 
       <div class="adm-topbar-actions">
         
         <form method="post" action="/i18n/set"
               class="adm-lang-form" aria-label="اللغة">
-          <input type="hidden" name="_csrf_token" value="0h0V4IkHmpadDwnasRq0DEpPvmtr4UzZAqq2sN-HQXQ">
+          <input type="hidden" name="_csrf_token" value="ggx4_nEc9piQZw0LuN5OtsemZ5gLFHChFcqVbn4sqfU">
           <input type="hidden" name="next" value="/admin/fleet/onboarding/new">
           <label for="adm-lang" class="adm-lang-label">
             <i class="fa-solid fa-language" aria-hidden="true"></i>
@@ -684,7 +710,7 @@
           </span>
         </div>
         <form method="post" action="/logout">
-          <input type="hidden" name="_csrf_token" value="0h0V4IkHmpadDwnasRq0DEpPvmtr4UzZAqq2sN-HQXQ">
+          <input type="hidden" name="_csrf_token" value="ggx4_nEc9piQZw0LuN5OtsemZ5gLFHChFcqVbn4sqfU">
           <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
           </button>
@@ -693,7 +719,7 @@
     </header>
 
     
-    <div class="adm-page">
+    <div class="adm-page" id="adm-page">
 
       
       
@@ -740,7 +766,7 @@
 <form id="fw-form" class="fw-card" novalidate
       data-onboarding-url="/admin/fleet/onboarding/jobs"
       data-providers-url="/admin/fleet/providers">
-  <input type="hidden" name="_csrf_token" value="0h0V4IkHmpadDwnasRq0DEpPvmtr4UzZAqq2sN-HQXQ">
+  <input type="hidden" name="_csrf_token" value="ggx4_nEc9piQZw0LuN5OtsemZ5gLFHChFcqVbn4sqfU">
 
   
   <div class="fw-panel is-active" data-step="1">
@@ -953,7 +979,7 @@
   </div>
 </div>
 
-<script src="/static/js/admin_fleet_wizard.js?v=1781352301" defer></script>
+<script src="/static/js/admin_fleet_wizard.js?v=1781322262" defer></script>
 
 
 
@@ -965,7 +991,7 @@
 
 
 
-<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true">
+<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="hub-confirm-title" aria-describedby="hub-confirm-msg">
   <div class="hub-modal-card">
     <div class="hub-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
     <h3 class="hub-modal-title" id="hub-confirm-title">تأكيد العملية</h3>
@@ -991,14 +1017,15 @@
 <div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
 
 
-<script src="/static/js/hub.js?v=1781352301" defer></script>
-<script src="/static/js/admin_design_sweep.js?v=1781352301" defer></script>
+<script src="/static/js/hub.js?v=1784215510" defer></script>
+<script src="/static/js/admin_design_sweep.js?v=1784215510" defer></script>
 
-<script src="/static/js/admin_polish.js?v=1781352301" defer></script>
+<script src="/static/js/admin_polish.js?v=1781260272" defer></script>
 
-<script src="/static/js/sym_speed.js?v=1781352301" defer></script>
+<script src="/static/js/sym_speed.js?v=1781224101" defer></script>
 
-<script src="/static/js/live_poll.js?v=1781352301" defer></script>
+<script src="/static/js/live_poll.js?v=1781426563" defer></script>
+<script src="/static/js/admin_notifications.js?v=1782023902" defer></script>
 
 <script>
 (function () {

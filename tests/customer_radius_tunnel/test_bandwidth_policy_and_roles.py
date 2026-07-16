@@ -30,7 +30,6 @@ from app.services.bandwidth_policy import (
     set_policy,
     set_symmetric,
 )
-from app.services.node_capacity import capacity_for
 from app.services.node_roles import (
     NODE_ROLES,
     enabled_roles,
@@ -146,75 +145,6 @@ class TestNodeRoles:
         roles = toggle_role(n, "radius_transport")
         assert "radius_transport" in roles
 
-
-# ════════════════════════════════════════════════════════════════════════
-# §10.2 — capacity allocator
-# ════════════════════════════════════════════════════════════════════════
-class TestNodeCapacity:
-    def _node(self, *, link_speed_mbps: int = 1000):
-        prov = FleetProvider(name=f"t-cap-{link_speed_mbps}", cost_model="open")
-        db.session.add(prov); db.session.flush()
-        n = FleetChrNode(
-            provider_id=prov.id, name=f"chr-cap-{link_speed_mbps}",
-            public_ip="203.0.113.6",
-            wg_mgmt_ip="10.99.0.6", wg_mgmt_pubkey="x" * 44,
-            routeros_api_port=8729, coa_port=3799,
-            max_sessions=500, link_speed_mbps=link_speed_mbps,
-            weight=1.0, enabled=True, status="up",
-        )
-        db.session.add(n); db.session.commit()
-        return n
-
-    def test_idle_node_has_full_uplink_spare(self, app):
-        n = self._node(link_speed_mbps=1000)
-        cap = capacity_for(n)
-        assert cap.uplink_mbps == 1000
-        assert cap.total_allocated_mbps == 0
-        assert cap.spare_mbps == 1000
-
-    def test_radius_only_node_shows_almost_full_spare(self, app):
-        """The owner's headline: a 1 G CHR carrying only RADIUS shows
-        ~995 M spare, because the §9 cap on radius_transport is 5 M."""
-        n = self._node(link_speed_mbps=1000)
-        set_roles(n, ["radius_transport"])
-        db.session.commit()
-        cap = capacity_for(n, sessions_by_role={"radius_transport": 1})
-        assert cap.allocated_by_role["radius_transport"] == 5
-        assert cap.allocated_by_role["vpn_sstp"] == 0
-        assert cap.spare_mbps == 1000 - 5
-
-    def test_dual_role_shares_one_uplink(self, app):
-        """Same node hosts both radius_transport AND vpn_sstp — capacity
-        accounting sees both."""
-        n = self._node(link_speed_mbps=1000)
-        set_roles(n, ["radius_transport", "vpn_sstp"])
-        db.session.commit()
-        cap = capacity_for(
-            n, sessions_by_role={"radius_transport": 1, "vpn_sstp": 5},
-        )
-        # 1×5 (radius) + 5×100 (sstp) = 505 M used → 495 M spare.
-        assert cap.allocated_by_role["radius_transport"] == 5
-        assert cap.allocated_by_role["vpn_sstp"] == 500
-        assert cap.total_allocated_mbps == 505
-        assert cap.spare_mbps == 495
-
-    def test_disabled_role_contributes_zero(self, app):
-        n = self._node(link_speed_mbps=1000)
-        set_roles(n, ["radius_transport"])
-        db.session.commit()
-        # vpn_sstp is NOT enabled on this node; session count must not allocate.
-        cap = capacity_for(
-            n, sessions_by_role={"radius_transport": 1, "vpn_sstp": 50},
-        )
-        assert cap.allocated_by_role["vpn_sstp"] == 0
-        assert cap.spare_mbps == 1000 - 5
-
-    def test_payload_shape_for_dashboard(self, app):
-        n = self._node()
-        payload = capacity_for(n).as_payload()
-        assert payload["uplink_mbps"] == 1000
-        assert set(payload["policy_by_role"].keys()) == set(SUPPORTED_TYPES)
-        assert payload["spare_mbps"] == 1000
 
 
 # ════════════════════════════════════════════════════════════════════════

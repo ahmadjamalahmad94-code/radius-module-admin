@@ -384,15 +384,23 @@ def revoke_peer(peer: WireguardPeer) -> None:
 
 
 def set_peer_status(peer: WireguardPeer, status: str) -> None:
+    """يعلّق/يفعّل القرين على CHR. نفس عقد العقدة في ``revoke_peer`` —
+    الاستدعاء القديم عبر ``chr_settings`` كان يشير لموديول محذوف (NameError)."""
     target = (status or "").strip().lower()
     if target not in {"active", "suspended"}:
         raise WireguardPeerError("invalid_status", "حالة القرين غير مسموحة.")
     if peer.chr_provisioned and peer.chr_peer_id:
+        node = peer.fleet_chr_node or fleet_node_router.auto_pick_best_node()
+        if node is None:
+            raise WireguardPeerError(
+                "no_fleet_node",
+                "لا توجد عقدة في الأسطول لتحديث حالة القرين عليها.",
+            )
         try:
-            client = chr_settings.build_client()
+            client = fleet_node_router.build_client_for(node)
             client.set_wireguard_peer_disabled(peer.chr_peer_id, disabled=(target == "suspended"))
-        except chr_settings.ChrSettingsError as exc:
-            raise WireguardPeerError("chr_not_configured", str(exc)) from exc
+        except FleetNodeUnavailable as exc:
+            raise WireguardPeerError("chr_not_configured", exc.message) from exc
         except RouterOSError as exc:
             raise WireguardPeerError(
                 "chr_update_failed",

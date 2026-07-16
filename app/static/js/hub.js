@@ -73,6 +73,7 @@
     var okBtn   = modal.querySelector('#hub-confirm-ok');
     var cancel  = modal.querySelector('#hub-confirm-cancel');
     var pending = null;
+    var lastFocus = null; // a11y: العنصر الذي فتح المودال — نعيد التركيز إليه عند الإغلاق
 
     function open(opts) {
       titleEl.textContent = opts.title || 'تأكيد العملية';
@@ -81,13 +82,17 @@
       okBtn.classList.remove('hub-btn--primary', 'hub-btn--danger');
       okBtn.classList.add(opts.variant === 'primary' ? 'hub-btn--primary' : 'hub-btn--danger');
       pending = opts.form;
+      lastFocus = document.activeElement;
       modal.classList.add('is-open');
       modal.setAttribute('aria-hidden', 'false');
+      cancel.focus();
     }
     function close() {
       modal.classList.remove('is-open');
       modal.setAttribute('aria-hidden', 'true');
       pending = null;
+      if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+      lastFocus = null;
     }
 
     document.addEventListener('click', function (e) {
@@ -115,7 +120,17 @@
     });
     cancel.addEventListener('click', close);
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && modal.classList.contains('is-open')) close();
+      if (!modal.classList.contains('is-open')) return;
+      if (e.key === 'Escape') { close(); return; }
+      // a11y: حبس التركيز داخل المودال — Tab يدور بين زرّيه فقط
+      if (e.key === 'Tab') {
+        var focusables = [cancel, okBtn].filter(function (b) { return b && !b.disabled; });
+        if (!focusables.length) return;
+        var first = focusables[0], last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        else if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      }
     });
   }
 

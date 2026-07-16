@@ -1,0 +1,582 @@
+/* extracted from app/templates/admin/customers/list_new.html — إعادة تصميم 2026-07 */
+  /* ======================================================
+     Hero Section
+  ====================================================== */
+  .clist-hero {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-10) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-11);
+  }
+
+  .clist-hero-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: var(--cc-r-lg);
+    background: var(--cc-hero-grad);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 22px;
+    color: #fff;
+    box-shadow: var(--cc-sh-glow);
+  }
+
+  .clist-hero-body { flex: 1; }
+
+  .clist-hero-title {
+    font-size: var(--cc-fs-h1);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    line-height: 1.2;
+  }
+
+  .clist-hero-sub {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-mute);
+    margin-block-start: var(--cc-sp-2);
+    font-weight: var(--cc-fw-medium);
+  }
+
+  .clist-hero-stats {
+    display: flex;
+    gap: var(--cc-sp-8);
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .clist-stat {
+    text-align: center;
+  }
+
+  .clist-stat-num {
+    font-size: var(--cc-fs-display);
+    font-weight: var(--cc-fw-display);
+    color: var(--cc-brand);
+    line-height: 1;
+  }
+
+  .clist-stat-label {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+    margin-block-start: var(--cc-sp-1);
+    white-space: nowrap;
+  }
+
+  .clist-stat-divider {
+    width: 1px;
+    height: 40px;
+    background: var(--cc-border-2);
+  }
+
+  /* ======================================================
+     بار الأدوات (بحث + فلاتر + زر الإضافة)
+  ====================================================== */
+  .clist-toolbar {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    margin-block-end: var(--cc-gap-section);
+    display: flex;
+    align-items: flex-end;
+    gap: var(--cc-sp-6);
+    flex-wrap: wrap;
+  }
+
+  .clist-toolbar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--cc-sp-6);
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  /* حقل مشترك */
+  .clist-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-sp-2);
+  }
+
+  .clist-field-label {
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* حقل البحث */
+  .clist-search-wrap {
+    position: relative;
+    min-width: 280px;
+  }
+
+  .clist-search-icon {
+    position: absolute;
+    inset-inline-start: var(--cc-sp-5);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--cc-text-mute);
+    font-size: var(--cc-fs-body-s);
+    pointer-events: none;
+  }
+
+  .clist-search-input {
+    width: 100%;
+    height: var(--cc-input-h);
+    padding-inline: calc(var(--cc-sp-5) + 20px) var(--cc-sp-6);
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-text);
+    transition: background var(--cc-anim-fast) var(--cc-ease),
+                border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+    outline: none;
+  }
+
+  .clist-search-input::placeholder { color: var(--cc-text-faint); }
+
+  .clist-search-input:focus {
+    background: var(--cc-input-bg-focus);
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+  }
+
+  /* Select */
+  .clist-select {
+    height: var(--cc-input-h);
+    min-width: 180px;
+    padding-inline: var(--cc-sp-6);
+    background: var(--cc-input-bg);
+    border: 1px solid var(--cc-input-border);
+    border-radius: var(--cc-input-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-medium);
+    color: var(--cc-text);
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6,9 12,15 18,9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: left var(--cc-sp-5) center;
+    padding-inline-end: calc(var(--cc-sp-5) + 20px);
+    transition: border-color var(--cc-anim-fast) var(--cc-ease),
+                box-shadow var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .clist-select:focus {
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-input-ring);
+    background-color: var(--cc-input-bg-focus);
+  }
+
+  /* أزرار الأدوات */
+  .clist-btn {
+    height: var(--cc-btn-h);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding-inline: var(--cc-sp-8);
+    border-radius: var(--cc-btn-radius);
+    font-family: var(--cc-font);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    text-decoration: none;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+  }
+
+  .clist-btn--primary {
+    background: var(--cc-btn-primary-bg);
+    color: #fff;
+    box-shadow: var(--cc-sh-glow);
+  }
+  .clist-btn--primary:hover {
+    background: var(--cc-btn-primary-hover);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(107,90,237,.45);
+  }
+
+  .clist-btn--filter {
+    background: var(--cc-card-bg);
+    color: var(--cc-text-soft);
+    border-color: var(--cc-border-2);
+  }
+  .clist-btn--filter:hover {
+    background: var(--hb-bg-hover);
+    color: var(--cc-text);
+  }
+
+  .clist-btn--reset {
+    background: transparent;
+    color: var(--cc-text-mute);
+    border-color: transparent;
+    padding-inline: var(--cc-sp-5);
+    font-size: var(--cc-fs-tiny);
+  }
+  .clist-btn--reset:hover {
+    color: var(--hb-red);
+  }
+
+  /* ======================================================
+     الجدول الرئيسي
+  ====================================================== */
+  .clist-card {
+    background: var(--cc-card-bg);
+    border: 1px solid var(--cc-border);
+    border-radius: var(--cc-r-card);
+    box-shadow: var(--cc-sh-card);
+    overflow: hidden;
+  }
+
+  .clist-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--cc-sp-8) var(--cc-sp-11);
+    border-block-end: 1px solid var(--cc-border);
+  }
+
+  .clist-card-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+  }
+
+  .clist-card-count {
+    padding: var(--cc-sp-1) var(--cc-sp-4);
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand-ink);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+  }
+
+  .clist-table-wrap {
+    overflow-x: auto;
+  }
+
+  .clist-table {
+    width: 100%;
+    border-collapse: collapse;
+    direction: rtl;
+  }
+
+  .clist-table thead th {
+    background: var(--cc-table-head-bg);
+    padding: var(--cc-sp-5) var(--cc-sp-8);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text-mute);
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-block-end: 1px solid var(--cc-border-2);
+    white-space: nowrap;
+  }
+
+  .clist-table thead th.col-center { text-align: center; }
+  .clist-table thead th.col-actions { text-align: center; }
+
+  .clist-table tbody tr {
+    border-block-end: 1px solid var(--cc-border);
+    transition: background var(--cc-anim-fast) var(--cc-ease);
+  }
+
+  .clist-table tbody tr:last-child { border-block-end: none; }
+
+  .clist-table tbody tr:hover { background: var(--cc-table-row-hover); }
+
+  .clist-table tbody td {
+    padding: var(--cc-sp-7) var(--cc-sp-8);
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+    vertical-align: middle;
+  }
+
+  /* عمود الاسم */
+  .clist-customer-name {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--cc-r-lg);
+    background: var(--cc-hero-grad);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-heavy);
+    color: #fff;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .clist-name-block strong {
+    display: block;
+    font-size: var(--cc-fs-body);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-text);
+    line-height: 1.3;
+  }
+
+  .clist-name-sub {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    margin-block-start: 2px;
+  }
+
+  /* البريد — يُقرأ من اليسار */
+  .ltr-val {
+    direction: ltr;
+    unicode-bidi: embed;
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-soft);
+  }
+
+  /* الحالة pill */
+  .clist-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+    padding: var(--cc-sp-1) var(--cc-sp-5);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-heavy);
+    white-space: nowrap;
+  }
+
+  .clist-pill .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: var(--cc-r-pill);
+    display: inline-block;
+  }
+
+  .pill--active   { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+  .pill--active   .dot { background: var(--pill-green-fg); }
+  .pill--inactive { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+  .pill--inactive .dot { background: var(--pill-grey-fg); }
+  .pill--blocked  { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+  .pill--blocked  .dot { background: var(--pill-red-fg); }
+  .pill--pending  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+  .pill--pending  .dot { background: var(--pill-amber-fg); }
+  .pill--trial    { background: var(--pill-cyan-bg);   color: var(--pill-cyan-fg);   }
+  .pill--trial    .dot { background: var(--pill-cyan-fg); }
+
+  /* أزرار الإجراءات */
+  .clist-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    justify-content: center;
+  }
+
+  .clist-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--cc-r);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--cc-fs-body-s);
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: var(--cc-tr-fast);
+  }
+
+  .clist-action-btn--view {
+    background: var(--cc-brand-soft);
+    color: var(--cc-brand);
+  }
+  .clist-action-btn--view:hover {
+    background: var(--cc-brand);
+    color: #fff;
+  }
+
+  .clist-action-btn--edit {
+    background: var(--tile-amber-bg);
+    color: var(--tile-amber-fg);
+  }
+  .clist-action-btn--edit:hover {
+    background: var(--hb-amber);
+    color: #fff;
+  }
+
+  .clist-action-btn--vault {
+    background: var(--tile-grey-bg);
+    color: var(--tile-grey-fg);
+  }
+  .clist-action-btn--vault:hover {
+    background: var(--cc-text-soft);
+    color: #fff;
+  }
+
+  /* ======================================================
+     Empty State
+  ====================================================== */
+  .clist-empty {
+    padding: var(--cc-sp-13) var(--cc-sp-11);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--cc-r-card);
+    background: var(--cc-brand-softer);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: var(--cc-brand);
+  }
+
+  .clist-empty-title {
+    font-size: var(--cc-fs-h3);
+    font-weight: var(--cc-fw-heavy);
+    color: var(--cc-text);
+  }
+
+  .clist-empty-sub {
+    font-size: var(--cc-fs-body-s);
+    color: var(--cc-text-mute);
+    max-width: 340px;
+    line-height: var(--cc-lh-loose);
+  }
+
+  /* ======================================================
+     Pagination
+  ====================================================== */
+  .clist-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--cc-sp-7) var(--cc-sp-11);
+    border-block-start: 1px solid var(--cc-border);
+    flex-wrap: wrap;
+    gap: var(--cc-sp-5);
+  }
+
+  .clist-page-info {
+    font-size: var(--cc-fs-tiny);
+    color: var(--cc-text-mute);
+    font-weight: var(--cc-fw-medium);
+  }
+
+  .clist-page-btns {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-2);
+  }
+
+  .clist-page-btn {
+    min-width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--cc-r);
+    font-size: var(--cc-fs-body-s);
+    font-weight: var(--cc-fw-bold);
+    font-family: var(--cc-font);
+    cursor: pointer;
+    text-decoration: none;
+    border: 1px solid var(--cc-border-2);
+    background: var(--cc-card-bg);
+    color: var(--cc-text-soft);
+    transition: var(--cc-tr-fast);
+    padding-inline: var(--cc-sp-4);
+  }
+
+  .clist-page-btn:hover {
+    background: var(--hb-bg-hover);
+    color: var(--cc-text);
+    border-color: var(--cc-brand);
+  }
+
+  .clist-page-btn.is-active {
+    background: var(--cc-brand);
+    color: #fff;
+    border-color: var(--cc-brand);
+    box-shadow: var(--cc-sh-glow);
+  }
+
+  .clist-page-btn[disabled] {
+    opacity: .4;
+    cursor: not-allowed;
+  }
+
+  /* ======================================================
+     Active Filter Chips
+  ====================================================== */
+  .clist-active-filters {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-sp-4);
+    flex-wrap: wrap;
+    margin-block-end: var(--cc-gap-section);
+  }
+
+  .clist-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-sp-3);
+    padding: var(--cc-sp-2) var(--cc-sp-5);
+    background: var(--cc-brand-soft);
+    border: 1px solid var(--cc-brand-soft2);
+    border-radius: var(--cc-r-pill);
+    font-size: var(--cc-fs-tiny);
+    font-weight: var(--cc-fw-bold);
+    color: var(--cc-brand-ink);
+  }
+
+  .clist-filter-chip-remove {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--cc-r-pill);
+    background: rgba(107,90,237,.15);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: var(--cc-brand-ink);
+    cursor: pointer;
+    transition: var(--cc-tr-fast);
+    font-family: var(--cc-font);
+    text-decoration: none;
+  }
+
+  .clist-filter-chip-remove:hover { background: var(--cc-brand); color: #fff; }

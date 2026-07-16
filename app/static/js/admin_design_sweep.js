@@ -101,6 +101,7 @@
     var pendingForm = null;
     var pendingResolve = null;
     var pendingSubmitter = null;   // the [data-confirm] control that opened us
+    var lastFocus = null;          // a11y: نعيد التركيز للعنصر الفاتح عند الإغلاق
 
     function close() {
       overlay.hidden = true;
@@ -108,13 +109,17 @@
       pendingSubmitter = null;
       if (pendingResolve) { try { pendingResolve(false); } catch (_) {} }
       pendingResolve = null;
+      if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (_) {} }
+      lastFocus = null;
     }
     function open(msg, form, resolve, submitter) {
       msgEl.textContent = String(msg || 'هل أنت متأكد؟');
       pendingForm = form || null;
       pendingResolve = resolve || null;
       pendingSubmitter = submitter || null;
+      lastFocus = document.activeElement;
       overlay.hidden = false;
+      cancel.focus();
     }
 
     // Submit a form, PRESERVING the submitter's name/value when the
@@ -151,7 +156,15 @@
     cancel.addEventListener('click', close);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
     document.addEventListener('keydown', function (e) {
-      if (!overlay.hidden && e.key === 'Escape') close();
+      if (overlay.hidden) return;
+      if (e.key === 'Escape') { close(); return; }
+      // a11y: حبس التركيز — Tab يدور بين إلغاء/تأكيد داخل المودال فقط
+      if (e.key === 'Tab') {
+        var first = cancel, last = okBtn;
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      }
     });
 
     // Any [data-confirm] button/link hooks the modal. This is the SINGLE

@@ -14,7 +14,7 @@
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
         crossorigin="anonymous" referrerpolicy="no-referrer">
 
-  <link rel="stylesheet" href="/static/css/app.css?v=1781323910">
+  <link rel="stylesheet" href="/static/css/app.css?v=1784213342">
   
   <style>
     .live-indicator {
@@ -42,14 +42,17 @@
       100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
     }
   </style>
-  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1781323910">
-  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781323910">
-  <link rel="stylesheet" href="/static/css/admin_components.css?v=1781323910">
+  <link rel="stylesheet" href="/static/css/admin_tokens.css?v=1784213310">
+  <link rel="stylesheet" href="/static/css/admin_base.css?v=1781884792">
+  <link rel="stylesheet" href="/static/css/admin_components.css?v=1784213344">
   
-  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781323910">
+  <link rel="stylesheet" href="/static/css/admin_design_sweep.css?v=1781125253">
 
   
-  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781323910">
+  <link rel="stylesheet" href="/static/css/admin_polish.css?v=1781260272">
+
+  
+  <link rel="stylesheet" href="/static/css/hb_theme.css?v=1784213389">
 
   <style>
     /* ── Language switcher in the top bar (kept tiny + design-system fitting) ── */
@@ -69,651 +72,14 @@
   </style>
 
   
-<style>
-  /* ======================================================
-     Hero Profile Header
-  ====================================================== */
-  .cd-hero {
-    background: var(--cc-hero-grad);
-    border-radius: var(--cc-r-card);
-    padding: var(--cc-sp-10) var(--cc-sp-11);
-    margin-block-end: var(--cc-gap-section);
-    display: flex;
-    align-items: flex-start;
-    gap: var(--cc-sp-10);
-    box-shadow: var(--cc-sh-hero);
-    flex-wrap: wrap;
-  }
-
-  .cd-hero-avatar {
-    width: 64px;
-    height: 64px;
-    border-radius: var(--cc-r-card);
-    background: rgba(255,255,255,.2);
-    border: 2px solid rgba(255,255,255,.35);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 26px;
-    font-weight: var(--cc-fw-heavy);
-    color: #fff;
-    flex-shrink: 0;
-    text-transform: uppercase;
-  }
-
-  .cd-hero-body { flex: 1; min-width: 220px; }
-
-  .cd-hero-name {
-    font-size: var(--cc-fs-h1);
-    font-weight: var(--cc-fw-display);
-    color: #fff;
-    line-height: 1.2;
-  }
-
-  .cd-hero-meta {
-    font-size: var(--cc-fs-body-s);
-    color: rgba(255,255,255,.75);
-    margin-block-start: var(--cc-sp-3);
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-5);
-    flex-wrap: wrap;
-  }
-
-  .cd-hero-meta span {
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-2);
-  }
-
-  .cd-hero-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-4);
-    flex-wrap: wrap;
-    flex-shrink: 0;
-  }
-
-  .cd-hero-btn {
-    height: 36px;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--cc-sp-3);
-    padding-inline: var(--cc-sp-7);
-    border-radius: var(--cc-btn-radius);
-    font-family: var(--cc-font);
-    font-size: var(--cc-fs-body-s);
-    font-weight: var(--cc-fw-bold);
-    cursor: pointer;
-    text-decoration: none;
-    border: 1.5px solid rgba(255,255,255,.4);
-    background: rgba(255,255,255,.15);
-    color: #fff;
-    transition: all var(--cc-anim-fast) var(--cc-ease);
-    white-space: nowrap;
-  }
-  .cd-hero-btn:hover {
-    background: rgba(255,255,255,.28);
-    border-color: rgba(255,255,255,.6);
-    color: #fff;
-  }
-
-  .cd-hero-btn--approve {
-    background: rgba(255,255,255,.95);
-    color: var(--cc-brand-ink);
-    border-color: transparent;
-  }
-  .cd-hero-btn--approve:hover {
-    background: #fff;
-    color: var(--cc-brand-deep);
-  }
-
-  /* الحالة pill في الهيرو */
-  .cd-status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--cc-sp-2);
-    padding: 3px var(--cc-sp-5);
-    border-radius: var(--cc-r-pill);
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-heavy);
-    background: rgba(255,255,255,.2);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,.3);
-  }
-
-  /* ======================================================
-     KPI Strip
-  ====================================================== */
-  .cd-kpi-strip {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: var(--cc-gap-inline);
-    margin-block-end: var(--cc-gap-section);
-  }
-
-  .cd-kpi {
-    background: var(--cc-card-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-tile);
-    box-shadow: var(--cc-sh-card);
-    padding: var(--cc-sp-8) var(--cc-sp-9);
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-6);
-  }
-
-  .cd-kpi-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: var(--cc-r-lg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--cc-fs-body-l);
-    flex-shrink: 0;
-  }
-
-  .cd-kpi-body {}
-
-  .cd-kpi-num {
-    font-size: var(--cc-fs-h2);
-    font-weight: var(--cc-fw-display);
-    color: var(--cc-text);
-    line-height: 1.1;
-  }
-
-  .cd-kpi-label {
-    font-size: var(--cc-fs-tiny);
-    color: var(--cc-text-mute);
-    font-weight: var(--cc-fw-medium);
-    margin-block-start: 2px;
-  }
-
-  /* ======================================================
-     Tabs
-  ====================================================== */
-  .cd-tabs-nav {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    background: var(--cc-card-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-card);
-    padding: var(--cc-sp-4) var(--cc-sp-7);
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* شريط قفز سريع لاصق فوق الأقسام */
-    position: sticky;
-    top: var(--cc-sp-6);
-    z-index: 20;
-    margin-block-end: var(--cc-gap-section);
-    box-shadow: var(--cc-sh-card);
-  }
-
-  .cd-tabs-nav::-webkit-scrollbar { display: none; }
-
-  .cd-tab-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--cc-sp-3);
-    padding: var(--cc-sp-4) var(--cc-sp-8);
-    border-radius: var(--cc-r-lg);
-    font-family: var(--cc-font);
-    font-size: var(--cc-fs-body-s);
-    font-weight: var(--cc-fw-bold);
-    color: var(--cc-text-soft);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: background var(--cc-anim-fast) var(--cc-ease),
-                color var(--cc-anim-fast) var(--cc-ease);
-    white-space: nowrap;
-  }
-
-  .cd-tab-btn:hover {
-    background: var(--hb-bg-hover);
-    color: var(--cc-text);
-  }
-
-  .cd-tab-btn.is-active {
-    background: var(--cc-brand-soft);
-    color: var(--cc-brand);
-  }
-
-  .cd-tab-btn .cd-tab-count {
-    width: 20px;
-    height: 20px;
-    border-radius: var(--cc-r-pill);
-    background: var(--cc-border-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-heavy);
-    color: var(--cc-text-mute);
-  }
-
-  .cd-tab-btn.is-active .cd-tab-count {
-    background: var(--cc-brand);
-    color: #fff;
-  }
-
-  /* المحتوى — أقسام عمودية مكدّسة، كل قسم بطاقة مستقلة */
-  .cd-tabs-content {
-    display: flex;
-    flex-direction: column;
-    gap: var(--cc-gap-section);
-  }
-
-  .cd-tab-panel {
-    display: none;                  /* قسم واحد فقط يظهر بالمرة (تبويبات) */
-    background: var(--cc-card-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-card);
-    box-shadow: var(--cc-sh-card);
-    padding: var(--cc-sp-11);
-  }
-  .cd-tab-panel.is-active { display: block; }
-
-  /* عنوان القسم */
-  .cd-panel-heading {
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-5);
-    font-size: var(--cc-fs-h3, 1.15rem);
-    font-weight: var(--cc-fw-bold);
-    color: var(--cc-text);
-    margin: 0 0 var(--cc-sp-9);
-    padding-block-end: var(--cc-sp-6);
-    border-block-end: 1px solid var(--cc-border);
-  }
-  .cd-panel-heading i { color: var(--cc-brand); }
-  .cd-panel-heading .cd-tab-count {
-    margin-inline-start: auto;
-    width: 22px; height: 22px;
-    border-radius: var(--cc-r-pill);
-    background: var(--cc-brand-soft); color: var(--cc-brand);
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy);
-  }
-
-  /* ======================================================
-     Section داخل التاب
-  ====================================================== */
-  .cd-section {
-    margin-block-end: var(--cc-sp-11);
-  }
-
-  .cd-section:last-child { margin-block-end: 0; }
-
-  .cd-section-title {
-    font-size: var(--cc-fs-h3);
-    font-weight: var(--cc-fw-heavy);
-    color: var(--cc-text);
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-4);
-    margin-block-end: var(--cc-sp-8);
-    padding-block-end: var(--cc-sp-5);
-    border-block-end: 1px solid var(--cc-border);
-  }
-
-  .cd-section-title i { color: var(--cc-brand); }
-
-  /* شبكة حقول */
-  .cd-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--cc-gap-section);
-  }
-
-  .cd-grid-3 {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-
-  /* عمود واحد مكدّس — الأقسام تحت بعض ومرتبة */
-  .cd-grid-stack {
-    grid-template-columns: 1fr;
-    gap: var(--cc-sp-10);
-  }
-  /* فصل بصري لطيف: كل قسم بطاقة خفيفة بإطار وخلفية وحشوة */
-  .cd-grid-stack > div {
-    background: var(--cc-bg-subtle, #F7F8FC);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-card);
-    padding: var(--cc-sp-9) var(--cc-sp-10);
-  }
-
-  /* بطاقة المعلومات (قائمة المفتاح/القيمة) */
-  .cd-info-card {
-    background: var(--cc-tint-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-tile);
-    padding: var(--cc-sp-8);
-  }
-
-  .cd-info-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--cc-sp-6);
-    padding: var(--cc-sp-4) 0;
-    border-block-end: 1px solid var(--cc-border);
-  }
-
-  .cd-info-row:last-child { border-block-end: none; padding-block-end: 0; }
-  .cd-info-row:first-child { padding-block-start: 0; }
-
-  .cd-info-key {
-    font-size: var(--cc-fs-body-s);
-    color: var(--cc-text-mute);
-    font-weight: var(--cc-fw-medium);
-    flex-shrink: 0;
-    min-width: 130px;
-  }
-
-  .cd-info-val {
-    font-size: var(--cc-fs-body-s);
-    color: var(--cc-text-soft);
-    font-weight: var(--cc-fw-bold);
-    text-align: end;
-    word-break: break-all;
-  }
-
-  .cd-info-val.mono {
-    font-family: var(--cc-font-mono);
-    font-size: var(--cc-fs-tiny);
-    letter-spacing: 0.3px;
-    direction: ltr;
-    unicode-bidi: embed;
-  }
-
-  /* ======================================================
-     Hint boxes
-  ====================================================== */
-  .cd-hint {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--cc-sp-4);
-    background: var(--cc-brand-softer);
-    border: 1px solid var(--cc-brand-soft2);
-    border-radius: var(--cc-r-lg);
-    padding: var(--cc-sp-5) var(--cc-sp-7);
-    font-size: var(--cc-fs-tiny);
-    color: var(--cc-brand-ink);
-    font-weight: var(--cc-fw-medium);
-    line-height: var(--cc-lh-default);
-    margin-block-end: var(--cc-sp-8);
-  }
-
-  .cd-hint i { color: var(--cc-brand); flex-shrink: 0; margin-block-start: 1px; }
-
-  /* ======================================================
-     Status pill
-  ====================================================== */
-  .cd-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--cc-sp-2);
-    padding: 2px var(--cc-sp-5);
-    border-radius: var(--cc-r-pill);
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-heavy);
-    white-space: nowrap;
-  }
-
-  .cd-pill .dot {
-    width: 5px; height: 5px;
-    border-radius: var(--cc-r-pill);
-  }
-
-  .cd-pill--active   { background:var(--pill-green-bg);  color:var(--pill-green-fg); }
-  .cd-pill--active   .dot { background:var(--pill-green-fg); }
-  .cd-pill--inactive { background:var(--pill-grey-bg);   color:var(--pill-grey-fg); }
-  .cd-pill--inactive .dot { background:var(--pill-grey-fg); }
-  .cd-pill--blocked  { background:var(--pill-red-bg);    color:var(--pill-red-fg); }
-  .cd-pill--blocked  .dot { background:var(--pill-red-fg); }
-  .cd-pill--pending  { background:var(--pill-amber-bg);  color:var(--pill-amber-fg); }
-  .cd-pill--pending  .dot { background:var(--pill-amber-fg); }
-  .cd-pill--trial    { background:var(--pill-cyan-bg);   color:var(--pill-cyan-fg); }
-  .cd-pill--trial    .dot { background:var(--pill-cyan-fg); }
-
-  /* ======================================================
-     License cards (Tab 2)
-  ====================================================== */
-  .cd-license-card {
-    background: var(--cc-tint-bg);
-    border: 1px solid var(--cc-border);
-    border-radius: var(--cc-r-tile);
-    padding: var(--cc-sp-8);
-    margin-block-end: var(--cc-gap-section);
-  }
-
-  .cd-license-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-block-end: var(--cc-sp-8);
-    flex-wrap: wrap;
-    gap: var(--cc-sp-5);
-  }
-
-  .cd-license-key {
-    font-family: var(--cc-font-mono);
-    font-size: var(--cc-fs-body-s);
-    color: var(--cc-brand);
-    font-weight: var(--cc-fw-bold);
-    background: var(--cc-brand-soft);
-    padding: var(--cc-sp-2) var(--cc-sp-5);
-    border-radius: var(--cc-r);
-    direction: ltr;
-    unicode-bidi: embed;
-    letter-spacing: 0.3px;
-  }
-
-  /* ======================================================
-     Progress bars (حدود الاستخدام)
-  ====================================================== */
-  .cd-usage-bar-wrap {
-    margin-block-end: var(--cc-sp-6);
-  }
-
-  .cd-usage-bar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-block-end: var(--cc-sp-3);
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-bold);
-  }
-
-  .cd-usage-bar-label { color: var(--cc-text-soft); }
-  .cd-usage-bar-val   { color: var(--cc-text-mute); }
-
-  .cd-usage-track {
-    height: 6px;
-    background: var(--cc-border-2);
-    border-radius: var(--cc-r-pill);
-    overflow: hidden;
-  }
-
-  .cd-usage-fill {
-    height: 100%;
-    border-radius: var(--cc-r-pill);
-    background: var(--cc-hero-grad);
-    transition: width var(--cc-anim-med) var(--cc-ease-out);
-  }
-
-  .cd-usage-fill--warn  { background: linear-gradient(90deg, var(--hb-amber), var(--hr-orange)); }
-  .cd-usage-fill--danger{ background: linear-gradient(90deg, var(--hb-red), var(--hr-red)); }
-
-  /* ======================================================
-     جدول داخل التاب (مدفوعات / سجل)
-  ====================================================== */
-  .cd-inner-table-wrap { overflow-x: auto; }
-
-  .cd-inner-table {
-    width: 100%;
-    border-collapse: collapse;
-    direction: rtl;
-  }
-
-  .cd-inner-table thead th {
-    background: var(--cc-table-head-bg);
-    padding: var(--cc-sp-4) var(--cc-sp-7);
-    font-size: var(--cc-fs-tiny);
-    font-weight: var(--cc-fw-heavy);
-    color: var(--cc-text-mute);
-    text-align: right;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    border-block-end: 1px solid var(--cc-border-2);
-    white-space: nowrap;
-  }
-
-  .cd-inner-table tbody tr {
-    border-block-end: 1px solid var(--cc-border);
-    transition: background var(--cc-anim-fast) var(--cc-ease);
-  }
-
-  .cd-inner-table tbody tr:last-child { border-block-end: none; }
-  .cd-inner-table tbody tr:hover { background: var(--cc-table-row-hover); }
-
-  .cd-inner-table tbody td {
-    padding: var(--cc-sp-5) var(--cc-sp-7);
-    font-size: var(--cc-fs-body-s);
-    color: var(--cc-text-soft);
-    vertical-align: middle;
-  }
-
-  /* ======================================================
-     حقل Credentials (RADIUS)
-  ====================================================== */
-  .cd-cred-box {
-    background: var(--hb-bg-page);
-    border: 1px solid var(--cc-border-2);
-    border-radius: var(--cc-r);
-    padding: var(--cc-sp-5) var(--cc-sp-7);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--cc-sp-5);
-    margin-block-end: var(--cc-sp-5);
-  }
-
-  .cd-cred-label {
-    font-size: var(--cc-fs-tiny);
-    color: var(--cc-text-mute);
-    font-weight: var(--cc-fw-heavy);
-    flex-shrink: 0;
-    min-width: 110px;
-  }
-
-  .cd-cred-val {
-    font-family: var(--cc-font-mono);
-    font-size: var(--cc-fs-body-s);
-    color: var(--cc-text);
-    font-weight: var(--cc-fw-bold);
-    direction: ltr;
-    unicode-bidi: embed;
-    letter-spacing: 0.3px;
-    word-break: break-all;
-    flex: 1;
-    text-align: start;
-  }
-
-  .cd-cred-copy {
-    width: 28px; height: 28px;
-    border-radius: var(--cc-r);
-    background: var(--cc-card-bg);
-    border: 1px solid var(--cc-border-2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    color: var(--cc-text-mute);
-    cursor: pointer;
-    transition: var(--cc-tr-fast);
-    flex-shrink: 0;
-  }
-  .cd-cred-copy:hover { background: var(--cc-brand-soft); color: var(--cc-brand); border-color: var(--cc-brand-soft2); }
-
-  /* ======================================================
-     Log Timeline (Tab 5)
-  ====================================================== */
-  .cd-timeline { position: relative; }
-
-  .cd-timeline::before {
-    content: '';
-    position: absolute;
-    inset-inline-start: 19px;
-    inset-block: 0;
-    width: 2px;
-    background: var(--cc-border-2);
-  }
-
-  .cd-log-item {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--cc-sp-7);
-    padding: var(--cc-sp-5) 0;
-    position: relative;
-  }
-
-  .cd-log-dot {
-    width: 10px; height: 10px;
-    border-radius: var(--cc-r-pill);
-    background: var(--cc-brand);
-    border: 2px solid var(--cc-card-bg);
-    box-shadow: 0 0 0 2px var(--cc-border-2);
-    flex-shrink: 0;
-    margin-block-start: 4px;
-    margin-inline-start: 14px;
-    z-index: 1;
-  }
-
-  .cd-log-dot--warn  { background: var(--hb-amber); }
-  .cd-log-dot--err   { background: var(--hb-red); }
-  .cd-log-dot--grey  { background: var(--cc-text-faint); }
-
-  .cd-log-body { flex: 1; }
-
-  .cd-log-action {
-    font-size: var(--cc-fs-body-s);
-    font-weight: var(--cc-fw-bold);
-    color: var(--cc-text);
-  }
-
-  .cd-log-meta {
-    font-size: var(--cc-fs-tiny);
-    color: var(--cc-text-mute);
-    margin-block-start: 2px;
-    display: flex;
-    align-items: center;
-    gap: var(--cc-sp-5);
-  }
-
-  /* Empty state داخل التاب */
-  .cd-empty {
-    padding: var(--cc-sp-13) var(--cc-sp-11);
-    text-align: center;
-    color: var(--cc-text-mute);
-    font-size: var(--cc-fs-body-s);
-    font-weight: var(--cc-fw-medium);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--cc-sp-5);
-  }
-
-  .cd-empty i { font-size: 28px; color: var(--cc-text-faint); }
-
-</style>
+<link rel="stylesheet" href="/static/css/pages/customers_detail.css?v=1784214743">
 
 </head>
 
 <body class="adm-body">
+
+
+<a class="hb-skip" href="#adm-page">تخطّي إلى المحتوى</a>
 
 
 <div class="adm-side-overlay" id="adm-overlay" aria-hidden="true"></div>
@@ -745,6 +111,22 @@
           <i class="fa-solid fa-gauge-high"></i>
         </span>
         <span class="adm-solo-label">لوحة التحكم</span>
+      </a>
+
+      
+      <a href="/admin/notifications/"
+         class="adm-solo "
+         data-notif-bell
+         data-unread-url="/admin/notifications/unread-count"
+         aria-current="false">
+        <span class="adm-solo-icon" aria-hidden="true">
+          <i class="fa-solid fa-bell"></i>
+        </span>
+        <span class="adm-solo-label">مركز الإشعارات</span>
+        <span class="adm-badge adm-badge--alert" data-notif-badge hidden
+              style="margin-inline-start:auto;min-width:20px;height:20px;display:inline-flex;
+                     align-items:center;justify-content:center;border-radius:10px;
+                     background:#dc2626;color:#fff;font-size:11px;font-weight:800;padding:0 6px">0</span>
       </a>
 
       
@@ -823,6 +205,14 @@
             خطط الاشتراك
           </a>
           
+          <a href="/admin/packages"
+             class="adm-link ">
+            الباقات والأسعار
+          </a>
+          <a href="/admin/discounts"
+             class="adm-link ">
+            عروض الخصومات
+          </a>
           <a href="/admin/services"
              class="adm-link ">
             الخدمات
@@ -869,27 +259,6 @@
       </div>
       
 
-      
-      
-      
-      <div class="adm-group " data-group="infra">
-        <button class="adm-group-head"
-                type="button"
-                aria-expanded="false"
-                aria-controls="grp-infra">
-          <span class="adm-group-icon" aria-hidden="true">
-            <i class="fa-solid fa-server"></i>
-          </span>
-          <span class="adm-group-label">البنية التحتية</span>
-          <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
-        </button>
-        <div class="adm-group-links" id="grp-infra">
-          <a href="/admin/infra/system-health"
-             class="adm-link ">
-            صحة الخدمات
-          </a>
-        </div>
-      </div>
       
 
       
@@ -971,10 +340,16 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-clipboard-list"></i>
           </span>
-          <span class="adm-group-label">السجلات</span>
+          <span class="adm-group-label">السجلات والمراقبة</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-logs">
+          
+          <a href="/admin/infra/system-health"
+             class="adm-link ">
+            صحة الخدمات
+          </a>
+          
           <a href="/admin/checks"
              class="adm-link ">
             سجل الفحوصات
@@ -1012,6 +387,10 @@
           <a href="/admin/landing/preview"
              class="adm-link ">
             معاينة الصفحة
+          </a>
+          <a href="/admin/landing/apps"
+             class="adm-link ">
+            التطبيقات والتنزيلات
           </a>
           <a href="/admin/landing/social-links"
              class="adm-link ">
@@ -1074,6 +453,13 @@
             <i class="fa-solid fa-layer-group fa-xs" aria-hidden="true"></i>
             تخصيص الأقسام
           </a>
+          
+          <a href="/admin/updates"
+             class="adm-link ">
+            <i class="fa-solid fa-cloud-arrow-up fa-xs" aria-hidden="true"></i>
+            تحديثات وحدة الراديوس
+          </a>
+          
         </div>
       </div>
       
@@ -1092,7 +478,7 @@
         </span>
       </div>
       <form method="post" action="/logout">
-        <input type="hidden" name="_csrf_token" value="g57qFFm9GAMOBPlf0IxQWBkj9vsgTLaiFFoPXQU4qiQ">
+        <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
         <button type="submit" class="adm-logout-btn" aria-label="تسجيل الخروج">
           <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
         </button>
@@ -1115,15 +501,15 @@
         <i class="fa-solid fa-bars" aria-hidden="true"></i>
       </button>
 
-      <div class="adm-topbar-page-title">
+      <h1 class="adm-topbar-page-title">
         لوحة التحكم
-      </div>
+      </h1>
 
       <div class="adm-topbar-actions">
         
         <form method="post" action="/i18n/set"
               class="adm-lang-form" aria-label="اللغة">
-          <input type="hidden" name="_csrf_token" value="g57qFFm9GAMOBPlf0IxQWBkj9vsgTLaiFFoPXQU4qiQ">
+          <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
           <input type="hidden" name="next" value="/admin/customers/1">
           <label for="adm-lang" class="adm-lang-label">
             <i class="fa-solid fa-language" aria-hidden="true"></i>
@@ -1164,7 +550,7 @@
           </span>
         </div>
         <form method="post" action="/logout">
-          <input type="hidden" name="_csrf_token" value="g57qFFm9GAMOBPlf0IxQWBkj9vsgTLaiFFoPXQU4qiQ">
+          <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
           <button type="submit" class="adm-topbar-logout" aria-label="تسجيل الخروج">
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
           </button>
@@ -1173,7 +559,7 @@
     </header>
 
     
-    <div class="adm-page">
+    <div class="adm-page" id="adm-page">
 
       
       
@@ -1231,6 +617,10 @@
        title="حدّد لكل خدمة هل هي مجانية مطلقة، مجانية محدودة، أو مدفوعة لهذا المشترك">
       <i class="fa-solid fa-layer-group" aria-hidden="true"></i> تعرفة الخدمات
     </a>
+    <a href="/admin/customers/1/messages" class="cd-hero-btn"
+       title="خط الدعم: إشعارات ودردشة باتجاهين بين لوحة التراخيص ولوحة الزبون">
+      <i class="fa-solid fa-comments" aria-hidden="true"></i> رسائل الدعم
+    </a>
     
       <a href="/admin/customers/1/vault" class="cd-hero-btn">
         <i class="fa-solid fa-vault" aria-hidden="true"></i> الخزنة
@@ -1274,11 +664,11 @@
 
   <div class="cd-kpi">
     <div class="cd-kpi-icon" style="background:var(--tile-teal-bg);color:var(--tile-teal-fg)">
-      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
+      <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
     </div>
     <div class="cd-kpi-body">
       <div class="cd-kpi-num">0</div>
-      <div class="cd-kpi-label">أجهزة NAS</div>
+      <div class="cd-kpi-label">أدمن الراديوس</div>
     </div>
   </div>
 
@@ -1413,7 +803,7 @@
           <div class="cd-info-row">
             <span class="cd-info-key">تاريخ الانضمام</span>
             <span class="cd-info-val">
-              2026-06-13 07:14
+              2026-07-16 18:41
             </span>
           </div>
           <div class="cd-info-row">
@@ -1427,7 +817,7 @@
           <div class="cd-info-row">
             <span class="cd-info-key">آخر تعديل</span>
             <span class="cd-info-val">
-              2026-06-13 07:14
+              2026-07-16 18:41
             </span>
           </div>
         </div>
@@ -1461,6 +851,95 @@
       </div>
 
     </div>
+
+    
+    
+    <div id="sms" class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
+      <i class="fa-solid fa-comment-sms" aria-hidden="true"></i>
+      إرسال رسالة نصية (SMS)
+      <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
+        — عبر حساب TweetSMS الخاصّ بك للتواصل المباشر مع العميل
+      </span>
+    </div>
+    <div class="cd-info-card" style="margin-block-start:var(--cc-sp-6)">
+      
+      <div class="cd-info-row">
+        <span class="cd-info-val" style="color:var(--cc-text-mute)">لا يوجد رقم هاتف لهذا العميل — أضِف رقمًا من «تعديل البيانات» لتتمكّن من الإرسال.</span>
+      </div>
+      
+    </div>
+    
+
+    
+    <div class="cd-section-title" style="margin-block-start:var(--cc-sp-11)">
+      <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+      تفعيل خدمة الجهات
+      <span style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute);font-weight:var(--cc-fw-medium)">
+        — خدمة مخفية تمامًا عن العميل حتى تمنحها هنا. عند المنح: حدّد عدد الجهات وحدود كل جهة.
+        
+          <span style="color:var(--cc-text-mute);font-weight:var(--cc-fw-bold)">الحالة: مخفية</span>
+        
+      </span>
+    </div>
+
+    <div class="cd-hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      <span>
+        «الجهات» (multi_tenant) تُتيح للعميل إنشاء عدّة جهات/مستأجرين داخل نسخته، لكل جهة حدودها الخاصة.
+        تبقى مخفية في عقد السعة (<code>visibility: hidden</code>) حتى تمنحها، فتتحول إلى
+        <code>granted</code> ومعها <code>entity_count</code> وحدود كل جهة. الإلغاء يعيدها مخفية.
+      </span>
+    </div>
+
+    <form method="post" action="/admin/customers/1/grant-entities"
+          style="margin-block:var(--cc-sp-6) var(--cc-sp-8)">
+      <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
+      <input type="hidden" name="action" value="grant">
+      <input type="hidden" name="return_to" value="detail">
+      <div style="display:flex;gap:var(--cc-sp-6);flex-wrap:wrap;align-items:flex-end">
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          عدد الجهات (entity_count)
+          <input type="number" name="entity_count" min="1" step="1"
+                 value="2"
+                 style="width:140px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          أقصى مشتركين لكل جهة
+          <input type="number" name="entity_max_subscribers" min="0" step="1"
+                 value=""
+                 placeholder="بلا حد"
+                 style="width:170px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          أقصى كروت لكل جهة
+          <input type="number" name="entity_max_cards" min="0" step="1"
+                 value=""
+                 placeholder="بلا حد"
+                 style="width:170px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        
+        <label style="display:flex;flex-direction:column;gap:var(--cc-sp-3);font-size:var(--cc-fs-small);font-weight:var(--cc-fw-bold);color:var(--cc-text)">
+          أقصى أجهزة شبكة لكل جهة
+          <input type="number" name="entity_max_nas" min="0" step="1"
+                 value=""
+                 placeholder="بلا حد"
+                 style="width:170px;height:36px;padding-inline:var(--cc-sp-5);border:1.5px solid var(--cc-border);border-radius:var(--cc-btn-radius)">
+        </label>
+        
+      </div>
+      <div style="margin-block-start:var(--cc-sp-6);display:flex;gap:var(--cc-sp-4);flex-wrap:wrap">
+        <button type="submit"
+                style="display:inline-flex;align-items:center;gap:var(--cc-sp-4);height:38px;padding-inline:var(--cc-sp-9);border:none;border-radius:var(--cc-btn-radius);background:var(--cc-brand);color:#fff;font-size:var(--cc-fs-body-s);font-weight:var(--cc-fw-bold);cursor:pointer">
+          <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+          منح وتفعيل «الجهات»
+        </button>
+      </div>
+    </form>
+
+    
+
   </div>
 
   
@@ -1562,18 +1041,111 @@
       </div>
 
       
-      <div>
+      <div id="radius-admins">
         <div class="cd-section-title">
-          <i class="fa-solid fa-router" aria-hidden="true"></i>
-          أجهزة الشبكة (NAS)
+          <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+          أدمن الراديوس (0)
         </div>
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          حسابات الأدمن/المدراء على راديوس العميل (ومنها الأدمن الرئيسي المحلي) —
+          تُستورد تلقائياً عبر الجسر. من هنا يُدير المالك أدمن اللوحة بالكامل:
+          <strong>إضافة</strong> أدمن جديد، <strong>تعديل صلاحياته</strong> (الدور)،
+          و<strong>تعطيله</strong>. تُطبَّق التغييرات على راديوس العميل عند المزامنة
+          التالية. «فرض سوبر يوزر» يجعل الحساب مشرفاً كاملاً دون المساس بكلمة مروره.
+        </p>
+
+        
+        
+
         
           <div class="cd-empty">
-            <i class="fa-solid fa-network-wired" aria-hidden="true"></i>
-            لا توجد أجهزة NAS مرتبطة بهذا العميل
+            <i class="fa-solid fa-user-lock" aria-hidden="true"></i>
+            لم تصل لقطة أدمن الراديوس بعد — تظهر هنا تلقائياً بعد أول بلاغ من راديوس العميل عبر الجسر، أو أضِف أدمن جديداً أدناه.
           </div>
         
+
+        
+        
+        <form method="post" action="/admin/customers/1/panel-admins/add"
+              style="display:flex;flex-wrap:wrap;gap:var(--cc-sp-4);align-items:flex-end;margin-top:var(--cc-sp-6);padding:var(--cc-sp-5);border:1px dashed var(--cc-border);border-radius:var(--cc-btn-radius);max-width:760px">
+          <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
+          <div style="display:flex;flex-direction:column;gap:var(--cc-sp-3)">
+            <label for="cd-pa-username" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">اسم المستخدم</label>
+            <input id="cd-pa-username" name="username" required autocomplete="off"
+                   style="direction:ltr;unicode-bidi:embed;height:34px;padding-inline:var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font-mono);font-size:var(--cc-fs-small)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:var(--cc-sp-3)">
+            <label for="cd-pa-password" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">كلمة المرور الأوليّة (8+)</label>
+            <input id="cd-pa-password" name="password" type="password" required minlength="8" autocomplete="new-password"
+                   style="direction:ltr;unicode-bidi:embed;height:34px;padding-inline:var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font-mono);font-size:var(--cc-fs-small)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:var(--cc-sp-3)">
+            <label for="cd-pa-role" style="font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">الصلاحيات (الدور)</label>
+            <select id="cd-pa-role" name="role_key"
+                    style="height:34px;border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small)">
+              
+                <option value="owner" >مالك الحساب</option>
+              
+                <option value="admin" >مدير</option>
+              
+                <option value="support" >دعم فني</option>
+              
+                <option value="billing" >محاسبة</option>
+              
+                <option value="viewer" selected>مشاهدة فقط</option>
+              
+            </select>
+          </div>
+          <button type="submit"
+                  style="height:34px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+            <i class="fa-solid fa-user-plus" aria-hidden="true"></i> إضافة أدمن
+          </button>
+          <p style="flex-basis:100%;margin:0;font-size:var(--cc-fs-tiny);color:var(--cc-text-mute)">
+            تُجزَّأ كلمة المرور مركزياً ولا تُسجَّل نصاً صريحاً؛ يُلزَم الأدمن بتغييرها عند أول دخول.
+            الحذف تعطيلٌ آمن قابل للاسترجاع — لا يمكن تعطيل حساب «مالك» معيَّن أو آخِر أدمن مفعّل.
+          </p>
+        </form>
+        
       </div>
+
+      
+      
+      <div id="owner-admins">
+        <div class="cd-section-title">
+          <i class="fa-solid fa-crown" aria-hidden="true"></i>
+          حسابات المالك (وصول كامل غير محدود)
+        </div>
+        <p style="font-size:var(--cc-fs-body-s);color:var(--cc-text-mute);margin:0 0 var(--cc-sp-5)">
+          عيّن حساب أو أكثر من حسابات أدمن لوحة العميل كـ«مالك»: تجاوز كامل
+          للصلاحيات + بلا سقف على الدين/السلف. يُطابَق المالك على اللوحة بـ
+          <strong>اسم المستخدم أو البريد</strong> (مفتاح ثابت عبر الأنظمة).
+          
+            <br>لم يُعيَّن مالك بعد — لوحة العميل تستخدم احتياط «المعرّف الأصغر».
+          
+        </p>
+
+        <form method="post"
+              action="/admin/customers/1/owner-admins"
+              style="display:flex;flex-direction:column;gap:var(--cc-sp-4);max-width:560px">
+          <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
+          
+          <label for="cd-owner-admins-ta" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">
+            أو أدخل أسماء المستخدمين/البريد (سطر لكل مالك، أو مفصولة بفواصل):
+          </label>
+          <textarea id="cd-owner-admins-ta" name="owner_admins" rows="3"
+                    placeholder="owner&#10;partner@example.com"
+                    style="direction:ltr;unicode-bidi:embed;padding:var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font-mono);font-size:var(--cc-fs-small)"></textarea>
+          <div style="display:flex;gap:var(--cc-sp-4);flex-wrap:wrap">
+            <button type="submit" name="action" value="save"
+                    style="height:36px;padding-inline:var(--cc-sp-7);border-radius:var(--cc-btn-radius);border:1px solid var(--cc-border-2);background:var(--cc-brand);color:#fff;font-family:var(--cc-font);font-size:var(--cc-fs-small);cursor:pointer;display:inline-flex;align-items:center;gap:var(--cc-sp-4)">
+              <i class="fa-solid fa-crown" aria-hidden="true"></i>
+              حفظ حسابات المالك
+            </button>
+            
+          </div>
+        </form>
+      </div>
+      
 
       
       
@@ -1601,7 +1173,7 @@
           <form id="cd-chrmove-form" method="post"
                 action="/admin/customers/1/move-chr"
                 style="display:flex;flex-direction:column;gap:var(--cc-sp-4);max-width:560px">
-            <input type="hidden" name="_csrf_token" value="g57qFFm9GAMOBPlf0IxQWBkj9vsgTLaiFFoPXQU4qiQ">
+            <input type="hidden" name="_csrf_token" value="8LFQss3nV6SpVrEdrW6PJmDv9C84by_EZxXKCO_wYMs">
             <label for="cd-chrmove-target" style="font-size:var(--cc-fs-small);color:var(--cc-text-mute)">العقدة الهدف</label>
             <select id="cd-chrmove-target" name="target_node_id" required
                     style="height:36px;padding:0 var(--cc-sp-4);border:1px solid var(--cc-border);border-radius:var(--cc-btn-radius);background:var(--cc-card-bg);color:var(--cc-text);font-family:var(--cc-font);font-size:var(--cc-fs-small)">
@@ -1674,6 +1246,26 @@
       
 
     </div>
+
+    
+    <h2 class="cd-panel-heading" style="margin-block-start:var(--cc-sp-9)">
+      <i class="fa-brands fa-google-drive" aria-hidden="true"></i> النسخ الاحتياطية و Google Drive
+    </h2>
+    <div class="cd-hint">تُرفع نسخ راديوس هذا العميل إلى لوحة التراخيص، ومنها إلى درايف العميل المربوط هنا تلقائيًا.</div>
+
+    <div class="cd-status" style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap;margin-block:var(--cc-sp-6)">
+      <span><i class="fa-brands fa-google-drive" aria-hidden="true"></i> حالة Google Drive:</span>
+      
+        <span class="badge badge-gray">غير متصل</span>
+        
+          <a href="/admin/settings#integrations" style="font-size:12px;color:var(--cc-brand)">
+            <i class="fa-solid fa-gear" aria-hidden="true"></i> هيّئ بيانات Google OAuth في الإعدادات أولاً
+          </a>
+        
+      
+    </div>
+
+    
 
   </div>
 
@@ -1776,7 +1368,7 @@
 
 
 
-<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true">
+<div class="hub-modal" id="hub-confirm" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="hub-confirm-title" aria-describedby="hub-confirm-msg">
   <div class="hub-modal-card">
     <div class="hub-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
     <h3 class="hub-modal-title" id="hub-confirm-title">تأكيد العملية</h3>
@@ -1802,14 +1394,15 @@
 <div class="hub-toast" id="hub-toast-root" role="status" aria-live="polite" hidden></div>
 
 
-<script src="/static/js/hub.js?v=1781323910" defer></script>
-<script src="/static/js/admin_design_sweep.js?v=1781323910" defer></script>
+<script src="/static/js/hub.js?v=1784215510" defer></script>
+<script src="/static/js/admin_design_sweep.js?v=1784215510" defer></script>
 
-<script src="/static/js/admin_polish.js?v=1781323910" defer></script>
+<script src="/static/js/admin_polish.js?v=1781260272" defer></script>
 
-<script src="/static/js/sym_speed.js?v=1781323910" defer></script>
+<script src="/static/js/sym_speed.js?v=1781224101" defer></script>
 
-<script src="/static/js/live_poll.js?v=1781323910" defer></script>
+<script src="/static/js/live_poll.js?v=1781426563" defer></script>
+<script src="/static/js/admin_notifications.js?v=1782023902" defer></script>
 
 <script>
 (function () {
@@ -1930,6 +1523,7 @@
 </script>
 
 
+<script src="/static/js/tweetsms_compose.js?v=1782830493" defer></script>
 <script>
 (function () {
   'use strict';

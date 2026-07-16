@@ -1,0 +1,14 @@
+# allowlist: استبعد كل شيء ثم اسمح فقط بما تحتاجه الصورة
+*
+!app
+!fleet
+!migrations
+!requirements.txt
+!requirements-production.txt
+!wsgi.py
+!run.py
+
+# حتى داخل المسموح — لا مخلفات
+**/__pycache__
+**/*.pyc
+app/static/**/*.map

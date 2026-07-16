@@ -1,0 +1,356 @@
+/* extracted from app/templates/admin/dashboard_new.html — إعادة تصميم 2026-07 */
+/* =============================================================
+   dashboard_new.html — تعريفات CSS خاصة باللوحة الرئيسية
+   يرث كل المتغيرات من admin_tokens.css
+   ============================================================= */
+
+/* ── الـ Hero الترحيبي ─────────────────────────────────────── */
+.dash-hero {
+  background:    var(--cc-hero-grad);
+  border-radius: var(--cc-r-hero);
+  box-shadow:    var(--cc-sh-hero);
+  padding:       var(--cc-sp-11) var(--cc-sp-13);
+  color:         #fff;
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-11);
+  overflow:      hidden;
+  position:      relative;
+}
+
+.dash-hero::after {
+  content:   '';
+  position:  absolute;
+  inset-inline-start: -50px;
+  inset-block-start:  -50px;
+  width:     180px;
+  height:    180px;
+  border-radius: var(--cc-r-pill);
+  background:    rgba(255,255,255,.06);
+  pointer-events: none;
+}
+
+.dash-hero-icon {
+  width:         52px;
+  height:        52px;
+  border-radius: var(--cc-r-card);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h1);
+  flex-shrink:   0;
+}
+
+.dash-hero-body { flex: 1; }
+
+.dash-hero-title {
+  font-size:   var(--cc-fs-h1);
+  font-weight: var(--cc-fw-display);
+  line-height: var(--cc-lh-tight);
+  margin-block-end: var(--cc-sp-2);
+}
+
+.dash-hero-sub {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-medium);
+  opacity:     0.85;
+}
+
+.dash-hero-actions {
+  display:   flex;
+  gap:       var(--cc-sp-5);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.dash-hero-btn {
+  display:       flex;
+  align-items:   center;
+  gap:           var(--cc-sp-3);
+  padding:       var(--cc-sp-3) var(--cc-sp-7);
+  border-radius: var(--cc-r-lg);
+  background:    rgba(255,255,255,.18);
+  border:        1px solid rgba(255,255,255,.28);
+  color:         #fff;
+  font-family:   var(--cc-font);
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-bold);
+  text-decoration: none;
+  transition:    background var(--cc-anim-fast);
+}
+
+.dash-hero-btn:hover { background: rgba(255,255,255,.28); }
+
+/* ── شبكة مؤشرات الأداء ─────────────────────────────────── */
+.dash-kpi-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap:                   var(--cc-gap-inline);
+}
+
+.dash-kpi-card {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-tile);
+  box-shadow:    var(--cc-sh-card);
+  padding:       var(--cc-sp-7) var(--cc-sp-8);
+  display:       flex;
+  align-items:   flex-start;
+  gap:           var(--cc-sp-6);
+  transition:    box-shadow var(--cc-anim-fast), transform var(--cc-anim-fast);
+}
+
+.dash-kpi-card:hover {
+  box-shadow: var(--cc-sh-card2);
+  transform:  translateY(-2px);
+}
+
+.dash-kpi-icon {
+  width:         42px;
+  height:        42px;
+  border-radius: var(--cc-r-sm);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     var(--cc-fs-h3);
+  flex-shrink:   0;
+}
+
+.dash-kpi-icon--purple { background: var(--tile-purple-bg); color: var(--tile-purple-fg); }
+.dash-kpi-icon--green  { background: var(--tile-green-bg);  color: var(--tile-green-fg);  }
+.dash-kpi-icon--amber  { background: var(--tile-amber-bg);  color: var(--tile-amber-fg);  }
+.dash-kpi-icon--red    { background: var(--tile-red-bg);    color: var(--tile-red-fg);    }
+.dash-kpi-icon--blue   { background: var(--tile-blue-bg);   color: var(--tile-blue-fg);   }
+
+.dash-kpi-body { flex: 1; min-width: 0; }
+
+.dash-kpi-label {
+  font-size:      var(--cc-fs-tiny);
+  font-weight:    var(--cc-fw-heavy);
+  color:          var(--cc-text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-block-end: var(--cc-sp-2);
+}
+
+.dash-kpi-value {
+  font-size:           var(--cc-fs-display);
+  font-weight:         var(--cc-fw-display);
+  color:               var(--cc-text);
+  line-height:         var(--cc-lh-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-kpi-sub {
+  font-size:        var(--cc-fs-small);
+  font-weight:      var(--cc-fw-medium);
+  color:            var(--cc-text-mute);
+  margin-block-start: var(--cc-sp-2);
+}
+
+.dash-kpi-sub--up   { color: var(--hb-green); }
+.dash-kpi-sub--down { color: var(--hb-red); }
+.dash-kpi-sub--warn { color: var(--hb-amber); }
+
+/* ── بطاقة القسم ─────────────────────────────────────────── */
+.dash-section {
+  background:    var(--cc-card-bg);
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-card);
+  box-shadow:    var(--cc-sh-card);
+  overflow:      hidden;
+}
+
+.dash-section-head {
+  display:          flex;
+  align-items:      center;
+  gap:              var(--cc-sp-5);
+  padding:          var(--cc-sp-6) var(--cc-sp-8);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.dash-section-icon {
+  width:         28px;
+  height:        28px;
+  border-radius: var(--cc-r-sm);
+  background:    var(--cc-brand-soft);
+  color:         var(--cc-brand);
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  font-size:     12px;
+  flex-shrink:   0;
+}
+
+.dash-section-icon--amber {
+  background: var(--tile-amber-bg);
+  color:      var(--tile-amber-fg);
+}
+
+.dash-section-title {
+  flex:        1;
+  font-size:   var(--cc-fs-h2);
+  font-weight: var(--cc-fw-heavy);
+  color:       var(--cc-text);
+}
+
+.dash-section-action {
+  font-size:   var(--cc-fs-body-s);
+  font-weight: var(--cc-fw-bold);
+  color:       var(--cc-brand);
+  padding:     var(--cc-sp-2) var(--cc-sp-5);
+  border-radius: var(--cc-r-pill);
+  transition:  background var(--cc-anim-fast);
+}
+
+.dash-section-action:hover {
+  background: var(--cc-brand-soft);
+  color:      var(--cc-brand-deep);
+}
+
+/* ── الجدول ──────────────────────────────────────────────── */
+.dash-table-wrap { overflow-x: auto; }
+
+.dash-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--cc-fs-body-s);
+}
+
+.dash-table thead th {
+  padding:         var(--cc-sp-4) var(--cc-sp-7);
+  font-size:       var(--cc-fs-tiny);
+  font-weight:     var(--cc-fw-heavy);
+  color:           var(--cc-text-mute);
+  text-transform:  uppercase;
+  letter-spacing:  0.4px;
+  background:      var(--hb-bg);
+  text-align:      center;
+  white-space:     nowrap;
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.dash-table tbody td {
+  padding:          var(--cc-sp-4) var(--cc-sp-7);
+  color:            var(--cc-text-soft);
+  border-block-end: 1px solid var(--cc-border);
+  text-align:       center;
+  vertical-align:   middle;
+  white-space:      nowrap;
+}
+
+.dash-table tbody tr:last-child td { border-block-end: none; }
+.dash-table tbody tr:hover          { background: var(--cc-brand-softer); }
+.dash-table td.mono {
+  font-family: var(--cc-font-mono);
+  direction:   ltr;
+  font-size:   11.5px;
+}
+
+/* ── شارات الحالة (pill) ──────────────────────────────────── */
+.dash-pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           var(--cc-sp-2);
+  padding:       var(--cc-sp-1) var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-heavy);
+  white-space:   nowrap;
+}
+
+.dash-pill--green  { background: var(--pill-green-bg);  color: var(--pill-green-fg);  }
+.dash-pill--amber  { background: var(--pill-amber-bg);  color: var(--pill-amber-fg);  }
+.dash-pill--red    { background: var(--pill-red-bg);    color: var(--pill-red-fg);    }
+.dash-pill--purple { background: var(--pill-purple-bg); color: var(--pill-purple-fg); }
+.dash-pill--grey   { background: var(--pill-grey-bg);   color: var(--pill-grey-fg);   }
+
+/* ── بطاقات التراخيص المنتهية ────────────────────────────── */
+.dash-expiry-grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap:                   var(--cc-gap-inline);
+  padding:               var(--cc-sp-8);
+}
+
+.dash-expiry-card {
+  border:        1px solid var(--cc-border);
+  border-radius: var(--cc-r-tile);
+  padding:       var(--cc-sp-6) var(--cc-sp-7);
+  background:    var(--cc-card-bg);
+  text-decoration: none;
+  color:         inherit;
+  display:       block;
+  transition:    box-shadow var(--cc-anim-fast), border-color var(--cc-anim-fast);
+}
+
+.dash-expiry-card:hover {
+  box-shadow:   var(--cc-sh-card2);
+  border-color: var(--cc-brand-soft2);
+}
+
+.dash-expiry-card--critical { border-inline-start: 3px solid var(--hb-red); }
+.dash-expiry-card--soon     { border-inline-start: 3px solid var(--hb-amber); }
+
+.dash-expiry-name {
+  font-size:     var(--cc-fs-body-s);
+  font-weight:   var(--cc-fw-heavy);
+  color:         var(--cc-text);
+  margin-block-end: var(--cc-sp-2);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-expiry-date {
+  font-size:    var(--cc-fs-small);
+  color:        var(--cc-text-mute);
+  font-weight:  var(--cc-fw-medium);
+  margin-block-end: var(--cc-sp-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-expiry-badge { font-size: var(--cc-fs-tiny); font-weight: var(--cc-fw-heavy); padding: 2px var(--cc-sp-4); border-radius: var(--cc-r-pill); }
+.dash-expiry-badge--critical { background: var(--tile-red-bg);   color: var(--tile-red-fg);   }
+.dash-expiry-badge--soon     { background: var(--tile-amber-bg); color: var(--tile-amber-fg); }
+
+/* ── الحالة الفارغة ──────────────────────────────────────── */
+.dash-empty {
+  padding:    var(--cc-sp-13) var(--cc-sp-8);
+  text-align: center;
+  color:      var(--cc-text-mute);
+}
+
+.dash-empty-icon  { font-size: 32px; margin-block-end: var(--cc-sp-5); opacity: .4; }
+.dash-empty-title { font-size: var(--cc-fs-h3); font-weight: var(--cc-fw-heavy); color: var(--cc-text-soft); margin-block-end: var(--cc-sp-3); }
+.dash-empty-sub   { font-size: var(--cc-fs-body-s); font-weight: var(--cc-fw-medium); }
+
+/* شارة عدد داخل عنوان القسم */
+.dash-count-badge {
+  display:       inline-flex;
+  align-items:   center;
+  padding:       2px var(--cc-sp-4);
+  border-radius: var(--cc-r-pill);
+  font-size:     var(--cc-fs-tiny);
+  font-weight:   var(--cc-fw-heavy);
+  margin-inline-start: var(--cc-sp-4);
+  vertical-align: middle;
+  background:    var(--tile-amber-bg);
+  color:         var(--tile-amber-fg);
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .dash-hero { flex-direction: column; align-items: flex-start; }
+  .dash-hero-actions { margin-block-start: var(--cc-sp-6); }
+}
+
+@media (max-width: 640px) {
+  .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 420px) {
+  .dash-kpi-grid { grid-template-columns: 1fr; }
+}

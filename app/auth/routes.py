@@ -90,6 +90,40 @@ def chr_console_required(view):
     return wrapped
 
 
+def enforce_admin_blueprint(blueprint, exempt_endpoints: frozenset[str] | set[str] = frozenset()) -> None:
+    """حارس على مستوى الـ blueprint بأكمله (دفاع في العمق).
+
+    كل مسارات لوحة الإدارة محمية بـ ``@login_required`` فرديًا، لكن مسارًا
+    جديدًا يُنسى عليه الـ decorator كان سيصبح عامًا بصمت. هذا الحارس يجعل
+    الافتراض «مغلق»: أي طلب لمسار ضمن الـ blueprint بلا جلسة مدير نشطة
+    يُعاد لتسجيل الدخول (أو 401 JSON للطلبات اللاإمتزامنة).
+    """
+    # idempotent: الـ blueprints كائنات وحيدة على مستوى الموديول بينما
+    # create_app() قد تُستدعى عدة مرات (الاختبارات) — Flask يمنع إضافة
+    # before_request بعد أول تسجيل، لذا نثبّت الحارس مرة واحدة فقط.
+    if getattr(blueprint, "_hb_admin_guard_installed", False):
+        return
+    blueprint._hb_admin_guard_installed = True
+
+    @blueprint.before_request
+    def _require_admin_session():  # pragma: no cover - trivial glue
+        if request.endpoint in exempt_endpoints:
+            return None
+        admin = current_admin()
+        if admin is not None and admin.active:
+            return None
+        session.clear()
+        wants_json = (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                      or "application/json" in (request.headers.get("Accept") or "")
+                      or request.path.startswith("/admin/api/"))
+        if wants_json:
+            from flask import jsonify
+            return jsonify({"ok": False, "error": "unauthorized",
+                            "message": "سجل الدخول للمتابعة."}), 401
+        flash("سجل الدخول للمتابعة.", "warning")
+        return redirect(url_for("auth.login", next=request.path))
+
+
 def audit(action: str, entity_type: str, entity_id: str = "", summary: str = "", metadata=None) -> None:
     admin_id = session.get("admin_id")
     row = AuditLog(

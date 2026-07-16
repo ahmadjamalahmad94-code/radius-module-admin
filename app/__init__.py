@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import time
@@ -119,6 +120,19 @@ def create_app(config_object=None, **overrides) -> Flask:
     from fleet.brain import models_session as _fleet_models_session   # noqa: F401
     from fleet.notify import models_alert as _fleet_models_alert      # noqa: F401
     from fleet.dns import models_dns as _fleet_models_dns             # noqa: F401
+
+    # دفاع في العمق: حارس جلسة على مستوى كل blueprint إداري — مسار جديد
+    # يُنسى عليه @login_required لن يصبح عامًا بصمت. لا يشمل واجهات الآلة
+    # (api/proxy_api/telemetry/placement/enforcement تستخدم توكنات خاصة).
+    from .auth.routes import enforce_admin_blueprint
+    enforce_admin_blueprint(admin_bp, exempt_endpoints={"admin.customer_data_bundle"})
+    for _session_bp in (admin_vault_bp, admin_chr_bp, admin_landing_bp,
+                        admin_infra_bp, admin_messaging_bp, admin_access_bp,
+                        admin_notifications_bp, fleet_ui_bp, fleet_p7_ui_bp,
+                        fleet_p8_ui_bp, fleet_p9_alerts_bp, fleet_sync_bp,
+                        fleet_registry_api_bp, fleet_provider_bp,
+                        fleet_onboarding_bp):
+        enforce_admin_blueprint(_session_bp)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
@@ -1386,7 +1400,8 @@ def _install_csrf(app: Flask) -> None:
             return None
         sent = request.form.get("_csrf_token") or request.headers.get("X-CSRFToken")
         expected = session.get("_csrf_token")
-        if not expected or sent != expected:
+        # hmac.compare_digest: مقارنة ثابتة الزمن — المقارنة المباشرة (!=) تسرّب توقيتيًا.
+        if not expected or not hmac.compare_digest(str(sent or ""), str(expected)):
             # Safe diagnostic: presence flags + lengths only, never token values.
             app.logger.error(
                 "CSRF fail path=%s form_tok=%s hdr_tok=%s session_tok=%s sent_len=%s exp_len=%s match=%s",

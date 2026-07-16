@@ -434,19 +434,31 @@ def revoke_tunnel(tunnel: CustomerVpnTunnel) -> None:
 
 
 def set_tunnel_status(tunnel: CustomerVpnTunnel, status: str) -> None:
-    """يعلّق/يفعّل النفق على CHR (disabled) ويحدّث الحالة. لا يُنفّذ commit."""
+    """يعلّق/يفعّل النفق على CHR (disabled) ويحدّث الحالة. لا يُنفّذ commit.
+
+    Targets the tunnel's fleet node (same contract as ``revoke_tunnel``) —
+    the legacy ``chr_settings`` singleton this used to call was removed.
+    """
     target = (status or "").strip().lower()
     if target not in {"active", "suspended"}:
         raise VpnTunnelError("invalid_status", "حالة النفق غير مسموحة.")
     if tunnel.chr_provisioned and tunnel.chr_secret_id:
+        node = tunnel.fleet_chr_node
+        if node is None:
+            node = fleet_node_router.auto_pick_best_node()
+        if node is None:
+            raise VpnTunnelError(
+                "no_fleet_node",
+                "لا توجد عقدة في الأسطول لتحديث حالة النفق عليها.",
+            )
         try:
-            client = chr_settings.build_client()
+            client = fleet_node_router.build_client_for(node)
             if tunnel.tunnel_type in PPP_SERVICES:
                 client.set_ppp_secret_disabled(tunnel.chr_secret_id, disabled=(target == "suspended"))
             elif tunnel.tunnel_type in IPSEC_TYPES:
                 client.set_ipsec_user_disabled(tunnel.chr_secret_id, disabled=(target == "suspended"))
-        except chr_settings.ChrSettingsError as exc:
-            raise VpnTunnelError("chr_not_configured", str(exc)) from exc
+        except FleetNodeUnavailable as exc:
+            raise VpnTunnelError("chr_not_configured", exc.message) from exc
         except RouterOSError as exc:
             raise VpnTunnelError("chr_update_failed", "تعذّر تحديث الحساب على CHR: " + exc.message) from exc
     tunnel.status = target
