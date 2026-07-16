@@ -577,7 +577,14 @@
      ========================================================= #}
   <div class="cd-tab-panel" id="tab-network" role="tabpanel" aria-labelledby="tbtn-network">
 
-    <h2 class="cd-panel-heading"><i class="fa-solid fa-network-wired" aria-hidden="true"></i> إعدادات الشبكة</h2>
+    <h2 class="cd-panel-heading" style="display:flex;align-items:center;gap:var(--cc-sp-5);flex-wrap:wrap">
+      <i class="fa-solid fa-network-wired" aria-hidden="true"></i> إعدادات الشبكة
+      {# رابط صفحة خدمة VPN للعميل (كانت غير مربوطة بأي مكان — تُفتح الآن من هنا) #}
+      <a href="{{ url_for('admin.customer_vpn_service', customer_id=customer.id) }}"
+         class="hub-btn hub-btn--secondary hub-btn--sm" style="margin-inline-start:auto">
+        <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> خدمة VPN وسرعتها
+      </a>
+    </h2>
 
     <div class="cd-hint">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>

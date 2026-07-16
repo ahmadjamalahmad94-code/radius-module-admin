@@ -139,9 +139,13 @@
                      background:#dc2626;color:#fff;font-size:11px;font-weight:800;padding:0 6px">0</span>
       </a>
 
-      {# ── ② العملاء ────────────────────────────────────────────────── #}
+      {# ── ② العملاء والتراخيص — دورة الحياة اليومية في مجموعة واحدة
+         (دمج «العملاء»+«التراخيص» 2026-07): إنشاء العميل، ترخيصه،
+         طلباته، مدفوعاته. إعدادات الفوترة الأقل تكرارًا في مجموعة «الفوترة». #}
       {% if 'customers' not in hidden_sections %}
-      {% set _g2 = ep.startswith('admin.customer') or ep.startswith('admin.service_request') or ep.startswith('admin.whatsapp') %}
+      {% set _g2 = ep.startswith('admin.customer') or ep.startswith('admin.service_request')
+                   or ep.startswith('admin.whatsapp') or ep.startswith('admin.license')
+                   or ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}
       <div class="adm-group {% if _g2 %}is-active is-open{% endif %}" data-group="customers">
         <button class="adm-group-head"
                 type="button"
@@ -150,7 +154,7 @@
           <span class="adm-group-icon" aria-hidden="true">
             <i class="fa-solid fa-users"></i>
           </span>
-          <span class="adm-group-label">{{ _('العملاء') }}</span>
+          <span class="adm-group-label">{{ _('العملاء والتراخيص') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
         <div class="adm-group-links" id="grp-customers">
@@ -168,9 +172,19 @@
             {{ _('مستخدمو العميل') }}
           </a>
           {% endif %}
+          {% if 'licenses' not in hidden_sections and 'licenses.list' not in hidden_sections %}
+          <a href="{{ url_for('admin.licenses_list') }}"
+             class="adm-link {% if ep.startswith('admin.license') %}is-active{% endif %}">
+            {{ _('التراخيص') }}
+          </a>
+          {% endif %}
           <a href="{{ url_for('admin.service_requests_list') }}"
              class="adm-link {% if ep in ['admin.service_requests_list','admin.service_request_detail'] %}is-active{% endif %}">
             {{ _('طلبات الخدمات') }}
+          </a>
+          <a href="{{ url_for('admin.payment_review_queue') }}"
+             class="adm-link {% if ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}is-active{% endif %}">
+            {{ _('مراجعة المدفوعات') }}
           </a>
           <a href="{{ url_for('admin.whatsapp_gateway') }}"
              class="adm-link {% if ep == 'admin.whatsapp_gateway' or ep == 'admin.customer_whatsapp' %}is-active{% endif %}">
@@ -188,27 +202,23 @@
       </div>
       {% endif %}
 
-      {# ── ③ التراخيص والاشتراكات ───────────────────────────────────── #}
+      {# ── ③ الفوترة والباقات — إعدادات تجارية أقل تكرارًا (خطط/باقات/خصومات/كتالوج/تقارير) #}
       {% if 'licenses' not in hidden_sections %}
-      {% set _g3 = ep.startswith('admin.license') or ep.startswith('admin.plan') or ep.startswith('admin.subscription') or ep.startswith('admin.discount') or 'payment' in ep %}
-      <div class="adm-group {% if _g3 %}is-active is-open{% endif %}" data-group="licenses">
+      {% set _g3 = ep.startswith('admin.plan') or ep.startswith('admin.subscription')
+                   or ep.startswith('admin.discount') or ep == 'admin.services_catalog_policy'
+                   or ep == 'admin.payment_reports' %}
+      <div class="adm-group {% if _g3 %}is-active is-open{% endif %}" data-group="billing">
         <button class="adm-group-head"
                 type="button"
                 aria-expanded="{{ 'true' if _g3 else 'false' }}"
-                aria-controls="grp-licenses">
+                aria-controls="grp-billing">
           <span class="adm-group-icon" aria-hidden="true">
-            <i class="fa-solid fa-key"></i>
+            <i class="fa-solid fa-tags"></i>
           </span>
-          <span class="adm-group-label">{{ _('التراخيص والاشتراكات') }}</span>
+          <span class="adm-group-label">{{ _('الفوترة والباقات') }}</span>
           <i class="fa-solid fa-chevron-down adm-group-chevron" aria-hidden="true"></i>
         </button>
-        <div class="adm-group-links" id="grp-licenses">
-          {% if 'licenses.list' not in hidden_sections %}
-          <a href="{{ url_for('admin.licenses_list') }}"
-             class="adm-link {% if ep.startswith('admin.license') %}is-active{% endif %}">
-            {{ _('التراخيص') }}
-          </a>
-          {% endif %}
+        <div class="adm-group-links" id="grp-billing">
           {% if 'licenses.plans' not in hidden_sections %}
           <a href="{{ url_for('admin.plans_list') }}"
              class="adm-link {% if ep.startswith('admin.plan') %}is-active{% endif %}">
@@ -226,10 +236,6 @@
           <a href="{{ url_for('admin.services_catalog_policy') }}"
              class="adm-link {% if ep in ['admin.services_catalog_policy'] %}is-active{% endif %}">
             {{ _('الخدمات') }}
-          </a>
-          <a href="{{ url_for('admin.payment_review_queue') }}"
-             class="adm-link {% if ep in ['admin.payment_review_queue','admin.payment_request_detail'] %}is-active{% endif %}">
-            {{ _('مراجعة المدفوعات') }}
           </a>
           <a href="{{ url_for('admin.payment_reports') }}"
              class="adm-link {% if ep == 'admin.payment_reports' %}is-active{% endif %}">
