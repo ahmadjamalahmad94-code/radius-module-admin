@@ -16,16 +16,16 @@
 :root {
 
   /* ----------------------------------------------------------
-     2.1 Brand / Purple
+     2.1 Brand / Teal  (إعادة تصميم 2026-07 — توحيد مع هوية HobeRadius)
      ---------------------------------------------------------- */
-  --cc-brand:          #6B5AED;
-  --cc-brand-2:        #8B7BF8;
-  --cc-brand-3:        #A99BF9;
-  --cc-brand-deep:     #5B4BD8;
-  --cc-brand-ink:      #2E1F8C;
-  --cc-brand-soft:     #EDE9FE;
-  --cc-brand-soft2:    #E8E1FB;
-  --cc-brand-softer:   #F4F1FE;
+  --cc-brand:          #0D9488;
+  --cc-brand-2:        #14B8A6;
+  --cc-brand-3:        #5EEAD4;
+  --cc-brand-deep:     #0F766E;
+  --cc-brand-ink:      #134E4A;
+  --cc-brand-soft:     #CCFBF1;
+  --cc-brand-soft2:    #BFF0E6;
+  --cc-brand-softer:   #F0FDFA;
 
   /* aliases used in sidebar / buttons */
   --hb-purple:         var(--cc-brand);
@@ -34,25 +34,25 @@
   --hb-purple-softer:  var(--cc-brand-softer);
 
   /* hero gradient */
-  --cc-hero-grad: linear-gradient(135deg, #6B5AED 0%, #A99BF9 100%);
+  --cc-hero-grad: linear-gradient(135deg, #0F766E 0%, #14B8A6 100%);
 
   /* ----------------------------------------------------------
      2.2 Page / Surface
      ---------------------------------------------------------- */
-  --hb-bg-page:        #EFEDF5;
-  --hb-bg:             #F5F3FB;
-  --hb-bg-hover:       #E6E2F2;
-  --hb-bg-icon-idle:   #EBE7F4;
+  --hb-bg-page:        #F1F5F9;
+  --hb-bg:             #F8FAFC;
+  --hb-bg-hover:       #E2E8F0;
+  --hb-bg-icon-idle:   #E9EEF4;
   --cc-card-bg:        #FFFFFF;
   --cc-tint-bg:        #FAFAFA;
 
   /* ----------------------------------------------------------
      2.3 Text
      ---------------------------------------------------------- */
-  --cc-text:           #1F2937;
+  --cc-text:           #0F172A;
   --cc-text-soft:      #475569;
-  --cc-text-mute:      #94A3B8;
-  --cc-text-faint:     #B6BCC8;
+  --cc-text-mute:      #64748B;   /* كان #94A3B8 — فشل تباين WCAG (2.6:1) */
+  --cc-text-faint:     #94A3B8;   /* للعناصر الزخرفية/المعطلة فقط */
 
   /* aliases */
   --hb-text:           var(--cc-text);
@@ -63,9 +63,9 @@
   /* ----------------------------------------------------------
      2.4 Borders
      ---------------------------------------------------------- */
-  --cc-border:         #EEEDF3;
-  --cc-border-2:       #E3E1EC;
-  --cc-border-cool:    #E5E0F5;
+  --cc-border:         #E7ECF2;
+  --cc-border-2:       #D9E1EA;
+  --cc-border-cool:    #D5E8E4;
 
   /* aliases */
   --hb-border:         var(--cc-border);
@@ -85,8 +85,8 @@
   /* ----------------------------------------------------------
      2.6 Status Icon-Tile Palette (action cards)
      ---------------------------------------------------------- */
-  --tile-purple-bg:    #EEE9FE;
-  --tile-purple-fg:    #2E1F8C;
+  --tile-purple-bg:    #CCFBF1;
+  --tile-purple-fg:    #134E4A;
   --tile-green-bg:     #DEF3E5;
   --tile-green-fg:     #157F4E;
   --tile-amber-bg:     #FCEFC9;
@@ -185,9 +185,9 @@
      ---------------------------------------------------------- */
   --cc-sh-card:   0 1px 0 rgba(15,23,42,.03), 0 6px 18px rgba(15,23,42,.05);
   --cc-sh-card2:  0 1px 0 rgba(15,23,42,.03), 0 10px 26px rgba(15,23,42,.08);
-  --cc-sh-hero:   0 14px 30px rgba(74,54,201,.22), 0 4px 10px rgba(74,54,201,.10);
+  --cc-sh-hero:   0 14px 30px rgba(13,148,136,.22), 0 4px 10px rgba(13,148,136,.10);
   --cc-sh-pop:    0 8px 22px rgba(0,0,0,.12);
-  --cc-sh-glow:   0 4px 12px rgba(107,90,237,.30);
+  --cc-sh-glow:   0 4px 12px rgba(13,148,136,.30);
 
   /* aliases */
   --hr-shadow-sm:  var(--cc-sh-card);
@@ -238,7 +238,7 @@
   --cc-input-bg:          var(--cc-brand-softer);
   --cc-input-bg-focus:    var(--cc-card-bg);
   --cc-input-border:      var(--cc-border-2);
-  --cc-input-ring:        0 0 0 3px rgba(107,90,237,.12);
+  --cc-input-ring:        0 0 0 3px rgba(13,148,136,.14);
 
   /* Buttons */
   --cc-btn-h:             38px;
@@ -261,8 +261,8 @@
   --pill-green-fg:    #157F4E;
   --pill-amber-bg:    #FCEFC9;
   --pill-amber-fg:    #7A4F02;
-  --pill-purple-bg:   #EEE9FE;
-  --pill-purple-fg:   #2E1F8C;
+  --pill-purple-bg:   #CCFBF1;
+  --pill-purple-fg:   #134E4A;
   --pill-blue-bg:     #E3EDF9;
   --pill-blue-fg:     #1E5C9F;
   --pill-grey-bg:     #EDEAE1;
@@ -285,7 +285,7 @@
   --cc-table-row-hover:  var(--cc-brand-softer);
   --cc-table-live-bg:    rgba(34,197,94,.04);
   --cc-table-live-border:var(--hb-green);
-  --cc-table-zebra:      #FBFAFF;
+  --cc-table-zebra:      #FAFCFB;
 }
 
 /* ============================================================

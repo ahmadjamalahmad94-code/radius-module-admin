@@ -10,9 +10,9 @@
 
 {% block head_extra %}
 <style>
-  :root { --zt-brand:#4f46e5; --zt-ink:#0f172a; --zt-line:#e5e7eb; }
+  :root { --zt-brand:#0D9488; --zt-ink:#0f172a; --zt-line:#e5e7eb; }
   .zt-hero {
-    background: linear-gradient(135deg, #0f172a 0%, #4f46e5 100%);
+    background: linear-gradient(135deg, #0f172a 0%, #0D9488 100%);
     border-radius: 18px; padding: 22px 26px; color: #fff;
     margin-block-end: 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     box-shadow: 0 20px 36px -22px rgba(15, 23, 42, .55);
@@ -40,7 +40,7 @@
   .zt-overall-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-block-end:12px; }
   .zt-overall-title { font-size:15px; font-weight:800; color:var(--zt-ink); }
   .zt-status-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:800; }
-  .zt-status-pill.running { background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; }
+  .zt-status-pill.running { background:#F0FDFA; color:#3730a3; border:1px solid #99F6E4; }
   .zt-status-pill.done    { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
   .zt-status-pill.failed  { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
   .zt-overall-counts { margin-inline-start:auto; display:flex; gap:14px; font-size:12.5px; color:#475569; }
@@ -50,10 +50,10 @@
   .zt-bar { position:relative; height:14px; border-radius:999px; background:#eef2f7; overflow:hidden; }
   .zt-bar-fill {
     position:absolute; inset-block:0; inset-inline-start:0; width:0%;
-    border-radius:999px; background: linear-gradient(90deg,#6366f1,#22c55e);
+    border-radius:999px; background: linear-gradient(90deg,#14B8A6,#22c55e);
     transition: width .55s cubic-bezier(.4,0,.2,1);
   }
-  .zt-bar-fill.is-failed { background: linear-gradient(90deg,#6366f1,#ef4444); }
+  .zt-bar-fill.is-failed { background: linear-gradient(90deg,#14B8A6,#ef4444); }
   .zt-bar.is-active .zt-bar-fill::after {
     content:""; position:absolute; inset:0; border-radius:999px;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
@@ -76,7 +76,7 @@
   .zt-node-name { font-size:16px; font-weight:800; color:var(--zt-ink); display:flex; align-items:center; gap:8px; }
   .zt-node-ip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:#64748b; }
   .zt-pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; }
-  .zt-pill.running{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;}
+  .zt-pill.running{background:#F0FDFA;color:#3730a3;border:1px solid #99F6E4;}
   .zt-pill.done{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;}
   .zt-pill.warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a;}
   .zt-pill.failed{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;}
@@ -89,7 +89,7 @@
   .zt-stage.is-running { background:#f5f7ff; }
   .zt-stage-ic { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; flex:0 0 auto; }
   .ic-pending{ background:#f1f5f9; color:#94a3b8; }
-  .ic-running{ background:#e0e7ff; color:#4f46e5; }
+  .ic-running{ background:#CCFBF1; color:#0D9488; }
   .ic-done{ background:#dcfce7; color:#16a34a; animation: zt-pop .3s ease; }
   .ic-warn{ background:#fef3c7; color:#d97706; }
   .ic-failed{ background:#fee2e2; color:#dc2626; animation: zt-shake .35s ease; }

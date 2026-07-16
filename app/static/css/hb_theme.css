@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   hb_theme.css — HobeRadius Admin Theme (إعادة تصميم 2026-07)
+   يُحمَّل أخيرًا في base_new.html. مسؤولياته:
+     1) السايدبار الداكن (slate) مع تمييز teal
+     2) توحيد عائلات الأزرار الأربع (hub-btn / btn-- / btn-primary / c-btn)
+     3) توبار نظيف لاصق + حالات تركيز واضحة (وصولية)
+     4) تطبيع الجداول والنماذج فوق كل الطبقات السابقة
+   الألوان من admin_tokens.css فقط — لا hex جديد إلا لسطح السايدبار الداكن.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --hbT-side-bg:      #0F172A;
+  --hbT-side-bg-2:    #16223B;
+  --hbT-side-line:    rgba(148,163,184,.14);
+  --hbT-side-text:    #CBD5E1;
+  --hbT-side-mute:    #7C8BA1;
+  --hbT-side-active:  #2DD4BF;
+}
+
+/* ── 0. وصولية عامة ──────────────────────────────────────────────────── */
+.hb-skip {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: -48px;
+  z-index: 200;
+  background: var(--cc-brand-deep);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: var(--cc-r-lg);
+  font-weight: var(--cc-fw-bold);
+  transition: top .15s ease;
+}
+.hb-skip:focus { top: 12px; }
+
+:where(a, button, [role="button"], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--cc-brand) !important;
+  outline-offset: 2px;
+}
+
+/* عنوان الصفحة أصبح h1 — صفّر شكل العنصر وحافظ على مقاس التوبار */
+h1.adm-topbar-page-title {
+  margin: 0;
+  font-size: var(--cc-fs-h2);
+  font-weight: var(--cc-fw-heavy);
+  color: var(--cc-text);
+}
+
+/* ── 1. السايدبار الداكن ─────────────────────────────────────────────── */
+.adm-side {
+  background: linear-gradient(180deg, var(--hbT-side-bg) 0%, var(--hbT-side-bg-2) 100%);
+  border-inline-end: 1px solid var(--hbT-side-line);
+}
+
+.adm-side .adm-brand { border-block-end: 1px solid var(--hbT-side-line); }
+.adm-side .adm-brand-mark {
+  background: linear-gradient(135deg, var(--cc-brand-deep), var(--cc-brand-2));
+  color: #fff;
+  box-shadow: var(--cc-sh-glow);
+}
+.adm-side .adm-brand-name { color: #F8FAFC; }
+.adm-side .adm-brand-sub  { color: var(--hbT-side-mute); }
+
+.adm-side .adm-solo,
+.adm-side .adm-group-head,
+.adm-side .adm-link {
+  color: var(--hbT-side-text);
+}
+.adm-side .adm-solo-icon,
+.adm-side .adm-group-icon {
+  background: rgba(148,163,184,.10);
+  color: var(--hbT-side-text);
+}
+.adm-side .adm-group-chevron { color: var(--hbT-side-mute); }
+
+.adm-side .adm-solo:hover,
+.adm-side .adm-group-head:hover,
+.adm-side .adm-link:hover {
+  background: rgba(148,163,184,.10);
+  color: #F1F5F9;
+}
+
+.adm-side .adm-solo.is-active {
+  background: rgba(45,212,191,.12);
+  color: var(--hbT-side-active);
+}
+.adm-side .adm-solo.is-active .adm-solo-icon {
+  background: var(--cc-brand);
+  color: #fff;
+}
+.adm-side .adm-group.is-active .adm-group-head { color: var(--hbT-side-active); }
+.adm-side .adm-group.is-active .adm-group-icon {
+  background: var(--cc-brand);
+  color: #fff;
+}
+.adm-side .adm-link.is-active {
+  background: rgba(45,212,191,.12);
+  color: var(--hbT-side-active);
+  font-weight: var(--cc-fw-bold);
+}
+.adm-side .adm-link.is-active::before { background: var(--hbT-side-active); }
+.adm-side .adm-group-links::before    { background: var(--hbT-side-line); }
+
+.adm-side .adm-side-foot { border-block-start: 1px solid var(--hbT-side-line); }
+.adm-side .adm-user-pill {
+  background: rgba(148,163,184,.10);
+  color: var(--hbT-side-text);
+}
+.adm-side .adm-user-avatar { background: var(--cc-brand); color: #fff; }
+.adm-side .adm-logout-btn  { color: var(--hbT-side-mute); }
+.adm-side .adm-logout-btn:hover { color: #FCA5A5; background: rgba(239,68,68,.12); }
+
+/* سكرول-بار السايدبار */
+.adm-side ::-webkit-scrollbar,
+.adm-nav::-webkit-scrollbar { width: 6px; }
+.adm-nav::-webkit-scrollbar-thumb {
+  background: rgba(148,163,184,.25);
+  border-radius: 999px;
+}
+
+/* ── 2. التوبار ──────────────────────────────────────────────────────── */
+.adm-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255,255,255,.92);
+  backdrop-filter: blur(8px);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+/* ── 3. توحيد الأزرار — العائلات الأربع تلتقي هنا ────────────────────── */
+.hub-btn, [class*="btn--"], .btn-primary, .c-btn {
+  border-radius: var(--cc-r-lg);
+  font-family: var(--cc-font);
+  font-weight: var(--cc-fw-bold);
+  transition: var(--cc-tr-fast);
+}
+
+.hub-btn--primary, .btn--primary, .btn-primary,
+.c-btn--primary, .dash-hero-btn--solid {
+  background: var(--cc-brand) !important;
+  border-color: var(--cc-brand) !important;
+  color: #fff !important;
+}
+.hub-btn--primary:hover, .btn--primary:hover, .btn-primary:hover,
+.c-btn--primary:hover {
+  background: var(--cc-brand-deep) !important;
+  border-color: var(--cc-brand-deep) !important;
+}
+
+.hub-btn--danger, .btn--danger {
+  background: var(--hb-red) !important;
+  border-color: var(--hb-red) !important;
+  color: #fff !important;
+}
+
+/* ── 4. الجداول ──────────────────────────────────────────────────────── */
+.adm-page table thead th {
+  background: var(--cc-table-head-bg);
+  color: var(--cc-text-soft);
+  font-weight: var(--cc-fw-bold);
+  font-size: var(--cc-fs-body-s);
+}
+.adm-page table tbody tr:hover > td { background: var(--cc-brand-softer); }
+
+/* ── 5. النماذج ──────────────────────────────────────────────────────── */
+.adm-page input[type="text"],
+.adm-page input[type="number"],
+.adm-page input[type="email"],
+.adm-page input[type="password"],
+.adm-page input[type="search"],
+.adm-page input[type="url"],
+.adm-page input[type="date"],
+.adm-page select,
+.adm-page textarea {
+  border-radius: var(--cc-input-radius);
+  border: 1px solid var(--cc-input-border);
+}
+.adm-page input:focus,
+.adm-page select:focus,
+.adm-page textarea:focus {
+  border-color: var(--cc-brand);
+  box-shadow: var(--cc-input-ring);
+}
+
+/* placeholder أوضح (كان يفشل تباينيًا) */
+.adm-page ::placeholder { color: var(--cc-text-mute); opacity: 1; }

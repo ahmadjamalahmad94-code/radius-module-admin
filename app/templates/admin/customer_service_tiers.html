@@ -10,7 +10,7 @@
 <style>
   .cst-intro{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px;
     padding:14px 16px; display:flex; gap:12px; font-size:13px; line-height:1.75; color:#475569; }
-  .cst-intro i{ color:#7c3aed; font-size:18px; margin-top:2px; }
+  .cst-intro i{ color:#0D9488; font-size:18px; margin-top:2px; }
   .cst-intro b{ color:#0f172a; }
   .cst-form{ display:flex; flex-direction:column; gap:14px; }
   .cst-actions-top{ display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
@@ -27,12 +27,12 @@
   .cst-tier-radio{ display:inline-flex; align-items:center; gap:7px; padding:8px 12px;
     border:1px solid #e2e8f0; border-radius:11px; background:#fff; cursor:pointer;
     font-size:12.5px; font-weight:700; color:#475569; transition:all .15s ease; }
-  .cst-tier-radio:hover{ border-color:#c4b5fd; background:#f5f3ff; }
-  .cst-tier-radio input{ accent-color:#7c3aed; }
-  .cst-tier-radio.is-paid input:checked ~ span{ color:#5b21b6; }
+  .cst-tier-radio:hover{ border-color:#c4b5fd; background:#F0FDFA; }
+  .cst-tier-radio input{ accent-color:#0D9488; }
+  .cst-tier-radio.is-paid input:checked ~ span{ color:#134E4A; }
   .cst-tier-radio.is-free-unl input:checked ~ span{ color:#15803d; }
   .cst-tier-radio.is-free-lim input:checked ~ span{ color:#0e7490; }
-  .cst-tier-radio:has(input:checked){ background:#f5f3ff; border-color:#7c3aed;
+  .cst-tier-radio:has(input:checked){ background:#F0FDFA; border-color:#0D9488;
     box-shadow:0 0 0 3px rgba(124,58,237,.12); }
   .cst-tier-radio.is-free-unl:has(input:checked){ background:#dcfce7; border-color:#16a34a;
     box-shadow:0 0 0 3px rgba(22,163,74,.14); }
@@ -44,11 +44,11 @@
     margin-bottom:3px; }
   .cst-limit-field input{ width:130px; padding:7px 10px; border:1px solid #cbd5e1;
     border-radius:9px; font:inherit; font-size:13px; }
-  .cst-limit-field input:focus{ outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.18); }
+  .cst-limit-field input:focus{ outline:none; border-color:#0D9488; box-shadow:0 0 0 3px rgba(124,58,237,.18); }
   .cst-limit-field .hint{ font-size:10.5px; color:#94a3b8; margin-top:3px; line-height:1.5; }
   .cst-current{ display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
     border-radius:999px; font-size:11px; font-weight:800; }
-  .cst-current.paid{ background:#ede9fe; color:#5b21b6; }
+  .cst-current.paid{ background:#CCFBF1; color:#134E4A; }
   .cst-current.free_unlimited{ background:#dcfce7; color:#166534; }
   .cst-current.free_limited{ background:#cffafe; color:#155e75; }
   .cst-flag{ display:inline-flex; align-items:center; gap:5px; margin-inline-start:7px;
@@ -97,7 +97,7 @@
 
 {# Apply the reusable «العرض المجاني» preset: 14-day license + 100 active
    subscribers + free-on-us tiers (costly ones stay locked-with-upgrade). #}
-<div class="cst-intro" style="border-color:#c4b5fd;background:#f5f3ff;align-items:center;justify-content:space-between">
+<div class="cst-intro" style="border-color:#c4b5fd;background:#F0FDFA;align-items:center;justify-content:space-between">
   <div style="display:flex;gap:12px;align-items:center">
     <i class="fa-solid fa-gift"></i>
     <div>طبّق <b>«العرض المجاني»</b> ({{ trial_days }} يومًا، حتى <b>{{ trial_cap }}</b> مشترك نشط) —

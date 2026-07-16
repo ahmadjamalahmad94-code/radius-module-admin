@@ -18,13 +18,13 @@
   transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
 .ac-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(15,23,42,.08);
-  border-color:var(--cc-brand,#6366f1);}
+  border-color:var(--cc-brand,#14B8A6);}
 .ac-card-head{display:flex;align-items:center;gap:12px;}
 .ac-card-icon{
   inline-size:46px;block-size:46px;border-radius:14px;display:grid;place-items:center;
   font-size:20px;color:#fff;flex-shrink:0;
 }
-.ac-card-icon--violet{background:linear-gradient(135deg,#8b5cf6,#6d28d9);}
+.ac-card-icon--violet{background:linear-gradient(135deg,#2DD4BF,#0F766E);}
 .ac-card-icon--amber {background:linear-gradient(135deg,#fbbf24,#d97706);}
 .ac-card-icon--blue  {background:linear-gradient(135deg,#3b82f6,#1d4ed8);}
 .ac-card-icon--green {background:linear-gradient(135deg,#10b981,#047857);}
@@ -41,7 +41,7 @@
 .ac-card-counts{display:flex;gap:14px;font-size:12px;color:var(--cc-text-mute,#6b7280);}
 .ac-count-num{display:block;font-weight:800;font-size:20px;color:var(--cc-text,#111827);}
 .ac-card-actions{display:flex;gap:8px;}
-.ac-more-btn{background:none;border:0;color:var(--cc-brand,#6366f1);font-weight:700;cursor:pointer;
+.ac-more-btn{background:none;border:0;color:var(--cc-brand,#14B8A6);font-weight:700;cursor:pointer;
   font-size:13px;padding:0;}
 .ac-more-btn:hover{text-decoration:underline;}
 
@@ -60,7 +60,7 @@
 }
 .ac-modal-icon{
   inline-size:40px;block-size:40px;border-radius:12px;display:grid;place-items:center;
-  font-size:18px;color:#fff;background:linear-gradient(135deg,#6366f1,#4338ca);
+  font-size:18px;color:#fff;background:linear-gradient(135deg,#14B8A6,#0F766E);
 }
 .ac-modal-title{font-size:17px;font-weight:800;color:var(--cc-text,#111827);}
 .ac-modal-sub{font-size:12px;color:var(--cc-text-mute,#6b7280);margin-top:2px;}
@@ -82,7 +82,7 @@
   background:#fff;border:1px solid var(--cc-border,#e5e7eb);border-radius:10px;
   outline:none;font-family:inherit;
 }
-.ac-input:focus,.ac-select:focus{border-color:var(--cc-brand,#6366f1);
+.ac-input:focus,.ac-select:focus{border-color:var(--cc-brand,#14B8A6);
   box-shadow:0 0 0 3px rgba(99,102,241,.18);}
 .ac-input.ltr,.ac-input.mono{direction:ltr;font-family:ui-monospace,Menlo,monospace;}
 .ac-callout{
@@ -100,7 +100,7 @@
   padding:7px 14px;border-radius:999px;background:#fff;border:1px solid var(--cc-border,#e5e7eb);
   font-size:13px;font-weight:700;color:var(--cc-text-mute,#6b7280);text-decoration:none;
 }
-.ac-filter a.is-active{background:var(--cc-brand,#6366f1);color:#fff;border-color:transparent;}
+.ac-filter a.is-active{background:var(--cc-brand,#14B8A6);color:#fff;border-color:transparent;}
 </style>
 {% endblock %}
 
@@ -337,7 +337,7 @@
     {{ csrf_input() }}
     <input type="hidden" name="tunnel_type" value="{{ ttype }}">
     <div class="ac-modal-head">
-      <span class="ac-modal-icon" style="background:linear-gradient(135deg,{{ '#8b5cf6,#6d28d9' if is_sstp else '#fbbf24,#d97706' }});">
+      <span class="ac-modal-icon" style="background:linear-gradient(135deg,{{ '#2DD4BF,#0F766E' if is_sstp else '#fbbf24,#d97706' }});">
         <i class="fa-solid fa-{{ 'lock' if is_sstp else 'plug' }}"></i>
       </span>
       <div>
@@ -375,7 +375,7 @@
       <div class="ac-callout"
            data-ac-radius-preview
            data-ac-preview-url="{{ url_for('admin_access.api_radius_link_preview') }}"
-           style="background:#eef2ff;border-color:#c7d2fe;color:#3730a3">
+           style="background:#F0FDFA;border-color:#99F6E4;color:#3730a3">
         <i class="fa-solid fa-route"></i>
         <div>
           <b>سلسلة RADIUS:</b>
@@ -646,8 +646,8 @@
 
     function refresh() {
       if (!custSel.value) {
-        box.style.background = '#eef2ff';
-        box.style.borderColor = '#c7d2fe';
+        box.style.background = '#F0FDFA';
+        box.style.borderColor = '#99F6E4';
         box.style.color = '#3730a3';
         body.textContent = 'اختر عميلًا وعقدة لمعاينة سلسلة RADIUS الكاملة.';
         return;

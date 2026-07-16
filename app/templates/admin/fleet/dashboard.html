@@ -19,14 +19,14 @@
   :root {
     --fdx-bg:#f6f8fb; --fdx-card:#ffffff; --fdx-line:#e8edf3; --fdx-line2:#eef2f7;
     --fdx-ink:#0f172a; --fdx-ink2:#475569; --fdx-mut:#94a3b8;
-    --fdx-brand:#4f46e5; --fdx-brand-ink:#3730a3; --fdx-brand-soft:#eef2ff;
+    --fdx-brand:#0D9488; --fdx-brand-ink:#3730a3; --fdx-brand-soft:#F0FDFA;
     --fdx-r:14px; --fdx-r-sm:10px; --fdx-r-pill:999px;
     --fdx-sh:0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.18);
   }
 
   /* ── hero ─────────────────────────────────────────────────────────── */
   .fd-hero{
-    background:radial-gradient(120% 160% at 100% 0%, #4f46e5 0%, #312e81 55%, #1e1b4b 100%);
+    background:radial-gradient(120% 160% at 100% 0%, #0D9488 0%, #312e81 55%, #1e1b4b 100%);
     border-radius:20px; padding:26px 28px; color:#fff;
     margin-block-end:18px; display:flex; align-items:center; gap:20px; flex-wrap:wrap;
     box-shadow:0 24px 48px -28px rgba(49,46,129,.7); position:relative; overflow:hidden;
@@ -56,7 +56,7 @@
   /* a neutral button used inside cards (the «إضافة عقدة» in a panel header) */
   .fd-btn.fd-btn--ghost,
   .fd-card .fd-btn{background:#fff;color:var(--fdx-brand);border:1px solid var(--fdx-line);box-shadow:none;}
-  .fd-card .fd-btn:hover{background:var(--fdx-brand-soft);border-color:#c7d2fe;}
+  .fd-card .fd-btn:hover{background:var(--fdx-brand-soft);border-color:#99F6E4;}
 
   /* ── KPI cards ─────────────────────────────────────────────────────── */
   .fd-kpis{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));}
@@ -73,7 +73,7 @@
   .fd-kpi-icon--deg{background:#fff4e0;color:#b45309;}
   .fd-kpi-icon--down{background:#fdecec;color:#b91c1c;}
   .fd-kpi-icon--off{background:#eef1f6;color:#475569;}
-  .fd-kpi-icon--unk{background:#f1ecfe;color:#7c3aed;}
+  .fd-kpi-icon--unk{background:#f1ecfe;color:#0D9488;}
   .fd-kpi-num{font-size:26px;font-weight:900;color:var(--fdx-ink);line-height:1;font-variant-numeric:tabular-nums;}
   .fd-kpi-label{font-size:12px;color:var(--fdx-ink2);margin-top:5px;font-weight:600;}
 
@@ -110,7 +110,7 @@
   .fd-mini{font-size:11px;color:var(--fdx-mut);margin-top:4px;line-height:1.5;}
   /* mini capacity bar in the sessions cell */
   .fd-bar{margin-top:6px;height:5px;width:84px;border-radius:999px;background:#eef2f7;overflow:hidden;}
-  .fd-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4f46e5,#22c55e);}
+  .fd-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#0D9488,#22c55e);}
 
   /* ── status badges (clean pills) ───────────────────────────────────── */
   .fd-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--fdx-r-pill);
@@ -120,8 +120,8 @@
   .fd-badge--deg{background:#fff4e0;color:#b45309;}
   .fd-badge--down{background:#fdecec;color:#b91c1c;}
   .fd-badge--off{background:#eef1f6;color:#475569;}
-  .fd-badge--prov{background:#eef2ff;color:#4338ca;}
-  .fd-badge--unk{background:#f1ecfe;color:#7c3aed;}
+  .fd-badge--prov{background:#F0FDFA;color:#0F766E;}
+  .fd-badge--unk{background:#f1ecfe;color:#0D9488;}
   /* feat/active-node-view-script-reimport — drift-warning badge. */
   .fd-badge--reimport{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
   .fd-badge--reimport i{font-size:10px;animation:fd-spin-slow 3s linear infinite;}
@@ -135,7 +135,7 @@
   }
   .fd-rowbtn:hover{background:#f8fafc;border-color:#cbd5e1;color:var(--fdx-ink);}
   .fd-rowbtn.fd-check-one{color:var(--fdx-brand);border-color:#dfe3fb;}
-  .fd-rowbtn.fd-check-one:hover{background:var(--fdx-brand-soft);border-color:#c7d2fe;}
+  .fd-rowbtn.fd-check-one:hover{background:var(--fdx-brand-soft);border-color:#99F6E4;}
   .fd-rowbtn.fd-poll-metrics{color:#0e7490;border-color:#cffafe;}
   .fd-rowbtn.fd-poll-metrics:hover{background:#ecfeff;border-color:#a5f3fc;}
   /* feat/active-node-view-script-reimport — node-keyed view-script
@@ -206,7 +206,7 @@
   .node-card--up::before{background:#22c55e;}
   .node-card--degraded::before{background:#f59e0b;}
   .node-card--down::before{background:#ef4444;}
-  .node-card--unknown::before{background:#a78bfa;}
+  .node-card--unknown::before{background:#5EEAD4;}
 
   .nc-top{display:flex;align-items:flex-start;gap:12px;margin-block-end:14px;}
   .nc-id{flex:1;min-width:0;}
@@ -284,7 +284,7 @@
   .fb-chip--ok{background:#e7f8ef;color:#15803d;border-color:#bbf7d0;}
   .fb-chip--warn{background:#fff4e0;color:#b45309;border-color:#fed7aa;}
   .fb-chip--bad{background:#fdecec;color:#b91c1c;border-color:#fecaca;}
-  .fb-chip--info{background:var(--fdx-brand-soft);color:var(--fdx-brand-ink);border-color:#c7d2fe;}
+  .fb-chip--info{background:var(--fdx-brand-soft);color:var(--fdx-brand-ink);border-color:#99F6E4;}
   .fb-chip-detail{display:block;font-size:11px;color:var(--fdx-mut);font-weight:600;margin-top:3px;padding-inline-start:2px;}
   .fb-chip-wrap{display:flex;flex-direction:column;}
   .fb-section-sub{margin-block-start:18px;margin-block-end:10px;font-size:12.5px;font-weight:800;color:var(--fdx-ink2);
@@ -297,13 +297,13 @@
     padding:18px 20px 18px 22px;box-shadow:var(--fdx-sh);overflow:hidden;transition:transform .14s,box-shadow .14s;
     display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;}
   .rk-row:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(15,23,42,.05),0 18px 36px -20px rgba(15,23,42,.3);}
-  .rk-row::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#c7d2fe;}
+  .rk-row::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#99F6E4;}
   .rk-row.is-best::before{background:linear-gradient(180deg,#22c55e,#15803d);}
   .rk-row.is-excluded{background:#fdfcfc;border-color:#fde2e2;}
   .rk-row.is-excluded::before{background:#fca5a5;}
 
   .rk-medal{width:56px;height:56px;border-radius:16px;display:flex;flex-direction:column;align-items:center;
-    justify-content:center;background:var(--fdx-brand-soft);color:var(--fdx-brand);box-shadow:inset 0 0 0 1px #e0e7ff;}
+    justify-content:center;background:var(--fdx-brand-soft);color:var(--fdx-brand);box-shadow:inset 0 0 0 1px #CCFBF1;}
   .rk-medal-sup{font-size:8.5px;font-weight:800;letter-spacing:.4px;opacity:.85;margin-block-end:-2px;}
   .rk-medal-num{font-size:21px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;}
   .rk-medal>i{font-size:20px;}
@@ -323,7 +323,7 @@
   .rk-score-num small{font-size:13px;font-weight:800;color:var(--fdx-mut);}
   .rk-score-cap{font-size:10.5px;color:var(--fdx-mut);margin-top:4px;font-weight:600;}
   .rk-bar{margin-top:9px;height:7px;border-radius:999px;background:#eef2f7;overflow:hidden;}
-  .rk-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4f46e5,#22c55e);}
+  .rk-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#0D9488,#22c55e);}
   .rk-row.is-excluded .rk-score-num{color:#94a3b8;}
   .rk-row.is-excluded .rk-bar>span{background:#cbd5e1;}
 
@@ -334,7 +334,7 @@
   .pj-list{display:flex;flex-direction:column;gap:16px;}
   .pj-card{position:relative;background:var(--fdx-card);border:1px solid var(--fdx-line);border-radius:18px;
     padding:18px 20px 18px 22px;box-shadow:var(--fdx-sh);overflow:hidden;}
-  .pj-card::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#818cf8;}
+  .pj-card::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:5px;background:#2DD4BF;}
   .pj-card--failed{border-color:#fecaca;background:#fffafa;}
   .pj-card--failed::before{background:#ef4444;}
 
@@ -378,7 +378,7 @@
     display:inline-flex;align-items:center;gap:7px;text-decoration:none;transition:background .14s,border-color .14s,color .14s;}
   .pj-btn:hover{background:#f8fafc;border-color:#cbd5e1;color:var(--fdx-ink);}
   .pj-btn--advance{color:var(--fdx-brand);border-color:#dfe3fb;}
-  .pj-btn--advance:hover{background:var(--fdx-brand-soft);border-color:#c7d2fe;}
+  .pj-btn--advance:hover{background:var(--fdx-brand-soft);border-color:#99F6E4;}
   .pj-btn--script{color:#047857;border-color:#a7f3d0;}
   .pj-btn--script:hover{background:#ecfdf5;border-color:#6ee7b7;}
   .pj-btn--delete{color:#b91c1c;border-color:#fecaca;}
@@ -398,12 +398,12 @@
   .fd-kpi--up{--accent:#22c55e;}
   .fd-kpi--deg{--accent:#f59e0b;}
   .fd-kpi--down{--accent:#ef4444;}
-  .fd-kpi--unk{--accent:#a78bfa;}
+  .fd-kpi--unk{--accent:#5EEAD4;}
   .fd-kpi--elig{--accent:#0ea5e9;}
   .fd-kpi--off{--accent:#94a3b8;}
-  .fd-kpi--pend{--accent:#6366f1;}
+  .fd-kpi--pend{--accent:#14B8A6;}
   .fd-kpi-icon--elig{background:#e0f2fe;color:#0369a1;}
-  .fd-kpi-icon--pend{background:#eef2ff;color:#4338ca;}
+  .fd-kpi-icon--pend{background:#F0FDFA;color:#0F766E;}
   .fd-kpi-trend{font-size:10.5px;font-weight:700;color:var(--fdx-mut);margin-top:5px;}
 
   .ov-grid{display:grid;gap:16px;grid-template-columns:1.35fr 1fr;margin-block-start:16px;}
@@ -414,7 +414,7 @@
   .ov-seg--up{background:linear-gradient(90deg,#16a34a,#22c55e);}
   .ov-seg--deg{background:linear-gradient(90deg,#d97706,#f59e0b);}
   .ov-seg--down{background:linear-gradient(90deg,#dc2626,#ef4444);}
-  .ov-seg--unk{background:linear-gradient(90deg,#7c3aed,#a78bfa);}
+  .ov-seg--unk{background:linear-gradient(90deg,#0D9488,#5EEAD4);}
   .ov-legend{display:flex;flex-wrap:wrap;gap:8px;margin-block-start:16px;}
   .ov-leg{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--fdx-ink2);
     background:#f8fafc;border:1px solid var(--fdx-line2);border-radius:var(--fdx-r-pill);padding:5px 12px;}
@@ -426,7 +426,7 @@
   .ov-util-pct{font-size:18px;font-weight:800;color:var(--fdx-mut);margin-bottom:4px;}
   .ov-util-cap{font-size:12px;color:var(--fdx-ink2);font-weight:700;margin-bottom:6px;margin-inline-start:auto;}
   .ov-bar{margin-block-start:12px;height:10px;border-radius:999px;background:#eef2f7;overflow:hidden;}
-  .ov-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4f46e5,#22c55e);
+  .ov-bar>span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#0D9488,#22c55e);
     transform-origin:right;animation:fd-grow .8s .25s both cubic-bezier(.2,.85,.25,1);}
   .ov-stats{display:flex;flex-direction:column;gap:11px;margin-block-start:18px;}
   .ov-stat{display:flex;align-items:center;gap:11px;font-size:13px;}
@@ -500,19 +500,19 @@
    banner pointing at the consolidation doc. ── #}
 {% if singleton_chr_match %}
 <div role="status" aria-live="polite"
-     style="display:flex;gap:12px;align-items:flex-start;background:#eef2ff;
-            border:1px solid #c7d2fe;border-radius:14px;padding:13px 17px;
+     style="display:flex;gap:12px;align-items:flex-start;background:#F0FDFA;
+            border:1px solid #99F6E4;border-radius:14px;padding:13px 17px;
             margin-block-end:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);">
   <div style="width:36px;height:36px;border-radius:10px;flex:none;display:grid;
-              place-items:center;background:#6366f1;color:#fff;font-size:15px;">
+              place-items:center;background:#14B8A6;color:#fff;font-size:15px;">
     <i class="fa-solid fa-link" aria-hidden="true"></i>
   </div>
   <div style="flex:1;min-width:0;">
     <div style="font-weight:800;color:#3730a3;font-size:13.5px;margin-bottom:4px;">
       هذا الـCHR موجود في الأسطول — وحّد بيانات الاعتماد
     </div>
-    <div style="font-size:12.5px;color:#4338ca;line-height:1.75;">
-      عنوان <code dir="ltr" style="background:#fff;padding:1px 6px;border-radius:5px;border:1px solid #c7d2fe;font-family:ui-monospace,monospace;">{{ singleton_chr_match.host }}</code>
+    <div style="font-size:12.5px;color:#0F766E;line-height:1.75;">
+      عنوان <code dir="ltr" style="background:#fff;padding:1px 6px;border-radius:5px;border:1px solid #99F6E4;font-family:ui-monospace,monospace;">{{ singleton_chr_match.host }}</code>
       مضبوط في
       <a href="{{ url_for('admin.settings_page') }}#chr"
          style="color:#312e81;font-weight:800;text-decoration:underline;">«MikroTik CHR — نمط الـCHR الواحد»</a>
@@ -640,7 +640,7 @@
       <span class="ov-leg"><span class="ov-leg-dot" style="background:#22c55e"></span> متّصلة <b>{{ _u }}</b></span>
       <span class="ov-leg"><span class="ov-leg-dot" style="background:#f59e0b"></span> متدهورة <b>{{ _d }}</b></span>
       <span class="ov-leg"><span class="ov-leg-dot" style="background:#ef4444"></span> مفصولة <b>{{ _x }}</b></span>
-      <span class="ov-leg"><span class="ov-leg-dot" style="background:#a78bfa"></span> غير معروفة <b>{{ _k }}</b></span>
+      <span class="ov-leg"><span class="ov-leg-dot" style="background:#5EEAD4"></span> غير معروفة <b>{{ _k }}</b></span>
     </div>
   </div>
 
