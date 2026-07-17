@@ -45,6 +45,27 @@ h1.adm-topbar-page-title {
   color: var(--cc-text);
 }
 
+/* العنوان + الفرعي في التوبار: عمود مضغوط، والفرعي مبتور بأناقة عند الضيق */
+.adm-topbar-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.adm-topbar-page-sub {
+  font-size: var(--cc-fs-small);
+  font-weight: var(--cc-fw-medium);
+  color: var(--cc-text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+@media (max-width: 720px) {
+  .adm-topbar-page-sub { display: none; }
+}
+
 /* ── 1. السايدبار الداكن ─────────────────────────────────────────────── */
 .adm-side {
   background: linear-gradient(180deg, var(--hbT-side-bg) 0%, var(--hbT-side-bg-2) 100%);

@@ -543,9 +543,15 @@
         <i class="fa-solid fa-bars" aria-hidden="true"></i>
       </button>
 
-      <h1 class="adm-topbar-page-title">
-        {% block page_title %}{{ _('لوحة التحكم') }}{% endblock %}{% block page_subtitle %}{% endblock %}
-      </h1>
+      {# العنوان الفرعي يُلتقط في متغيّر كي لا يلتصق بالعنوان داخل h1
+         (كان يُعرض متلاصقًا: «مركز الإشعاراتكل التنبيهات...») #}
+      {% set _page_subtitle %}{% block page_subtitle %}{% endblock %}{% endset %}
+      <div class="adm-topbar-title-wrap">
+        <h1 class="adm-topbar-page-title">{% block page_title %}{{ _('لوحة التحكم') }}{% endblock %}</h1>
+        {% if _page_subtitle | trim %}
+        <span class="adm-topbar-page-sub">{{ _page_subtitle }}</span>
+        {% endif %}
+      </div>
 
       <div class="adm-topbar-actions">
         {# ── Language switcher (no native confirm — POST + redirect) ── #}
