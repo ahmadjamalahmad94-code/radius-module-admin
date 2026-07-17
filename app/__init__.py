@@ -550,7 +550,9 @@ def _install_security_headers(app: Flask) -> None:
     @app.after_request
     def set_security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        # SAMEORIGIN لا DENY: يمنع clickjacking من مواقع أخرى مع السماح
+        # بالتضمين داخل نفس الأصل (معاينات/فحوص داخلية).
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault(
             "Content-Security-Policy",
@@ -571,8 +573,8 @@ def _install_security_headers(app: Flask) -> None:
             # frame-src: الـSDK ينشئ iframe مخفيًا على facebook.com + نافذة حوار التسجيل.
             # كلاهما مطلوب حصريًا لتسجيل واتساب المضمّن (Meta JS SDK) — لا شيء أوسع من ذلك.
             "connect-src 'self' https://graph.facebook.com https://www.facebook.com https://connect.facebook.net; "
-            "frame-src https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com https://connect.facebook.net; "
-            "frame-ancestors 'none'",
+            "frame-src 'self' https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com https://connect.facebook.net; "
+            "frame-ancestors 'self'",  # موحّدة مع X-Frame-Options: SAMEORIGIN
         )
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")

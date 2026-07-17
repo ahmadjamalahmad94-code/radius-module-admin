@@ -154,6 +154,14 @@ h1.adm-topbar-page-title {
 }
 
 /* ── 4. الجداول ──────────────────────────────────────────────────────── */
+/* أزرار الإجراءات داخل خلايا الجداول: سطر واحد دائمًا — الالتفاف كان
+   يكدّس الأزرار فوق بعضها في الأعمدة الضيقة (شكوى بصرية 2026-07). */
+.adm-page td .hub-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.adm-page td .hub-actions form { flex-shrink: 0; }
+
 .adm-page table thead th {
   background: var(--cc-table-head-bg);
   color: var(--cc-text-soft);
@@ -184,3 +192,33 @@ h1.adm-topbar-page-title {
 
 /* placeholder أوضح (كان يفشل تباينيًا) */
 .adm-page ::placeholder { color: var(--cc-text-mute); opacity: 1; }
+
+/* ── 6. توحيد مقاسات حقول الإدخال (شكوى بصرية 2026-07) ─────────────────
+   .hub-field شبكة تتمدد لارتفاع الجار الأطول (حقل بتلميحة بجانب حقل بدونها)
+   فيتضخم input المجاور عموديًا. الحل: ارتفاع موحد + عدم تمدد المحتوى. */
+.adm-page .hub-field { align-content: start; }
+.adm-page .hub-input,
+.adm-page .hub-select,
+.adm-page .hub-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.adm-page .hub-field select {
+  height: var(--cc-input-h);
+}
+.adm-page .hub-textarea,
+.adm-page .hub-field textarea {
+  height: auto;
+  min-height: 84px;
+}
+
+/* ── 7. تنفّس عام: لا تلاصق أقسام ولا نصوص ملتصقة بالحواف ─────────────── */
+.adm-page > * + * { margin-block-start: var(--cc-gap-section); }
+.adm-page .hub-section + .hub-section { margin-block-start: var(--cc-gap-section); }
+/* خلايا الجداول: حشوة أفقية دنيا كي لا يلمس النص حافة العمود */
+.adm-page table th,
+.adm-page table td {
+  padding-inline: var(--cc-sp-6);
+}
+/* صفوف قوائم التفاصيل (حالة النظام وشبيهاتها): كانت padding: 8px 0
+   فيلامس النص حواف البطاقة — حشوة أفقية موحدة. */
+.adm-page .adm-detail-list > div {
+  padding-inline: var(--cc-sp-6);
+}

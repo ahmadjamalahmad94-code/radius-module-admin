@@ -45,8 +45,17 @@
   {% endcall %}
 </div>
 
-{% call hub.section("التسوية والمخاطر", icon="scale-balanced",
-   meta='<form method="post" action="' ~ url_for('admin.payment_expire_pending') ~ '" style="margin:0">' ~ csrf_input()|string ~ '<button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit"><i class="fa-solid fa-clock"></i> تعليم الطلبات المنتهية</button></form>') %}
+{# بناء الـ meta بـ set-block (لا دمج ~ مع csrf_input الذي يُعيد Markup —
+   الدمج يجعل Markup يُهرّب النص العادي فيظهر HTML خامًا للمستخدم). #}
+{% set expire_pending_meta %}
+<form method="post" action="{{ url_for('admin.payment_expire_pending') }}" style="margin:0">
+  {{ csrf_input() }}
+  <button class="hub-btn hub-btn--secondary hub-btn--sm" type="submit">
+    <i class="fa-solid fa-clock"></i> تعليم الطلبات المنتهية
+  </button>
+</form>
+{% endset %}
+{% call hub.section("التسوية والمخاطر", icon="scale-balanced", meta=expire_pending_meta) %}
   <div class="hub-table-wrap">
     <table class="hub-table">
       <thead><tr><th>الفحص</th><th class="num">العدد</th><th>ملاحظة</th></tr></thead>

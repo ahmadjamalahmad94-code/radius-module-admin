@@ -230,9 +230,10 @@ def test_security_headers_and_secure_cookie_flags_are_set(client):
     response = client.get("/login")
 
     assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["X-Frame-Options"] == "DENY"
+    # SAMEORIGIN (2026-07): يمنع clickjacking الخارجي ويسمح بالتضمين داخل نفس الأصل
+    assert response.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert response.headers["Referrer-Policy"] == "same-origin"
-    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'self'" in response.headers["Content-Security-Policy"]
 
 
 def _csp_directive(policy: str, name: str) -> str:
@@ -278,7 +279,7 @@ def test_csp_allows_meta_embedded_signup_sdk_exactly(client):
 
     # Nothing else weakened: base policy + clickjacking protections intact.
     assert "default-src 'self'" in policy
-    assert "frame-ancestors 'none'" in policy
+    assert "frame-ancestors 'self'" in policy
     # No broad wildcards crept in (only the scoped fbcdn image wildcard is allowed).
     assert "*.facebook.com" not in policy
     assert " https://*" not in policy.replace("https://*.fbcdn.net", "")

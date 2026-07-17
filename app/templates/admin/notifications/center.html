@@ -12,16 +12,20 @@
 } %}
 
 {% block content %}
+{# actions_html عبر set-block — دمج csrf_input() (Markup) بـ ~ كان يُهرّب الـ HTML. #}
+{% set mark_all_read_html %}
+<form method="post" action="{{ url_for('admin_notifications.mark_all_read') }}" style="display:inline">
+  {{ csrf_input() }}
+  <button class="hub-btn hub-btn--secondary" type="submit">
+    <i class="fa-solid fa-check-double"></i> تعليم الكل كمقروء
+  </button>
+</form>
+{% endset %}
 {{ hub.hero(
    "مركز الإشعارات",
    subtitle="غير المقروء: " ~ unread_count,
    icon="bell",
-   actions_html=(
-     '<form method="post" action="' ~ url_for('admin_notifications.mark_all_read') ~ '" style="display:inline">'
-     ~ csrf_input()
-     ~ '<button class="hub-btn hub-btn--secondary" type="submit"><i class="fa-solid fa-check-double"></i> تعليم الكل كمقروء</button>'
-     ~ '</form>'
-   )
+   actions_html=mark_all_read_html
 ) }}
 
 {% call hub.section("الإشعارات", icon="list", meta=(items|length ~ ' إشعار')) %}

@@ -136,9 +136,9 @@
   opacity:     0.8;
 }
 .pln-card-badge {
-  position:      absolute;
-  inset-inline-start: var(--cc-sp-5);
-  inset-block-end:    var(--cc-sp-5);
+  /* كانت absolute فتتراكب فوق رقم السعر — الآن بسطرها الخاص في التدفق */
+  margin-block-start: var(--cc-sp-5);
+  width:         fit-content;
   display:       inline-flex;
   align-items:   center;
   gap:           var(--cc-sp-1);
